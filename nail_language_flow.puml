@@ -1,0 +1,19 @@
+@startuml Nail language flow
+title Nail language flow
+
+start
+:lexer.rs;
+note right: Lexer is the first step\nwhere the source code is tokenized.
+
+:parser.rs;
+note right: Parser is the second step\nwhere tokenized code is parsed\ninto an abstract syntax tree (AST).
+
+:checker.rs;
+note right: Checker verifies the abstract syntax tree for correctness.\nThis is type-checking and semantic analysis, which means things\n like making sure the variables exist in the right scopes.
+
+:transpiler.rs;
+note right: Transpiler converts\nthe abstract syntax tree\ninto async/concurrent/parallel\nRust code, for final compilation.
+
+stop
+
+@enduml
