@@ -857,7 +857,7 @@ mod tests {
 
     #[test]
     fn test_function_declaration_multiple_params() {
-        let input = r#"fn random(x:i, y:f):s { v result:s = "test"; r result; }"#;
+        let input = r#"fn random(x:i, y:f):s { v result:s = `test`; r result; }"#;
         let result = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
 

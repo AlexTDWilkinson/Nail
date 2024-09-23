@@ -306,7 +306,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                     end_column: lexer_output.end_column,
                 });
             }
-            '"' => {
+            '`' => {
                 let lexer_output: LexerOutput = lex_string_literal(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
@@ -1002,7 +1002,7 @@ fn is_single_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -
                             || next_char == '-'
                             || next_char == '*'
                             || next_char == '/'
-                            || next_char == '"'
+                            || next_char == '`'
                             || next_char == '\n'
                     }
                     None => true, // End of input is fine
@@ -1454,7 +1454,7 @@ fn lex_string_literal(chars: &mut std::iter::Peekable<std::str::Chars>, state: &
     advance(chars, state); // Skip opening quote
     let mut string_literal = String::new();
     while let Some(c) = advance(chars, state) {
-        if c == '"' {
+        if c == '`' {
             return LexerOutput { token_type: TokenType::StringLiteral(string_literal), start_line, start_column, end_line: state.line, end_column: state.column };
         }
         string_literal.push(c);
@@ -1712,7 +1712,7 @@ fn lex_value(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexer
     if let Some(&c) = chars.peek() {
         let lexer_output: LexerOutput = match c {
             _ if is_array(chars) => lex_array(chars, state),
-            '"' => lex_string_literal(chars, state),
+            '`' => lex_string_literal(chars, state),
             _ if is_number(chars) => lex_number(chars, state),
             _ if is_struct_instantiation(chars) => lex_struct_instantiation(chars, state),
             _ if is_enum_variant(chars) => lex_enum_variant(chars, state),
@@ -1859,7 +1859,7 @@ mod tests {
 
     #[test]
     fn test_function_declaration_multiple_params() {
-        let input = r#"fn random(x:i, y:f):s { v result:s = "test"; r result; }"#;
+        let input = r#"fn random(x:i, y:f):s { v result:s = `test`; r result; }"#;
         let result = lexer(input);
         println!("RESULT: {:#?}", result);
         assert_eq!(
