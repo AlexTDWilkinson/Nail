@@ -30,6 +30,8 @@ impl Transpiler {
 
     fn transpile_node(&mut self, node: &ASTNode, output: &mut String) -> Result<(), std::fmt::Error> {
         match node {
+            ASTNode::StructDeclarationField { .. } => todo!(),
+            ASTNode::StructInstantiationField { .. } => todo!(),
             ASTNode::Program(statements) => {
                 for stmt in statements {
                     self.transpile_node(stmt, output)?;
@@ -120,8 +122,10 @@ impl Transpiler {
                 for node in nodes {
                     match node {
                         ASTNode::RustLiteral(literal) => write!(output, "{}", literal)?,
-                        ASTNode::NailInjection(inner_node) => {
-                            self.transpile_node(inner_node, output)?;
+                        ASTNode::NailInjection(vec_inner_node) => {
+                            for inner_node in vec_inner_node {
+                                self.transpile_node(inner_node, output)?;
+                            }
                         }
                         _ => return Err(std::fmt::Error),
                     }
@@ -132,29 +136,36 @@ impl Transpiler {
                 write!(output, "{}", literal)?;
             }
 
-            ASTNode::NailInjection(inner_node) => {
-                self.transpile_node(inner_node, output)?;
+            ASTNode::NailInjection(vec_inner_node) => {
+                for node in vec_inner_node {
+                    self.transpile_node(node, output)?;
+                }
             }
             ASTNode::ReturnStatement(value) => {
                 write!(output, "{}return ", self.indent())?;
                 self.transpile_node(value, output)?;
             }
             ASTNode::StructDeclaration { name, fields } => {
-                writeln!(output, "{}#[derive(Debug)]", self.indent())?;
-                writeln!(output, "{}struct {} {{", self.indent(), name)?;
-                self.indent_level += 1;
-                for (field_name, field_type) in fields {
-                    writeln!(output, "{}{}: {},", self.indent(), field_name, self.rust_type(field_type, name))?;
-                }
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
+                // writeln!(output, "{}#[derive(Debug)]", self.indent())?;
+                // writeln!(output, "{}struct {} {{", self.indent(), name)?;
+                // self.indent_level += 1;
+                // for (name, f) in fields {
+                //     writeln!(output, "{}{}: {},", self.indent(), name, self.rust_type(field_type, ""))?;
+                // }
+                // self.indent_level -= 1;
+                // writeln!(output, "{}}}", self.indent())?;
             }
             ASTNode::EnumDeclaration { name, variants } => {
                 writeln!(output, "{}#[derive(Debug)]", self.indent())?;
                 writeln!(output, "{}enum {} {{", self.indent(), name)?;
                 self.indent_level += 1;
                 for variant in variants {
-                    writeln!(output, "{}{},", self.indent(), variant)?;
+                    match variant {
+                        ASTNode::EnumVariant { variant, .. } => {
+                            writeln!(output, "{}{},", self.indent(), variant)?;
+                        }
+                        _ => return Err(std::fmt::Error),
+                    }
                 }
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
@@ -174,18 +185,18 @@ impl Transpiler {
                 writeln!(output, "{}}}", self.indent())?;
             }
             ASTNode::StructInstantiation { name, fields } => {
-                write!(output, "{}{} {{", self.indent(), name)?;
-                for (i, (field_name, field_value)) in fields.iter().enumerate() {
-                    if i > 0 {
-                        write!(output, ", ")?;
-                    }
-                    write!(output, "{}: ", field_name)?;
-                    self.transpile_node(field_value, output)?;
-                }
-                writeln!(output, "}}")?;
+                // write!(output, "{}{} {{", self.indent(), name)?;
+                // for (i, (field_name, field_value)) in fields.iter().enumerate() {
+                //     if i > 0 {
+                //         write!(output, ", ")?;
+                //     }
+                //     write!(output, "{}: ", field_name)?;
+                //     self.transpile_node(field_value, output)?;
+                // }
+                // writeln!(output, "}}")?;
             }
-            ASTNode::EnumVariant { enum_name, variant } => {
-                write!(output, "{}{}::{}", self.indent(), enum_name, variant)?;
+            ASTNode::EnumVariant { name, variant } => {
+                write!(output, "{}{}::{}", self.indent(), name, variant)?;
             }
             ASTNode::ArrayLiteral(values) => {
                 write!(output, "{}vec! [", self.indent())?;

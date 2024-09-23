@@ -11,7 +11,7 @@ pub static FUNCTION_DEFINITION: &str = "
  fn add(x:i, y:i):i = x + y;
  add(2:i, 3:i) * -seven";
 
-pub static CONST_ASSIGNMENT: &str = "c x = 10;";
+pub static CONST_ASSIGNMENT: &str = "c x:i = 10;";
 pub static NESTED_EXPRESSION: &str = "2 + 3 * 4";
 pub static SIMPLE_ADDITION_OF_NEGATIVE_NUMBERS: &str = "-1 + -2";
 pub static SIMPLE_ADDITION: &str = "1 + 2";
@@ -32,5 +32,4 @@ x:i = 10;
 
 pub static RUST_ESCAPE_NESTED_BLOCKS: &str = "R{ { let x:i = 10; } }";
 
-pub static RUST_ESCAPE_NAIL_INJECTION: &str =
-    r#"R{ println!("Hello, ^[name]^! You are ^[ 18 + 8 ]^ years old."); }"#;
+pub static RUST_ESCAPE_NAIL_INJECTION: &str = r#"R{ println!("Hello, ^[name]^! You are ^[ 18 + 8 ]^ years old."); }"#;

@@ -17,7 +17,29 @@ static ALPHABET: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 static ALPHABET_UPPERCASE: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 static NUMBERS: &str = "0123456789";
 
-// create Result enum
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructDeclarationData {
+    pub name: String,
+    pub fields: Vec<StructDeclarationDataField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructInstantiationData {
+    pub name: String,
+    pub fields: Vec<StructInstantiationDataField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructInstantiationDataField {
+    pub name: String,
+    pub value: Token,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructDeclarationDataField {
+    pub name: String,
+    pub data_type: NailDataTypeDescriptor,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Maybe<NailDataType: 'static> {
@@ -32,9 +54,15 @@ pub struct NailStruct {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NailEnum {
-    name: String,
-    variants: Vec<String>,
+pub struct EnumDeclarationData {
+    pub name: String,
+    pub variants: Vec<Token>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumVariantData {
+    pub name: String,
+    pub variant: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,8 +73,8 @@ pub enum NailDataType {
     Boolean,
     Array(Vec<NailDataType>), // Can hold other NailDataType values
     Error(String),
-    EnumDeclaration(NailEnum),
-    StructDeclaration(NailStruct),
+    EnumDeclaration(EnumDeclarationData),
+    StructDeclaration(StructDeclarationData),
     Maybe(Maybe<NailDataType>), // This can hold a reference to a static NailDataType
     Void,
 }
@@ -91,15 +119,11 @@ pub enum TokenType {
     LambdaReturnTypeDeclaration(NailDataTypeDescriptor),
     FunctionReturnTypeDeclaration(NailDataTypeDescriptor),
     FunctionName(String),
-    FunctionCall(Vec<Token>),
-    StructDeclaration(Vec<Token>), // For struct declarations
-    StructInstantiation(String, Vec<Token>),
-    EnumDeclaration(Vec<Token>), // For enum data
+    StructDeclaration(StructDeclarationData), // For struct declarations
+    StructInstantiation(StructInstantiationData),
+    EnumDeclaration(EnumDeclarationData), // For enum data
     StructFieldAccess(String, String),
-    StructName(String),                      // For struct name
-    EnumName(String),                        // For enum name
-    StructFieldName(String),                 // For struct field name
-    EnumVariant(String),                     // For enum variant name
+    EnumVariant(EnumVariantData),            // For enum variant name
     Comment(String),                         // For comments
     FunctionSignature(Vec<Token>),           // For function declarations ie "fn"
     ConstDeclaration,                        // For const declarations ie "c"
@@ -248,17 +272,6 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
             }
             _ if is_comment(&mut chars) => {
                 lex_comment(&mut chars, state);
-            }
-
-            _ if is_function_call(&mut chars) => {
-                let lexer_output = lex_function_call(&mut chars, state);
-                tokens.push(Token {
-                    token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
-                });
             }
 
             _ if is_function_signature(&mut chars) => {
@@ -519,7 +532,7 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
     }
     advance(chars, state);
 
-    let mut fields = Vec::new();
+    let mut fields: Vec<StructInstantiationDataField> = Vec::new();
     loop {
         // Skip whitespace
         while let Some(&c) = chars.peek() {
@@ -536,9 +549,6 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
             break;
         }
 
-        // Parse field name
-        let field_start_line = state.line;
-        let field_start_column = state.column;
         let mut field_name = String::new();
         while let Some(&c) = chars.peek() {
             if is_in_alphabet_or_number(c) || c == '_' {
@@ -548,8 +558,6 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
                 break;
             }
         }
-
-        fields.push(Token { token_type: TokenType::StructFieldName(field_name), start_line: field_start_line, end_line: state.line, start_column: field_start_column, end_column: state.column });
 
         // Skip whitespace
         while let Some(&c) = chars.peek() {
@@ -583,7 +591,10 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
 
         // Parse field value
         let value = lex_value(chars, state);
-        fields.push(Token { token_type: value.token_type, start_line: value.start_line, end_line: value.end_line, start_column: value.start_column, end_column: value.end_column });
+        fields.push(StructInstantiationDataField {
+            name: field_name,
+            value: Token { token_type: value.token_type, start_line: value.start_line, end_line: value.end_line, start_column: value.start_column, end_column: value.end_column },
+        });
 
         // Skip whitespace
         while let Some(&c) = chars.peek() {
@@ -614,7 +625,7 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
         }
     }
 
-    LexerOutput { token_type: TokenType::StructInstantiation(struct_name, fields), start_line, start_column, end_line: state.line, end_column: state.column }
+    LexerOutput { token_type: TokenType::StructInstantiation(StructInstantiationData { name: struct_name, fields }), start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
 fn lex_array(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
@@ -817,70 +828,6 @@ fn is_function_call(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
     }
 
     false
-}
-
-fn lex_function_call(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
-    let start_line = state.line;
-    let start_column = state.column;
-
-    // Lex function name
-    let func_name = lex_identifier_or_keyword(chars, state);
-    let mut tokens = vec![Token {
-        token_type: match func_name.token_type {
-            TokenType::Identifier(s) => TokenType::FunctionName(s),
-            _ => TokenType::LexerError("Expected function name".to_string()),
-        },
-        start_line: func_name.start_line,
-        end_line: func_name.end_line,
-        start_column: func_name.start_column,
-        end_column: func_name.end_column,
-    }];
-
-    // Expect and consume opening parenthesis
-    if chars.peek() != Some(&'(') {
-        return LexerOutput { token_type: TokenType::LexerError("Expected '(' after function name".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
-    }
-    advance(chars, state); // Consume '('
-
-    // Parse arguments
-    loop {
-        skip_whitespace(chars, state);
-
-        // Check for closing parenthesis
-        if chars.peek() == Some(&')') {
-            advance(chars, state);
-            break;
-        }
-
-        // Parse argument
-        let arg = if is_function_call(chars) { lex_function_call(chars, state) } else { lex_value(chars, state) };
-
-        tokens.push(Token { token_type: arg.token_type, start_line: arg.start_line, end_line: arg.end_line, start_column: arg.start_column, end_column: arg.end_column });
-
-        skip_whitespace(chars, state);
-
-        // Check for comma or closing parenthesis
-        match chars.peek() {
-            Some(&',') => {
-                advance(chars, state);
-                tokens.push(Token { token_type: TokenType::Comma, start_line: state.line, end_line: state.line, start_column: state.column - 1, end_column: state.column });
-            }
-            Some(&')') => {
-                // Will be handled at the start of the next iteration
-            }
-            _ => {
-                return LexerOutput {
-                    token_type: TokenType::LexerError("Expected ',' or ')' after function argument".to_string()),
-                    start_line,
-                    start_column,
-                    end_line: state.line,
-                    end_column: state.column,
-                }
-            }
-        }
-    }
-
-    LexerOutput { token_type: TokenType::FunctionCall(tokens), start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
 // Helper function to skip whitespace
@@ -1176,26 +1123,22 @@ fn lex_struct_declaration(chars: &mut std::iter::Peekable<std::str::Chars>, stat
         }
 
         // Parse field type
-
-        // Skip whitespace
-        while let Some(&c) = chars.peek() {
-            if c.is_whitespace() {
-                advance(chars, state);
-            } else {
-                break;
-            }
-        }
-
         let field_type = lex_type_system_type(chars, state);
 
-        fields.push(Token { token_type: TokenType::StructFieldName(field_name), start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column });
-
-        fields.push(Token {
-            token_type: field_type.token_type,
-            start_line: field_type.start_line,
-            end_line: field_type.end_line,
-            start_column: field_type.start_column,
-            end_column: field_type.end_column,
+        fields.push(StructDeclarationDataField {
+            name: field_name,
+            data_type: match field_type {
+                LexerOutput { token_type: TokenType::TypeDeclaration(t), .. } => t,
+                _ => {
+                    return LexerOutput {
+                        token_type: TokenType::LexerError("Expected type declaration after field name in struct".to_string()),
+                        start_line,
+                        start_column,
+                        end_line: state.line,
+                        end_column: state.column,
+                    }
+                }
+            },
         });
 
         // Skip whitespace
@@ -1215,22 +1158,7 @@ fn lex_struct_declaration(chars: &mut std::iter::Peekable<std::str::Chars>, stat
         }
     }
 
-    LexerOutput {
-        token_type: TokenType::StructDeclaration(
-            vec![
-                Token { token_type: TokenType::StructName(struct_name), start_line, end_line: state.line, start_column: start_column + 7, end_column: state.column - 1 },
-                Token { token_type: TokenType::BlockOpen, start_line: state.line, end_line: state.line, start_column: state.column - 1, end_column: state.column },
-            ]
-            .into_iter()
-            .chain(fields)
-            .chain(vec![Token { token_type: TokenType::BlockClose, start_line: state.line, end_line: state.line, start_column: state.column - 1, end_column: state.column }])
-            .collect(),
-        ),
-        start_line,
-        start_column,
-        end_line: state.line,
-        end_column: state.column,
-    }
+    LexerOutput { token_type: TokenType::StructDeclaration(StructDeclarationData { name: struct_name, fields }), start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
 fn is_enum_declaration(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
@@ -1312,7 +1240,13 @@ fn lex_enum_delcaration(chars: &mut std::iter::Peekable<std::str::Chars>, state:
             }
         }
 
-        variants.push(Token { token_type: TokenType::EnumVariant(variant_name), start_line: state.line, end_line: state.line, start_column: variant_start_column, end_column: state.column });
+        variants.push(Token {
+            token_type: TokenType::EnumVariant(EnumVariantData { name: enum_name.clone(), variant: variant_name }),
+            start_line: state.line,
+            end_line: state.line,
+            start_column: variant_start_column,
+            end_column: state.column,
+        });
 
         // Skip whitespace
         while let Some(&c) = chars.peek() {
@@ -1331,22 +1265,7 @@ fn lex_enum_delcaration(chars: &mut std::iter::Peekable<std::str::Chars>, state:
         }
     }
 
-    LexerOutput {
-        token_type: TokenType::EnumDeclaration(
-            vec![
-                Token { token_type: TokenType::EnumName(enum_name), start_line, end_line: state.line, start_column: start_column + 5, end_column: state.column - 1 },
-                Token { token_type: TokenType::BlockOpen, start_line: state.line, end_line: state.line, start_column: state.column - 1, end_column: state.column },
-            ]
-            .into_iter()
-            .chain(variants)
-            .chain(vec![Token { token_type: TokenType::BlockClose, start_line: state.line, end_line: state.line, start_column: state.column - 1, end_column: state.column }])
-            .collect(),
-        ),
-        start_line,
-        start_column,
-        end_line: state.line,
-        end_column: state.column,
-    }
+    LexerOutput { token_type: TokenType::EnumDeclaration(EnumDeclarationData { name: enum_name, variants }), start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
 fn is_identifier_or_keyword(c: char) -> bool {
@@ -1708,7 +1627,13 @@ fn lex_enum_variant(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mu
 
     let parts: Vec<&str> = full_name.split("::").collect();
     if parts.len() == 2 {
-        LexerOutput { token_type: TokenType::EnumVariant(parts[1].to_string()), start_line, start_column, end_line: state.line, end_column: state.column }
+        LexerOutput {
+            token_type: TokenType::EnumVariant(EnumVariantData { name: parts[0].to_string(), variant: parts[1].to_string() }),
+            start_line,
+            start_column,
+            end_line: state.line,
+            end_column: state.column,
+        }
     } else {
         LexerOutput { token_type: TokenType::LexerError(format!("Invalid enum variant syntax: {}", full_name)), start_line, start_column, end_line: state.line, end_column: state.column }
     }
@@ -1868,17 +1793,11 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                Token {
-                    token_type: FunctionCall(vec![
-                        Token { token_type: FunctionName("fun".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 4 },
-                        Token { token_type: Identifier("param".to_string()), start_line: 1, end_line: 1, start_column: 5, end_column: 10 },
-                    ],),
-                    start_line: 1,
-                    end_line: 1,
-                    start_column: 1,
-                    end_column: 11,
-                },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 11, end_column: 12 },
+                Token { token_type: Identifier("fun".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 4 },
+                Token { token_type: ParenthesisOpen, start_line: 1, end_line: 1, start_column: 4, end_column: 5 },
+                Token { token_type: Identifier("param".to_string()), start_line: 1, end_line: 1, start_column: 5, end_column: 10 },
+                Token { token_type: ParenthesisClose, start_line: 1, end_line: 1, start_column: 10, end_column: 11 },
+                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 11, end_column: 12 }
             ]
         );
     }
@@ -1891,26 +1810,14 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                Token {
-                    token_type: FunctionCall(vec![
-                        Token { token_type: FunctionName("fun".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 4 },
-                        Token {
-                            token_type: FunctionCall(vec![
-                                Token { token_type: FunctionName("times".to_string()), start_line: 1, end_line: 1, start_column: 5, end_column: 10 },
-                                Token { token_type: Identifier("param".to_string()), start_line: 1, end_line: 1, start_column: 11, end_column: 16 },
-                            ],),
-                            start_line: 1,
-                            end_line: 1,
-                            start_column: 5,
-                            end_column: 17,
-                        },
-                    ],),
-                    start_line: 1,
-                    end_line: 1,
-                    start_column: 1,
-                    end_column: 18,
-                },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 18, end_column: 19 },
+                Token { token_type: Identifier("fun".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 4 },
+                Token { token_type: ParenthesisOpen, start_line: 1, end_line: 1, start_column: 4, end_column: 5 },
+                Token { token_type: Identifier("times".to_string()), start_line: 1, end_line: 1, start_column: 5, end_column: 10 },
+                Token { token_type: ParenthesisOpen, start_line: 1, end_line: 1, start_column: 10, end_column: 11 },
+                Token { token_type: Identifier("param".to_string()), start_line: 1, end_line: 1, start_column: 11, end_column: 16 },
+                Token { token_type: ParenthesisClose, start_line: 1, end_line: 1, start_column: 16, end_column: 17 },
+                Token { token_type: ParenthesisClose, start_line: 1, end_line: 1, start_column: 17, end_column: 18 },
+                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 18, end_column: 19 }
             ]
         );
     }
@@ -2098,24 +2005,20 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
 
         assert_eq!(
             result,
-            vec![
-                // Struct Point declaration
+            [
                 Token {
-                    token_type: StructDeclaration(vec![
-                        Token { token_type: StructName("Point".to_string()), start_line: 2, end_line: 2, start_column: 8, end_column: 25 },
-                        Token { token_type: BlockOpen, start_line: 2, end_line: 2, start_column: 25, end_column: 26 },
-                        Token { token_type: StructFieldName("x".to_string()), start_line: 2, end_line: 2, start_column: 19, end_column: 19 },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 2, end_line: 2, start_column: 17, end_column: 19 },
-                        Token { token_type: StructFieldName("y".to_string()), start_line: 2, end_line: 2, start_column: 24, end_column: 24 },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 2, end_line: 2, start_column: 22, end_column: 24 },
-                        Token { token_type: BlockClose, start_line: 2, end_line: 2, start_column: 25, end_column: 26 },
-                    ]),
+                    token_type: StructDeclaration(StructDeclarationData {
+                        name: "Point".to_string(),
+                        fields: vec![
+                            StructDeclarationDataField { name: "x".to_string(), data_type: NailDataTypeDescriptor::Int },
+                            StructDeclarationDataField { name: "y".to_string(), data_type: NailDataTypeDescriptor::Int }
+                        ]
+                    }),
                     start_line: 2,
                     end_line: 2,
                     start_column: 1,
                     end_column: 26
                 },
-                // Array of Points declaration
                 Token { token_type: VariableDeclaration, start_line: 3, end_line: 3, start_column: 1, end_column: 2 },
                 Token { token_type: Identifier("points".to_string()), start_line: 3, end_line: 3, start_column: 3, end_column: 9 },
                 Token { token_type: TypeDeclaration(NailDataTypeDescriptor::ArrayStruct("Point".to_string())), start_line: 3, end_line: 3, start_column: 9, end_column: 24 },
@@ -2123,42 +2026,50 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
                 Token {
                     token_type: Array(vec![
                         Token {
-                            token_type: StructInstantiation(
-                                "Point".to_string(),
-                                vec![
-                                    Token { token_type: StructFieldName("x".to_string()), start_line: 3, end_line: 3, start_column: 36, end_column: 37 },
-                                    Token { token_type: Integer("1".to_string()), start_line: 3, end_line: 3, start_column: 39, end_column: 40 },
-                                    Token { token_type: StructFieldName("y".to_string()), start_line: 3, end_line: 3, start_column: 42, end_column: 43 },
-                                    Token { token_type: Integer("2".to_string()), start_line: 3, end_line: 3, start_column: 45, end_column: 46 },
+                            token_type: StructInstantiation(StructInstantiationData {
+                                name: "Point".to_string(),
+                                fields: vec![
+                                    StructInstantiationDataField {
+                                        name: "x".to_string(),
+                                        value: Token { token_type: Integer("1".to_string()), start_line: 3, end_line: 3, start_column: 39, end_column: 40 }
+                                    },
+                                    StructInstantiationDataField {
+                                        name: "y".to_string(),
+                                        value: Token { token_type: Integer("2".to_string()), start_line: 3, end_line: 3, start_column: 45, end_column: 46 }
+                                    }
                                 ]
-                            ),
+                            }),
                             start_line: 3,
                             end_line: 3,
                             start_column: 28,
                             end_column: 48
                         },
                         Token {
-                            token_type: StructInstantiation(
-                                "Point".to_string(),
-                                vec![
-                                    Token { token_type: StructFieldName("x".to_string()), start_line: 3, end_line: 3, start_column: 58, end_column: 59 },
-                                    Token { token_type: Integer("3".to_string()), start_line: 3, end_line: 3, start_column: 61, end_column: 62 },
-                                    Token { token_type: StructFieldName("y".to_string()), start_line: 3, end_line: 3, start_column: 64, end_column: 65 },
-                                    Token { token_type: Integer("4".to_string()), start_line: 3, end_line: 3, start_column: 67, end_column: 68 },
+                            token_type: StructInstantiation(StructInstantiationData {
+                                name: "Point".to_string(),
+                                fields: vec![
+                                    StructInstantiationDataField {
+                                        name: "x".to_string(),
+                                        value: Token { token_type: Integer("3".to_string()), start_line: 3, end_line: 3, start_column: 61, end_column: 62 }
+                                    },
+                                    StructInstantiationDataField {
+                                        name: "y".to_string(),
+                                        value: Token { token_type: Integer("4".to_string()), start_line: 3, end_line: 3, start_column: 67, end_column: 68 }
+                                    }
                                 ]
-                            ),
+                            }),
                             start_line: 3,
                             end_line: 3,
                             start_column: 50,
                             end_column: 70
-                        },
+                        }
                     ]),
                     start_line: 3,
                     end_line: 3,
                     start_column: 27,
                     end_column: 71
                 },
-                Token { token_type: EndStatementOrExpression, start_line: 3, end_line: 3, start_column: 71, end_column: 72 },
+                Token { token_type: EndStatementOrExpression, start_line: 3, end_line: 3, start_column: 71, end_column: 72 }
             ]
         );
     }
@@ -2167,24 +2078,22 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
     fn test_struct_declaration_lexing() {
         let result = lexer("struct Point { x:i, y:i }");
         println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[Token {
-            token_type: StructDeclaration(
-                [
-                    Token { token_type: StructName("Point".to_string()), start_line: 1, end_line: 1, start_column: 8, end_column: 25 },
-                    Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 25, end_column: 26 },
-                    Token { token_type: StructFieldName("x".to_string()), start_line: 1, end_line: 1, start_column: 19, end_column: 19 },
-                    Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 17, end_column: 19 },
-                    Token { token_type: StructFieldName("y".to_string()), start_line: 1, end_line: 1, start_column: 24, end_column: 24 },
-                    Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 22, end_column: 24 },
-                    Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 25, end_column: 26 },
-                ]
-                .to_vec()
-            ),
-            start_line: 1,
-            end_line: 1,
-            start_column: 1,
-            end_column: 26,
-        }]));
+        assert_eq!(
+            result,
+            [Token {
+                token_type: StructDeclaration(StructDeclarationData {
+                    name: "Point".to_string(),
+                    fields: vec![
+                        StructDeclarationDataField { name: "x".to_string(), data_type: NailDataTypeDescriptor::Int },
+                        StructDeclarationDataField { name: "y".to_string(), data_type: NailDataTypeDescriptor::Int }
+                    ]
+                }),
+                start_line: 1,
+                end_line: 1,
+                start_column: 1,
+                end_column: 26
+            }]
+        );
     }
 
     #[test]
@@ -2196,7 +2105,7 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
             Token { token_type: Identifier("color".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 8 },
             Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Enum("Color".to_string())), start_line: 1, end_line: 1, start_column: 8, end_column: 19 },
             Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 20, end_column: 21 },
-            Token { token_type: EnumVariant("Red".to_string()), start_line: 1, end_line: 1, start_column: 22, end_column: 32 },
+            Token { token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Red".to_string() }), start_line: 1, end_line: 1, start_column: 22, end_column: 32 },
             Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 32, end_column: 33 },
         ]));
     }
@@ -2208,25 +2117,16 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         assert!(result.eq(&[
             Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 2 },
             Token { token_type: Identifier("point".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 8 },
-            Token {
-                // token_type: TypeDeclaration(StructDeclaration("Point".to_string())),
-                token_type: TypeDeclaration(NailDataTypeDescriptor::Struct("Point".to_string())),
-                start_line: 1,
-                end_line: 1,
-                start_column: 8,
-                end_column: 21
-            },
+            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Struct("Point".to_string())), start_line: 1, end_line: 1, start_column: 8, end_column: 21 },
             Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 22, end_column: 23 },
             Token {
-                token_type: StructInstantiation(
-                    "Point".to_string(),
-                    vec![
-                        Token { token_type: StructFieldName("x".to_string()), start_line: 1, end_line: 1, start_column: 32, end_column: 33 },
-                        Token { token_type: Integer("10".to_string()), start_line: 1, end_line: 1, start_column: 35, end_column: 37 },
-                        Token { token_type: StructFieldName("y".to_string()), start_line: 1, end_line: 1, start_column: 39, end_column: 40 },
-                        Token { token_type: Integer("20".to_string()), start_line: 1, end_line: 1, start_column: 42, end_column: 44 },
+                token_type: StructInstantiation(StructInstantiationData {
+                    name: "Point".to_string(),
+                    fields: vec![
+                        StructInstantiationDataField { name: "x".to_string(), value: Token { token_type: Integer("10".to_string()), start_line: 1, end_line: 1, start_column: 35, end_column: 37 } },
+                        StructInstantiationDataField { name: "y".to_string(), value: Token { token_type: Integer("20".to_string()), start_line: 1, end_line: 1, start_column: 42, end_column: 44 } },
                     ],
-                ),
+                }),
                 start_line: 1,
                 end_line: 1,
                 start_column: 24,
@@ -2256,17 +2156,14 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let tokens = lexer(input);
         println!("RESULT: {:#?}", tokens);
         assert!(tokens.eq(&[Token {
-            token_type: EnumDeclaration(
-                [
-                    Token { token_type: EnumName("Color".to_string()), start_line: 1, end_line: 1, start_column: 6, end_column: 31 },
-                    Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 31, end_column: 32 },
-                    Token { token_type: EnumVariant("Red".to_string()), start_line: 1, end_line: 1, start_column: 14, end_column: 17 },
-                    Token { token_type: EnumVariant("Green".to_string()), start_line: 1, end_line: 1, start_column: 19, end_column: 24 },
-                    Token { token_type: EnumVariant("Blue".to_string()), start_line: 1, end_line: 1, start_column: 26, end_column: 30 },
-                    Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 31, end_column: 32 },
-                ]
-                .to_vec()
-            ),
+            token_type: EnumDeclaration(EnumDeclarationData {
+                name: "Color".to_string(),
+                variants: vec![
+                    Token { token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Red".to_string() }), start_line: 1, end_line: 1, start_column: 14, end_column: 17 },
+                    Token { token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Green".to_string() }), start_line: 1, end_line: 1, start_column: 19, end_column: 24 },
+                    Token { token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Blue".to_string() }), start_line: 1, end_line: 1, start_column: 26, end_column: 30 },
+                ],
+            }),
             start_line: 1,
             end_line: 1,
             start_column: 1,
@@ -2306,7 +2203,7 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
                     NailDataTypeDescriptor::ArrayFloat,
                     NailDataTypeDescriptor::ArrayStruct("any".to_string()),
                     NailDataTypeDescriptor::ArrayEnum("any".to_string()),
-                ],),),
+                ])),
                 start_line: 2,
                 end_line: 2,
                 start_column: 26,
@@ -2323,9 +2220,10 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         assert!(result.eq(&[
             Token { token_type: ConstDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 2 },
             Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 4 },
-            Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 5, end_column: 6 },
-            Token { token_type: Integer("10".to_string()), start_line: 1, end_line: 1, start_column: 7, end_column: 9 },
-            Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 9, end_column: 10 },
+            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 4, end_column: 6 },
+            Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 7, end_column: 8 },
+            Token { token_type: Integer("10".to_string()), start_line: 1, end_line: 1, start_column: 9, end_column: 11 },
+            Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 11, end_column: 12 },
         ]));
     }
 

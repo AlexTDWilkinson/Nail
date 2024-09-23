@@ -256,9 +256,6 @@ Nail includes a comprehensive standard library:
 
 The EBNF specification in this repo provides a more formal and comprehensive overview of the Nail programming language.
 
-
-## END OVERVIEW
-
 #  Nail Language Grammar in EBNF
 
 
