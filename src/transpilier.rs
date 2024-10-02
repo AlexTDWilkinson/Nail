@@ -225,10 +225,7 @@ impl Transpiler {
             NailDataTypeDescriptor::Struct(name) => name.to_string(),
             NailDataTypeDescriptor::Enum(name) => name.to_string(),
             NailDataTypeDescriptor::Void => "()".to_string(),
-            NailDataTypeDescriptor::Error => "Result<NailDataType, String>".to_string(), // Or another error type you prefer
-            NailDataTypeDescriptor::Fn(_, _) => {
-                panic!("NailDataTypeDescriptor::Function should have converted to specific types before it gets transpiled to Rust")
-            }
+            NailDataTypeDescriptor::Error => "Result<NailDataType, String>".to_string(),
             NailDataTypeDescriptor::Any(_) => {
                 panic!("NailDataTypeDescriptor::Any should have converted to specific types before it gets transpiled to Rust")
             }

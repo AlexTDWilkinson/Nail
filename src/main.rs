@@ -1,3 +1,4 @@
+mod checker;
 mod colorizer;
 mod lexer;
 mod parser;
@@ -61,22 +62,14 @@ pub struct CodeError {
 
 impl Default for CodeError {
     fn default() -> Self {
-        CodeError {
-            line: 0,
-            column: 0,
-            message: "UNKNOWN ERROR".to_string(),
-        }
+        CodeError { line: 0, column: 0, message: "UNKNOWN ERROR".to_string() }
     }
 }
 
 //       ^ the trait `From<String>` is not implemented for `CodeError`, which is required by `Result<ASTNode, CodeError>: FromResidual<Result<Infallible, String>>`
 impl From<String> for CodeError {
     fn from(error: String) -> Self {
-        CodeError {
-            line: 0,
-            column: 0,
-            message: error,
-        }
+        CodeError { line: 0, column: 0, message: error }
     }
 }
 
@@ -178,11 +171,7 @@ impl Editor {
     }
 
     fn toggle_theme(&mut self) {
-        self.theme = if *self.theme == *LIGHT_THEME {
-            &*DARK_THEME
-        } else {
-            &*LIGHT_THEME
-        };
+        self.theme = if *self.theme == *LIGHT_THEME { &*DARK_THEME } else { &*LIGHT_THEME };
 
         let _ = self.save_config();
     }
@@ -215,18 +204,13 @@ impl Editor {
     }
 
     fn save_config(&self) -> io::Result<()> {
-        let home_dir = env::current_dir()
-            .expect("Could not get the directory that is running Nail to save configuration");
+        let home_dir = env::current_dir().expect("Could not get the directory that is running Nail to save configuration");
         let config_path = PathBuf::from(home_dir).join(".nail");
 
         // Debugging print to check file path
         log::info!("Saving configuration to {:?}", config_path);
 
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&config_path)?;
+        let mut file = fs::OpenOptions::new().write(true).create(true).truncate(true).open(&config_path)?;
 
         let theme = format!(
             "theme={}",
@@ -241,8 +225,7 @@ impl Editor {
     }
 
     fn load_config() -> String {
-        let home_dir = env::current_dir()
-            .expect("Could not get the directory that is running Nail to save configuration");
+        let home_dir = env::current_dir().expect("Could not get the directory that is running Nail to save configuration");
         let config_path = PathBuf::from(home_dir).join(".nail");
 
         // Debugging print to check file path
@@ -262,10 +245,7 @@ impl Editor {
 
 fn main() -> Result<(), io::Error> {
     let log_file = File::create("nail.log").expect("Failed to create log file");
-    Builder::new()
-        .target(env_logger::Target::Pipe(Box::new(log_file)))
-        .filter_level(LevelFilter::Debug)
-        .init();
+    Builder::new().target(env_logger::Target::Pipe(Box::new(log_file))).filter_level(LevelFilter::Debug).init();
 
     panic::set_hook(Box::new(|panic_info| {
         let backtrace = Backtrace::capture();
@@ -360,11 +340,7 @@ fn main() -> Result<(), io::Error> {
     let _ = lex_and_parse_handle.join();
 
     disable_raw_mode()?;
-    execute!(
-        lock(&terminal_arc).backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(lock(&terminal_arc).backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     lock(&terminal_arc).show_cursor()?;
 
     Ok(())

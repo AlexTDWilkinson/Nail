@@ -213,8 +213,8 @@ Errors must be explicitly handled:
 c user_input:s|e = lib_io_readline();
 c user_input:s = if {
     is_string_type(user_input:s|e) { return trust(user_input:s|e); },
-    is_error_type(user_input:s|e) { return "Use this default string instead"; },
-    else { return e("Unexpected error in input reading"); }
+    is_error_type(user_input:s|e) { return `Use this default string instead`; },
+    else { return e(`Unexpected error in input reading`); }
 };
 ```
 
@@ -407,15 +407,15 @@ v today:DaysOfWeek = DaysOfWeek::Wednesday;
 
 // if statement that must cover all enum cases since it has no else branch
 if {
-   current_light == TrafficLight::Red => { println!("Stop!") };
-   current_light == TrafficLight::Yellow => { println!("Prepare to stop") };
-   current_light == TrafficLight::Green => { println!("Go!") };
+   current_light == TrafficLight::Red => { println!(`Stop!`) };
+   current_light == TrafficLight::Yellow => { println!(`Prepare to stop`) };
+   current_light == TrafficLight::Green => { println!(`Go!`) };
 }
 
 // If you have an else branch, you don't need to cover all cases
 if {
-   current_light == TrafficLight::Red => { println!("Stop!") };
-   else { println!("It could be yellow or green...") };
+   current_light == TrafficLight::Red => { println!(`Stop!`) };
+   else { println!(`It could be yellow or green...`) };
 }
 ```
 
@@ -429,11 +429,11 @@ enum TrafficLight {
 }
 
 if current_light == TrafficLight::Red {
-    println!("Stop!");
+    println!(`Stop!`);
 } else if current_light == TrafficLight::Yellow {
-    println!("Prepare to stop");
+    println!(`Prepare to stop`);
 } else if current_light == TrafficLight::Green {
-    println!("Go!");
+    println!(`Go!`);
 } 
 ```
 
@@ -472,13 +472,13 @@ In Nail, if expressions are used similarly to other languages, but they offer co
 // Basic if statement in Nail
 if {
     today == DaysOfWeek::Monday => {
-        println("Start of the week.");
+        println(`Start of the week.`);
     },
     today == DaysOfWeek::Friday => {
-        println("End of the workweek!");
+        println(`End of the workweek!`);
     },
     else {
-        println("It's a regular day.");
+        println(`It's a regular day.`);
     }
 };
 ```
@@ -509,13 +509,13 @@ In Nail, when using an if statement with an enum, you must ensure that all possi
 ```js
 if {
     current_light == TrafficLight::Red => {
-        println("Stop!");
+        println(`Stop!`);
     },
     current_light == TrafficLight::Yellow => {
-        println("Prepare to stop.");
+        println(`Prepare to stop.`);
     },
     current_light == TrafficLight::Green => {
-        println("Go!");
+        println(`Go!`);
     }
 };
 ```
@@ -541,9 +541,9 @@ One important aspect of if expressions in Nail is that all branches must return 
 ```js
 // Example where all branches return the same type (in this case, a string)
 c message = if {
-    today == DaysOfWeek::Monday => "Start of the week",
-    today == DaysOfWeek::Friday => "End of the workweek",
-    else => "It's a regular day"
+    today == DaysOfWeek::Monday => `Start of the week`,
+    today == DaysOfWeek::Friday => `End of the workweek`,
+    else => `It's a regular day`
 };
 
 // This will work because all branches return a string.
@@ -554,9 +554,9 @@ However, if branches return different types, Nail will produce an error:
 ```js
 // Example where branches return different types (this will cause an error)
 c message = if {
-    today == DaysOfWeek::Monday => "Start of the week",  // String
+    today == DaysOfWeek::Monday => `Start of the week`,  // String
     today == DaysOfWeek::Friday => 5,  // Integer
-    else => "It's a regular day"  // String
+    else => `It's a regular day`  // String
 };
 
 // This will fail because one branch returns a string and another returns an integer.
@@ -599,7 +599,7 @@ Const declarations are used for immutable values. They are defined using the `c`
 ```js
 c pi:f = 3.14159;
 c max_users:i = 100;
-c greeting:s = "Hello, World!";
+c greeting:s = `Hello, World!`;
 ```
 
 Key points about const declarations:
@@ -651,7 +651,7 @@ Const with shadowing:
 ```js
 c max_attempts:i = 3;
 c max_attempts:i = 5;  // Shadowing the previous declaration
-c max_attempts:s = "Three"; // Shadows can even change the type (like Rust)
+c max_attempts:s = `Three`; // Shadows can even change the type (like Rust)
 ```
 
 Variable with direct modification:
@@ -677,8 +677,8 @@ c scores:v|e = update(scores, 0, 78);
 
 if {
     // if any expression in an if statement contains a result type, all result outcomes must be handled.
-    is_ok(scores) => { r println("Failed to update scores"); }
-    is_error(scores) => { r println("Scores updated successfully");},
+    is_ok(scores) => { r println(`Failed to update scores`); }
+    is_error(scores) => { r println(`Scores updated successfully`);},
 }
 
 
@@ -729,10 +729,10 @@ In Nail, function parameters must always be named, unless the name of the variab
 
 ```js
 fn greet(name:s) {
-    print("Hello, " + name + "!");
+    print(`Hello, ` + name + `!`);
 }
 
-c user_name = "Alice";
+c user_name = `Alice`;
 greet(name:user_name);  // Explicitly named parameter
 greet(user_name);        // Allowed because variable name matches parameter name
 ```
@@ -870,7 +870,7 @@ R{
 Within Rust blocks, you can inject Nail expressions using the `^[ ]^` syntax. This allows you to seamlessly integrate Nail values into your Rust code.
 
 ```js
-c name:s = "Alice";
+c name:s = `Alice`;
 c age:i = 30;
 
 R{

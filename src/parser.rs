@@ -94,13 +94,13 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                 Ok(ASTNode::EnumVariant { name: variant.name, variant: variant.variant })
             }
             TokenType::Array(_) => parse_array_literal(state),
-            _ => Err(CodeError { message: format!("Unexpected token {:?}", token.token_type), line: token.start_line, column: token.start_column }),
+            _ => Err(CodeError { message: format!("Unexpected token {:?}", token.token_type), line: token.code_span.start_line, column: token.code_span.start_column }),
         }
     } else {
         Err(CodeError {
             message: "Unexpected end of file".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         })
     }
 }
@@ -122,8 +122,8 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
         },
         None => Err(CodeError {
             message: "No token was found to match with a statement.".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         }),
     }
 }
@@ -154,7 +154,7 @@ fn expect_token(state: &mut ParserState, expected: TokenType) -> Result<(), Code
         if token.token_type == expected {
             Ok(())
         } else {
-            let error = CodeError { message: format!("Expected {:?}, found {:?}", expected, token.token_type), line: token.start_line, column: token.start_column };
+            let error = CodeError { message: format!("Expected {:?}, found {:?}", expected, token.token_type), line: token.code_span.start_line, column: token.code_span.start_column };
             log::error!("Expect token error: {:?}", error);
             Err(error)
         }
@@ -162,8 +162,8 @@ fn expect_token(state: &mut ParserState, expected: TokenType) -> Result<(), Code
         log::error!("expect_token else branch error: {:?}", expected);
         Err(CodeError {
             message: format!("Expected {:?}, found end of file", expected),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         })
     }
 }
@@ -174,8 +174,8 @@ fn expect_identifier(state: &mut ParserState) -> Result<String, CodeError> {
     } else {
         let error = CodeError {
             message: format!("Expected identifier, found {:?}", state.tokens.peek().map(|token| token.token_type.clone()).unwrap_or(TokenType::EndOfFile)),
-            line: state.tokens.peek().map_or(0, |token| token.start_line),
-            column: state.tokens.peek().map_or(0, |token| token.start_column),
+            line: state.tokens.peek().map_or(0, |token| token.code_span.start_line),
+            column: state.tokens.peek().map_or(0, |token| token.code_span.start_column),
         };
         log::error!("Expect identifier error: {:?}", error);
         Err(error)
@@ -226,23 +226,23 @@ fn parse_lambda_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
                             Some(other) => {
                                 return Err(CodeError {
                                     message: format!("Expected comma or return type declaration, found {:?}", other.token_type),
-                                    line: other.start_line,
-                                    column: other.start_column,
+                                    line: other.code_span.start_line,
+                                    column: other.code_span.start_column,
                                 })
                             }
                             None => {
                                 return Err(CodeError {
                                     message: "Unexpected end of lambda declaration".to_string(),
-                                    line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-                                    column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+                                    line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+                                    column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
                                 })
                             }
                         }
                     } else {
                         return Err(CodeError {
                             message: "Expected type declaration for lambda parameter".to_string(),
-                            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-                            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+                            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+                            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
                         });
                     }
                 }
@@ -250,12 +250,18 @@ fn parse_lambda_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
                     return_type = rt;
                     break;
                 }
-                Some(other) => return Err(CodeError { message: format!("Unexpected token in lambda declaration: {:?}", other.token_type), line: other.start_line, column: other.start_column }),
+                Some(other) => {
+                    return Err(CodeError {
+                        message: format!("Unexpected token in lambda declaration: {:?}", other.token_type),
+                        line: other.code_span.start_line,
+                        column: other.code_span.start_column,
+                    })
+                }
                 None => {
                     return Err(CodeError {
                         message: "Unexpected end of lambda declaration".to_string(),
-                        line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-                        column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+                        line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+                        column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
                     })
                 }
             }
@@ -268,8 +274,8 @@ fn parse_lambda_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
     } else {
         Err(CodeError {
             message: "Expected lambda declaration".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         })
     }
 }
@@ -289,8 +295,8 @@ fn parse_struct_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
     } else {
         Err(CodeError {
             message: "Struct declaration syntax is incorrect".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         })
     }
 }
@@ -310,14 +316,18 @@ fn parse_struct_instantiation_token(token: &Token) -> Result<ASTNode, CodeError>
                     TokenType::Float(value) => ASTNode::NumberLiteral(value.clone()),
                     TokenType::StringLiteral(value) => ASTNode::StringLiteral(value.clone()),
                     _ => {
-                        return Err(CodeError { message: format!("Unexpected token in struct field: {:?}", field.value.token_type), line: field.value.start_line, column: field.value.start_column });
+                        return Err(CodeError {
+                            message: format!("Unexpected token in struct field: {:?}", field.value.token_type),
+                            line: field.value.code_span.start_line,
+                            column: field.value.code_span.start_column,
+                        });
                     }
                 }),
             });
         }
         Ok(ASTNode::StructInstantiation { name: struct_name, fields })
     } else {
-        Err(CodeError { message: format!("Expected struct instantiation, found {:?}", token.token_type), line: token.start_line, column: token.start_column })
+        Err(CodeError { message: format!("Expected struct instantiation, found {:?}", token.token_type), line: token.code_span.start_line, column: token.code_span.start_column })
     }
 }
 
@@ -329,8 +339,8 @@ fn parse_struct_instantiation(state: &mut ParserState) -> Result<ASTNode, CodeEr
     } else {
         Err(CodeError {
             message: "Expected struct instantiation".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         })
     }
 }
@@ -346,7 +356,7 @@ fn parse_array_literal(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                 TokenType::StringLiteral(value) => elements.push(ASTNode::StringLiteral(value)),
                 TokenType::Identifier(name) => elements.push(ASTNode::Identifier(name)),
 
-                _ => return Err(CodeError { message: format!("Unexpected token in array: {:?}", token.token_type), line: token.start_line, column: token.start_column }),
+                _ => return Err(CodeError { message: format!("Unexpected token in array: {:?}", token.token_type), line: token.code_span.start_line, column: token.code_span.start_column }),
             }
         }
 
@@ -356,8 +366,8 @@ fn parse_array_literal(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     } else {
         Err(CodeError {
             message: "Array literal syntax is incorrect".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         })
     }
 }
@@ -375,7 +385,9 @@ fn parse_enum_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError>
                     variants.push(ASTNode::EnumVariant { name: enum_name.clone(), variant: variant.variant });
                 }
                 TokenType::BlockClose => break,
-                _ => return Err(CodeError { message: format!("Unexpected token in enum declaration: {:?}", token.token_type), line: token.start_line, column: token.start_column }),
+                _ => {
+                    return Err(CodeError { message: format!("Unexpected token in enum declaration: {:?}", token.token_type), line: token.code_span.start_line, column: token.code_span.start_column })
+                }
             }
         }
 
@@ -383,8 +395,8 @@ fn parse_enum_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError>
     } else {
         Err(CodeError {
             message: "Expected enum declaration".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         })
     }
 }
@@ -399,8 +411,8 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
         } else {
             return Err(CodeError {
                 message: "Expected function name".to_string(),
-                line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-                column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+                line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+                column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
             });
         };
 
@@ -424,23 +436,23 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
                             Some(other) => {
                                 return Err(CodeError {
                                     message: format!("Expected comma or return type declaration, found {:?}", other.token_type),
-                                    line: other.start_line,
-                                    column: other.start_column,
+                                    line: other.code_span.start_line,
+                                    column: other.code_span.start_column,
                                 })
                             }
                             None => {
                                 return Err(CodeError {
                                     message: "Unexpected end of function declaration".to_string(),
-                                    line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-                                    column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+                                    line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+                                    column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
                                 })
                             }
                         }
                     } else {
                         return Err(CodeError {
                             message: "Expected type declaration for function parameter".to_string(),
-                            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-                            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+                            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+                            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
                         });
                     }
                 }
@@ -448,12 +460,18 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
                     return_type = rt;
                     break;
                 }
-                Some(other) => return Err(CodeError { message: format!("Unexpected token in function declaration: {:?}", other.token_type), line: other.start_line, column: other.start_column }),
+                Some(other) => {
+                    return Err(CodeError {
+                        message: format!("Unexpected token in function declaration: {:?}", other.token_type),
+                        line: other.code_span.start_line,
+                        column: other.code_span.start_column,
+                    })
+                }
                 None => {
                     return Err(CodeError {
                         message: "Unexpected end of function declaration".to_string(),
-                        line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-                        column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+                        line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+                        column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
                     })
                 }
             }
@@ -466,8 +484,8 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
     } else {
         Err(CodeError {
             message: "Expected function declaration".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
         })
     }
 }
@@ -551,8 +569,8 @@ fn parse_if_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
         } else {
             return Err(CodeError {
                 message: "Unexpected end of if statement".to_string(),
-                line: state.previous_token.as_ref().map_or(0, |t| t.start_line),
-                column: state.previous_token.as_ref().map_or(0, |t| t.start_column),
+                line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
+                column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
             });
         }
     }
@@ -586,8 +604,8 @@ fn parse_type_declaration(state: &mut ParserState) -> Result<NailDataTypeDescrip
     } else {
         let error = CodeError {
             message: format!("Expected type declaration, found {:?}", state.tokens.peek().map(|token| token.token_type.clone()).unwrap_or(TokenType::EndOfFile)),
-            line: state.tokens.peek().map_or(0, |token| token.start_line),
-            column: state.tokens.peek().map_or(0, |token| token.start_column),
+            line: state.tokens.peek().map_or(0, |token| token.code_span.start_line),
+            column: state.tokens.peek().map_or(0, |token| token.code_span.start_column),
         };
         log::error!("parse_type_declaration error: {:?}", error);
         Err(error)

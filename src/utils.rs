@@ -448,7 +448,7 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         let mut lexing_error = None;
         for token in tokens.clone() {
             if let lexer::TokenType::LexerError(message) = token.token_type {
-                lexing_error = Some(CodeError { line: token.start_line, column: token.start_column, message: format!("^ {}", message) });
+                lexing_error = Some(CodeError { line: token.code_span.start_line, column: token.code_span.start_column, message: format!("^ {}", message) });
                 break;
             }
         }

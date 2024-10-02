@@ -96,16 +96,12 @@ pub enum NailDataTypeDescriptor {
     Void,
     Error,
     Any(Vec<NailDataTypeDescriptor>),
-    Fn(Vec<NailDataTypeDescriptor>, Box<NailDataTypeDescriptor>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub token_type: TokenType,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub start_column: usize,
-    pub end_column: usize,
+    pub code_span: CodeSpan,
 }
 
 // Nail is deterministic syntax wise, so we can take advantage of that
@@ -148,9 +144,8 @@ pub enum TokenType {
     RustLiteral(String),                     // For a piece of literal rust code
     RustNailInsert(Vec<Token>),              // For a nail insert in rust code
     LexerError(String),                      // For lexer_inner errors
-
-    Return,    // For return keyword
-    EndOfFile, // For end of file
+    Return,                                  // For return keyword
+    EndOfFile,                               // For end of file
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -240,6 +235,14 @@ pub struct LexerState {
     pub column: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeSpan {
+    pub start_line: usize,
+    pub start_column: usize,
+    pub end_line: usize,
+    pub end_column: usize,
+}
+
 pub fn lexer(input: &str) -> Vec<Token> {
     let mut state = LexerState { line: 1, column: 1 };
     lexer_inner(input, &mut state)
@@ -264,10 +267,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output: LexerOutput = lex_rust_escape(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
             _ if is_comment(&mut chars) => {
@@ -278,10 +278,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output = lex_function_signature(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
 
@@ -289,10 +286,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output = lex_lambda(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
 
@@ -300,20 +294,14 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output = lex_array(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
             '`' => {
                 let lexer_output: LexerOutput = lex_string_literal(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
 
@@ -321,10 +309,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output: LexerOutput = lex_type_system_type(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
 
@@ -332,10 +317,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output: LexerOutput = lex_enum_delcaration(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
 
@@ -343,10 +325,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output: LexerOutput = lex_struct_declaration(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
 
@@ -354,10 +333,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output: LexerOutput = lex_struct_instantiation(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
 
@@ -365,10 +341,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output = lex_enum_variant(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
 
@@ -387,19 +360,13 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                     let lexer_output = lex_struct_field_access(&mut chars, state);
                     tokens.push(Token {
                         token_type: lexer_output.token_type,
-                        start_line: lexer_output.start_line,
-                        end_line: lexer_output.end_line,
-                        start_column: lexer_output.start_column,
-                        end_column: lexer_output.end_column,
+                        code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                     });
                 } else {
                     let lexer_output = lex_identifier_or_keyword(&mut chars, state);
                     tokens.push(Token {
                         token_type: lexer_output.token_type,
-                        start_line: lexer_output.start_line,
-                        end_line: lexer_output.end_line,
-                        start_column: lexer_output.start_column,
-                        end_column: lexer_output.end_column,
+                        code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                     });
                 }
             }
@@ -407,39 +374,27 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 let lexer_output: LexerOutput = lex_number(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
             _ if is_double_character_token(&mut chars) => {
                 let lexer_output: LexerOutput = lex_double_character_token(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
             _ if is_single_character_token(&mut chars) => {
                 let lexer_output: LexerOutput = lex_single_character_token(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
-                    start_line: lexer_output.start_line,
-                    end_line: lexer_output.end_line,
-                    start_column: lexer_output.start_column,
-                    end_column: lexer_output.end_column,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                 });
             }
             _ => {
                 tokens.push(Token {
                     token_type: TokenType::LexerError(format!("Unrecognized character: {}", c)),
-                    start_line: state.line,
-                    end_line: state.line,
-                    start_column: state.column,
-                    end_column: state.column,
+                    code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column },
                 });
                 chars.next();
             }
@@ -593,7 +548,10 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
         let value = lex_value(chars, state);
         fields.push(StructInstantiationDataField {
             name: field_name,
-            value: Token { token_type: value.token_type, start_line: value.start_line, end_line: value.end_line, start_column: value.start_column, end_column: value.end_column },
+            value: Token {
+                token_type: value.token_type,
+                code_span: CodeSpan { start_line: value.start_line, end_line: value.end_line, start_column: value.start_column, end_column: value.end_column },
+            },
         });
 
         // Skip whitespace
@@ -657,14 +615,14 @@ fn lex_array(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexer
             let nested_array = lex_array(chars, state);
             elements.push(Token {
                 token_type: nested_array.token_type,
-                start_line: nested_array.start_line,
-                end_line: nested_array.end_line,
-                start_column: nested_array.start_column,
-                end_column: nested_array.end_column,
+                code_span: CodeSpan { start_line: nested_array.start_line, end_line: nested_array.end_line, start_column: nested_array.start_column, end_column: nested_array.end_column },
             });
         } else {
             let element = lex_value(chars, state);
-            elements.push(Token { token_type: element.token_type, start_line: element.start_line, end_line: element.end_line, start_column: element.start_column, end_column: element.end_column });
+            elements.push(Token {
+                token_type: element.token_type,
+                code_span: CodeSpan { start_line: element.start_line, end_line: element.end_line, start_column: element.start_column, end_column: element.end_column },
+            });
         }
 
         // Skip whitespace
@@ -721,10 +679,7 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
             TokenType::Identifier(s) => TokenType::FunctionName(s),
             _ => TokenType::LexerError("Expected function name".to_string()),
         },
-        start_line: function_name.start_line,
-        end_line: function_name.end_line,
-        start_column: function_name.start_column,
-        end_column: function_name.end_column,
+        code_span: CodeSpan { start_line: function_name.start_line, end_line: function_name.end_line, start_column: function_name.start_column, end_column: function_name.end_column },
     });
 
     // Parse parameters
@@ -739,10 +694,7 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
             let param_name = lex_identifier_or_keyword(chars, state);
             tokens.push(Token {
                 token_type: param_name.token_type,
-                start_line: param_name.start_line,
-                end_line: param_name.end_line,
-                start_column: param_name.start_column,
-                end_column: param_name.end_column,
+                code_span: CodeSpan { start_line: param_name.start_line, end_line: param_name.end_line, start_column: param_name.start_column, end_column: param_name.end_column },
             });
 
             // Parse parameter type
@@ -750,10 +702,7 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
                 let param_type = lex_type_system_type(chars, state);
                 tokens.push(Token {
                     token_type: param_type.token_type,
-                    start_line: param_type.start_line,
-                    end_line: param_type.end_line,
-                    start_column: param_type.start_column,
-                    end_column: param_type.end_column,
+                    code_span: CodeSpan { start_line: param_type.start_line, end_line: param_type.end_line, start_column: param_type.start_column, end_column: param_type.end_column },
                 });
             }
 
@@ -768,7 +717,7 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
 
             // Consume comma
             if chars.peek() == Some(&',') {
-                tokens.push(Token { token_type: TokenType::Comma, start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column + 1 });
+                tokens.push(Token { token_type: TokenType::Comma, code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column + 1 } });
                 advance(chars, state);
             }
 
@@ -794,10 +743,7 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
         if let TokenType::TypeDeclaration(t) = return_type.token_type {
             tokens.push(Token {
                 token_type: TokenType::FunctionReturnTypeDeclaration(t),
-                start_line: return_type.start_line,
-                end_line: return_type.end_line,
-                start_column: return_type.start_column,
-                end_column: return_type.end_column,
+                code_span: CodeSpan { start_line: return_type.start_line, end_line: return_type.end_line, start_column: return_type.start_column, end_column: return_type.end_column },
             });
         } else {
             return LexerOutput {
@@ -872,10 +818,7 @@ fn lex_lambda(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexe
         let param_name = lex_identifier_or_keyword(chars, state);
         tokens.push(Token {
             token_type: param_name.token_type,
-            start_line: param_name.start_line,
-            end_line: param_name.end_line,
-            start_column: param_name.start_column,
-            end_column: param_name.end_column,
+            code_span: CodeSpan { start_line: param_name.start_line, end_line: param_name.end_line, start_column: param_name.start_column, end_column: param_name.end_column },
         });
 
         // Parse parameter type
@@ -883,10 +826,7 @@ fn lex_lambda(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexe
             let param_type = lex_type_system_type(chars, state);
             tokens.push(Token {
                 token_type: param_type.token_type,
-                start_line: param_type.start_line,
-                end_line: param_type.end_line,
-                start_column: param_type.start_column,
-                end_column: param_type.end_column,
+                code_span: CodeSpan { start_line: param_type.start_line, end_line: param_type.end_line, start_column: param_type.start_column, end_column: param_type.end_column },
             });
         }
 
@@ -901,7 +841,7 @@ fn lex_lambda(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexe
 
         // Check for comma or end of parameters
         if chars.peek() == Some(&',') {
-            tokens.push(Token { token_type: TokenType::Comma, start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column + 1 });
+            tokens.push(Token { token_type: TokenType::Comma, code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column + 1 } });
             advance(chars, state);
         } else if chars.peek() == Some(&'|') {
             break;
@@ -929,10 +869,7 @@ fn lex_lambda(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexe
         if let TokenType::TypeDeclaration(t) = return_type.token_type {
             tokens.push(Token {
                 token_type: TokenType::LambdaReturnTypeDeclaration(t),
-                start_line: return_type.start_line,
-                end_line: return_type.end_line,
-                start_column: return_type.start_column,
-                end_column: return_type.end_column,
+                code_span: CodeSpan { start_line: return_type.start_line, end_line: return_type.end_line, start_column: return_type.start_column, end_column: return_type.end_column },
             });
         } else {
             return LexerOutput {
@@ -1242,10 +1179,7 @@ fn lex_enum_delcaration(chars: &mut std::iter::Peekable<std::str::Chars>, state:
 
         variants.push(Token {
             token_type: TokenType::EnumVariant(EnumVariantData { name: enum_name.clone(), variant: variant_name }),
-            start_line: state.line,
-            end_line: state.line,
-            start_column: variant_start_column,
-            end_column: state.column,
+            code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: variant_start_column, end_column: state.column },
         });
 
         // Skip whitespace
@@ -1486,7 +1420,10 @@ fn lex_rust_escape(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut
         match c {
             '^' if chars.clone().nth(1) == Some('[') => {
                 if !rust_literal.is_empty() {
-                    let token = Token { token_type: TokenType::RustLiteral(rust_literal), start_line: start_line, end_line: state.line, start_column: start_column, end_column: state.column };
+                    let token = Token {
+                        token_type: TokenType::RustLiteral(rust_literal),
+                        code_span: CodeSpan { start_line: start_line, end_line: state.line, start_column: start_column, end_column: state.column },
+                    };
                     content.push(token);
                     rust_literal = String::new();
                 }
@@ -1511,7 +1448,10 @@ fn lex_rust_escape(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut
                 // Recursively lex the NAIL content
                 // This is why we seperate lexer_inner, so we can call it recursively w/out losing the line/cols.
                 let nail_tokens = lexer_inner(&nail_content, state);
-                let token = Token { token_type: TokenType::RustNailInsert(nail_tokens), start_line: nail_start_line, end_line: state.line, start_column: nail_start_column, end_column: state.column };
+                let token = Token {
+                    token_type: TokenType::RustNailInsert(nail_tokens),
+                    code_span: CodeSpan { start_line: nail_start_line, end_line: state.line, start_column: nail_start_column, end_column: state.column },
+                };
                 content.push(token);
             }
             '{' => {
@@ -1539,7 +1479,8 @@ fn lex_rust_escape(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut
     }
 
     if !rust_literal.is_empty() {
-        let token = Token { token_type: TokenType::RustLiteral(rust_literal), start_line: start_line, end_line: state.line, start_column: start_column, end_column: state.column };
+        let token =
+            Token { token_type: TokenType::RustLiteral(rust_literal), code_span: CodeSpan { start_line: start_line, end_line: state.line, start_column: start_column, end_column: state.column } };
         content.push(token);
     }
 
@@ -1744,16 +1685,16 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                Token { token_type: IfDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 3 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 4, end_column: 5 },
-                Token { token_type: Identifier("a".to_string()), start_line: 1, end_line: 1, start_column: 6, end_column: 7 },
-                Token { token_type: Operator(Operation::Gt), start_line: 1, end_line: 1, start_column: 8, end_column: 9 },
-                Token { token_type: Integer("5".to_string()), start_line: 1, end_line: 1, start_column: 10, end_column: 11 },
-                Token { token_type: ArrowAssignment, start_line: 1, end_line: 1, start_column: 12, end_column: 14 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 15, end_column: 16 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 16, end_column: 17 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 18, end_column: 19 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 19, end_column: 20 },
+                Token { token_type: IfDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 3 } },
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 5 } },
+                Token { token_type: Identifier("a".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 6, end_column: 7 } },
+                Token { token_type: Operator(Operation::Gt), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 9 } },
+                Token { token_type: Integer("5".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
+                Token { token_type: ArrowAssignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 12, end_column: 14 } },
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 15, end_column: 16 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 19 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 20 } },
             ]
         );
     }
@@ -1766,21 +1707,21 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                Token { token_type: IfDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 3 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 4, end_column: 5 },
-                Token { token_type: Identifier("a".to_string()), start_line: 1, end_line: 1, start_column: 6, end_column: 7 },
-                Token { token_type: Operator(Operation::Gt), start_line: 1, end_line: 1, start_column: 8, end_column: 9 },
-                Token { token_type: Integer("5".to_string()), start_line: 1, end_line: 1, start_column: 10, end_column: 11 },
-                Token { token_type: ArrowAssignment, start_line: 1, end_line: 1, start_column: 12, end_column: 14 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 15, end_column: 16 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 16, end_column: 17 },
-                Token { token_type: Comma, start_line: 1, end_line: 1, start_column: 17, end_column: 18 },
-                Token { token_type: ElseDeclaration, start_line: 1, end_line: 1, start_column: 19, end_column: 23 },
-                Token { token_type: ArrowAssignment, start_line: 1, end_line: 1, start_column: 24, end_column: 26 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 27, end_column: 28 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 28, end_column: 29 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 30, end_column: 31 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 31, end_column: 32 }
+                Token { token_type: IfDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 3 } },
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 5 } },
+                Token { token_type: Identifier("a".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 6, end_column: 7 } },
+                Token { token_type: Operator(Operation::Gt), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 9 } },
+                Token { token_type: Integer("5".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
+                Token { token_type: ArrowAssignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 12, end_column: 14 } },
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 15, end_column: 16 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
+                Token { token_type: Comma, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 17, end_column: 18 } },
+                Token { token_type: ElseDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 23 } },
+                Token { token_type: ArrowAssignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 24, end_column: 26 } },
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 27, end_column: 28 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 28, end_column: 29 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 30, end_column: 31 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 31, end_column: 32 } }
             ]
         );
     }
@@ -1793,11 +1734,11 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                Token { token_type: Identifier("fun".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 4 },
-                Token { token_type: ParenthesisOpen, start_line: 1, end_line: 1, start_column: 4, end_column: 5 },
-                Token { token_type: Identifier("param".to_string()), start_line: 1, end_line: 1, start_column: 5, end_column: 10 },
-                Token { token_type: ParenthesisClose, start_line: 1, end_line: 1, start_column: 10, end_column: 11 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 11, end_column: 12 }
+                Token { token_type: Identifier("fun".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 4 } },
+                Token { token_type: ParenthesisOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 5 } },
+                Token { token_type: Identifier("param".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 5, end_column: 10 } },
+                Token { token_type: ParenthesisClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 12 } }
             ]
         );
     }
@@ -1810,14 +1751,14 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                Token { token_type: Identifier("fun".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 4 },
-                Token { token_type: ParenthesisOpen, start_line: 1, end_line: 1, start_column: 4, end_column: 5 },
-                Token { token_type: Identifier("times".to_string()), start_line: 1, end_line: 1, start_column: 5, end_column: 10 },
-                Token { token_type: ParenthesisOpen, start_line: 1, end_line: 1, start_column: 10, end_column: 11 },
-                Token { token_type: Identifier("param".to_string()), start_line: 1, end_line: 1, start_column: 11, end_column: 16 },
-                Token { token_type: ParenthesisClose, start_line: 1, end_line: 1, start_column: 16, end_column: 17 },
-                Token { token_type: ParenthesisClose, start_line: 1, end_line: 1, start_column: 17, end_column: 18 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 18, end_column: 19 }
+                Token { token_type: Identifier("fun".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 4 } },
+                Token { token_type: ParenthesisOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 5 } },
+                Token { token_type: Identifier("times".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 5, end_column: 10 } },
+                Token { token_type: ParenthesisOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
+                Token { token_type: Identifier("param".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 16 } },
+                Token { token_type: ParenthesisClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
+                Token { token_type: ParenthesisClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 17, end_column: 18 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 19 } }
             ]
         );
     }
@@ -1832,27 +1773,24 @@ mod tests {
             vec![
                 Token {
                     token_type: FunctionSignature(vec![
-                        Token { token_type: FunctionName("fun".to_string()), start_line: 1, end_line: 1, start_column: 4, end_column: 7 },
-                        Token { token_type: Identifier("param".to_string()), start_line: 1, end_line: 1, start_column: 8, end_column: 13 },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 13, end_column: 15 },
-                        Token { token_type: FunctionReturnTypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 16, end_column: 18 }
+                        Token { token_type: FunctionName("fun".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 7 } },
+                        Token { token_type: Identifier("param".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 13 } },
+                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 13, end_column: 15 } },
+                        Token { token_type: FunctionReturnTypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 18 } }
                     ]),
-                    start_line: 1,
-                    end_line: 1,
-                    start_column: 1,
-                    end_column: 18
+                    code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 18 }
                 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 19, end_column: 20 },
-                Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 21, end_column: 22 },
-                Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 23, end_column: 24 },
-                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 24, end_column: 26 },
-                Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 27, end_column: 28 },
-                Token { token_type: Integer("5".to_string()), start_line: 1, end_line: 1, start_column: 29, end_column: 30 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 30, end_column: 31 },
-                Token { token_type: Return, start_line: 1, end_line: 1, start_column: 32, end_column: 33 },
-                Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 34, end_column: 35 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 35, end_column: 36 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 37, end_column: 38 }
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 20 } },
+                Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 21, end_column: 22 } },
+                Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 23, end_column: 24 } },
+                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 24, end_column: 26 } },
+                Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 27, end_column: 28 } },
+                Token { token_type: Integer("5".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 29, end_column: 30 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 30, end_column: 31 } },
+                Token { token_type: Return, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 32, end_column: 33 } },
+                Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 34, end_column: 35 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 35, end_column: 36 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 37, end_column: 38 } }
             ]
         );
     }
@@ -1867,30 +1805,27 @@ mod tests {
             vec![
                 Token {
                     token_type: FunctionSignature(vec![
-                        Token { token_type: FunctionName("random".to_string()), start_line: 1, end_line: 1, start_column: 4, end_column: 10 },
-                        Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 11, end_column: 12 },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 12, end_column: 14 },
-                        Token { token_type: Comma, start_line: 1, end_line: 1, start_column: 14, end_column: 15 },
-                        Token { token_type: Identifier("y".to_string()), start_line: 1, end_line: 1, start_column: 16, end_column: 17 },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Float), start_line: 1, end_line: 1, start_column: 17, end_column: 19 },
-                        Token { token_type: FunctionReturnTypeDeclaration(NailDataTypeDescriptor::String), start_line: 1, end_line: 1, start_column: 20, end_column: 22 }
+                        Token { token_type: FunctionName("random".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 10 } },
+                        Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 12 } },
+                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 12, end_column: 14 } },
+                        Token { token_type: Comma, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 14, end_column: 15 } },
+                        Token { token_type: Identifier("y".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
+                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Float), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 17, end_column: 19 } },
+                        Token { token_type: FunctionReturnTypeDeclaration(NailDataTypeDescriptor::String), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 20, end_column: 22 } }
                     ]),
-                    start_line: 1,
-                    end_line: 1,
-                    start_column: 1,
-                    end_column: 22
+                    code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 22 }
                 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 23, end_column: 24 },
-                Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 25, end_column: 26 },
-                Token { token_type: Identifier("result".to_string()), start_line: 1, end_line: 1, start_column: 27, end_column: 33 },
-                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::String), start_line: 1, end_line: 1, start_column: 33, end_column: 35 },
-                Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 36, end_column: 37 },
-                Token { token_type: StringLiteral("test".to_string()), start_line: 1, end_line: 1, start_column: 38, end_column: 44 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 44, end_column: 45 },
-                Token { token_type: Return, start_line: 1, end_line: 1, start_column: 46, end_column: 47 },
-                Token { token_type: Identifier("result".to_string()), start_line: 1, end_line: 1, start_column: 48, end_column: 54 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 54, end_column: 55 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 56, end_column: 57 }
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 23, end_column: 24 } },
+                Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 25, end_column: 26 } },
+                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 27, end_column: 33 } },
+                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::String), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 33, end_column: 35 } },
+                Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 36, end_column: 37 } },
+                Token { token_type: StringLiteral("test".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 38, end_column: 44 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 44, end_column: 45 } },
+                Token { token_type: Return, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 46, end_column: 47 } },
+                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 48, end_column: 54 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 54, end_column: 55 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 56, end_column: 57 } }
             ]
         );
     }
@@ -1905,28 +1840,25 @@ mod tests {
             vec![
                 Token {
                     token_type: LambdaSignature(vec![
-                        Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 4 },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 4, end_column: 6 },
-                        Token { token_type: LambdaReturnTypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 8, end_column: 10 }
+                        Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 4 } },
+                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 6 } },
+                        Token { token_type: LambdaReturnTypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 10 } }
                     ]),
-                    start_line: 1,
-                    end_line: 1,
-                    start_column: 1,
-                    end_column: 10
+                    code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 10 }
                 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 11, end_column: 12 },
-                Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 13, end_column: 14 },
-                Token { token_type: Identifier("result".to_string()), start_line: 1, end_line: 1, start_column: 15, end_column: 21 },
-                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 21, end_column: 23 },
-                Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 24, end_column: 25 },
-                Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 26, end_column: 27 },
-                Token { token_type: Operator(Operation::Add), start_line: 1, end_line: 1, start_column: 28, end_column: 29 },
-                Token { token_type: Integer("1".to_string()), start_line: 1, end_line: 1, start_column: 30, end_column: 31 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 31, end_column: 32 },
-                Token { token_type: Return, start_line: 1, end_line: 1, start_column: 33, end_column: 34 },
-                Token { token_type: Identifier("result".to_string()), start_line: 1, end_line: 1, start_column: 35, end_column: 41 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 41, end_column: 42 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 43, end_column: 44 }
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 12 } },
+                Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 13, end_column: 14 } },
+                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 15, end_column: 21 } },
+                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 21, end_column: 23 } },
+                Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 24, end_column: 25 } },
+                Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 26, end_column: 27 } },
+                Token { token_type: Operator(Operation::Add), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 28, end_column: 29 } },
+                Token { token_type: Integer("1".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 30, end_column: 31 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 31, end_column: 32 } },
+                Token { token_type: Return, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 33, end_column: 34 } },
+                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 35, end_column: 41 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 41, end_column: 42 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 43, end_column: 44 } }
             ]
         );
     }
@@ -1941,31 +1873,28 @@ mod tests {
             vec![
                 Token {
                     token_type: LambdaSignature(vec![
-                        Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 4 },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 4, end_column: 6 },
-                        Token { token_type: Comma, start_line: 1, end_line: 1, start_column: 6, end_column: 7 },
-                        Token { token_type: Identifier("y".to_string()), start_line: 1, end_line: 1, start_column: 8, end_column: 9 },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Float), start_line: 1, end_line: 1, start_column: 9, end_column: 11 },
-                        Token { token_type: LambdaReturnTypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 13, end_column: 15 }
+                        Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 4 } },
+                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 6 } },
+                        Token { token_type: Comma, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 6, end_column: 7 } },
+                        Token { token_type: Identifier("y".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 9 } },
+                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Float), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 9, end_column: 11 } },
+                        Token { token_type: LambdaReturnTypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 13, end_column: 15 } }
                     ]),
-                    start_line: 1,
-                    end_line: 1,
-                    start_column: 1,
-                    end_column: 15
+                    code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 15 }
                 },
-                Token { token_type: BlockOpen, start_line: 1, end_line: 1, start_column: 16, end_column: 17 },
-                Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 18, end_column: 19 },
-                Token { token_type: Identifier("result".to_string()), start_line: 1, end_line: 1, start_column: 20, end_column: 26 },
-                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 26, end_column: 28 },
-                Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 29, end_column: 30 },
-                Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 31, end_column: 32 },
-                Token { token_type: Operator(Operation::Add), start_line: 1, end_line: 1, start_column: 33, end_column: 34 },
-                Token { token_type: Integer("1".to_string()), start_line: 1, end_line: 1, start_column: 35, end_column: 36 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 36, end_column: 37 },
-                Token { token_type: Return, start_line: 1, end_line: 1, start_column: 38, end_column: 39 },
-                Token { token_type: Identifier("result".to_string()), start_line: 1, end_line: 1, start_column: 40, end_column: 46 },
-                Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 46, end_column: 47 },
-                Token { token_type: BlockClose, start_line: 1, end_line: 1, start_column: 48, end_column: 49 }
+                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
+                Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 19 } },
+                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 20, end_column: 26 } },
+                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 26, end_column: 28 } },
+                Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 29, end_column: 30 } },
+                Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 31, end_column: 32 } },
+                Token { token_type: Operator(Operation::Add), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 33, end_column: 34 } },
+                Token { token_type: Integer("1".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 35, end_column: 36 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 36, end_column: 37 } },
+                Token { token_type: Return, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 38, end_column: 39 } },
+                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 40, end_column: 46 } },
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 46, end_column: 47 } },
+                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 48, end_column: 49 } }
             ]
         );
     }
@@ -1975,22 +1904,19 @@ mod tests {
         let result = lexer("v test_array:a:i = [1, 2, 3];");
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[
-            Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 2 },
-            Token { token_type: Identifier("test_array".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 13 },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::ArrayInt), start_line: 1, end_line: 1, start_column: 13, end_column: 17 },
-            Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 18, end_column: 19 },
+            Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 2 } },
+            Token { token_type: Identifier("test_array".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 13 } },
+            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::ArrayInt), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 13, end_column: 17 } },
+            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 19 } },
             Token {
                 token_type: Array(vec![
-                    Token { token_type: Integer("1".to_string()), start_line: 1, end_line: 1, start_column: 21, end_column: 22 },
-                    Token { token_type: Integer("2".to_string()), start_line: 1, end_line: 1, start_column: 24, end_column: 25 },
-                    Token { token_type: Integer("3".to_string()), start_line: 1, end_line: 1, start_column: 27, end_column: 28 },
+                    Token { token_type: Integer("1".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 21, end_column: 22 } },
+                    Token { token_type: Integer("2".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 24, end_column: 25 } },
+                    Token { token_type: Integer("3".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 27, end_column: 28 } },
                 ]),
-                start_line: 1,
-                end_line: 1,
-                start_column: 20,
-                end_column: 29,
+                code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 20, end_column: 29 }
             },
-            Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 29, end_column: 30 },
+            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 29, end_column: 30 } }
         ]));
     }
 
@@ -2014,15 +1940,12 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
                             StructDeclarationDataField { name: "y".to_string(), data_type: NailDataTypeDescriptor::Int }
                         ]
                     }),
-                    start_line: 2,
-                    end_line: 2,
-                    start_column: 1,
-                    end_column: 26
+                    code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 1, end_column: 26 }
                 },
-                Token { token_type: VariableDeclaration, start_line: 3, end_line: 3, start_column: 1, end_column: 2 },
-                Token { token_type: Identifier("points".to_string()), start_line: 3, end_line: 3, start_column: 3, end_column: 9 },
-                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::ArrayStruct("Point".to_string())), start_line: 3, end_line: 3, start_column: 9, end_column: 24 },
-                Token { token_type: Assignment, start_line: 3, end_line: 3, start_column: 25, end_column: 26 },
+                Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 1, end_column: 2 } },
+                Token { token_type: Identifier("points".to_string()), code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 3, end_column: 9 } },
+                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::ArrayStruct("Point".to_string())), code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 9, end_column: 24 } },
+                Token { token_type: Assignment, code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 25, end_column: 26 } },
                 Token {
                     token_type: Array(vec![
                         Token {
@@ -2031,18 +1954,15 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
                                 fields: vec![
                                     StructInstantiationDataField {
                                         name: "x".to_string(),
-                                        value: Token { token_type: Integer("1".to_string()), start_line: 3, end_line: 3, start_column: 39, end_column: 40 }
+                                        value: Token { token_type: Integer("1".to_string()), code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 39, end_column: 40 } }
                                     },
                                     StructInstantiationDataField {
                                         name: "y".to_string(),
-                                        value: Token { token_type: Integer("2".to_string()), start_line: 3, end_line: 3, start_column: 45, end_column: 46 }
+                                        value: Token { token_type: Integer("2".to_string()), code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 45, end_column: 46 } }
                                     }
                                 ]
                             }),
-                            start_line: 3,
-                            end_line: 3,
-                            start_column: 28,
-                            end_column: 48
+                            code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 28, end_column: 48 }
                         },
                         Token {
                             token_type: StructInstantiation(StructInstantiationData {
@@ -2050,26 +1970,20 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
                                 fields: vec![
                                     StructInstantiationDataField {
                                         name: "x".to_string(),
-                                        value: Token { token_type: Integer("3".to_string()), start_line: 3, end_line: 3, start_column: 61, end_column: 62 }
+                                        value: Token { token_type: Integer("3".to_string()), code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 61, end_column: 62 } }
                                     },
                                     StructInstantiationDataField {
                                         name: "y".to_string(),
-                                        value: Token { token_type: Integer("4".to_string()), start_line: 3, end_line: 3, start_column: 67, end_column: 68 }
+                                        value: Token { token_type: Integer("4".to_string()), code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 67, end_column: 68 } }
                                     }
                                 ]
                             }),
-                            start_line: 3,
-                            end_line: 3,
-                            start_column: 50,
-                            end_column: 70
+                            code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 50, end_column: 70 }
                         }
                     ]),
-                    start_line: 3,
-                    end_line: 3,
-                    start_column: 27,
-                    end_column: 71
+                    code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 27, end_column: 71 }
                 },
-                Token { token_type: EndStatementOrExpression, start_line: 3, end_line: 3, start_column: 71, end_column: 72 }
+                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 3, end_line: 3, start_column: 71, end_column: 72 } }
             ]
         );
     }
@@ -2088,10 +2002,7 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
                         StructDeclarationDataField { name: "y".to_string(), data_type: NailDataTypeDescriptor::Int }
                     ]
                 }),
-                start_line: 1,
-                end_line: 1,
-                start_column: 1,
-                end_column: 26
+                code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 26 }
             }]
         );
     }
@@ -2101,12 +2012,15 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let result = lexer("v color:enum:Color = Color::Red;");
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[
-            Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 2 },
-            Token { token_type: Identifier("color".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 8 },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Enum("Color".to_string())), start_line: 1, end_line: 1, start_column: 8, end_column: 19 },
-            Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 20, end_column: 21 },
-            Token { token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Red".to_string() }), start_line: 1, end_line: 1, start_column: 22, end_column: 32 },
-            Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 32, end_column: 33 },
+            Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 2 } },
+            Token { token_type: Identifier("color".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 8 } },
+            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Enum("Color".to_string())), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 19 } },
+            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 20, end_column: 21 } },
+            Token {
+                token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Red".to_string() }),
+                code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 22, end_column: 32 }
+            },
+            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 32, end_column: 33 } },
         ]));
     }
 
@@ -2115,24 +2029,27 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let result = lexer("v point:struct:Point = Point { x: 10, y: 20 };");
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[
-            Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 2 },
-            Token { token_type: Identifier("point".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 8 },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Struct("Point".to_string())), start_line: 1, end_line: 1, start_column: 8, end_column: 21 },
-            Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 22, end_column: 23 },
+            Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 2 } },
+            Token { token_type: Identifier("point".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 8 } },
+            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Struct("Point".to_string())), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 21 } },
+            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 22, end_column: 23 } },
             Token {
                 token_type: StructInstantiation(StructInstantiationData {
                     name: "Point".to_string(),
                     fields: vec![
-                        StructInstantiationDataField { name: "x".to_string(), value: Token { token_type: Integer("10".to_string()), start_line: 1, end_line: 1, start_column: 35, end_column: 37 } },
-                        StructInstantiationDataField { name: "y".to_string(), value: Token { token_type: Integer("20".to_string()), start_line: 1, end_line: 1, start_column: 42, end_column: 44 } },
+                        StructInstantiationDataField {
+                            name: "x".to_string(),
+                            value: Token { token_type: Integer("10".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 35, end_column: 37 } }
+                        },
+                        StructInstantiationDataField {
+                            name: "y".to_string(),
+                            value: Token { token_type: Integer("20".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 42, end_column: 44 } }
+                        },
                     ],
                 }),
-                start_line: 1,
-                end_line: 1,
-                start_column: 24,
-                end_column: 46,
+                code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 24, end_column: 46 }
             },
-            Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 46, end_column: 47 },
+            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 46, end_column: 47 } },
         ]));
     }
 
@@ -2141,12 +2058,12 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let result = lexer("v point_on_x_struct:i = point.x;");
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[
-            Token { token_type: VariableDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 2 },
-            Token { token_type: Identifier("point_on_x_struct".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 20 },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 20, end_column: 22 },
-            Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 23, end_column: 24 },
-            Token { token_type: StructFieldAccess("point".to_string(), "x".to_string()), start_line: 1, end_line: 1, start_column: 25, end_column: 32 },
-            Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 32, end_column: 33 },
+            Token { token_type: VariableDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 2 } },
+            Token { token_type: Identifier("point_on_x_struct".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 20 } },
+            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 20, end_column: 22 } },
+            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 23, end_column: 24 } },
+            Token { token_type: StructFieldAccess("point".to_string(), "x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 25, end_column: 32 } },
+            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 32, end_column: 33 } },
         ]));
     }
 
@@ -2159,15 +2076,21 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
             token_type: EnumDeclaration(EnumDeclarationData {
                 name: "Color".to_string(),
                 variants: vec![
-                    Token { token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Red".to_string() }), start_line: 1, end_line: 1, start_column: 14, end_column: 17 },
-                    Token { token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Green".to_string() }), start_line: 1, end_line: 1, start_column: 19, end_column: 24 },
-                    Token { token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Blue".to_string() }), start_line: 1, end_line: 1, start_column: 26, end_column: 30 },
+                    Token {
+                        token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Red".to_string() }),
+                        code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 14, end_column: 17 }
+                    },
+                    Token {
+                        token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Green".to_string() }),
+                        code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 24 }
+                    },
+                    Token {
+                        token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Blue".to_string() }),
+                        code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 26, end_column: 30 }
+                    },
                 ],
             }),
-            start_line: 1,
-            end_line: 1,
-            start_column: 1,
-            end_column: 32,
+            code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 32 }
         },]));
     }
 
@@ -2176,8 +2099,8 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let result = lexer(SIMPLE_IDENT);
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[
-            Token { token_type: Identifier("bob".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 4 },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 4, end_column: 6 },
+            Token { token_type: Identifier("bob".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 4 } },
+            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 6 } },
         ]));
     }
 
@@ -2191,8 +2114,8 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         );
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[
-            Token { token_type: ConstDeclaration, start_line: 2, end_line: 2, start_column: 9, end_column: 10 },
-            Token { token_type: Identifier("every_nail_type".to_string()), start_line: 2, end_line: 2, start_column: 11, end_column: 26 },
+            Token { token_type: ConstDeclaration, code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 9, end_column: 10 } },
+            Token { token_type: Identifier("every_nail_type".to_string()), code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 11, end_column: 26 } },
             Token {
                 token_type: TypeDeclaration(NailDataTypeDescriptor::Any(vec![
                     NailDataTypeDescriptor::Int,
@@ -2204,12 +2127,9 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
                     NailDataTypeDescriptor::ArrayStruct("any".to_string()),
                     NailDataTypeDescriptor::ArrayEnum("any".to_string()),
                 ])),
-                start_line: 2,
-                end_line: 2,
-                start_column: 26,
-                end_column: 71,
+                code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 26, end_column: 71 }
             },
-            Token { token_type: EndStatementOrExpression, start_line: 2, end_line: 2, start_column: 71, end_column: 72 },
+            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 71, end_column: 72 } },
         ]));
     }
 
@@ -2218,12 +2138,12 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let result = lexer(CONST_ASSIGNMENT);
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[
-            Token { token_type: ConstDeclaration, start_line: 1, end_line: 1, start_column: 1, end_column: 2 },
-            Token { token_type: Identifier("x".to_string()), start_line: 1, end_line: 1, start_column: 3, end_column: 4 },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), start_line: 1, end_line: 1, start_column: 4, end_column: 6 },
-            Token { token_type: Assignment, start_line: 1, end_line: 1, start_column: 7, end_column: 8 },
-            Token { token_type: Integer("10".to_string()), start_line: 1, end_line: 1, start_column: 9, end_column: 11 },
-            Token { token_type: EndStatementOrExpression, start_line: 1, end_line: 1, start_column: 11, end_column: 12 },
+            Token { token_type: ConstDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 2 } },
+            Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 4 } },
+            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 6 } },
+            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 7, end_column: 8 } },
+            Token { token_type: Integer("10".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 9, end_column: 11 } },
+            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 12 } },
         ]));
     }
 
@@ -2235,10 +2155,10 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
             token_type: StringLiteral(
                 "This is a story all about how my life\ngot flipped turned upside down, and I'd like to take a minute just sit right\nthere, I'll tell you how I became the\nprince of a town called Bel-Air.".to_string(),
             ),
-            start_line: 1,
+            code_span: CodeSpan {  start_line: 1,
             end_line: 4,
             start_column: 1,
-            end_column: 34,
+            end_column: 34,}
         },]));
     }
 
@@ -2247,11 +2167,8 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let result = lexer(RUST_ESCAPE);
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[Token {
-            token_type: RustEscape(vec![Token { token_type: RustLiteral(" let x:i = 10; ".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 19 }]),
-            start_line: 1,
-            end_line: 1,
-            start_column: 1,
-            end_column: 19,
+            token_type: RustEscape(vec![Token { token_type: RustLiteral(" let x:i = 10; ".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 19 } }]),
+            code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 19 }
         }]));
     }
 
@@ -2260,11 +2177,8 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let result = lexer(RUST_ESCAPE_MULTILINE);
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[Token {
-            token_type: RustEscape(vec![Token { token_type: RustLiteral("\nx:i = 10;\n".to_string()), start_line: 1, end_line: 3, start_column: 1, end_column: 2 }]),
-            start_line: 1,
-            end_line: 3,
-            start_column: 1,
-            end_column: 2,
+            token_type: RustEscape(vec![Token { token_type: RustLiteral("\nx:i = 10;\n".to_string()), code_span: CodeSpan { start_line: 1, end_line: 3, start_column: 1, end_column: 2 } }]),
+            code_span: CodeSpan { start_line: 1, end_line: 3, start_column: 1, end_column: 2 }
         }]));
     }
 
@@ -2273,11 +2187,8 @@ v points:a:struct:Point = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
         let result = lexer(RUST_ESCAPE_NESTED_BLOCKS);
         println!("RESULT: {:#?}", result);
         assert!(result.eq(&[Token {
-            token_type: RustEscape(vec![Token { token_type: RustLiteral(" { let x:i = 10; } ".to_string()), start_line: 1, end_line: 1, start_column: 1, end_column: 23 }]),
-            start_line: 1,
-            end_line: 1,
-            start_column: 1,
-            end_column: 23,
+            token_type: RustEscape(vec![Token { token_type: RustLiteral(" { let x:i = 10; } ".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 23 } }]),
+            code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 23 }
         }]));
     }
 
