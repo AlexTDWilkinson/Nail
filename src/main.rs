@@ -39,6 +39,7 @@ use std::thread;
 use utils::lock;
 use utils::BuildStatus;
 
+use crate::lexer::CodeSpan;
 use ratatui::crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -55,21 +56,19 @@ use ratatui::{
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodeError {
-    line: usize,
-    column: usize,
+    code_span: CodeSpan,
     message: String,
 }
 
 impl Default for CodeError {
     fn default() -> Self {
-        CodeError { line: 0, column: 0, message: "UNKNOWN ERROR".to_string() }
+        CodeError { message: "UNKNOWN ERROR".to_string(), code_span: CodeSpan::default() }
     }
 }
 
-//       ^ the trait `From<String>` is not implemented for `CodeError`, which is required by `Result<ASTNode, CodeError>: FromResidual<Result<Infallible, String>>`
 impl From<String> for CodeError {
     fn from(error: String) -> Self {
-        CodeError { line: 0, column: 0, message: error }
+        CodeError { message: error, code_span: CodeSpan::default() }
     }
 }
 

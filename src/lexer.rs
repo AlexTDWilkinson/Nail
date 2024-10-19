@@ -96,6 +96,8 @@ pub enum NailDataTypeDescriptor {
     Void,
     Error,
     Any(Vec<NailDataTypeDescriptor>),
+    Fn(Vec<NailDataTypeDescriptor>, Box<NailDataTypeDescriptor>),
+    Unknown, // Only used internally
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,7 +237,7 @@ pub struct LexerState {
     pub column: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CodeSpan {
     pub start_line: usize,
     pub start_column: usize,

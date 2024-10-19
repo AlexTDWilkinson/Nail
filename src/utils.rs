@@ -1,12 +1,13 @@
+use crate::checker::checker;
 use crate::parser::parse;
+use crate::parser::ASTNode;
 use crate::transpilier::Transpiler;
 use crate::CodeError;
 use crate::Editor;
-use std::backtrace::Backtrace;
-use std::panic;
-
 use log::error;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use std::backtrace::Backtrace;
+use std::panic;
 use std::path::Path;
 use std::sync::{
     mpsc::{Receiver, Sender},
@@ -205,8 +206,8 @@ fn display_build_status(f: &mut Frame, editor: &Editor) {
 }
 
 fn display_error(f: &mut Frame, error: &CodeError, editor: &Editor, content_area: Rect) {
-    let error_line = error.line.saturating_sub(editor.scroll_position as usize);
-    let error_column = error.column;
+    let error_line = error.code_span.start_line.saturating_sub(editor.scroll_position as usize);
+    let error_column = error.code_span.start_column;
     let error_message = error.message.clone();
 
     // Only display the error if it's within the visible area
@@ -304,15 +305,28 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             let tokens = lexer::lexer(&editor.content.join("\n"));
             drop(editor);
 
-            let ast = match parse(tokens) {
+            let mut ast = match parse(tokens) {
                 Ok(ast) => {
-                    log::info!("AST: {:#?}", ast);
+                    log::info!("AST (parsed): {:#?}", ast);
                     ast
                 }
                 Err(e) => {
                     let mut editor = editor_arc.lock().unwrap();
                     editor.build_status = BuildStatus::Failed(e.message.clone());
                     log::error!("Parsing failed: {:?}", e);
+                    continue;
+                }
+            };
+
+            let ast = match checker(&mut ast) {
+                Ok(_) => {
+                    log::info!("AST (type checked): {:#?}", ast);
+                    ast
+                }
+                Err(errors) => {
+                    let mut editor = editor_arc.lock().unwrap();
+                    editor.build_status = BuildStatus::Failed(errors[0].message.clone());
+                    log::error!("Checker failed: {:?}", errors);
                     continue;
                 }
             };
@@ -448,7 +462,7 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         let mut lexing_error = None;
         for token in tokens.clone() {
             if let lexer::TokenType::LexerError(message) = token.token_type {
-                lexing_error = Some(CodeError { line: token.code_span.start_line, column: token.code_span.start_column, message: format!("^ {}", message) });
+                lexing_error = Some(CodeError { message: format!("^ {}", message), code_span: token.code_span });
                 break;
             }
         }
@@ -467,11 +481,20 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
 
         // if the above is successful, get the parser errors and do the same thing
 
-        let _ = match parse(tokens) {
-            Ok(_) => {}
+        let mut ast = match parse(tokens) {
+            Ok(ast) => ast,
             Err(e) => {
                 let mut editor = lock(&editor_arc);
-                editor.code_error = Some(CodeError { line: e.line, column: e.column, message: format!("^ {}", e.message) });
+                editor.code_error = Some(CodeError { message: format!("^ {}", e.message), code_span: e.code_span });
+                ASTNode::default()
+            }
+        };
+
+        let _ = match checker(&mut ast) {
+            Ok(_) => {}
+            Err(errors) => {
+                let mut editor = lock(&editor_arc);
+                editor.code_error = Some(CodeError { message: format!("^ {}", errors[0].message), code_span: errors[0].code_span.clone() });
             }
         };
 
@@ -497,15 +520,15 @@ pub fn create_transpilation_cargo_toml() -> String {
     .to_string()
 }
 
-static WELCOME_MESSAGE: &str = r#"c welcome:s = "Welcome to NAIL - alpha version";
+static WELCOME_MESSAGE: &str = r#"c welcome:s = `Welcome to NAIL - alpha version`;
 
-c example_text:s = "Here are some quick tips to get you started:
+c example_text:s = `Here are some quick tips to get you started:
 1. Type your code in this editor
 2. Use F6 to toggle between light and dark themes
 3. Press F7 to build and run your code
 4. Use Ctrl + C or Esc to exit the editor
 
-Let's start with some cool examples:";
+Let's start with some cool examples:`;
 "#;
 
 // static WELCOME_MESSAGE: &str = r#"

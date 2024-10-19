@@ -1,34 +1,40 @@
+use crate::checker::NO_SCOPE;
 use crate::lexer::*;
 use crate::CodeError;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
+// We don't actually use this in the parser, it's a placeholder so the AST doesn't need to be recreated as an entirely new structure just for the scopes in the checker stage
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum ASTNode {
-    Program(Vec<ASTNode>),
-    FunctionDeclaration { name: String, params: Vec<(String, NailDataTypeDescriptor)>, return_type: NailDataTypeDescriptor, body: Box<ASTNode> },
-    LambdaDeclaration { params: Vec<(String, NailDataTypeDescriptor)>, return_type: NailDataTypeDescriptor, body: Box<ASTNode> },
-    FunctionCall { name: String, args: Vec<ASTNode> },
-    VariableDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode> },
-    ConstDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode> },
-    IfStatement { condition_branch_pairs: Vec<(Box<ASTNode>, Box<ASTNode>)>, else_branch: Option<Box<ASTNode>> },
-    Block(Vec<ASTNode>),
-    BinaryOperation { left: Box<ASTNode>, operator: Operation, right: Box<ASTNode> },
-    UnaryOperation { operator: Operation, operand: Box<ASTNode> },
-    StructDeclaration { name: String, fields: Vec<ASTNode> },
+    Program { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    FunctionDeclaration { name: String, params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    LambdaDeclaration { params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    FunctionCall { name: String, args: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    VariableDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    ConstDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    IfStatement { condition_branches: Vec<(Box<ASTNode>, Box<ASTNode>)>, else_branch: Option<Box<ASTNode>>, code_span: CodeSpan, scope: usize },
+    Block { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    BinaryOperation { left: Box<ASTNode>, operator: Operation, right: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    UnaryOperation { operator: Operation, operand: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    StructDeclaration { name: String, fields: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     StructDeclarationField { name: String, data_type: NailDataTypeDescriptor },
-    StructInstantiation { name: String, fields: Vec<ASTNode> },
-    StructInstantiationField { name: String, value: Box<ASTNode> },
-    EnumDeclaration { name: String, variants: Vec<ASTNode> },
-    EnumVariant { name: String, variant: String },
-    ArrayLiteral(Vec<ASTNode>),
-    Identifier(String),
-    NumberLiteral(String),
-    StringLiteral(String),
-    RustEscape(Vec<ASTNode>),
-    RustLiteral(String),
-    NailInjection(Vec<ASTNode>),
-    ReturnStatement(Box<ASTNode>),
+    StructInstantiation { name: String, fields: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    StructInstantiationField { name: String, value: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    EnumDeclaration { name: String, variants: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    EnumVariant { name: String, variant: String, code_span: CodeSpan, scope: usize },
+    ArrayLiteral { elements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    Identifier { name: String, code_span: CodeSpan, scope: usize },
+    NumberLiteral { value: String, data_type: NailDataTypeDescriptor, code_span: CodeSpan, scope: usize },
+    StringLiteral { value: String, code_span: CodeSpan, scope: usize },
+    ReturnDeclaration { statement: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+}
+
+impl Default for ASTNode {
+    fn default() -> Self {
+        ASTNode::Program { statements: Vec::new(), code_span: CodeSpan::default(), scope: 0 }
+    }
 }
 
 pub struct ParserState {
@@ -47,7 +53,7 @@ fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     while state.tokens.peek().is_some() {
         program.push(parse_statement(state)?);
     }
-    Ok(ASTNode::Program(program))
+    Ok(ASTNode::Program { statements: program, code_span: CodeSpan::default(), scope: NO_SCOPE })
 }
 
 fn advance(state: &mut ParserState) -> Option<Token> {
@@ -68,40 +74,40 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                 if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::ParenthesisOpen)) {
                     parse_function_call(state, name)
                 } else {
-                    Ok(ASTNode::Identifier(name))
+                    Ok(ASTNode::Identifier { name, code_span: token.code_span, scope: NO_SCOPE })
                 }
             }
-            TokenType::Float(value) | TokenType::Integer(value) => {
+            TokenType::Float(value) => {
                 advance(state);
-                Ok(ASTNode::NumberLiteral(value))
+                Ok(ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Float, code_span: token.code_span, scope: NO_SCOPE })
+            }
+            TokenType::Integer(value) => {
+                advance(state);
+                Ok(ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Int, code_span: token.code_span, scope: NO_SCOPE })
             }
             TokenType::StringLiteral(value) => {
                 advance(state);
-                Ok(ASTNode::StringLiteral(value))
-            }
-            TokenType::RustLiteral(value) => {
-                advance(state);
-                Ok(ASTNode::RustLiteral(value))
+                Ok(ASTNode::StringLiteral { value, code_span: token.code_span, scope: NO_SCOPE })
             }
             TokenType::ParenthesisOpen => {
                 advance(state);
                 let expr = parse_expression(state, 0)?;
-                expect_token(state, TokenType::ParenthesisClose)?;
+                let _ = expect_token(state, TokenType::ParenthesisClose)?;
                 Ok(expr)
             }
             TokenType::EnumVariant(variant) => {
+                let code_span = token.code_span;
                 advance(state);
-                Ok(ASTNode::EnumVariant { name: variant.name, variant: variant.variant })
+                Ok(ASTNode::EnumVariant { name: variant.name, variant: variant.variant, code_span, scope: NO_SCOPE })
             }
             TokenType::Array(_) => parse_array_literal(state),
-            _ => Err(CodeError { message: format!("Unexpected token {:?}", token.token_type), line: token.code_span.start_line, column: token.code_span.start_column }),
+            _ => {
+                let code_span = token.code_span;
+                Err(CodeError { message: format!("Unexpected token {:?}", token.token_type), code_span: code_span.clone() })
+            }
         }
     } else {
-        Err(CodeError {
-            message: "Unexpected end of file".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        })
+        Err(CodeError { message: "Unexpected end of file".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
 }
 
@@ -110,7 +116,6 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
         Some(token) => match &token.token_type {
             TokenType::StructDeclaration(_) => parse_struct_declaration(state),
             TokenType::EnumDeclaration(_) => parse_enum_declaration(state),
-            TokenType::RustNailInsert(_) => parse_inner(state),
             TokenType::FunctionSignature(_) => parse_function_declaration(state),
             TokenType::ConstDeclaration => parse_const_declaration(state),
             TokenType::VariableDeclaration => parse_variable_declaration(state),
@@ -120,11 +125,7 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::BlockOpen => parse_block(state),
             _ => parse_expression(state, 0),
         },
-        None => Err(CodeError {
-            message: "No token was found to match with a statement.".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        }),
+        None => Err(CodeError { message: "No token was found to match with a statement.".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) }),
     }
 }
 
@@ -137,34 +138,31 @@ fn parse_expression(state: &mut ParserState, min_precedence: u8) -> Result<ASTNo
         }
 
         advance(state); // Consume the operator
+        let code_span = state.current_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
 
         if op.is_unary() {
-            left = ASTNode::UnaryOperation { operator: op, operand: Box::new(left) };
+            left = ASTNode::UnaryOperation { operator: op, operand: Box::new(left), code_span: code_span.clone(), scope: NO_SCOPE };
         } else {
             let right = parse_expression(state, op.precedence() + 1)?;
-            left = ASTNode::BinaryOperation { left: Box::new(left), operator: op, right: Box::new(right) };
+            left = ASTNode::BinaryOperation { left: Box::new(left), operator: op, right: Box::new(right), code_span: code_span.clone(), scope: NO_SCOPE };
         }
     }
 
     Ok(left)
 }
 
-fn expect_token(state: &mut ParserState, expected: TokenType) -> Result<(), CodeError> {
+fn expect_token(state: &mut ParserState, expected: TokenType) -> Result<CodeSpan, CodeError> {
     if let Some(token) = advance(state) {
         if token.token_type == expected {
-            Ok(())
+            Ok(token.code_span)
         } else {
-            let error = CodeError { message: format!("Expected {:?}, found {:?}", expected, token.token_type), line: token.code_span.start_line, column: token.code_span.start_column };
+            let error = CodeError { message: format!("Expected {:?}, found {:?}", expected, token.token_type), code_span: token.code_span.clone() };
             log::error!("Expect token error: {:?}", error);
             Err(error)
         }
     } else {
         log::error!("expect_token else branch error: {:?}", expected);
-        Err(CodeError {
-            message: format!("Expected {:?}, found end of file", expected),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        })
+        Err(CodeError { message: format!("Expected {:?}, found end of file", expected), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
 }
 
@@ -174,8 +172,7 @@ fn expect_identifier(state: &mut ParserState) -> Result<String, CodeError> {
     } else {
         let error = CodeError {
             message: format!("Expected identifier, found {:?}", state.tokens.peek().map(|token| token.token_type.clone()).unwrap_or(TokenType::EndOfFile)),
-            line: state.tokens.peek().map_or(0, |token| token.code_span.start_line),
-            column: state.tokens.peek().map_or(0, |token| token.code_span.start_column),
+            code_span: state.tokens.peek().map_or(CodeSpan::default(), |token| token.code_span.clone()),
         };
         log::error!("Expect identifier error: {:?}", error);
         Err(error)
@@ -183,7 +180,7 @@ fn expect_identifier(state: &mut ParserState) -> Result<String, CodeError> {
 }
 
 fn parse_function_call(state: &mut ParserState, name: String) -> Result<ASTNode, CodeError> {
-    expect_token(state, TokenType::ParenthesisOpen)?;
+    let _ = expect_token(state, TokenType::ParenthesisOpen)?;
     let mut args = Vec::new();
     while state.tokens.peek().map_or(false, |t| t.token_type != TokenType::ParenthesisClose) {
         args.push(parse_expression(state, 0)?);
@@ -193,21 +190,23 @@ fn parse_function_call(state: &mut ParserState, name: String) -> Result<ASTNode,
             break;
         }
     }
-    expect_token(state, TokenType::ParenthesisClose)?;
+    let code_span = expect_token(state, TokenType::ParenthesisClose)?;
 
     // it should have a ; if the next token after is not a ) for stuff like fun(yay(times)); so it doesnt need a bunch of ugly ; like fun(yay(times););
     if state.tokens.peek().map_or(true, |t| t.token_type != TokenType::ParenthesisClose) {
-        expect_token(state, TokenType::EndStatementOrExpression)?;
+        let _ = expect_token(state, TokenType::EndStatementOrExpression)?;
     }
 
-    Ok(ASTNode::FunctionCall { name, args })
+    Ok(ASTNode::FunctionCall { name, args, code_span, scope: NO_SCOPE })
 }
 
 fn parse_lambda_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     if let Some(Token { token_type: TokenType::LambdaSignature(tokens), .. }) = advance(state) {
+        let code_span = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
         let mut lambda_tokens = tokens.into_iter();
         let mut params = Vec::new();
-        let mut return_type = NailDataTypeDescriptor::Void;
+        #[allow(unused_assignments)]
+        let mut data_type = NailDataTypeDescriptor::Void;
 
         // Parse parameters
         loop {
@@ -220,48 +219,33 @@ fn parse_lambda_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
                         match lambda_tokens.next() {
                             Some(Token { token_type: TokenType::Comma, .. }) => continue,
                             Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
-                                return_type = rt;
+                                data_type = rt;
                                 break;
                             }
-                            Some(other) => {
-                                return Err(CodeError {
-                                    message: format!("Expected comma or return type declaration, found {:?}", other.token_type),
-                                    line: other.code_span.start_line,
-                                    column: other.code_span.start_column,
-                                })
-                            }
+                            Some(other) => return Err(CodeError { message: format!("Expected comma or return type declaration, found {:?}", other.token_type), code_span: other.code_span.clone() }),
                             None => {
                                 return Err(CodeError {
                                     message: "Unexpected end of lambda declaration".to_string(),
-                                    line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-                                    column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
+                                    code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
                                 })
                             }
                         }
                     } else {
                         return Err(CodeError {
                             message: "Expected type declaration for lambda parameter".to_string(),
-                            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-                            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
+                            code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
                         });
                     }
                 }
                 Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
-                    return_type = rt;
+                    data_type = rt;
                     break;
                 }
-                Some(other) => {
-                    return Err(CodeError {
-                        message: format!("Unexpected token in lambda declaration: {:?}", other.token_type),
-                        line: other.code_span.start_line,
-                        column: other.code_span.start_column,
-                    })
-                }
+                Some(other) => return Err(CodeError { message: format!("Unexpected token in lambda declaration: {:?}", other.token_type), code_span: other.code_span.clone() }),
                 None => {
                     return Err(CodeError {
                         message: "Unexpected end of lambda declaration".to_string(),
-                        line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-                        column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
+                        code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
                     })
                 }
             }
@@ -270,18 +254,15 @@ fn parse_lambda_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
         // Parse the lambda body
         let body = Box::new(parse_block(state)?);
 
-        Ok(ASTNode::LambdaDeclaration { params, return_type, body })
+        Ok(ASTNode::LambdaDeclaration { params, data_type, body, code_span, scope: NO_SCOPE })
     } else {
-        Err(CodeError {
-            message: "Expected lambda declaration".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        })
+        Err(CodeError { message: "Expected lambda declaration".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
 }
 
 fn parse_struct_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     if let Some(Token { token_type: TokenType::StructDeclaration(struct_declaration_data), .. }) = advance(state) {
+        let code_span = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
         let mut struct_fields = struct_declaration_data.fields.into_iter();
 
         let struct_name = struct_declaration_data.name;
@@ -291,13 +272,9 @@ fn parse_struct_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
             fields.push(ASTNode::StructDeclarationField { name: field.name, data_type: field.data_type })
         }
 
-        Ok(ASTNode::StructDeclaration { name: struct_name, fields })
+        Ok(ASTNode::StructDeclaration { name: struct_name, fields, code_span, scope: NO_SCOPE })
     } else {
-        Err(CodeError {
-            message: "Struct declaration syntax is incorrect".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        })
+        Err(CodeError { message: "Struct declaration syntax is incorrect".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
 }
 
@@ -311,39 +288,34 @@ fn parse_struct_instantiation_token(token: &Token) -> Result<ASTNode, CodeError>
             fields.push(ASTNode::StructInstantiationField {
                 name: field.name.clone(),
                 value: Box::new(match &field.value.token_type {
-                    TokenType::Identifier(name) => ASTNode::Identifier(name.clone()),
-                    TokenType::Integer(value) => ASTNode::NumberLiteral(value.clone()),
-                    TokenType::Float(value) => ASTNode::NumberLiteral(value.clone()),
-                    TokenType::StringLiteral(value) => ASTNode::StringLiteral(value.clone()),
+                    TokenType::Identifier(name) => ASTNode::Identifier { name: name.clone(), code_span: field.value.code_span.clone(), scope: NO_SCOPE },
+                    TokenType::Integer(value) => ASTNode::NumberLiteral { value: value.clone(), data_type: NailDataTypeDescriptor::Int, code_span: field.value.code_span.clone(), scope: NO_SCOPE },
+                    TokenType::Float(value) => ASTNode::NumberLiteral { value: value.clone(), data_type: NailDataTypeDescriptor::Float, code_span: field.value.code_span.clone(), scope: NO_SCOPE },
+                    TokenType::StringLiteral(value) => ASTNode::StringLiteral { value: value.clone(), code_span: field.value.code_span.clone(), scope: NO_SCOPE },
                     _ => {
-                        return Err(CodeError {
-                            message: format!("Unexpected token in struct field: {:?}", field.value.token_type),
-                            line: field.value.code_span.start_line,
-                            column: field.value.code_span.start_column,
-                        });
+                        return Err(CodeError { message: format!("Unexpected token in struct field: {:?}", field.value.token_type), code_span: field.value.code_span.clone() });
                     }
                 }),
+                code_span: field.value.code_span.clone(),
+                scope: NO_SCOPE,
             });
         }
-        Ok(ASTNode::StructInstantiation { name: struct_name, fields })
+        Ok(ASTNode::StructInstantiation { name: struct_name, fields, code_span: token.code_span.clone(), scope: NO_SCOPE })
     } else {
-        Err(CodeError { message: format!("Expected struct instantiation, found {:?}", token.token_type), line: token.code_span.start_line, column: token.code_span.start_column })
+        Err(CodeError { message: format!("Expected struct instantiation, found {:?}", token.token_type), code_span: token.code_span.clone() })
     }
 }
 
 // For standalone struct instantiations outside of arrays
-fn parse_struct_instantiation(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    if let Some(token @ Token { token_type: TokenType::StructInstantiation(_), .. }) = state.tokens.peek().cloned() {
-        advance(state); // Consume the StructInstantiation token
-        parse_struct_instantiation_token(&token)
-    } else {
-        Err(CodeError {
-            message: "Expected struct instantiation".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        })
-    }
-}
+// fn parse_struct_instantiation(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+//     if let Some(token @ Token { token_type: TokenType::StructInstantiation(_), .. }) = state.tokens.peek().cloned() {
+//         advance(state); // Consume the StructInstantiation token
+//         parse_struct_instantiation_token(&token)
+//     } else {
+//         Err(CodeError { message: "Expected struct instantiation".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
+//     }
+// }
+
 fn parse_array_literal(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     if let Some(Token { token_type: TokenType::Array(element_tokens), .. }) = state.tokens.peek().cloned() {
         let mut elements = Vec::new();
@@ -351,73 +323,63 @@ fn parse_array_literal(state: &mut ParserState) -> Result<ASTNode, CodeError> {
         for token in element_tokens {
             match token.token_type {
                 TokenType::StructInstantiation(_) => elements.push(parse_struct_instantiation_token(&token)?),
-                TokenType::Integer(value) => elements.push(ASTNode::NumberLiteral(value)),
-                TokenType::Float(value) => elements.push(ASTNode::NumberLiteral(value)),
-                TokenType::StringLiteral(value) => elements.push(ASTNode::StringLiteral(value)),
-                TokenType::Identifier(name) => elements.push(ASTNode::Identifier(name)),
+                TokenType::Integer(value) => elements.push(ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Int, code_span: token.code_span.clone(), scope: NO_SCOPE }),
+                TokenType::Float(value) => elements.push(ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Float, code_span: token.code_span.clone(), scope: NO_SCOPE }),
+                TokenType::StringLiteral(value) => elements.push(ASTNode::StringLiteral { value, code_span: token.code_span.clone(), scope: NO_SCOPE }),
+                TokenType::Identifier(name) => elements.push(ASTNode::Identifier { name, code_span: token.code_span.clone(), scope: NO_SCOPE }),
 
-                _ => return Err(CodeError { message: format!("Unexpected token in array: {:?}", token.token_type), line: token.code_span.start_line, column: token.code_span.start_column }),
+                _ => return Err(CodeError { message: format!("Unexpected token in array: {:?}", token.token_type), code_span: token.code_span.clone() }),
             }
         }
 
         advance(state); // Consume the Array token
 
-        Ok(ASTNode::ArrayLiteral(elements))
+        Ok(ASTNode::ArrayLiteral { elements, code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()), scope: NO_SCOPE })
     } else {
-        Err(CodeError {
-            message: "Array literal syntax is incorrect".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        })
+        Err(CodeError { message: "Array literal syntax is incorrect".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
 }
 
 fn parse_enum_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     if let Some(Token { token_type: TokenType::EnumDeclaration(nail_enum_data), .. }) = advance(state) {
+        let code_span = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
         let enum_name = nail_enum_data.name;
         let mut enum_tokens = nail_enum_data.variants.into_iter();
 
         // Parse variants
         let mut variants = Vec::new();
         while let Some(token) = enum_tokens.next() {
+            let code_span = token.code_span;
             match token.token_type {
-                TokenType::EnumVariant(variant) => {
-                    variants.push(ASTNode::EnumVariant { name: enum_name.clone(), variant: variant.variant });
-                }
+                TokenType::EnumVariant(variant) => variants.push(ASTNode::EnumVariant { name: enum_name.clone(), variant: variant.variant, code_span, scope: NO_SCOPE }),
                 TokenType::BlockClose => break,
                 _ => {
-                    return Err(CodeError { message: format!("Unexpected token in enum declaration: {:?}", token.token_type), line: token.code_span.start_line, column: token.code_span.start_column })
+                    return Err(CodeError { message: format!("Unexpected token in enum declaration: {:?}", token.token_type), code_span });
                 }
             }
         }
 
-        Ok(ASTNode::EnumDeclaration { name: enum_name, variants })
+        Ok(ASTNode::EnumDeclaration { name: enum_name, variants, code_span, scope: NO_SCOPE })
     } else {
-        Err(CodeError {
-            message: "Expected enum declaration".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        })
+        Err(CodeError { message: "Expected enum declaration".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
 }
 
 fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     if let Some(Token { token_type: TokenType::FunctionSignature(tokens), .. }) = advance(state) {
+        let code_span = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
         let mut func_tokens = tokens.into_iter();
 
         // Parse function name
         let name = if let Some(Token { token_type: TokenType::FunctionName(name), .. }) = func_tokens.next() {
             name
         } else {
-            return Err(CodeError {
-                message: "Expected function name".to_string(),
-                line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-                column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-            });
+            return Err(CodeError { message: "Expected function name".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) });
         };
 
         let mut params = Vec::new();
-        let mut return_type = NailDataTypeDescriptor::Void;
+        #[allow(unused_assignments)]
+        let mut data_type = NailDataTypeDescriptor::Void;
 
         // Parse parameters
         loop {
@@ -430,48 +392,33 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
                         match func_tokens.next() {
                             Some(Token { token_type: TokenType::Comma, .. }) => continue,
                             Some(Token { token_type: TokenType::FunctionReturnTypeDeclaration(rt), .. }) => {
-                                return_type = rt;
+                                data_type = rt;
                                 break;
                             }
-                            Some(other) => {
-                                return Err(CodeError {
-                                    message: format!("Expected comma or return type declaration, found {:?}", other.token_type),
-                                    line: other.code_span.start_line,
-                                    column: other.code_span.start_column,
-                                })
-                            }
+                            Some(other) => return Err(CodeError { message: format!("Expected comma or return type declaration, found {:?}", other.token_type), code_span: other.code_span.clone() }),
                             None => {
                                 return Err(CodeError {
                                     message: "Unexpected end of function declaration".to_string(),
-                                    line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-                                    column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
+                                    code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
                                 })
                             }
                         }
                     } else {
                         return Err(CodeError {
                             message: "Expected type declaration for function parameter".to_string(),
-                            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-                            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
+                            code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
                         });
                     }
                 }
                 Some(Token { token_type: TokenType::FunctionReturnTypeDeclaration(rt), .. }) => {
-                    return_type = rt;
+                    data_type = rt;
                     break;
                 }
-                Some(other) => {
-                    return Err(CodeError {
-                        message: format!("Unexpected token in function declaration: {:?}", other.token_type),
-                        line: other.code_span.start_line,
-                        column: other.code_span.start_column,
-                    })
-                }
+                Some(other) => return Err(CodeError { message: format!("Unexpected token in function declaration: {:?}", other.token_type), code_span: other.code_span.clone() }),
                 None => {
                     return Err(CodeError {
                         message: "Unexpected end of function declaration".to_string(),
-                        line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-                        column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
+                        code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
                     })
                 }
             }
@@ -480,39 +427,38 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
         // Parse function body
         let body = Box::new(parse_block(state)?);
 
-        Ok(ASTNode::FunctionDeclaration { name, params, return_type, body })
+        Ok(ASTNode::FunctionDeclaration { name, params, data_type, body, code_span, scope: NO_SCOPE })
     } else {
-        Err(CodeError {
-            message: "Expected function declaration".to_string(),
-            line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-            column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-        })
+        Err(CodeError { message: "Expected function declaration".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
 }
 
 fn parse_const_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    expect_token(state, TokenType::ConstDeclaration)?;
+    let _ = expect_token(state, TokenType::ConstDeclaration)?;
+    let _ = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
     let name = expect_identifier(state)?;
     let data_type = parse_type_declaration(state)?;
-    expect_token(state, TokenType::Assignment)?;
+    let _ = expect_token(state, TokenType::Assignment)?;
     let value = Box::new(parse_expression(state, 0)?);
-    expect_token(state, TokenType::EndStatementOrExpression)?;
+    let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
 
-    Ok(ASTNode::ConstDeclaration { name, data_type, value })
+    Ok(ASTNode::ConstDeclaration { name, data_type, value, code_span, scope: NO_SCOPE })
 }
 
 fn parse_variable_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    expect_token(state, TokenType::VariableDeclaration)?;
+    let _ = expect_token(state, TokenType::VariableDeclaration)?;
+    let _ = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
     let name = expect_identifier(state)?;
     let data_type = parse_type_declaration(state)?;
-    expect_token(state, TokenType::Assignment)?;
+    let _ = expect_token(state, TokenType::Assignment)?;
     let value = Box::new(parse_expression(state, 0)?);
-    expect_token(state, TokenType::EndStatementOrExpression)?;
+    let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
 
-    Ok(ASTNode::VariableDeclaration { name, data_type, value })
+    Ok(ASTNode::VariableDeclaration { name, data_type, value, code_span, scope: NO_SCOPE })
 }
 
 fn parse_if_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let _ = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
     // #[test]
     // fn test_if_statement() {
     //     let input = "if { a > 5 => {} };";
@@ -535,10 +481,10 @@ fn parse_if_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     //     );
     // }
 
-    expect_token(state, TokenType::IfDeclaration)?;
-    expect_token(state, TokenType::BlockOpen)?;
+    let _ = expect_token(state, TokenType::IfDeclaration)?;
+    let code_span = expect_token(state, TokenType::BlockOpen)?;
 
-    let mut condition_branch_pairs = Vec::new();
+    let mut condition_branches = Vec::new();
     let mut else_branch = None;
 
     loop {
@@ -546,7 +492,7 @@ fn parse_if_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             match &token.token_type {
                 TokenType::ElseDeclaration => {
                     advance(state); // Consume 'else'
-                    expect_token(state, TokenType::ArrowAssignment)?;
+                    let _ = expect_token(state, TokenType::ArrowAssignment)?;
                     else_branch = Some(Box::new(parse_block(state)?));
 
                     break;
@@ -554,9 +500,9 @@ fn parse_if_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
 
                 _ => {
                     let condition = Box::new(parse_expression(state, 0)?);
-                    expect_token(state, TokenType::ArrowAssignment)?;
+                    let _ = expect_token(state, TokenType::ArrowAssignment)?;
                     let branch = Box::new(parse_block(state)?);
-                    condition_branch_pairs.push((condition, branch));
+                    condition_branches.push((condition, branch));
 
                     // Check for comma after each pair except the last one
                     if state.tokens.peek().map_or(false, |t| t.token_type == TokenType::Comma) {
@@ -567,35 +513,31 @@ fn parse_if_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                 }
             }
         } else {
-            return Err(CodeError {
-                message: "Unexpected end of if statement".to_string(),
-                line: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_line),
-                column: state.previous_token.as_ref().map_or(0, |t| t.code_span.start_column),
-            });
+            return Err(CodeError { message: "Unexpected end of if statement".to_string(), code_span: code_span.clone() });
         }
     }
 
-    expect_token(state, TokenType::BlockClose)?;
-    expect_token(state, TokenType::EndStatementOrExpression)?;
+    let _ = expect_token(state, TokenType::BlockClose)?;
+    let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
 
-    Ok(ASTNode::IfStatement { condition_branch_pairs, else_branch })
+    Ok(ASTNode::IfStatement { condition_branches, else_branch, code_span, scope: NO_SCOPE })
 }
 
 fn parse_block(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    expect_token(state, TokenType::BlockOpen)?;
+    let _ = expect_token(state, TokenType::BlockOpen)?;
     let mut statements = vec![];
     while state.tokens.peek().map_or(false, |t| t.token_type != TokenType::BlockClose) {
         statements.push(parse_statement(state)?);
     }
-    expect_token(state, TokenType::BlockClose)?;
-    Ok(ASTNode::Block(statements))
+    let _ = expect_token(state, TokenType::BlockClose)?;
+    Ok(ASTNode::Block { statements, code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()), scope: NO_SCOPE })
 }
 
 fn parse_return_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    expect_token(state, TokenType::Return)?;
-    let value = Box::new(parse_expression(state, 0)?);
-    expect_token(state, TokenType::EndStatementOrExpression)?;
-    Ok(ASTNode::ReturnStatement(value))
+    let _ = expect_token(state, TokenType::Return)?;
+    let statement = parse_statement(state)?;
+    let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
+    Ok(ASTNode::ReturnDeclaration { statement: Box::new(statement.clone()), code_span: code_span.clone(), scope: NO_SCOPE })
 }
 
 fn parse_type_declaration(state: &mut ParserState) -> Result<NailDataTypeDescriptor, CodeError> {
@@ -604,8 +546,7 @@ fn parse_type_declaration(state: &mut ParserState) -> Result<NailDataTypeDescrip
     } else {
         let error = CodeError {
             message: format!("Expected type declaration, found {:?}", state.tokens.peek().map(|token| token.token_type.clone()).unwrap_or(TokenType::EndOfFile)),
-            line: state.tokens.peek().map_or(0, |token| token.code_span.start_line),
-            column: state.tokens.peek().map_or(0, |token| token.code_span.start_column),
+            code_span: state.tokens.peek().map_or(CodeSpan::default(), |token| token.code_span.clone()),
         };
         log::error!("parse_type_declaration error: {:?}", error);
         Err(error)
@@ -640,10 +581,10 @@ mod tests {
                     Int,
                 ),
             ],
-            return_type: Int,
+            data_type: Int,
             body: Block(
                 [
-                    ReturnStatement(
+                    ReturnDeclaration(
                         BinaryOperation {
                             left: Identifier(
                                 "yay",
@@ -670,7 +611,7 @@ mod tests {
         let expected = r#"
       Program([
     IfStatement {
-        condition_branch_pairs: [
+        condition_branches: [
             (BinaryOperation {
                 left: Identifier("a",),
                 operator: Gt,
@@ -698,7 +639,7 @@ mod tests {
                             Int,
                         ),
                     ],
-                    return_type: Int,
+                    data_type: Int,
                     body: Block(
                         [
                             VariableDeclaration {
@@ -714,7 +655,7 @@ mod tests {
                                     ),
                                 },
                             },
-                            ReturnStatement(
+                            ReturnDeclaration(
                                 Identifier(
                                     "result",
                                 ),
@@ -801,7 +742,7 @@ mod tests {
         let input = "if { a > 5 => {}, else => {} };";
         let result = parse(lexer(input)).unwrap();
         let expected = r#"
-        Program([IfStatement{condition_branch_pairs:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
+        Program([IfStatement{condition_branches:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
         "#;
         assert_eq!(remove_whitespace(&format!("{:#?}", result)), remove_whitespace(expected));
     }
@@ -811,7 +752,7 @@ mod tests {
         let input = "if { a > 5 => {}, b < 5 => {}, else => {} };";
         let result = parse(lexer(input)).unwrap();
         let expected = r#"
-        Program([IfStatement{condition_branch_pairs:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),(BinaryOperation{left:Identifier("b",),operator:Lt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
+        Program([IfStatement{condition_branches:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),(BinaryOperation{left:Identifier("b",),operator:Lt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
         "#;
         assert_eq!(remove_whitespace(&format!("{:#?}", result)), remove_whitespace(expected));
     }
@@ -894,7 +835,7 @@ mod tests {
                     Float,
                 ),
             ],
-            return_type: String,
+            data_type: String,
             body: Block(
                 [
                     VariableDeclaration {
@@ -904,7 +845,7 @@ mod tests {
                             "test",
                         ),
                     },
-                    ReturnStatement(
+                    ReturnDeclaration(
                         Identifier(
                             "result",
                         ),
@@ -1008,7 +949,7 @@ mod tests {
                     Float,
                 ),
             ],
-            return_type: Int,
+            data_type: Int,
             body: Block(
                 [
                     VariableDeclaration {
@@ -1024,7 +965,7 @@ mod tests {
                             ),
                         },
                     },
-                    ReturnStatement(
+                    ReturnDeclaration(
                         Identifier(
                             "result",
                         ),

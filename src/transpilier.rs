@@ -7,11 +7,12 @@ use std::fmt::Write;
 
 pub struct Transpiler {
     indent_level: usize,
+    scope_level: usize,
 }
 
 impl Transpiler {
     pub fn new() -> Self {
-        Transpiler { indent_level: 0 }
+        Transpiler { indent_level: 0, scope_level: 0 }
     }
 
     pub fn transpile(&mut self, node: &ASTNode) -> Result<String, std::fmt::Error> {
@@ -32,13 +33,13 @@ impl Transpiler {
         match node {
             ASTNode::StructDeclarationField { .. } => todo!(),
             ASTNode::StructInstantiationField { .. } => todo!(),
-            ASTNode::Program(statements) => {
+            ASTNode::Program { statements, .. } => {
                 for stmt in statements {
                     self.transpile_node(stmt, output)?;
                     writeln!(output)?;
                 }
             }
-            ASTNode::FunctionDeclaration { name, params, return_type, body } => {
+            ASTNode::FunctionDeclaration { name, params, data_type, body, .. } => {
                 write!(output, "{}async fn {}(", self.indent(), name)?;
                 for (i, (param_name, param_type)) in params.iter().enumerate() {
                     if i > 0 {
@@ -46,13 +47,13 @@ impl Transpiler {
                     }
                     write!(output, "{}: {}", param_name, self.rust_type(param_type, name))?;
                 }
-                writeln!(output, ") -> {} {{", self.rust_async_return_type(return_type, name))?;
+                writeln!(output, ") -> {} {{", self.rust_async_return_type(data_type, name))?;
                 self.indent_level += 1;
                 self.transpile_node(body, output)?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
             }
-            ASTNode::FunctionCall { name, args } => {
+            ASTNode::FunctionCall { name, args, .. } => {
                 write!(output, "{}{}(", self.indent(), name)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
@@ -62,19 +63,19 @@ impl Transpiler {
                 }
                 writeln!(output, ").await")?;
             }
-            ASTNode::ConstDeclaration { name, data_type, value } => {
+            ASTNode::ConstDeclaration { name, data_type, value, .. } => {
                 write!(output, "{}let {}: {} = ", self.indent(), name, self.rust_type(data_type, name))?;
                 self.transpile_node(value, output)?;
                 writeln!(output)?;
             }
-            ASTNode::VariableDeclaration { name, data_type, value } => {
+            ASTNode::VariableDeclaration { name, data_type, value, .. } => {
                 write!(output, "{}let mut {}: {} = ", self.indent(), name, self.rust_type(data_type, name))?;
                 self.transpile_node(value, output)?;
                 writeln!(output)?;
             }
-            ASTNode::IfStatement { condition_branch_pairs, else_branch } => {
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
                 // turn into if else ifs
-                for (i, (condition, branch)) in condition_branch_pairs.iter().enumerate() {
+                for (i, (condition, branch)) in condition_branches.iter().enumerate() {
                     if i == 0 {
                         write!(output, "{}if ", self.indent())?;
                     } else {
@@ -95,57 +96,35 @@ impl Transpiler {
                     writeln!(output, "{}}}", self.indent())?;
                 }
             }
-            ASTNode::Block(statements) => {
+            ASTNode::Block { statements, .. } => {
                 for stmt in statements {
                     self.transpile_node(stmt, output)?;
                 }
             }
-            ASTNode::BinaryOperation { left, operator, right } => {
+            ASTNode::BinaryOperation { left, operator, right, .. } => {
                 self.transpile_node(left, output)?;
                 write!(output, " {} ", self.rust_operator(operator))?;
                 self.transpile_node(right, output)?;
             }
-            ASTNode::UnaryOperation { operator, operand } => {
+            ASTNode::UnaryOperation { operator, operand, .. } => {
                 write!(output, "{}", self.rust_operator(operator))?;
                 self.transpile_node(operand, output)?;
             }
-            ASTNode::Identifier(name) => {
+            ASTNode::Identifier { name, .. } => {
                 write!(output, "{}", name)?;
             }
-            ASTNode::NumberLiteral(value) => {
+            ASTNode::NumberLiteral { value, .. } => {
                 write!(output, "{}", value)?;
             }
-            ASTNode::StringLiteral(value) => {
+            ASTNode::StringLiteral { value, .. } => {
                 write!(output, "\"{}\".to_string()", value.replace("\"", "\\\""))?;
             }
-            ASTNode::RustEscape(nodes) => {
-                for node in nodes {
-                    match node {
-                        ASTNode::RustLiteral(literal) => write!(output, "{}", literal)?,
-                        ASTNode::NailInjection(vec_inner_node) => {
-                            for inner_node in vec_inner_node {
-                                self.transpile_node(inner_node, output)?;
-                            }
-                        }
-                        _ => return Err(std::fmt::Error),
-                    }
-                }
-            }
 
-            ASTNode::RustLiteral(literal) => {
-                write!(output, "{}", literal)?;
-            }
-
-            ASTNode::NailInjection(vec_inner_node) => {
-                for node in vec_inner_node {
-                    self.transpile_node(node, output)?;
-                }
-            }
-            ASTNode::ReturnStatement(value) => {
+            ASTNode::ReturnDeclaration { statement, .. } => {
                 write!(output, "{}return ", self.indent())?;
-                self.transpile_node(value, output)?;
+                self.transpile_node(statement, output)?;
             }
-            ASTNode::StructDeclaration { name, fields } => {
+            ASTNode::StructDeclaration { name, fields, .. } => {
                 // writeln!(output, "{}#[derive(Debug)]", self.indent())?;
                 // writeln!(output, "{}struct {} {{", self.indent(), name)?;
                 // self.indent_level += 1;
@@ -155,7 +134,7 @@ impl Transpiler {
                 // self.indent_level -= 1;
                 // writeln!(output, "{}}}", self.indent())?;
             }
-            ASTNode::EnumDeclaration { name, variants } => {
+            ASTNode::EnumDeclaration { name, variants, .. } => {
                 writeln!(output, "{}#[derive(Debug)]", self.indent())?;
                 writeln!(output, "{}enum {} {{", self.indent(), name)?;
                 self.indent_level += 1;
@@ -170,7 +149,7 @@ impl Transpiler {
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
             }
-            ASTNode::LambdaDeclaration { params, return_type, body } => {
+            ASTNode::LambdaDeclaration { params, data_type, body, .. } => {
                 write!(output, "{}|", self.indent())?;
                 for (i, (param_name, param_type)) in params.iter().enumerate() {
                     if i > 0 {
@@ -178,13 +157,13 @@ impl Transpiler {
                     }
                     write!(output, "{}: {}", param_name, self.rust_type(param_type, ""))?;
                 }
-                writeln!(output, "| -> {} {{", self.rust_async_return_type(return_type, ""))?;
+                writeln!(output, "| -> {} {{", self.rust_async_return_type(data_type, ""))?;
                 self.indent_level += 1;
                 self.transpile_node(body, output)?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
             }
-            ASTNode::StructInstantiation { name, fields } => {
+            ASTNode::StructInstantiation { name, fields, .. } => {
                 // write!(output, "{}{} {{", self.indent(), name)?;
                 // for (i, (field_name, field_value)) in fields.iter().enumerate() {
                 //     if i > 0 {
@@ -195,12 +174,12 @@ impl Transpiler {
                 // }
                 // writeln!(output, "}}")?;
             }
-            ASTNode::EnumVariant { name, variant } => {
+            ASTNode::EnumVariant { name, variant, .. } => {
                 write!(output, "{}{}::{}", self.indent(), name, variant)?;
             }
-            ASTNode::ArrayLiteral(values) => {
+            ASTNode::ArrayLiteral { elements, .. } => {
                 write!(output, "{}vec! [", self.indent())?;
-                for (i, value) in values.iter().enumerate() {
+                for (i, value) in elements.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
@@ -218,19 +197,19 @@ impl Transpiler {
             NailDataTypeDescriptor::Int => "i64".to_string(),
             NailDataTypeDescriptor::Float => "f64".to_string(),
             NailDataTypeDescriptor::Boolean => "bool".to_string(),
-            NailDataTypeDescriptor::ArrayInt => "Vec<i64>".to_string(),
-            NailDataTypeDescriptor::ArrayFloat => "Vec<f64>".to_string(),
-            NailDataTypeDescriptor::ArrayString => "Vec<String>".to_string(),
-            NailDataTypeDescriptor::ArrayBoolean => "Vec<bool>".to_string(),
             NailDataTypeDescriptor::Struct(name) => name.to_string(),
             NailDataTypeDescriptor::Enum(name) => name.to_string(),
             NailDataTypeDescriptor::Void => "()".to_string(),
             NailDataTypeDescriptor::Error => "Result<NailDataType, String>".to_string(),
-            NailDataTypeDescriptor::Any(_) => {
-                panic!("NailDataTypeDescriptor::Any should have converted to specific types before it gets transpiled to Rust")
-            }
+            NailDataTypeDescriptor::ArrayInt => "Vec<i64>".to_string(),
+            NailDataTypeDescriptor::ArrayFloat => "Vec<f64>".to_string(),
+            NailDataTypeDescriptor::ArrayString => "Vec<String>".to_string(),
+            NailDataTypeDescriptor::ArrayBoolean => "Vec<bool>".to_string(),
             NailDataTypeDescriptor::ArrayStruct(name) => format!("Vec<{}>", name),
             NailDataTypeDescriptor::ArrayEnum(name) => format!("Vec<{}>", name),
+            NailDataTypeDescriptor::Any(_) => panic!("NailDataTypeDescriptor::Any data type found during transpilation. This should not happen."),
+            NailDataTypeDescriptor::Fn(_, _) => panic!("NailDataTypeDescriptor::Fn data type found during transpilation. This should not happen."),
+            NailDataTypeDescriptor::Unknown => panic!("NailDataTypeDescriptor::Unknown data type found during transpilation. This should not happen."),
         }
     }
 
