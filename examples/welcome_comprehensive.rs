@@ -1,3 +1,4 @@
+use Nail::std_lib::string::string_from;
 use tokio;
 use Nail::std_lib;
 
@@ -30,7 +31,7 @@ async fn main() {
             return Ok(num / den)        }
     }
     let result: i64 = match     divide(10, 2).await { Ok(v) => v, Err(e) => (|err: String| -> i64 { println!("{}", std_lib::string::concat(vec! ["Error: ".to_string(), err.clone()]));     return 0 })(e) };
-    println!("{}", std_lib::string::concat(vec! ["10 / 2 = ".to_string(), std_lib::convert::to_string(result.clone())]));
+    println!("{}", std_lib::string::concat(vec! ["10 / 2 = ".to_string(), string_from(result.clone())]));
     async fn greet(person_name: String) -> String {
         return std_lib::string::concat(vec! ["Hello, ".to_string(), person_name.clone(), "!".to_string()])    }
     let greeting: String =     greet(name.clone()).await;

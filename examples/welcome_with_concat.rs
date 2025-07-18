@@ -1,19 +1,20 @@
 use tokio;
 use Nail::std_lib;
+use Nail::std_lib::string::string_from;
 
 #[tokio::main]
 async fn main() {
     let name: String = "Alice".to_string();
     let age: i64 = 25;
     let score: f64 = 95.7;
-    let greeting: String = std_lib::convert::to_string(age.clone());
+    let greeting: String = string_from(age.clone());
     let timestamp: i64 = std_lib::time::now();
     println!("{}", "Hello from Nail!".to_string());
     let result: i64 = age + 10;
     let average: f64 = score + 85.3 / 2.0;
     let (parallel_result_0, parallel_result_1, parallel_result_2, parallel_result_3) = tokio::join!(
         async {
-            let task1: String = std_lib::convert::to_string(42);
+            let task1: String = string_from(42);
             ()
         },
         async {

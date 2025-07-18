@@ -29,3 +29,8 @@ pub fn to_uppercase(s: String) -> String {
 pub fn to_lowercase(s: String) -> String {
     s.to_lowercase()
 }
+
+// Convert any type that implements Display to string
+pub fn string_from<T: std::fmt::Display>(value: T) -> String {
+    format!("{}", value)
+}

@@ -25,11 +25,3 @@ got flipped turned upside down, and I'd like to take a minute just sit right
 there, I'll tell you how I became the
 prince of a town called Bel-Air.`"#;
 
-pub static RUST_ESCAPE: &str = "R{ let x:i = 10; }";
-pub static RUST_ESCAPE_MULTILINE: &str = "R{
-x:i = 10;
-}";
-
-pub static RUST_ESCAPE_NESTED_BLOCKS: &str = "R{ { let x:i = 10; } }";
-
-pub static RUST_ESCAPE_NAIL_INJECTION: &str = r#"R{ println!("Hello, ^[name]^! You are ^[ 18 + 8 ]^ years old."); }"#;

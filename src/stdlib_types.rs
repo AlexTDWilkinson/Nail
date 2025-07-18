@@ -120,8 +120,8 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::String,
         });
         
-        // Type conversion - Note: to_string should accept any type, but we'll use Unknown as a placeholder for "any type"
-        m.insert("to_string", StdlibFunctionType {
+        // Type conversion - string_from replaced to_string
+        m.insert("string_from", StdlibFunctionType {
             parameters: vec![StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Unknown }], // Accept any type
             return_type: NailDataTypeDescriptor::String,
         });
@@ -192,8 +192,25 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::Void,
         });
         
+        // safe() handles errors by providing a fallback
+        m.insert("safe", StdlibFunctionType {
+            parameters: vec![
+                StdlibParameter { name: "result".to_string(), param_type: NailDataTypeDescriptor::Unknown }, // Any result type
+                StdlibParameter { name: "error_handler".to_string(), param_type: NailDataTypeDescriptor::Unknown } // Lambda function
+            ],
+            return_type: NailDataTypeDescriptor::Unknown, // Returns the base type
+        });
+        
         // dangerous() unwraps a result type, propagating the error if it fails
         m.insert("dangerous", StdlibFunctionType {
+            parameters: vec![
+                StdlibParameter { name: "result".to_string(), param_type: NailDataTypeDescriptor::Unknown } // Any result type
+            ],
+            return_type: NailDataTypeDescriptor::Unknown, // Returns the base type
+        });
+        
+        // expect() is semantically identical to dangerous but with different intent
+        m.insert("expect", StdlibFunctionType {
             parameters: vec![
                 StdlibParameter { name: "result".to_string(), param_type: NailDataTypeDescriptor::Unknown } // Any result type
             ],

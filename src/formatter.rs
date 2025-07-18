@@ -157,8 +157,21 @@ pub fn format_nail_line(line: &str) -> String {
                     formatted.push_str(" != ");
                     chars.next();
                 } else {
-                    // ! (for error types)
-                    formatted.push(ch);
+                    // Check if this is an error type (e.g., i!e, f!e, s!e)
+                    // Look back to see if we just had a type character
+                    let last_char = formatted.chars().last();
+                    let is_type_char = last_char.map_or(false, |c| matches!(c, 'i' | 'f' | 's' | 'b' | 'a'));
+                    
+                    // Look ahead to see if next char is 'e' (error)
+                    let next_is_e = chars.peek() == Some(&'e');
+                    
+                    if is_type_char && next_is_e {
+                        // This is an error type like i!e, don't add spaces
+                        formatted.push(ch);
+                    } else {
+                        // Regular ! operator
+                        formatted.push(ch);
+                    }
                 }
             }
             '<' => {
@@ -200,6 +213,10 @@ pub fn format_nail_line(line: &str) -> String {
                 if chars.peek() == Some(&'/') {
                     // This is handled by the comment check above, but just in case
                     formatted.push(ch);
+                } else if chars.peek() == Some(&'p') {
+                    // This is /p for parallel end, keep it as one token without spaces
+                    formatted.push(ch);
+                    formatted.push(chars.next().unwrap()); // consume the 'p'
                 } else {
                     // Regular division operator
                     while formatted.ends_with(' ') {
@@ -304,6 +321,10 @@ mod tests {
     fn test_error_types() {
         assert_eq!(format_nail_line("fn div():i!e"), "fn div():i!e");
         assert_eq!(format_nail_line("result:i!e = divide(a,b)"), "result:i!e = divide(a, b)");
+        assert_eq!(format_nail_line("fn divide(num:i, den:i):i!e {"), "fn divide(num:i, den:i):i!e {");
+        assert_eq!(format_nail_line("fn safe(result:i!e, handler:s):i {"), "fn safe(result:i!e, handler:s):i {");
+        assert_eq!(format_nail_line("value:f!e = parse_float(str)"), "value:f!e = parse_float(str)");
+        assert_eq!(format_nail_line("data:s!e = read_file(path)"), "data:s!e = read_file(path)");
     }
 
     #[test]
@@ -325,6 +346,7 @@ mod tests {
         assert_eq!(format_nail_line("numbers:a:i = [1,2,3]"), "numbers:a:i = [1, 2, 3]");
         assert_eq!(format_nail_line("result:i = calc()"), "result:i = calc()");
     }
+    
 
     #[test]
     fn test_complex_expression() {
@@ -408,5 +430,13 @@ mod tests {
         ];
         
         assert_eq!(format_nail_code(&input), expected);
+    }
+
+    #[test]
+    fn test_parallel_syntax() {
+        assert_eq!(format_nail_line("p"), "p");
+        assert_eq!(format_nail_line("/p"), "/p");
+        assert_eq!(format_nail_line("task1:s = `hello`; /p"), "task1:s = `hello`; /p");
+        assert_eq!(format_nail_line("p task1:i = 42; task2:s = `test`; /p"), "p task1:i = 42; task2:s = `test`; /p");
     }
 }

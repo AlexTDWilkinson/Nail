@@ -28,7 +28,7 @@ age:i = 25;
 score:f = 95.7;
 
 // Function Calls and String Conversion
-greeting:s = to_string(age);
+greeting:s = string_from(age);
 timestamp:i = time_now();
 print(`Hello from Nail!`);
 
@@ -38,7 +38,7 @@ average:f = (score + 85.3) / 2.0;
 
 // Parallel Processing (Nail's superpower!)
 parallel {
-   task1:s = to_string(42);
+   task1:s = string_from(42);
    task2:i = time_now();
     print(`Running in parallel!`);
    fast_calc:i = 100 * 50;
@@ -54,8 +54,8 @@ square_root:f = math_sqrt(16.0);
 
 // Print results
 print(`Welcome to Nail programming!`);
-print(to_string(array_length));
-print(to_string(square_root));
+print(string_from(array_length));
+print(string_from(square_root));
 
 // Comments work everywhere!
 final_message:s = `Nail makes parallel programming easy!`; // Inline comment

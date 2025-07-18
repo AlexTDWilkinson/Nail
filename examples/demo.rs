@@ -1,3 +1,4 @@
+use Nail::std_lib::string::string_from;
 use tokio;
 use Nail::std_lib;
 
@@ -26,7 +27,7 @@ async fn main() {
     let current_time: i64 = std_lib::time::now();
     let square_root: f64 = std_lib::math::sqrt(16.0);
     println!("{}", user_name);
-    println!("{}", std_lib::convert::to_string(result_sum.clone()));
-    println!("{}", std_lib::convert::to_string(celsius.clone()));
-    println!("{}", std_lib::convert::to_string(square_root.clone()));
+    println!("{}", string_from(result_sum.clone()));
+    println!("{}", string_from(celsius.clone()));
+    println!("{}", string_from(square_root.clone()));
 }

@@ -119,6 +119,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         | ASTNode::ReturnDeclaration { scope, .. }
         | ASTNode::Block { scope, .. }
         | ASTNode::ParallelBlock { scope, .. }
+        | ASTNode::ParallelAssignment { scope, .. }
         | ASTNode::LambdaDeclaration { scope, .. }
         | ASTNode::FunctionDeclaration { scope, .. }
         | ASTNode::StructInstantiation { scope, .. }
@@ -148,6 +149,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         }
         ASTNode::ReturnDeclaration { statement, code_span, .. } => visit_return_declaration(statement, state, code_span),
         ASTNode::ParallelBlock { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
+        ASTNode::ParallelAssignment { assignments, .. } => visit_parallel_assignment(assignments, state),
         ASTNode::Block { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
         _ => {} // Handle other cases as needed
     }
@@ -442,6 +444,24 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
         ASTNode::FunctionDeclaration { data_type, .. } => data_type.clone(),
         ASTNode::LambdaDeclaration { data_type, .. } => data_type.clone(),
         ASTNode::FunctionCall { name, args, scope, .. } => {
+            // Special handling for error-handling functions that need type inference
+            if name == "safe" || name == "dangerous" || name == "expect" {
+                // These functions take a Result<T, E> and return T
+                // We need to infer T from the first argument
+                if let Some(first_arg) = args.first() {
+                    let arg_type = check_type(first_arg, state);
+                    // If the argument is a Result type (Any with 2 types where second is Error)
+                    if let NailDataTypeDescriptor::Any(types) = arg_type {
+                        if types.len() == 2 && types[1] == NailDataTypeDescriptor::Error {
+                            // Return the base type (first type in the Any)
+                            return types[0].clone();
+                        }
+                    }
+                }
+                // If we can't infer, return Unknown
+                return NailDataTypeDescriptor::Unknown;
+            }
+            
             // Check if this is a stdlib function first
             if let Some(func_type) = stdlib_types::get_stdlib_function_type(name) {
                 return func_type.return_type.clone();
@@ -459,6 +479,10 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
         ASTNode::IfStatement { condition_branches, .. } => condition_branches.first().map_or(NailDataTypeDescriptor::Unknown, |(_, branch)| check_type(branch, state)),
         ASTNode::Block { statements, .. } => statements.last().map_or(NailDataTypeDescriptor::Unknown, |stmt| check_type(stmt, state)),
         ASTNode::ParallelBlock { statements, .. } => statements.last().map_or(NailDataTypeDescriptor::Unknown, |stmt| check_type(stmt, state)),
+        ASTNode::ParallelAssignment { assignments, .. } => {
+            // Return the type of the last assignment, or Unknown if no assignments
+            assignments.last().map_or(NailDataTypeDescriptor::Unknown, |(_, data_type, _)| data_type.clone())
+        },
         ASTNode::StructDeclaration { name, .. } => NailDataTypeDescriptor::Struct(name.to_string()),
         ASTNode::StructInstantiation { name, .. } => NailDataTypeDescriptor::Struct(name.to_string()),
         ASTNode::StructInstantiationField { value, .. } => check_type(value, state),
@@ -640,5 +664,24 @@ fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &
                 add_error(state, format!("Missing return statement in function '{}'", name), code_span);
             }
         }
+    }
+}
+
+fn visit_parallel_assignment(assignments: &mut [(String, NailDataTypeDescriptor, Box<ASTNode>)], state: &mut AnalyzerState) {
+    for (name, data_type, value) in assignments.iter_mut() {
+        // Check the value expression
+        visit_node(value, state);
+        
+        // Type check the assignment
+        let value_type = check_type(value, state);
+        // For now, skip type compatibility check for parallel assignments
+        // The variables will be available in the current scope after tokio::join! completes
+        
+        // Add the variable to the current scope
+        add_symbol(state, Symbol {
+            name: name.clone(),
+            data_type: data_type.clone(),
+            is_used: false,
+        });
     }
 }

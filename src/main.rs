@@ -238,6 +238,35 @@ impl Editor {
         Ok(())
     }
     
+    fn load_file(&mut self, filename: &str) -> io::Result<()> {
+        // Read the file
+        let content = fs::read_to_string(filename)?;
+        
+        // Split into lines
+        self.content = content.lines().map(|s| s.to_string()).collect();
+        
+        // If content is empty, add an empty line
+        if self.content.is_empty() {
+            self.content.push(String::new());
+        }
+        
+        // Reset cursor and scroll position
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+        self.scroll_position = 0;
+        
+        // Update current file and reset modified flag
+        self.current_file = Some(filename.to_string());
+        self.modified = false;
+        
+        // Clear any errors
+        self.code_error = None;
+        self.build_status = BuildStatus::Idle;
+        
+        log::info!("Loaded file: {}", filename);
+        Ok(())
+    }
+    
     fn format_code(&mut self) {
         use crate::formatter::format_nail_code;
         

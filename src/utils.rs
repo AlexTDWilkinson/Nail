@@ -178,7 +178,12 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             let visible_content: Vec<Line> = colorize_code(visible_content, &editor.theme);
 
-            let paragraph = Paragraph::new(visible_content).block(Block::default().borders(Borders::ALL).title("NAIL")).style(Style::default().bg(editor.theme.background).fg(editor.theme.default));
+            let editor_title = if let Some(ref filename) = editor.current_file {
+                format!("NAIL - {}", filename)
+            } else {
+                "NAIL".to_string()
+            };
+            let paragraph = Paragraph::new(visible_content).block(Block::default().borders(Borders::ALL).title(editor_title)).style(Style::default().bg(editor.theme.background).fg(editor.theme.default));
 
             f.render_widget(paragraph, content_layout[0]);
 
@@ -332,6 +337,44 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     Err(e) => {
                                         editor.build_status = BuildStatus::Failed(format!("Save failed: {}", e));
                                         log::error!("Failed to save file: {}", e);
+                                    }
+                                }
+                            }
+                            KeyCode::F(5) => {
+                                // Load example files
+                                log::info!("F5 pressed - cycling through example files");
+                                
+                                // List of example files to cycle through
+                                let example_files = vec![
+                                    "example.nail",
+                                    "examples/web_server.nail",
+                                    "examples/adventure_game.nail",
+                                    "examples/todo_app.nail",
+                                    "examples/simple_web.nail",
+                                    "examples/demo_all_stdlib.nail",
+                                    "examples/functional_demo.nail",
+                                    "examples/test_parallel.nail",
+                                ];
+                                
+                                // Find current file index
+                                let current_index = if let Some(ref current) = editor.current_file {
+                                    example_files.iter().position(|&f| f == current).unwrap_or(0)
+                                } else {
+                                    0
+                                };
+                                
+                                // Load next file in the cycle
+                                let next_index = (current_index + 1) % example_files.len();
+                                let next_file = example_files[next_index];
+                                
+                                match editor.load_file(next_file) {
+                                    Ok(_) => {
+                                        editor.build_status = BuildStatus::Failed(format!("Loaded: {}", next_file));
+                                        log::info!("Successfully loaded file: {}", next_file);
+                                    }
+                                    Err(e) => {
+                                        editor.build_status = BuildStatus::Failed(format!("Failed to load {}: {}", next_file, e));
+                                        log::error!("Failed to load file {}: {}", next_file, e);
                                     }
                                 }
                             }
@@ -588,22 +631,29 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
 
         // if the above is successful, get the parser errors and do the same thing
 
-        let mut ast = match parse(tokens) {
-            Ok(ast) => ast,
+        let (mut ast, parse_succeeded) = match parse(tokens) {
+            Ok(ast) => (ast, true),
             Err(e) => {
                 let mut editor = lock(&editor_arc);
                 editor.code_error = Some(CodeError { message: format!("^ {}", e.message), code_span: e.code_span });
-                ASTNode::default()
+                (ASTNode::default(), false)
             }
         };
 
-        let _ = match checker(&mut ast) {
-            Ok(_) => {}
-            Err(errors) => {
-                let mut editor = lock(&editor_arc);
-                editor.code_error = Some(CodeError { message: format!("^ {}", errors[0].message), code_span: errors[0].code_span.clone() });
-            }
-        };
+        // Only check types if parsing succeeded
+        if parse_succeeded {
+            let _ = match checker(&mut ast) {
+                Ok(_) => {
+                    // Clear any previous errors if everything is successful
+                    let mut editor = lock(&editor_arc);
+                    editor.code_error = None;
+                }
+                Err(errors) => {
+                    let mut editor = lock(&editor_arc);
+                    editor.code_error = Some(CodeError { message: format!("^ {}", errors[0].message), code_span: errors[0].code_span.clone() });
+                }
+            };
+        }
 
         // Sleep to avoid excessive CPU usage
         thread::sleep(Duration::from_millis(250));
@@ -629,7 +679,7 @@ pub fn create_transpilation_cargo_toml() -> String {
 }
 
 static WELCOME_MESSAGE: &str = r#"// Welcome to NAIL - Simple, Safe, Parallel Programming!
-// Press F7 to compile & run, F6 to toggle theme, Ctrl+C to exit
+// Press F7 to compile & run, F6 to toggle theme, F5 to load examples, Ctrl+C to exit
 // Use backticks for strings: `like this`
 
 // === STRUCTS - Custom Data Types ===
@@ -662,17 +712,20 @@ fn divide(num:i, den:i):i!e {
     }
 }
 
-// safe() function handles errors from i!e types
-fn safe(result:i!e, error_handler:s):i {
-    // This would be implemented in the transpiler
-    // For now, just show the function signature
-    r 42; // Placeholder
-}
-
 // Handle errors gracefully with safe()
-result:i = safe(divide(10, 2), `default_error_message`);
+// safe() is a built-in standard library function that works with any T!e type
+result:i = safe(divide(10, 2), |e|:i {
+    print(e); // Print the error message
+    r 0;      // Return default value
+});
 result_msg:a:s = [`10 / 2 = `, to_string(result)];
 print(string_concat(result_msg));
+
+// Use dangerous() when you're certain the operation won't fail (temporary code to be replaced with safe() later)
+safe_result:i = dangerous(divide(10, 2)); // Safe because we know 2 != 0
+
+// Use expect() when failure would make the program useless (critical operations)
+critical_result:i = expect(divide(100, 10)); // Program can't continue if this fails
 
 // === BASIC TYPES ===
 name:s = `Alice`;
@@ -688,12 +741,13 @@ fn greet(person:s):s {
 print(greet(name));
 
 // === PARALLEL PROCESSING - Nail's Superpower! ===
-parallel {
+p
     task1:s = to_string(42);
     task2:i = time_now();
-    print(`Running in parallel!`);
     fast_calc:i = 100 * 50;
-}
+/p
+print(string_concat([`Task 1 result: `, task1]));
+print(string_concat([`Fast calculation: `, to_string(fast_calc)]));
 
 // === ARRAYS ===
 numbers:a:i = [10, 20, 30, 40, 50];

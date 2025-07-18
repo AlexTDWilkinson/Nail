@@ -53,20 +53,20 @@ lazy_static! {
         });
         
         // Type conversion functions
-        m.insert("to_string", StdlibFunction {
-            rust_path: "std_lib::convert::to_string".to_string(),
+        m.insert("string_from", StdlibFunction {
+            rust_path: "std_lib::string::string_from".to_string(),
             is_async: false
             
         });
         
-        m.insert("to_int", StdlibFunction {
-            rust_path: "std_lib::convert::to_int".to_string(),
+        m.insert("int_from", StdlibFunction {
+            rust_path: "std_lib::int::int_from".to_string(),
             is_async: false
             
         });
         
-        m.insert("to_float", StdlibFunction {
-            rust_path: "std_lib::convert::to_float".to_string(),
+        m.insert("float_from", StdlibFunction {
+            rust_path: "std_lib::float::float_from".to_string(),
             is_async: false
             
         });
@@ -244,6 +244,86 @@ lazy_static! {
         });
         m.insert("range_exclusive", StdlibFunction {
             rust_path: "std_lib::array_functional::range_exclusive".to_string(),
+            is_async: false
+            
+        });
+        
+        // Integer functions
+        m.insert("int_abs", StdlibFunction {
+            rust_path: "std_lib::int::abs".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("int_min", StdlibFunction {
+            rust_path: "std_lib::int::min".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("int_max", StdlibFunction {
+            rust_path: "std_lib::int::max".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("int_pow", StdlibFunction {
+            rust_path: "std_lib::int::pow".to_string(),
+            is_async: false
+            
+        });
+        
+        // Float functions
+        m.insert("float_abs", StdlibFunction {
+            rust_path: "std_lib::float::abs".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("float_sqrt", StdlibFunction {
+            rust_path: "std_lib::float::sqrt".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("float_pow", StdlibFunction {
+            rust_path: "std_lib::float::pow".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("float_round", StdlibFunction {
+            rust_path: "std_lib::float::round".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("float_floor", StdlibFunction {
+            rust_path: "std_lib::float::floor".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("float_ceil", StdlibFunction {
+            rust_path: "std_lib::float::ceil".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("float_min", StdlibFunction {
+            rust_path: "std_lib::float::min".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("float_max", StdlibFunction {
+            rust_path: "std_lib::float::max".to_string(),
+            is_async: false
+            
+        });
+        
+        m.insert("float_random", StdlibFunction {
+            rust_path: "std_lib::float::random".to_string(),
             is_async: false
             
         });

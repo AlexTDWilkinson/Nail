@@ -130,6 +130,8 @@ pub enum TokenType {
     IfDeclaration,                           // For if keyword
     ElseDeclaration,                         // For else keyword
     ParallelDeclaration,                     // For parallel keyword
+    ParallelStart,                           // For p keyword  
+    ParallelEnd,                             // For /p keyword
     Assignment,                              // For assignment ie =
     ArrowAssignment,                         // For arrow assignment ie =>
     Identifier(String),                      // For variable names, etc.
@@ -144,9 +146,6 @@ pub enum TokenType {
     BlockOpen,                               // For block start
     BlockClose,                              // For block end
     EndStatementOrExpression,                // For end of statement or expression
-    RustEscape(Vec<Token>),                  // For rust code container
-    RustLiteral(String),                     // For a piece of literal rust code
-    RustNailInsert(Vec<Token>),              // For a nail insert in rust code
     LexerError(String),                      // For lexer_inner errors
     Return,                                  // For return keyword
     EndOfFile,                               // For end of file
@@ -262,8 +261,8 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 }
                 chars.next();
             }
-            _ if is_rust_literal(&mut chars) => {
-                let lexer_output: LexerOutput = lex_rust_escape(&mut chars, state);
+            _ if is_parallel_end(&mut chars) => {
+                let lexer_output = lex_parallel_end(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
                     code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
@@ -967,6 +966,37 @@ fn is_comment(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
     lookahead.next() == Some('/') && lookahead.next() == Some('/')
 }
 
+fn is_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
+    let mut lookahead = chars.clone();
+    if let Some(first) = lookahead.next() {
+        if first == '/' {
+            if let Some(second) = lookahead.next() {
+                return second == 'p';
+            }
+        }
+    }
+    false
+}
+
+fn lex_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
+    let start_line = state.line;
+    let start_column = state.column;
+    
+    // Consume "/p"
+    chars.next(); // consume '/'
+    state.column += 1;
+    chars.next(); // consume 'p'
+    state.column += 1;
+    
+    LexerOutput {
+        token_type: TokenType::ParallelEnd,
+        start_line,
+        start_column,
+        end_line: state.line,
+        end_column: state.column,
+    }
+}
+
 fn lex_comment(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
     let start_line = state.line;
     let start_column = state.column;
@@ -1306,6 +1336,8 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "if" => TokenType::IfDeclaration,
         "else" => TokenType::ElseDeclaration,
         "parallel" => TokenType::ParallelDeclaration,
+        "p" => TokenType::ParallelStart,
+        "/p" => TokenType::ParallelEnd,
         _ => TokenType::Identifier(identifier),
     };
 
@@ -1529,95 +1561,6 @@ fn lex_string_literal(chars: &mut std::iter::Peekable<std::str::Chars>, state: &
     LexerOutput { token_type: TokenType::LexerError("Unterminated string literal".to_string()), start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
-fn is_rust_literal(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
-    let mut lookahead = chars.clone();
-    if lookahead.next() == Some('R') && lookahead.next() == Some('{') {
-        return true;
-    }
-    false
-}
-
-// this is an escape hatch to allow for rust code to be embedded in nail code for the standard library, or mega power users I guess
-fn lex_rust_escape(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
-    let start_line = state.line;
-    let start_column = state.column;
-    // Skip 'R{'
-    advance(chars, state);
-    advance(chars, state);
-    let mut content = Vec::new();
-    let mut rust_literal = String::new();
-    let mut brace_count = 1;
-
-    while let Some(&c) = chars.peek() {
-        match c {
-            '^' if chars.clone().nth(1) == Some('[') => {
-                if !rust_literal.is_empty() {
-                    let token = Token {
-                        token_type: TokenType::RustLiteral(rust_literal),
-                        code_span: CodeSpan { start_line: start_line, end_line: state.line, start_column: start_column, end_column: state.column },
-                    };
-                    content.push(token);
-                    rust_literal = String::new();
-                }
-                // Handle NAIL injection
-                let nail_start_line = state.line;
-                let nail_start_column = state.column;
-                advance(chars, state); // Skip '^'
-                advance(chars, state); // Skip '['
-                let mut nail_content = String::new();
-                while let Some(&c) = chars.peek() {
-                    if c == ']' && chars.clone().nth(1) == Some('^') {
-                        advance(chars, state); // Skip ']'
-                        advance(chars, state); // Skip '^'
-                        break;
-                    }
-                    nail_content.push(c);
-                    advance(chars, state);
-                    if chars.peek().is_none() {
-                        return LexerOutput { token_type: TokenType::LexerError("Unterminated NAIL injection".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
-                    }
-                }
-                // Recursively lex the NAIL content
-                // This is why we seperate lexer_inner, so we can call it recursively w/out losing the line/cols.
-                let nail_tokens = lexer_inner(&nail_content, state);
-                let token = Token {
-                    token_type: TokenType::RustNailInsert(nail_tokens),
-                    code_span: CodeSpan { start_line: nail_start_line, end_line: state.line, start_column: nail_start_column, end_column: state.column },
-                };
-                content.push(token);
-            }
-            '{' => {
-                brace_count += 1;
-                rust_literal.push(c);
-                advance(chars, state);
-            }
-            '}' => {
-                brace_count -= 1;
-                if brace_count == 0 {
-                    advance(chars, state);
-                    break;
-                }
-                rust_literal.push(c);
-                advance(chars, state);
-            }
-            _ => {
-                if chars.peek().is_none() {
-                    return LexerOutput { token_type: TokenType::LexerError("Unterminated rust escape".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
-                }
-                rust_literal.push(c);
-                advance(chars, state);
-            }
-        }
-    }
-
-    if !rust_literal.is_empty() {
-        let token =
-            Token { token_type: TokenType::RustLiteral(rust_literal), code_span: CodeSpan { start_line: start_line, end_line: state.line, start_column: start_column, end_column: state.column } };
-        content.push(token);
-    }
-
-    LexerOutput { token_type: TokenType::RustEscape(content), start_line, end_line: state.line, start_column, end_column: state.column }
-}
 
 fn lex_struct_field_access(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
     let start_line = state.line;
@@ -2223,62 +2166,4 @@ mod tests {
         },]));
     }
 
-    #[test]
-    fn test_rust_escape_hatch() {
-        let result = lexer(RUST_ESCAPE);
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[Token {
-            token_type: RustEscape(vec![Token { token_type: RustLiteral(" let x:i = 10; ".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 19 } }]),
-            code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 19 }
-        }]));
-    }
-
-    #[test]
-    fn test_rust_escape_hatch_multiline() {
-        let result = lexer(RUST_ESCAPE_MULTILINE);
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[Token {
-            token_type: RustEscape(vec![Token { token_type: RustLiteral("\nx:i = 10;\n".to_string()), code_span: CodeSpan { start_line: 1, end_line: 3, start_column: 1, end_column: 2 } }]),
-            code_span: CodeSpan { start_line: 1, end_line: 3, start_column: 1, end_column: 2 }
-        }]));
-    }
-
-    #[test]
-    fn test_rust_escape_nested_blocks() {
-        let result = lexer(RUST_ESCAPE_NESTED_BLOCKS);
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[Token {
-            token_type: RustEscape(vec![Token { token_type: RustLiteral(" { let x:i = 10; } ".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 23 } }]),
-            code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 23 }
-        }]));
-    }
-
-    #[test]
-    fn test_rust_escape_nail_injection() {
-        let result = lexer(RUST_ESCAPE_NAIL_INJECTION);
-        println!("RESULT: {:#?}", result);
-        assert_eq!(result.len(), 1);
-        if let TokenType::RustEscape(content) = &result[0].token_type {
-            assert_eq!(content.len(), 5);
-            assert!(matches!(&content[0].token_type, TokenType::RustLiteral(s) if s == " println!(\"Hello, "));
-            if let TokenType::RustNailInsert(nail_tokens) = &content[1].token_type {
-                assert_eq!(nail_tokens.len(), 1);
-                assert!(matches!(&nail_tokens[0].token_type, TokenType::Identifier(s) if s == "name"));
-            } else {
-                panic!("Expected RustNailInsert");
-            }
-            assert!(matches!(&content[2].token_type, TokenType::RustLiteral(s) if s == "! You are "));
-            if let TokenType::RustNailInsert(nail_tokens) = &content[3].token_type {
-                assert_eq!(nail_tokens.len(), 3);
-                assert!(matches!(&nail_tokens[0].token_type, TokenType::Integer(s) if s == "18"));
-                assert!(matches!(&nail_tokens[1].token_type, TokenType::Operator(Operation::Add)));
-                assert!(matches!(&nail_tokens[2].token_type, TokenType::Integer(s) if s == "8"));
-            } else {
-                panic!("Expected RustNailInsert");
-            }
-            assert!(matches!(&content[4].token_type, TokenType::RustLiteral(s) if s == " years old.\"); "));
-        } else {
-            panic!("Expected RustEscape token");
-        }
-    }
 }

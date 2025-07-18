@@ -1,5 +1,6 @@
 use tokio;
 use Nail::std_lib;
+use Nail::std_lib::string::string_from;
 
 #[tokio::main]
 async fn main() {
@@ -12,6 +13,6 @@ async fn main() {
     let min_test: f64 = std_lib::math::min(5.0, 3.0);
     let max_test: f64 = std_lib::math::max(5.0, 3.0);
     let random_test: f64 = std_lib::math::random();
-    let result: String = std_lib::string::concat(vec! ["abs(-5.7) = ".to_string(), std_lib::convert::to_string(abs_test.clone()), ", sqrt(16) = ".to_string(), std_lib::convert::to_string(sqrt_test.clone()), ", pow(2,3) = ".to_string(), std_lib::convert::to_string(pow_test.clone()), ", round(3.7) = ".to_string(), std_lib::convert::to_string(round_test.clone()), ", floor(3.7) = ".to_string(), std_lib::convert::to_string(floor_test.clone()), ", ceil(3.2) = ".to_string(), std_lib::convert::to_string(ceil_test.clone()), ", min(5,3) = ".to_string(), std_lib::convert::to_string(min_test.clone()), ", max(5,3) = ".to_string(), std_lib::convert::to_string(max_test.clone()), ", random = ".to_string(), std_lib::convert::to_string(random_test.clone())]);
+    let result: String = std_lib::string::concat(vec! ["abs(-5.7) = ".to_string(), string_from(abs_test.clone()), ", sqrt(16) = ".to_string(), string_from(sqrt_test.clone()), ", pow(2,3) = ".to_string(), string_from(pow_test.clone()), ", round(3.7) = ".to_string(), string_from(round_test.clone()), ", floor(3.7) = ".to_string(), string_from(floor_test.clone()), ", ceil(3.2) = ".to_string(), string_from(ceil_test.clone()), ", min(5,3) = ".to_string(), string_from(min_test.clone()), ", max(5,3) = ".to_string(), string_from(max_test.clone()), ", random = ".to_string(), string_from(random_test.clone())]);
     println!("{}", result);
 }

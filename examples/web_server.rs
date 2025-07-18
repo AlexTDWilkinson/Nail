@@ -1,10 +1,11 @@
 use tokio;
 use Nail::std_lib;
+use Nail::std_lib::string::string_from;
 
 #[tokio::main]
 async fn main() {
     let port: i64 = 3000;
-    let port_string: String = std_lib::convert::to_string(port.clone());
+    let port_string: String = string_from(port.clone());
     let html_content: String = std_lib::string::concat(vec! ["
 <!DOCTYPE html>
 <html>

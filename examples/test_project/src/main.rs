@@ -1,5 +1,6 @@
 use tokio;
 use Nail::std_lib;
+use Nail::std_lib::string::string_from;
 
 #[tokio::main]
 async fn main() {
@@ -28,11 +29,11 @@ async fn main() {
             return Ok(num / den)        }
     }
     let result: i64 = match     safe_divide(10, 2).await { Ok(v) => v, Err(e) => (|err: String| -> i64 { println!("{}", "Error occurred: ".to_string() + err);     return -1 })(e) };
-    println!("{}", "10 / 2 = ".to_string() + std_lib::convert::to_string(result));
+    println!("{}", "10 / 2 = ".to_string() + string_from(result));
     async fn add(first: i64, second: i64) -> i64 {
         return first + second    }
     let total: i64 =     add(5, 3).await;
-    println!("{}", "5 + 3 = ".to_string() + std_lib::convert::to_string(total));
+    println!("{}", "5 + 3 = ".to_string() + string_from(total));
     if status ==     Status::Active {
         println!("{}", "System is active".to_string());
     }

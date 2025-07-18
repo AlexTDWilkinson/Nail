@@ -1,3 +1,4 @@
+use Nail::std_lib::string::string_from;
 use tokio;
 use Nail::std_lib;
 
@@ -28,11 +29,11 @@ async fn main() {
             return Ok(num / den)        }
     }
     let result: i64 = match     safe_divide(10, 2).await { Ok(v) => v, Err(e) => (|err: String| -> i64 { println!("{}", std_lib::string::concat(vec! ["Error occurred: ".to_string(), err.clone()]));     return -1 })(e) };
-    println!("{}", std_lib::string::concat(vec! ["10 / 2 = ".to_string(), std_lib::convert::to_string(result.clone())]));
+    println!("{}", std_lib::string::concat(vec! ["10 / 2 = ".to_string(), string_from(result.clone())]));
     async fn add(first: i64, second: i64) -> i64 {
         return first + second    }
     let total: i64 =     add(5, 3).await;
-    println!("{}", std_lib::string::concat(vec! ["5 + 3 = ".to_string(), std_lib::convert::to_string(total.clone())]));
+    println!("{}", std_lib::string::concat(vec! ["5 + 3 = ".to_string(), string_from(total.clone())]));
     if status ==     Status::Active {
         println!("{}", "System is active".to_string());
     }

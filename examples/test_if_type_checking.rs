@@ -1,5 +1,6 @@
 use tokio;
 use Nail::std_lib;
+use Nail::std_lib::string::string_from;
 
 #[tokio::main]
 async fn main() {
@@ -9,7 +10,7 @@ async fn main() {
     }
     else {
         let temp: i64 = 100;
-        println!("{}", std_lib::convert::to_string(temp.clone()));
+        println!("{}", string_from(temp.clone()));
     }
     if age > 18 {
         println!("{}", "over 18".to_string());

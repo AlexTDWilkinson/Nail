@@ -17,6 +17,7 @@ pub enum ASTNode {
     ConstDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     IfStatement { condition_branches: Vec<(Box<ASTNode>, Box<ASTNode>)>, else_branch: Option<Box<ASTNode>>, code_span: CodeSpan, scope: usize },
     ParallelBlock { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    ParallelAssignment { assignments: Vec<(String, NailDataTypeDescriptor, Box<ASTNode>)>, code_span: CodeSpan, scope: usize },
     Block { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     BinaryOperation { left: Box<ASTNode>, operator: Operation, right: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     UnaryOperation { operator: Operation, operand: Box<ASTNode>, code_span: CodeSpan, scope: usize },
@@ -124,6 +125,7 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::ConstDeclaration => parse_const_declaration(state),
             TokenType::IfDeclaration => parse_if_statement_expr(state, false),
             TokenType::ParallelDeclaration => parse_parallel_block(state),
+            TokenType::ParallelStart => parse_parallel_block_new(state),
             TokenType::Return => parse_return_statement(state),
             TokenType::LambdaSignature(_) => parse_lambda_declaration(state),
             TokenType::BlockOpen => parse_block(state),
@@ -245,29 +247,60 @@ fn parse_lambda_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
         loop {
             match lambda_tokens.next() {
                 Some(Token { token_type: TokenType::Identifier(param_name), .. }) => {
-                    if let Some(Token { token_type: TokenType::TypeDeclaration(type_desc), .. }) = lambda_tokens.next() {
-                        params.push((param_name.clone(), type_desc.clone()));
+                    // Check what comes next
+                    let next_token = lambda_tokens.next();
+                    match next_token {
+                        Some(Token { token_type: TokenType::TypeDeclaration(type_desc), .. }) => {
+                            // Parameter has explicit type
+                            params.push((param_name.clone(), type_desc.clone()));
 
-                        // Check for comma or end of parameters
-                        match lambda_tokens.next() {
-                            Some(Token { token_type: TokenType::Comma, .. }) => continue,
-                            Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
-                                data_type = rt;
-                                break;
-                            }
-                            Some(other) => return Err(CodeError { message: format!("Expected comma or return type declaration, found {:?}", other.token_type), code_span: other.code_span.clone() }),
-                            None => {
-                                return Err(CodeError {
-                                    message: "Unexpected end of lambda declaration".to_string(),
-                                    code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
-                                })
+                            // Check for comma or end of parameters
+                            match lambda_tokens.next() {
+                                Some(Token { token_type: TokenType::Comma, .. }) => continue,
+                                Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
+                                    data_type = rt;
+                                    break;
+                                }
+                                Some(other) => return Err(CodeError { message: format!("Expected comma or return type declaration, found {:?}", other.token_type), code_span: other.code_span.clone() }),
+                                None => {
+                                    return Err(CodeError {
+                                        message: "Unexpected end of lambda declaration".to_string(),
+                                        code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
+                                    })
+                                }
                             }
                         }
-                    } else {
-                        return Err(CodeError {
-                            message: "Expected type declaration for lambda parameter".to_string(),
-                            code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
-                        });
+                        Some(Token { token_type: TokenType::Comma, .. }) => {
+                            // Parameter without type followed by comma - infer error type if param name is 'e'
+                            if param_name == "e" {
+                                params.push((param_name.clone(), NailDataTypeDescriptor::Error));
+                                continue;
+                            } else {
+                                return Err(CodeError {
+                                    message: format!("Parameter '{}' requires a type declaration", param_name),
+                                    code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
+                                });
+                            }
+                        }
+                        Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
+                            // Parameter without type followed by return type - infer error type if param name is 'e'
+                            if param_name == "e" {
+                                params.push((param_name.clone(), NailDataTypeDescriptor::Error));
+                                data_type = rt;
+                                break;
+                            } else {
+                                return Err(CodeError {
+                                    message: format!("Parameter '{}' requires a type declaration", param_name),
+                                    code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
+                                });
+                            }
+                        }
+                        _ => {
+                            return Err(CodeError {
+                                message: "Expected type declaration for lambda parameter".to_string(),
+                                code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
+                            });
+                        }
                     }
                 }
                 Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
@@ -601,6 +634,40 @@ fn parse_parallel_block(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     }
     let _ = expect_token(state, TokenType::BlockClose)?;
     Ok(ASTNode::ParallelBlock { statements, code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()), scope: GLOBAL_SCOPE })
+}
+
+fn parse_parallel_block_new(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::ParallelStart)?;
+    let mut assignments = vec![];
+    
+    while state.tokens.peek().map_or(false, |t| t.token_type != TokenType::ParallelEnd) {
+        let stmt = parse_statement(state)?;
+        
+        // Only const declarations are allowed in parallel assignments
+        match stmt {
+            ASTNode::ConstDeclaration { name, data_type, value, .. } => {
+                assignments.push((name, data_type, value));
+            }
+            _ => {
+                return Err(CodeError {
+                    message: "Only const declarations are allowed in parallel assignments. Use 'name:type = expression;' syntax.".to_string(),
+                    code_span: start_span.clone(),
+                });
+            }
+        }
+    }
+    
+    let end_span = expect_token(state, TokenType::ParallelEnd)?;
+    Ok(ASTNode::ParallelAssignment { 
+        assignments, 
+        code_span: CodeSpan {
+            start_line: start_span.start_line,
+            start_column: start_span.start_column,
+            end_line: end_span.end_line,
+            end_column: end_span.end_column,
+        }, 
+        scope: GLOBAL_SCOPE 
+    })
 }
 
 fn parse_return_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
@@ -999,6 +1066,69 @@ mod tests {
             assert!(matches!(statements.get(0), Some(ASTNode::LambdaDeclaration { .. })));
         } else {
             panic!("Expected Program node");
+        }
+    }
+
+    #[test]
+    fn test_lambda_with_error_parameter() {
+        // Test that |e|:i syntax works for error parameters
+        let input = r#"|e|:i { r 0; }"#;
+        
+        let result = parse(lexer(input));
+        assert!(result.is_ok(), "Failed to parse lambda with error parameter: {:?}", result.err());
+        
+        let ast = result.unwrap();
+        
+        // The lambda should be at the top level
+        if let ASTNode::Program { statements, .. } = ast {
+            assert!(!statements.is_empty(), "Program should have statements");
+            
+            if let Some(ASTNode::LambdaDeclaration { params, data_type, .. }) = statements.first() {
+                // Check that there's one parameter named 'e' with Error type
+                assert_eq!(params.len(), 1, "Lambda should have exactly one parameter");
+                assert_eq!(params[0].0, "e", "Parameter should be named 'e'");
+                assert_eq!(params[0].1, NailDataTypeDescriptor::Error, "Parameter 'e' should have Error type");
+                
+                // Check return type is Int
+                assert_eq!(*data_type, NailDataTypeDescriptor::Int, "Lambda should return Int");
+            } else {
+                panic!("Expected LambdaDeclaration at top level");
+            }
+        } else {
+            panic!("Expected Program node");
+        }
+    }
+    
+    fn find_lambda_in_ast(node: &ASTNode) -> Option<&ASTNode> {
+        match node {
+            ASTNode::LambdaDeclaration { .. } => Some(node),
+            ASTNode::Program { statements, .. } => {
+                for stmt in statements {
+                    if let Some(found) = find_lambda_in_ast(stmt) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            ASTNode::FunctionDeclaration { body, .. } => find_lambda_in_ast(body),
+            ASTNode::Block { statements, .. } => {
+                for stmt in statements {
+                    if let Some(found) = find_lambda_in_ast(stmt) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            ASTNode::ConstDeclaration { value, .. } => find_lambda_in_ast(value),
+            ASTNode::FunctionCall { args, .. } => {
+                for arg in args {
+                    if let Some(found) = find_lambda_in_ast(arg) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            _ => None,
         }
     }
 

@@ -1,5 +1,5 @@
 // Welcome to NAIL - Simple, Safe, Parallel Programming!
-// Press F7 to compile & run, F6 to toggle theme, Ctrl+C to exit
+// Press F7 to compile & run, F6 to toggle theme, F5 to load examples, Ctrl+C to exit
 // Use backticks for strings: `like this`
 
 // === STRUCTS - Custom Data Types ===
@@ -32,17 +32,20 @@ fn divide(num:i, den:i):i!e {
     }
 }
 
-// safe() function handles errors from i!e types
-fn safe(result:i!e, error_handler:s):i {
-    // This would be implemented in the transpiler
-    // For now, just show the function signature
-    r 42; // Placeholder
-}
-
 // Handle errors gracefully with safe()
-result:i = safe(divide(10, 2), `default_error_message`);
+// safe() is a built-in standard library function that works with any T!e type
+result:i = safe(divide(10, 2), |e|:i {
+    print(e); // Print the error message
+    r 0; // Return default value
+});
 result_msg:a:s = [`10 / 2 = `, to_string(result)];
 print(string_concat(result_msg));
+
+// Use dangerous() when you're certain the operation won't fail (temporary code to be replaced with safe() later)
+safe_result:i = dangerous(divide(10, 2)); // Safe because we know 2 != 0
+
+// Use expect() when failure would make the program useless (critical operations)
+critical_result:i = expect(divide(100, 10)); // Program can't continue if this fails
 
 // === BASIC TYPES ===
 name:s = `Alice`;
@@ -58,12 +61,13 @@ fn greet(person:s):s {
 print(greet(name));
 
 // === PARALLEL PROCESSING - Nail's Superpower! ===
-parallel {
-    task1:s = to_string(42);
-    task2:i = time_now();
-    print(`Running in parallel!`);
-    fast_calc:i = 100 * 50;
-}
+p
+task1:s = to_string(42);
+task2:i = time_now();
+fast_calc:i = 100 * 50;
+/ p
+
+print(string_concat([`This is the async one used outside the p tag`, task1]));
 
 // === ARRAYS ===
 numbers:a:i = [10, 20, 30, 40, 50];
@@ -82,7 +86,7 @@ fn is_even_func(n:i):b {
 
 fn add_func(acc:i, n:i):i { r acc + n; }
 
-fn square_func(n:i):i { r n * n;}
+fn square_func(n:i):i { r n * n; }
 
 // Map - transform each element
 doubled:a:i = map_int(nums, double_func);
@@ -96,8 +100,11 @@ sum_msg:a:s = [`Sum 1-5: `, to_string(sum)];
 print(string_concat(sum_msg));
 
 // Chain operations - sum of squares
-sum_squares:i = reduce_int(map_int(nums, square_func), 0, add_func);
-
+sum_squares:i = reduce_int(
+map_int(nums, square_func),
+0,
+add_func
+);
 squares_msg:a:s = [`Sum of squares: `, to_string(sum_squares)];
 print(string_concat(squares_msg));
 

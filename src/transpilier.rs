@@ -55,14 +55,14 @@ impl Transpiler {
                 }
             }
             ASTNode::FunctionDeclaration { name, params, data_type, body, .. } => {
-                write!(output, "{}async fn {}(", self.indent(), name)?;
+                write!(output, "{}fn {}(", self.indent(), name)?;
                 for (i, (param_name, param_type)) in params.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
                     write!(output, "{}: {}", param_name, self.rust_type(param_type, name))?;
                 }
-                writeln!(output, ") -> {} {{", self.rust_async_return_type(data_type, name))?;
+                writeln!(output, ") -> {} {{", self.rust_type(data_type, name))?;
                 
                 // Store the current function's context
                 let prev_return_type = self.current_function_return_type.clone();
@@ -161,6 +161,9 @@ impl Transpiler {
             }
             ASTNode::ParallelBlock { statements, .. } => {
                 self.transpile_parallel_block(statements, output)?;
+            }
+            ASTNode::ParallelAssignment { assignments, .. } => {
+                self.transpile_parallel_assignment(assignments, output)?;
             }
             ASTNode::BinaryOperation { left, operator, right, .. } => {
                 self.transpile_node_internal(left, output, false)?;
@@ -311,7 +314,7 @@ impl Transpiler {
             NailDataTypeDescriptor::Struct(name) => name.to_string(),
             NailDataTypeDescriptor::Enum(name) => name.to_string(),
             NailDataTypeDescriptor::Void => "()".to_string(),
-            NailDataTypeDescriptor::Error => "Result<NailDataType, String>".to_string(),
+            NailDataTypeDescriptor::Error => "String".to_string(),
             NailDataTypeDescriptor::ArrayInt => "Vec<i64>".to_string(),
             NailDataTypeDescriptor::ArrayFloat => "Vec<f64>".to_string(),
             NailDataTypeDescriptor::ArrayString => "Vec<String>".to_string(),
@@ -423,6 +426,24 @@ impl Transpiler {
                 writeln!(output, ";")?;
             }
             return Ok(());
+        } else if name == "expect" {
+            // expect(expression) - semantically identical to dangerous but with different intent
+            if args.len() != 1 {
+                return Err(std::fmt::Error);
+            }
+            
+            if add_indent {
+                write!(output, "{}", self.indent())?;
+            }
+            
+            // Generate: expression.unwrap_or_else(|e| panic!("Nail Error: {}", e))
+            self.transpile_node_internal(&args[0], output, false)?;
+            write!(output, ".unwrap_or_else(|nail_error| panic!(\"🔨 Nail Error: {{}}\", nail_error))")?;
+            
+            if add_indent {
+                writeln!(output, ";")?;
+            }
+            return Ok(());
         }
         
         // Check if it's a stdlib function
@@ -501,7 +522,7 @@ impl Transpiler {
                     self.transpile_node_internal(arg, output, false)?;
                 }
             }
-            write!(output, ").await")?;
+            write!(output, ")")?;
             if add_indent {
                 writeln!(output, ";")?;
             }
@@ -515,13 +536,30 @@ impl Transpiler {
             return Ok(());
         }
 
-        // Generate variable names for results
+        // Extract variable names from const declarations and generate expressions
         let mut var_names = Vec::new();
-        for (i, _) in statements.iter().enumerate() {
-            var_names.push(format!("parallel_result_{}", i));
+        let mut expressions = Vec::new();
+        
+        for stmt in statements.iter() {
+            match stmt {
+                ASTNode::ConstDeclaration { name, value, .. } => {
+                    var_names.push(name.clone());
+                    expressions.push(value.as_ref());
+                }
+                ASTNode::FunctionCall { .. } => {
+                    // Function calls that don't assign to variables get a placeholder name
+                    var_names.push("_".to_string());
+                    expressions.push(stmt);
+                }
+                _ => {
+                    // Other statements get placeholder names
+                    var_names.push("_".to_string());
+                    expressions.push(stmt);
+                }
+            }
         }
 
-        // Generate the destructuring assignment
+        // Generate the destructuring assignment with actual variable names
         write!(output, "{}let (", self.indent())?;
         for (i, var_name) in var_names.iter().enumerate() {
             if i > 0 {
@@ -531,26 +569,54 @@ impl Transpiler {
         }
         writeln!(output, ") = tokio::join!(")?;
 
-        // Generate the async blocks
+        // Generate the async blocks that return the computed values
         self.indent_level += 1;
-        for (i, stmt) in statements.iter().enumerate() {
+        for (i, expr) in expressions.iter().enumerate() {
             if i > 0 {
                 writeln!(output, ",")?;
             }
-            write!(output, "{}async {{", self.indent())?;
-            self.indent_level += 1;
-            writeln!(output)?;
-            self.transpile_node_internal(stmt, output, true)?;
-            // For async blocks, we need to return () for statements that don't have return values
-            match stmt {
-                ASTNode::ConstDeclaration { .. } | ASTNode::FunctionCall { .. } => {
-                    // These statements don't return values, so we need an empty return
-                    writeln!(output, "{}()", self.indent())?;
-                }
-                _ => {} // Other nodes might return values
+            write!(output, "{}async {{ ", self.indent())?;
+            
+            // For const declarations, return just the value expression
+            // For other expressions, return the expression itself
+            self.transpile_node_internal(expr, output, false)?;
+            
+            write!(output, " }}")?;
+        }
+        self.indent_level -= 1;
+        writeln!(output)?;
+        writeln!(output, "{});", self.indent())?;
+
+        Ok(())
+    }
+
+    fn transpile_parallel_assignment(&mut self, assignments: &[(String, NailDataTypeDescriptor, Box<ASTNode>)], output: &mut String) -> Result<(), std::fmt::Error> {
+        if assignments.is_empty() {
+            return Ok(());
+        }
+
+        // Generate the destructuring assignment with actual variable names
+        write!(output, "{}let (", self.indent())?;
+        for (i, (var_name, _, _)) in assignments.iter().enumerate() {
+            if i > 0 {
+                write!(output, ", ")?;
             }
-            self.indent_level -= 1;
-            write!(output, "{}}}", self.indent())?;
+            write!(output, "{}", var_name)?;
+        }
+        writeln!(output, ") = tokio::join!(")?;
+
+        // Generate the async blocks that return the computed values
+        self.indent_level += 1;
+        for (i, (_, _, value)) in assignments.iter().enumerate() {
+            if i > 0 {
+                writeln!(output, ",")?;
+            }
+            write!(output, "{}async {{ ", self.indent())?;
+            
+            // Return the value expression
+            self.transpile_node_internal(value, output, false)?;
+            
+            write!(output, " }}")?;
         }
         self.indent_level -= 1;
         writeln!(output)?;
