@@ -3,7 +3,7 @@ use Nail::std_lib;
 
 #[tokio::main]
 async fn main() {
-    let greeting: String = "Hello from Nail!".string_from();
+    let greeting: String = "Hello from Nail!".to_string();
     let number: i64 = 42;
     let pi: f64 = 3.14;
 }

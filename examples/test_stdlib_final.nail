@@ -38,7 +38,7 @@ num_str:s = `42`;
 converted_num:i = to_int(num_str);
 float_str:s = `3.14`;
 converted_float:f = to_float(float_str);
-final_str:s = string_from(converted_num);
+final_str:s =from(converted_num);
 
 // Path operations
 joined_path:s = path_join(`/home`, `user`);
@@ -48,7 +48,7 @@ path_exists_check:b = path_exists(joined_path);
 args:a:s = env_args();
 
 // Create final output
-v parts:a:s = [upper, ` | `, string_from(sqrt_val), ` | `, joined, ` | `, string_from(arr_len)];
+v parts:a:s = [upper, ` | `,from(sqrt_val), ` | `, joined, ` | `,from(arr_len)];
 output:s = string_concat(parts);
 
 // Print result

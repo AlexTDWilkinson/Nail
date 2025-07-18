@@ -1,6 +1,6 @@
 use tokio;
 use Nail::std_lib;
-use Nail::std_lib::string::string_from;
+use Nail::std_lib::string::from;
 
 #[tokio::main]
 async fn main() {
@@ -22,17 +22,17 @@ async fn main() {
         Playing,
         GameOver,
     }
-    let name: String = "Alice".string_from();
+    let name: String = "Alice".to_string();
     let age: i64 = 25;
     let score: f64 = 95.7;
-    let greeting: String = string_from(age.clone());
+    let greeting: String =from(age.clone());
     let timestamp: i64 = std_lib::time::now();
-    println!("{}", "Hello from Nail!".string_from());
+    println!("{}", "Hello from Nail!".to_string());
     let result: i64 = age + 10;
     let average: f64 = score + 85.3 / 2.0;
     let (parallel_result_0, parallel_result_1, parallel_result_2, parallel_result_3) = tokio::join!(
         async {
-            let task1: String = string_from(42);
+            let task1: String =from(42);
             ()
         },
         async {
@@ -40,7 +40,7 @@ async fn main() {
             ()
         },
         async {
-            println!("{}", "Running in parallel!".string_from());
+            println!("{}", "Running in parallel!".to_string());
             ()
         },
         async {
@@ -52,8 +52,8 @@ async fn main() {
     let array_length: i64 = std_lib::array::len(numbers.clone());
     let current_time: i64 = std_lib::time::now();
     let square_root: f64 = std_lib::math::sqrt(16.0);
-    println!("{}", "Welcome to Nail programming!".string_from());
-    println!("{}", string_from(array_length.clone()));
-    println!("{}", string_from(square_root.clone()));
-    let final_message: String = "Nail makes parallel programming easy!".string_from();
+    println!("{}", "Welcome to Nail programming!".to_string());
+    println!("{}",from(array_length.clone()));
+    println!("{}",from(square_root.clone()));
+    let final_message: String = "Nail makes parallel programming easy!".to_string();
 }

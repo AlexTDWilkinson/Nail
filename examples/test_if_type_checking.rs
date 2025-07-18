@@ -1,35 +1,31 @@
 use tokio;
 use Nail::std_lib;
-use Nail::std_lib::string::string_from;
+use Nail::std_lib::string::from;
 
 #[tokio::main]
 async fn main() {
     let age: i64 = 25;
     if age > 18 {
-        println!("{}", "adult".string_from());
-    }
-    else {
+        println!("{}", "adult".to_string());
+    } else {
         let temp: i64 = 100;
-        println!("{}", string_from(temp.clone()));
+        println!("{}", from(temp.clone()));
     }
     if age > 18 {
-        println!("{}", "over 18".string_from());
+        println!("{}", "over 18".to_string());
     }
     if age > 18 {
-    }
-    else {
+    } else {
     }
     if age < 18 {
-        println!("{}", "minor".string_from());
-        println!("{}", "restricted access".string_from());
+        println!("{}", "minor".to_string());
+        println!("{}", "restricted access".to_string());
+    } else if age < 65 {
+        println!("{}", "adult".to_string());
+        println!("{}", "full access".to_string());
+    } else {
+        println!("{}", "senior".to_string());
+        println!("{}", "special benefits".to_string());
     }
-    else if age < 65 {
-        println!("{}", "adult".string_from());
-        println!("{}", "full access".string_from());
-    }
-    else {
-        println!("{}", "senior".string_from());
-        println!("{}", "special benefits".string_from());
-    }
-    println!("{}", "Type checking test complete".string_from());
+    println!("{}", "Type checking test complete".to_string());
 }

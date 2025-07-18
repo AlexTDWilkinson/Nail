@@ -1,4 +1,4 @@
-use Nail::std_lib::string::string_from;
+use Nail::std_lib::string::from;
 use tokio;
 use Nail::std_lib;
 
@@ -9,25 +9,25 @@ async fn main() {
     let result_sum: i64 = first_number + second_number;
     let temperature: f64 = 98.6;
     let celsius: f64 = temperature - 32.0 * 5.0 / 9.0;
-    let user_name: String = "Grug".string_from();
+    let user_name: String = "Grug".to_string();
     let (parallel_result_0, parallel_result_1, parallel_result_2) = tokio::join!(
         async {
-            println!("{}", "Processing task one".string_from());
+            println!("{}", "Processing task one".to_string());
             ()
         },
         async {
-            println!("{}", "Processing task two".string_from());
+            println!("{}", "Processing task two".to_string());
             ()
         },
         async {
-            println!("{}", "Processing task three".string_from());
+            println!("{}", "Processing task three".to_string());
             ()
         }
     );
     let current_time: i64 = std_lib::time::now();
     let square_root: f64 = std_lib::math::sqrt(16.0);
     println!("{}", user_name);
-    println!("{}", string_from(result_sum.clone()));
-    println!("{}", string_from(celsius.clone()));
-    println!("{}", string_from(square_root.clone()));
+    println!("{}",from(result_sum.clone()));
+    println!("{}",from(celsius.clone()));
+    println!("{}",from(square_root.clone()));
 }

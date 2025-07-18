@@ -1,13 +1,13 @@
 use tokio;
 use Nail::std_lib;
-use Nail::std_lib::string::string_from;
+use Nail::std_lib::string::from;
 
 #[tokio::main]
 async fn main() {
-    let greeting: String = "Hello, World!".string_from();
+    let greeting: String = "Hello, World!".to_string();
     let upper: String = std_lib::string::to_uppercase(greeting.clone());
     let x_value: f64 = std_lib::math::sqrt(16.0);
     let rounded: f64 = std_lib::math::round(3.7);
-    let result: String = string_from(x_value.clone());
+    let result: String =from(x_value.clone());
     println!("{}", result);
 }

@@ -1,20 +1,20 @@
 use tokio;
 use Nail::std_lib;
-use Nail::std_lib::string::string_from;
+use Nail::std_lib::string::from;
 
 #[tokio::main]
 async fn main() {
-    let name: String = "Alice".string_from();
+    let name: String = "Alice".to_string();
     let age: i64 = 25;
     let score: f64 = 95.7;
-    let greeting: String = string_from(age.clone());
+    let greeting: String = from(age.clone());
     let timestamp: i64 = std_lib::time::now();
-    println!("{}", "Hello from Nail!".string_from());
+    println!("{}", "Hello from Nail!".to_string());
     let result: i64 = age + 10;
     let average: f64 = score + 85.3 / 2.0;
     let (parallel_result_0, parallel_result_1, parallel_result_2, parallel_result_3) = tokio::join!(
         async {
-            let task1: String = string_from(42);
+            let task1: String = from(42);
             ()
         },
         async {
@@ -22,7 +22,7 @@ async fn main() {
             ()
         },
         async {
-            println!("{}", "Running in parallel!".string_from());
+            println!("{}", "Running in parallel!".to_string());
             ()
         },
         async {
@@ -30,11 +30,11 @@ async fn main() {
             ()
         }
     );
-    println!("{}", "Welcome to Nail programming!".string_from());
-    let full_name: String = std_lib::string::concat(vec! [name.clone(), " Johnson".string_from()]);
-    let message: String = std_lib::string::concat(vec! ["User ".string_from(), name.clone()]);
+    println!("{}", "Welcome to Nail programming!".to_string());
+    let full_name: String = std_lib::string::concat(vec![name.clone(), " Johnson".to_string()]);
+    let message: String = std_lib::string::concat(vec!["User ".to_string(), name.clone()]);
     let bonus: i64 = age * 2;
     let current_time: i64 = std_lib::time::now();
     let name_length: i64 = std_lib::string::len(name.clone());
-    let final_message: String = "Nail makes parallel programming easy!".string_from();
+    let final_message: String = "Nail makes parallel programming easy!".to_string();
 }

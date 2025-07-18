@@ -26,7 +26,7 @@ parsed_number:i = to_int(number_string);
 current_timestamp:i = time_now();
 
 // Create output
-math_output:s = string_from(absolute_value);
+math_output:s =from(absolute_value);
 final_output:s = string_concat([`Result: `, math_output, `, Text: `, uppercase_greeting]);
 
 print(final_output);

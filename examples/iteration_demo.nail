@@ -19,7 +19,7 @@ sum:i = reduce_int(numbers, 0, |acc:i, n:i|:i { r acc + n; });
 
 // Each for side effects (like printing)
 each_int(numbers, |n:i|:v {
-    print(string_concat([`Number: `, string_from(n)]));
+    print(string_concat([`Number: `,from(n)]));
 });
 
 // === REGARDING CONTINUOUS PROCESSING ===

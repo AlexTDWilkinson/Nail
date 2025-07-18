@@ -15,8 +15,8 @@ print(`Found even numbers`);
 // Reduce: Combine all elements into one value
 sum:i = reduce_int(numbers, 0, |acc:i, n:i|:i { r acc + n; });
 product:i = reduce_int(range(1, 5), 1, |acc:i, n:i|:i { r acc * n; });
-print(string_concat([`Sum 1-10: `, string_from(sum)]));
-print(string_concat([`Product 1-5: `, string_from(product)]));
+print(string_concat([`Sum 1-10: `,from(sum)]));
+print(string_concat([`Product 1-5: `,from(product)]));
 
 // Chain operations
 doubled_evens:a:i = map_int(
@@ -30,6 +30,6 @@ sum_of_squares:i = reduce_int(
     0,
     |acc:i, n:i|:i { r acc + n; }
 );
-print(string_concat([`Sum of squares 1-5: `, string_from(sum_of_squares)]));
+print(string_concat([`Sum of squares 1-5: `,from(sum_of_squares)]));
 
 print(`Done! No loops were used.`);

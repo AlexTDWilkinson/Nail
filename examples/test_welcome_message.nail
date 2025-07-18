@@ -28,7 +28,7 @@ age:i = 25;
 score:f = 95.7;
 
 // Function Calls and String Conversion
-greeting:s = string_from(age);
+greeting:s =from(age);
 timestamp:i = time_now();
 print(`Hello from Nail!`);
 
@@ -38,7 +38,7 @@ average:f = (score + 85.3) / 2.0;
 
 // Parallel Processing (Nail's superpower!)
 parallel {
-   task1:s = string_from(42);
+   task1:s =from(42);
    task2:i = time_now();
     print(`Running in parallel!`);
    fast_calc:i = 100 * 50;

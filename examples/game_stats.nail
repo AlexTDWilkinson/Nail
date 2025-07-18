@@ -10,10 +10,10 @@ item_count:i = array_len(inventory);
 item_list:s = array_join(inventory, `, `);
 
 upper_name:s = string_to_uppercase(player_name);
-health_str:s = string_from(player_health);
-level_str:s = string_from(player_level);
-gold_str:s = string_from(player_gold);
-count_str:s = string_from(item_count);
+health_str:s =from(player_health);
+level_str:s =from(player_level);
+gold_str:s =from(player_gold);
+count_str:s =from(item_count);
 
 output_lines:a:s = [
     `===== GAME STATS =====`,

@@ -54,9 +54,9 @@ completion_rate:f = calculate_stats(total_tasks, completed_tasks);
 
 // Build output
 header:s = string_concat([app_title, `\n`, separator]);
-stats_line:s = string_concat([`Total Tasks: `, string_from(total_tasks), ` | Completed: `, string_from(completed_tasks), ` (`, string_from(completion_rate), `%)`]);
+stats_line:s = string_concat([`Total Tasks: `,from(total_tasks), ` | Completed: `,from(completed_tasks), ` (`,from(completion_rate), `%)`]);
 task_list:s = array_join(all_tasks, `\n`);
-timestamp:s = string_concat([`\nGenerated at: `, string_from(time_now()), ` seconds since epoch`]);
+timestamp:s = string_concat([`\nGenerated at: `,from(time_now()), ` seconds since epoch`]);
 
 // Create final output
 v output_parts:a:s = [header, `\n\n`, stats_line, `\n\n`, `Tasks:\n`, task_list, `\n`, separator, timestamp];

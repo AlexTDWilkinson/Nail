@@ -1,9 +1,9 @@
 use tokio;
 use Nail::std_lib;
-use Nail::std_lib::string::string_from;
+use Nail::std_lib::string::from;
 
 #[tokio::main]
 async fn main() {
     let num: i64 = 42;
-    let test: String = string_from(num.clone());
+    let test: String = from(num.clone());
 }

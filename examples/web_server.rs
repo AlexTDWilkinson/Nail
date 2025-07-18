@@ -1,11 +1,11 @@
 use tokio;
 use Nail::std_lib;
-use Nail::std_lib::string::string_from;
+use Nail::std_lib::string::from;
 
 #[tokio::main]
 async fn main() {
     let port: i64 = 3000;
-    let port_string: String = string_from(port.clone());
+    let port_string: String =from(port.clone());
     let html_content: String = std_lib::string::concat(vec! ["
 <!DOCTYPE html>
 <html>
@@ -37,7 +37,7 @@ async fn main() {
     <div class=\"nail-box\">
         <h1>🔨 Hello from Nail!</h1>
         <p>This webpage is being served by a Nail program using Axum under the hood.</p>
-        <p>The server is running on port <code>".string_from(), port_string.clone(), "</code></p>
+        <p>The server is running on port <code>".to_string(), port_string.clone(), "</code></p>
         <p>Nail features demonstrated:</p>
         <ul>
             <li>String interpolation with backticks</li>
@@ -48,6 +48,6 @@ async fn main() {
     </div>
 </body>
 </html>
-".string_from()]);
+".to_string()]);
     std_lib::http::http_server_start(port.clone(), html_content.clone()).await.unwrap();
 }

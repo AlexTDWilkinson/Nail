@@ -38,6 +38,7 @@ result:i = safe(divide(10, 2), |e|:i {
     print(e); // Print the error message
     r 0; // Return default value
 });
+
 result_msg:a:s = [`10 / 2 = `, string_from(result)];
 print(string_concat(result_msg));
 
@@ -65,9 +66,9 @@ p
 task1:s = string_from(42);
 task2:i = time_now();
 fast_calc:i = 100 * 50;
-/ p
-
-print(string_concat([`This is the async one used outside the p tag`, task1]));
+/p
+print(string_concat([`Task 1 result: `, task1]));
+print(string_concat([`Fast calculation: `, string_from(fast_calc)]));
 
 // === ARRAYS ===
 numbers:a:i = [10, 20, 30, 40, 50];

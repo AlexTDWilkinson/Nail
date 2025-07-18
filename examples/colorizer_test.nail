@@ -8,7 +8,7 @@ score:f = 95.7;
 v counter:i = 0;
 
 // Function calls with different argument types
-greeting:s = string_from(age);
+greeting:s =from(age);
 timestamp:i = time_now();
 print(`Hello world!`);
 
@@ -24,7 +24,7 @@ Line 3`;
 
 // Parallel blocks
 parallel {
-   task1:s = string_from(42);
+   task1:s =from(42);
    task2:i = time_now();
     print(`Parallel task`);
 }
@@ -45,7 +45,7 @@ value:i = 100; // This is an inline comment
 another:s = `test`; // Another inline comment
 
 // Nested function calls
-nested:s = string_from(time_now());
+nested:s =from(time_now());
 
 // Multiple operators
 math:i = 10 + 20 - 5 * 2 / 4;

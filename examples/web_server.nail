@@ -2,7 +2,7 @@
 
 port:i = 3000;
 
-port_string:s = string_from(port);
+port_string:s =from(port);
 html_content:s = string_concat([`
 <!DOCTYPE html>
 <html>

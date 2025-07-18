@@ -39,7 +39,7 @@ result:i = safe(safe_divide(10, 2), |err:s|:i {
     print(string_concat([`Error occurred: `, err]));
     r -1;
 });
-print(string_concat([`10 / 2 = `, string_from(result)]));
+print(string_concat([`10 / 2 = `,from(result)]));
 
 // === Functions ===
 fn add(first:i, second:i):i {
@@ -47,7 +47,7 @@ fn add(first:i, second:i):i {
 }
 
 total:i = add(5, 3);
-print(string_concat([`5 + 3 = `, string_from(total)]));
+print(string_concat([`5 + 3 = `,from(total)]));
 
 // === Control Flow ===
 if {

@@ -49,16 +49,16 @@ args_count:i = array_len(args);
 
 // Create summary
 v results:a:s = [
-    `Math: sqrt(16) = `, string_from(sqrt_val),
-    `, abs(-5.7) = `, string_from(abs_val),
-    `, pow(2,3) = `, string_from(power),
+    `Math: sqrt(16) = `,from(sqrt_val),
+    `, abs(-5.7) = `,from(abs_val),
+    `, pow(2,3) = `,from(power),
     `\nString: upper = `, upper,
-    `, length = `, string_from(str_len),
-    `\nArray: length = `, string_from(arr_len),
+    `, length = `,from(str_len),
+    `\nArray: length = `,from(arr_len),
     `, joined = `, joined,
     `\nTime: `, formatted_time,
     `\nPath: `, joined_path,
-    `\nArgs: `, string_from(args_count)
+    `\nArgs: `,from(args_count)
 ];
 
 output:s = string_concat(results);

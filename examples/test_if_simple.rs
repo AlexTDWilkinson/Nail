@@ -5,7 +5,7 @@ use Nail::std_lib;
 async fn main() {
     let result: i64 = 5;
     if result > 0 {
-        println!("{}", "positive".string_from());
+        println!("{}", "positive".to_string());
     }
-    println!("{}", "done".string_from());
+    println!("{}", "done".to_string());
 }

@@ -16,8 +16,8 @@ async fn main() {
         Pending,
         Suspended,
     }
-    let message: String = "Structs and enums can be declared".string_from();
+    let message: String = "Structs and enums can be declared".to_string();
     let count: i64 = 42;
     println!("{}", message);
-    println!("{}", "Currently only declarations are supported".string_from());
+    println!("{}", "Currently only declarations are supported".to_string());
 }

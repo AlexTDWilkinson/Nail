@@ -41,5 +41,5 @@ async fn main() {
         Saving,
         Shutting_Down,
     }
-    println!("{}", "Combined struct and enum test completed".string_from());
+    println!("{}", "Combined struct and enum test completed".to_string());
 }

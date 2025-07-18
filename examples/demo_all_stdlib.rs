@@ -1,34 +1,34 @@
 use tokio;
 use Nail::std_lib;
-use Nail::std_lib::string::string_from;
+use Nail::std_lib::string::from;
 
 #[tokio::main]
 async fn main() {
     let test_number: f64 = 16.0;
-    let greeting_text: String = "Hello, Grug!".string_from();
+    let greeting_text: String = "Hello, Grug!".to_string();
     let number_array: Vec<i64> = vec![1, 2, 3, 4, 5];
-    let string_array: Vec<String> = vec!["Nail".string_from(), "is".string_from(), "simple".string_from()];
-    let sqrt_result: String = string_from(std_lib::math::sqrt(test_number.clone()));
-    let abs_result: String = string_from(std_lib::math::abs(-5.7));
+    let string_array: Vec<String> = vec!["Nail".to_string(), "is".to_string(), "simple".to_string()];
+    let sqrt_result: String = from(std_lib::math::sqrt(test_number.clone()));
+    let abs_result: String = from(std_lib::math::abs(-5.7));
     let upper_text: String = std_lib::string::to_uppercase(greeting_text.clone());
-    let array_size: String = string_from(std_lib::array::len(number_array.clone()));
-    let joined_text: String = std_lib::array::join(string_array.clone(), " ".string_from());
-    let time_now_str: String = string_from(std_lib::time::now());
-    let path_result: String = std_lib::path::join("/home".string_from(), "grug".string_from());
+    let array_size: String = from(std_lib::array::len(number_array.clone()));
+    let joined_text: String = std_lib::array::join(string_array.clone(), " ".to_string());
+    let time_now_str: String = from(std_lib::time::now());
+    let path_result: String = std_lib::path::join("/home".to_string(), "grug".to_string());
     let output_parts: Vec<String> = vec![
-        "Math: sqrt=".string_from(),
+        "Math: sqrt=".to_string(),
         sqrt_result.clone(),
-        ", abs=".string_from(),
+        ", abs=".to_string(),
         abs_result.clone(),
-        " | String: ".string_from(),
+        " | String: ".to_string(),
         upper_text.clone(),
-        " | Array: len=".string_from(),
+        " | Array: len=".to_string(),
         array_size.clone(),
-        ", joined=".string_from(),
+        ", joined=".to_string(),
         joined_text.clone(),
-        " | Path: ".string_from(),
+        " | Path: ".to_string(),
         path_result.clone(),
-        " | Time: ".string_from(),
+        " | Time: ".to_string(),
         time_now_str.clone(),
     ];
     println!("{:#?}", std_lib::string::concat(output_parts.clone()));

@@ -1,5 +1,5 @@
 // Simple stdlib demo
 
-result:s = string_concat([`Math: `, string_from(math_sqrt(16.0)), ` | String: `, string_to_uppercase(`hello`)]);
+result:s = string_concat([`Math: `,from(math_sqrt(16.0)), ` | String: `, string_to_uppercase(`hello`)]);
 
 print(result);

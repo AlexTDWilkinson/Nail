@@ -15,5 +15,5 @@ async fn main() {
         Playing,
         GameOver,
     }
-    println!("{}", "Struct and enum declarations compiled successfully!".string_from());
+    println!("{}", "Struct and enum declarations compiled successfully!".to_string());
 }

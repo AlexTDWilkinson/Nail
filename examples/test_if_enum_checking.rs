@@ -12,31 +12,31 @@ async fn main() {
     }
     let current_status: Status =     Status::Active;
     if current_status ==     Status::Active {
-        println!("{}", "Active".string_from());
+        println!("{}", "Active".to_string());
     }
     else if current_status ==     Status::Inactive {
-        println!("{}", "Inactive".string_from());
+        println!("{}", "Inactive".to_string());
     }
     else if current_status ==     Status::Pending {
-        println!("{}", "Pending".string_from());
+        println!("{}", "Pending".to_string());
     }
     else if current_status ==     Status::Suspended {
-        println!("{}", "Suspended".string_from());
+        println!("{}", "Suspended".to_string());
     }
     if current_status ==     Status::Active {
-        println!("{}", "Active".string_from());
+        println!("{}", "Active".to_string());
     }
     else if current_status ==     Status::Inactive {
-        println!("{}", "Inactive".string_from());
+        println!("{}", "Inactive".to_string());
     }
     if current_status ==     Status::Active {
-        println!("{}", "Active".string_from());
+        println!("{}", "Active".to_string());
     }
     else if current_status ==     Status::Inactive {
-        println!("{}", "Inactive".string_from());
+        println!("{}", "Inactive".to_string());
     }
     else {
-        println!("{}", "Other status".string_from());
+        println!("{}", "Other status".to_string());
     }
-    println!("{}", "Enum checking test complete".string_from());
+    println!("{}", "Enum checking test complete".to_string());
 }

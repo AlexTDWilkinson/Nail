@@ -16,6 +16,6 @@ numbers:a:i = [1, 2, 3, 4, 5];
 
 arr_len:i = array_len(numbers);
 
-final_str:s = string_from(sqrt_result);
+final_str:s =from(sqrt_result);
 
 print(final_str);

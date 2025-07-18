@@ -19,7 +19,7 @@ total_items:i = array_len(inventory);
 // String operations
 upper_name:s = string_to_uppercase(player_name);
 item_list:s = array_join(inventory, `, `);
-health_str:s = string_from(player_health);
+health_str:s =from(player_health);
 
 // Parallel operations
 parallel {
@@ -38,7 +38,7 @@ fn calculate_damage(base_damage:i, level:i):i {
 fn process_inventory(items:a:s):s {
    count:i = array_len(items);
    first_item:s = array_get(items, 0);
-   result:s = string_concat([`Found `, string_from(count), ` items. First: `, first_item]);
+   result:s = string_concat([`Found `,from(count), ` items. First: `, first_item]);
     r result;
 }
 
@@ -61,7 +61,7 @@ if {
 // More complex expressions
 complex_calc:f = math_sqrt(math_pow(3.0, 2.0) + math_pow(4.0, 2.0));
 time_stamp:i = time_now();
-formatted_time:s = string_from(time_stamp);
+formatted_time:s =from(time_stamp);
 
 // Array operations
 v numbers:a:i = [5, 2, 8, 1, 9];
@@ -83,11 +83,11 @@ inventory_summary:s = process_inventory(inventory);
 print(string_concat([
     `=== Game Status ===\n`,
     `Player: `, upper_name, `\n`,
-    `Level: `, string_from(player_level), `\n`,
+    `Level: `,from(player_level), `\n`,
     `Health: `, health_str, `\n`,
-    `Damage: `, string_from(final_damage), `\n`,
+    `Damage: `,from(final_damage), `\n`,
     `Items: `, inventory_summary, `\n`,
-    `Complex Calc: `, string_from(complex_calc), `\n`,
+    `Complex Calc: `,from(complex_calc), `\n`,
     `==================`
 ]));
 

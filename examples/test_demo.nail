@@ -9,6 +9,6 @@ v numbers:a:i = [5, 2, 8, 1, 9];
 sqrt_result:f = math_sqrt(x_value);
 upper:s = string_to_uppercase(greeting);
 sorted:a:i = array_sort(numbers);
-joined:s = array_join([`Result: sqrt = `, string_from(sqrt_result), `, upper = `, upper], ``);
+joined:s = array_join([`Result: sqrt = `,from(sqrt_result), `, upper = `, upper], ``);
 
 print(joined);
