@@ -1,0 +1,25 @@
+// Demo all stdlib functions with proper names
+
+test_number:f = 16.0;
+greeting_text:s = `Hello, Grug!`;
+number_array:a:i = [1, 2, 3, 4, 5];
+string_array:a:s = [`Nail`, `is`, `simple`];
+
+// Test results
+sqrt_result:s = to_string(math_sqrt(test_number));
+abs_result:s = to_string(math_abs(-5.7));
+upper_text:s = string_to_uppercase(greeting_text);
+array_size:s = to_string(array_len(number_array));
+joined_text:s = array_join(string_array, ` `);
+time_now_str:s = to_string(time_now());
+path_result:s = path_join(`/home`, `grug`);
+
+output_parts:a:s = [
+    `Math: sqrt=`, sqrt_result, `, abs=`, abs_result,
+    ` | String: `, upper_text,
+    ` | Array: len=`, array_size, `, joined=`, joined_text,
+    ` | Path: `, path_result,
+    ` | Time: `, time_now_str
+];
+
+print(string_concat(output_parts));

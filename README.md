@@ -20,7 +20,7 @@ More detailed info the [Nail Language Spec](nail_language_spec.md).
 - **Good Parts of Functional:** Map, filter, reduce. No loops.
 - **No OOP:** OOP make brain hurt. Nail keep it simple.
 - **Smart Error Handling:** Errors bubble up, adding context. Result type best type.
-- **Flat Structure:** No nesting. Flat is way.
+- **Simple Structs:** Structs can contain other structs. Keep nesting shallow, grug brain happy.
 - **Simple Garbage Collection:** No manual memory management. Grug no like.
 
 ## 🏗️ Current State: Baby Nail

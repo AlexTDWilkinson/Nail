@@ -1,0 +1,1 @@
+number_list:a:i = [1, 2, 3, 4, 5]; print(to_string(array_len(number_list)));

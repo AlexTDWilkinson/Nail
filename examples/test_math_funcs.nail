@@ -1,0 +1,25 @@
+// Test all math functions
+
+abs_test:f = math_abs(-5.7);
+sqrt_test:f = math_sqrt(16.0);
+pow_test:f = math_pow(2.0, 3.0);
+round_test:f = math_round(3.7);
+floor_test:f = math_floor(3.7);
+ceil_test:f = math_ceil(3.2);
+min_test:f = math_min(5.0, 3.0);
+max_test:f = math_max(5.0, 3.0);
+random_test:f = math_random();
+
+result:s = string_concat([
+    `abs(-5.7) = `, to_string(abs_test),
+    `, sqrt(16) = `, to_string(sqrt_test),
+    `, pow(2,3) = `, to_string(pow_test),
+    `, round(3.7) = `, to_string(round_test),
+    `, floor(3.7) = `, to_string(floor_test),
+    `, ceil(3.2) = `, to_string(ceil_test),
+    `, min(5,3) = `, to_string(min_test),
+    `, max(5,3) = `, to_string(max_test),
+    `, random = `, to_string(random_test)
+]);
+
+print(result);

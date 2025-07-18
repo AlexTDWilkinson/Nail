@@ -1,0 +1,5 @@
+// Test various bad variable names
+
+i:i = 5;
+
+print(to_string(i));

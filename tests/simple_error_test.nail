@@ -1,0 +1,22 @@
+// Simple test to verify error handling syntax parsing
+
+fn test_result_type():i!e {
+    r 42;
+}
+
+fn test_error():i!e {
+    r e(`Something went wrong`);
+}
+
+fn main():v {
+    // Test safe
+    value:i = safe(test_result_type(), |err|:i {
+        print(`Error: ` + err);
+        r -1;
+    });
+    print(`Value: ` + to_string(value));
+    
+    // Test dangerous - this would panic if test_result_type returns error
+    value2:i = dangerous(test_result_type());
+    print(`Value2: ` + to_string(value2));
+}

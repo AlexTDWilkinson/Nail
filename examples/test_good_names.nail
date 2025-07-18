@@ -1,0 +1,5 @@
+// Test with good descriptive names
+
+input_number:f = 16.0;
+
+print(to_string(math_sqrt(input_number)));

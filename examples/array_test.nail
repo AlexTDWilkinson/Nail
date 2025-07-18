@@ -1,0 +1,2 @@
+arr:a:i = [1, 2, 3];
+len:i = array_len(arr);

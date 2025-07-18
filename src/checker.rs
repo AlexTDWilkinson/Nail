@@ -1,12 +1,12 @@
-use crate::lexer::CodeSpan;
-use crate::lexer::NailDataTypeDescriptor;
-use crate::lexer::Operation;
+use crate::common::{CodeError, CodeSpan};
+use crate::lexer::{NailDataTypeDescriptor, Operation};
 use crate::parser::ASTNode;
-use crate::CodeError;
-use std::collections::{HashMap, HashSet, VecDeque};
+use crate::stdlib_types;
+use std::collections::{HashMap, HashSet};
 
-pub const NO_SCOPE: usize = usize::MAX;
+pub const ERROR_SCOPE: usize = usize::MAX;
 pub const GLOBAL_SCOPE: usize = 0;
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scope {
@@ -29,15 +29,14 @@ pub struct ScopeArena {
 impl ScopeArena {
     pub fn new() -> Self {
         // I guess this is where we'd set up global scope?
-        // Note that global scope has no parent, so it's just set to NO_SCOPE to cause an error if it's parent is accessed for some reason
-        ScopeArena { scopes: vec![Scope { symbols: HashMap::new(), parent: NO_SCOPE }] }
+        // Note that global scope has no parent, so it's just set to ERROR_SCOPE to cause an error if it's parent is accessed for some reason
+        ScopeArena { scopes: vec![Scope { symbols: HashMap::new(), parent: ERROR_SCOPE }] }
     }
 
     pub fn push_scope(&mut self) -> usize {
-        let new_index = self.scopes.len();
-        let parent = new_index.checked_sub(1).unwrap_or(NO_SCOPE);
+        let parent = self.current_scope();
         self.scopes.push(Scope { symbols: HashMap::new(), parent });
-        new_index
+        self.scopes.len() - 1
     }
 
     pub fn pop_scope(&mut self) -> Result<(), &'static str> {
@@ -49,15 +48,22 @@ impl ScopeArena {
     }
 
     pub fn current_scope(&self) -> usize {
-        self.scopes.len() - 1
+        // log::info!("Current scope: {}", self.scopes.len().checked_sub(1).unwrap_or(ERROR_SCOPE));
+        self.scopes.len().checked_sub(1).unwrap_or(ERROR_SCOPE)
     }
 
-    pub fn get_scope(&self, index: usize) -> Option<&Scope> {
-        self.scopes.get(index)
+    pub fn get_scope(&self, index: usize) -> &Scope {
+        if index == ERROR_SCOPE {
+            panic!("Attempted to access error scope");
+        }
+        self.scopes.get(index).expect("Failed to get scope. THIS SHOULD NEVER HAPPEN.")
     }
 
-    pub fn get_scope_mut(&mut self, index: usize) -> Option<&mut Scope> {
-        self.scopes.get_mut(index)
+    pub fn get_scope_mut(&mut self, index: usize) -> &mut Scope {
+        if index == ERROR_SCOPE {
+            panic!("Attempted to access error scope");
+        }
+        self.scopes.get_mut(index).expect("Failed to get mutable scope. THIS SHOULD NEVER HAPPEN.")
     }
 
     pub fn clear_above_scope(&mut self, index: usize) {
@@ -70,17 +76,22 @@ struct AnalyzerState {
     errors: Vec<CodeError>,
     in_function: bool,
     enum_variants: HashMap<String, HashSet<String>>,
+    structs: HashMap<String, Vec<ASTNode>>,
 }
 
 fn new_analyzer_state() -> AnalyzerState {
-    AnalyzerState { scope_arena: ScopeArena::new(), errors: Vec::new(), in_function: false, enum_variants: HashMap::new() }
+    AnalyzerState { scope_arena: ScopeArena::new(), errors: Vec::new(), in_function: false, enum_variants: HashMap::new(), structs: HashMap::new() }
 }
 
 pub fn checker(ast: &mut ASTNode) -> Result<(), Vec<CodeError>> {
     let mut state = new_analyzer_state();
+
+    if let ASTNode::Program { scope, .. } = ast {
+        *scope = GLOBAL_SCOPE;
+    }
+
     visit_node(ast, &mut state);
     check_unused_symbols(&mut state);
-
     if state.errors.is_empty() {
         Ok(())
     } else {
@@ -89,25 +100,55 @@ pub fn checker(ast: &mut ASTNode) -> Result<(), Vec<CodeError>> {
 }
 
 fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
+    let current_scope = state.scope_arena.current_scope();
+
+    // Always set the scope for every node
     match node {
-        ASTNode::Program { statements, code_span, scope } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
-        ASTNode::FunctionDeclaration { name, params, data_type, body, code_span, scope } => visit_function_declaration(name, params, data_type, body, state, code_span, scope),
-        ASTNode::VariableDeclaration { name, data_type, value, code_span, .. } => visit_variable_declaration(name, data_type, value, state, code_span),
+        ASTNode::Program { scope, .. }
+        | ASTNode::ConstDeclaration { scope, .. }
+        | ASTNode::StringLiteral { scope, .. }
+        | ASTNode::NumberLiteral { scope, .. }
+        | ASTNode::UnaryOperation { scope, .. }
+        | ASTNode::BinaryOperation { scope, .. }
+        | ASTNode::Identifier { scope, .. }
+        | ASTNode::IfStatement { scope, .. }
+        | ASTNode::StructDeclaration { scope, .. }
+        | ASTNode::EnumDeclaration { scope, .. }
+        | ASTNode::ArrayLiteral { scope, .. }
+        | ASTNode::FunctionCall { scope, .. }
+        | ASTNode::ReturnDeclaration { scope, .. }
+        | ASTNode::Block { scope, .. }
+        | ASTNode::ParallelBlock { scope, .. }
+        | ASTNode::LambdaDeclaration { scope, .. }
+        | ASTNode::FunctionDeclaration { scope, .. }
+        | ASTNode::StructInstantiation { scope, .. }
+        | ASTNode::StructInstantiationField { scope, .. }
+        | ASTNode::StructDeclarationField { scope, .. }
+        | ASTNode::EnumVariant { scope, .. } => {
+            *scope = current_scope;
+        }
+    }
+
+    match node {
+        ASTNode::Program { statements, code_span, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
+        ASTNode::FunctionDeclaration { name, params, data_type, body, code_span, .. } => visit_function_declaration(name, params, data_type, body, state, code_span),
         ASTNode::ConstDeclaration { name, data_type, value, code_span, .. } => visit_const_declaration(name, data_type, value, state, code_span),
         ASTNode::BinaryOperation { left, operator, right, code_span, .. } => visit_binary_operation(left, operator, right, state, code_span),
-        ASTNode::Identifier { name, code_span, scope, .. } => {
+        ASTNode::Identifier { name, code_span, .. } => {
             if !mark_symbol_as_used(state, name) {
                 add_error(state, format!("Undefined variable: {}", name), code_span);
             }
         }
-        ASTNode::IfStatement { condition_branches, else_branch, code_span, scope } => visit_if_statement(condition_branches, else_branch, state),
-        ASTNode::StructDeclaration { name, fields, code_span, scope } => visit_struct_declaration(name, fields, state, code_span),
-        ASTNode::EnumDeclaration { name, variants, code_span, scope } => visit_enum_declaration(name, variants, state, code_span),
-        ASTNode::ArrayLiteral { elements, code_span, scope } => visit_array_literal(elements, state, code_span),
+        ASTNode::IfStatement { condition_branches, else_branch, code_span, .. } => visit_if_statement(condition_branches, else_branch, state),
+        ASTNode::StructDeclaration { name, fields, code_span, .. } => visit_struct_declaration(name, fields, state, code_span),
+        ASTNode::EnumDeclaration { name, variants, code_span, .. } => visit_enum_declaration(name, variants, state, code_span),
+        ASTNode::ArrayLiteral { elements, code_span, .. } => visit_array_literal(elements, state, code_span),
         ASTNode::FunctionCall { name, args, code_span, scope } => {
             visit_function_call(name, args, state, *scope, code_span);
         }
-        ASTNode::ReturnDeclaration { statement, code_span, scope } => visit_return_declaration(statement, state, code_span),
+        ASTNode::ReturnDeclaration { statement, code_span, .. } => visit_return_declaration(statement, state, code_span),
+        ASTNode::ParallelBlock { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
+        ASTNode::Block { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
         _ => {} // Handle other cases as needed
     }
 }
@@ -119,18 +160,23 @@ fn visit_function_declaration(
     body: &mut Box<ASTNode>,
     state: &mut AnalyzerState,
     code_span: &mut CodeSpan,
-    scope: &mut usize,
 ) {
-    *scope = state.scope_arena.push_scope();
-
-    state.in_function = true;
-
     // Create the function type
     let param_types: Vec<NailDataTypeDescriptor> = params.iter().map(|(_, t)| t.clone()).collect();
     let function_type = NailDataTypeDescriptor::Fn(param_types, Box::new(return_type.clone()));
 
-    // Add the function to the current scope
+    // Add the function to the current scope (parent scope)
     add_symbol(state, Symbol { name: name.to_string(), data_type: function_type, is_used: false });
+
+    // Now push a new scope for the function body
+    let function_scope = state.scope_arena.push_scope();
+
+    // Update the function declaration's scope
+    if let ASTNode::FunctionDeclaration { scope, .. } = body.as_mut() {
+        *scope = function_scope;
+    }
+
+    state.in_function = true;
 
     // Add parameters to the function's scope
     params.iter().for_each(|(param_name, param_type)| {
@@ -144,22 +190,37 @@ fn visit_function_declaration(
     check_function_return(name, return_type, body, state, code_span);
 
     state.in_function = false;
+
+    state.scope_arena.pop_scope().expect("Failed to pop function scope");
 }
 
-fn visit_variable_declaration(name: &str, data_type: &NailDataTypeDescriptor, value: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     let value_type = check_type(value, state);
-    if *data_type != value_type {
-        add_error(state, format!("Type mismatch in variable declaration named `{}`: expected {:?}, got {:?}", name, data_type, value_type), code_span);
-    }
-    add_symbol(state, Symbol { name: name.to_string(), data_type: data_type.clone(), is_used: false });
-}
 
-fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
-    let value_type = check_type(value, state);
-    if *data_type != value_type {
-        add_error(state, format!("Type mismatch in const declaration named `{}`: expected {:?}, got {:?}", name, data_type, value_type), code_span);
+    // Check for type compatibility, allowing struct/enum name mismatches
+    let types_compatible = match (data_type, &value_type) {
+        // Exact match
+        (a, b) if a == b => true,
+        // Allow struct annotation with enum value (or vice versa) if they have the same name
+        (NailDataTypeDescriptor::Struct(struct_name), NailDataTypeDescriptor::Enum(enum_name)) => struct_name == enum_name,
+        (NailDataTypeDescriptor::Enum(enum_name), NailDataTypeDescriptor::Struct(struct_name)) => enum_name == struct_name,
+        _ => false,
+    };
+
+    if !types_compatible {
+        add_error(state, format!("Type mismatch in constant declaration named `{}`: expected {:?}, got {:?}", name, data_type, value_type), code_span);
     }
-    add_symbol(state, Symbol { name: name.to_string(), data_type: data_type.clone(), is_used: false });
+
+    // Use the actual value type for the symbol, not the annotation type
+    let symbol_type = if types_compatible && data_type != &value_type {
+        value_type.clone()
+    } else {
+        data_type.clone()
+    };
+
+    add_symbol(state, Symbol { name: name.to_string(), data_type: symbol_type, is_used: false });
+
+    visit_node(value, state);
 }
 
 fn visit_binary_operation(left: &ASTNode, operator: &Operation, right: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
@@ -182,8 +243,14 @@ fn visit_binary_operation(left: &ASTNode, operator: &Operation, right: &ASTNode,
                 }
             }
             Operation::Eq | Operation::Ne | Operation::Lt | Operation::Lte | Operation::Gt | Operation::Gte => {
-                if left_type != NailDataTypeDescriptor::Int && left_type != NailDataTypeDescriptor::Float && left_type != NailDataTypeDescriptor::String {
-                    add_error(state, format!("Invalid operand type for comparison operation: {:?}", left_type), code_span);
+                // Allow equality comparisons for all types
+                if matches!(operator, Operation::Eq | Operation::Ne) {
+                    // Equality is allowed for all types including enums, structs, etc.
+                } else {
+                    // Ordering comparisons (Lt, Lte, Gt, Gte) only allowed for Int, Float, String
+                    if left_type != NailDataTypeDescriptor::Int && left_type != NailDataTypeDescriptor::Float && left_type != NailDataTypeDescriptor::String {
+                        add_error(state, format!("Invalid operand type for ordering comparison operation: {:?}", left_type), code_span);
+                    }
                 }
             }
             _ => {
@@ -204,19 +271,36 @@ fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], e
 }
 
 fn visit_struct_declaration(name: &str, fields: &[ASTNode], state: &mut AnalyzerState, code_span: &mut CodeSpan) {
-    fields.iter().for_each(|field| {
-        if let ASTNode::StructDeclarationField { name: field_name, data_type } = field {
-            if matches!(data_type, NailDataTypeDescriptor::Struct(_) | NailDataTypeDescriptor::Enum(_)) {
-                add_error(state, format!("Nested structs or enums are not allowed in struct '{}', field '{}'", name, field_name), code_span);
+    // Register the struct in the type system
+    if let Some(existing) = state.structs.get(name) {
+        if existing != fields {
+            add_error(state, format!("Struct '{}' is already defined", name), code_span);
+        }
+    } else {
+        state.structs.insert(name.to_string(), fields.to_vec());
+    }
+    
+    // Nested structs are now allowed - just validate they exist
+    for field in fields {
+        if let ASTNode::StructDeclarationField { name: field_name, data_type, .. } = field {
+            match data_type {
+                NailDataTypeDescriptor::Struct(struct_name) => {
+                    // Allow forward references and self-references for now
+                    // More sophisticated checking could be added later
+                }
+                NailDataTypeDescriptor::Enum(enum_name) => {
+                    // Allow forward references for now
+                }
+                _ => {}
             }
         }
-    });
+    }
 }
 
 fn visit_enum_declaration(name: &str, variants: &[ASTNode], state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     let mut variant_set = HashSet::new();
     variants.iter().for_each(|variant| {
-        if let ASTNode::EnumVariant { name: variant_name, code_span, .. } = variant {
+        if let ASTNode::EnumVariant { variant: variant_name, code_span, .. } = variant {
             if !variant_set.insert(variant_name.clone()) {
                 add_error(state, format!("Duplicate variant '{}' in enum '{}'", variant_name, name), &mut code_span.clone());
             }
@@ -241,6 +325,35 @@ fn visit_array_literal(elements: &[ASTNode], state: &mut AnalyzerState, code_spa
 }
 
 fn visit_function_call(name: &str, args: &[ASTNode], state: &mut AnalyzerState, call_scope: usize, code_span: &mut CodeSpan) -> NailDataTypeDescriptor {
+    // Check if this is a stdlib function first
+    if let Some(func_type) = stdlib_types::get_stdlib_function_type(name) {
+        // Check argument count
+        if args.len() != func_type.parameters.len() {
+            add_error(state, format!("{} expects {} arguments, got {}", name, func_type.parameters.len(), args.len()), code_span);
+        }
+        
+        // Type check each argument against expected parameter types
+        for (i, arg) in args.iter().enumerate() {
+            // Use a mutable reference to allow visiting
+            let mut arg_clone = arg.clone();
+            visit_node(&mut arg_clone, state);
+            
+            // Check if we have a parameter definition for this argument
+            if let Some(expected_param) = func_type.parameters.get(i) {
+                let actual_type = check_type(&arg_clone, state);
+                // Skip type checking if expected type is Unknown (accepts any type) or actual type is Unknown (failed to infer)
+                if expected_param.param_type != NailDataTypeDescriptor::Unknown && 
+                   actual_type != NailDataTypeDescriptor::Unknown && 
+                   actual_type != expected_param.param_type {
+                    add_error(state, format!("{} parameter '{}' expects type {:?}, got {:?}", 
+                        name, expected_param.name, expected_param.param_type, actual_type), code_span);
+                }
+            }
+        }
+        
+        return func_type.return_type.clone();
+    }
+    
     let symbol = match lookup_symbol(&state.scope_arena, call_scope, name) {
         Some(s) => s.clone(),
         None => {
@@ -289,64 +402,105 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
     match node {
         ASTNode::NumberLiteral { data_type, .. } => data_type.clone(),
         ASTNode::StringLiteral { .. } => NailDataTypeDescriptor::String,
-        ASTNode::Identifier { name, scope, .. } => lookup_symbol(&state.scope_arena, *scope, name).map_or(NailDataTypeDescriptor::Unknown, |s| s.data_type.clone()),
+        ASTNode::Identifier { name, .. } => lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), name).map_or(NailDataTypeDescriptor::Unknown, |s| s.data_type.clone()),
         ASTNode::ReturnDeclaration { statement, .. } => check_type(statement, state),
         ASTNode::UnaryOperation { operand, .. } => check_type(operand, state),
-        ASTNode::BinaryOperation { left, right, .. } => {
+        ASTNode::BinaryOperation { left, right, operator, .. } => {
             let left_type = check_type(left, state);
             let right_type = check_type(right, state);
-            if left_type == right_type {
-                left_type
-            } else {
-                NailDataTypeDescriptor::Unknown
+            
+            // Comparison operators should return Boolean, not operand type
+            match operator {
+                Operation::Eq | Operation::Ne | Operation::Lt | Operation::Lte | Operation::Gt | Operation::Gte => {
+                    // Comparison operators return Boolean regardless of operand types
+                    // (as long as operands are compatible)
+                    if left_type == right_type {
+                        NailDataTypeDescriptor::Boolean
+                    } else {
+                        NailDataTypeDescriptor::Unknown
+                    }
+                }
+                // Arithmetic operators return operand type
+                Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod => {
+                    if left_type == right_type {
+                        left_type
+                    } else {
+                        NailDataTypeDescriptor::Unknown
+                    }
+                }
+                // Other operators (logical, etc.) - for now return operand type
+                _ => {
+                    if left_type == right_type {
+                        left_type
+                    } else {
+                        NailDataTypeDescriptor::Unknown
+                    }
+                }
             }
         }
         ASTNode::Program { statements, .. } => statements.last().map_or(NailDataTypeDescriptor::Unknown, |stmt| check_type(stmt, state)),
         ASTNode::FunctionDeclaration { data_type, .. } => data_type.clone(),
         ASTNode::LambdaDeclaration { data_type, .. } => data_type.clone(),
-        ASTNode::FunctionCall { name, scope, .. } => lookup_symbol(&state.scope_arena, *scope, name).map_or(NailDataTypeDescriptor::Unknown, |s| s.data_type.clone()),
-        ASTNode::VariableDeclaration { data_type, .. } => data_type.clone(),
+        ASTNode::FunctionCall { name, args, scope, .. } => {
+            // Check if this is a stdlib function first
+            if let Some(func_type) = stdlib_types::get_stdlib_function_type(name) {
+                return func_type.return_type.clone();
+            }
+            // Otherwise look up in symbol table
+            lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), name).map_or(NailDataTypeDescriptor::Unknown, |s| {
+                match &s.data_type {
+                    NailDataTypeDescriptor::Fn(_, return_type) => (**return_type).clone(),
+                    _ => s.data_type.clone()
+                }
+            })
+        },
         ASTNode::ConstDeclaration { data_type, .. } => data_type.clone(),
         ASTNode::StructDeclarationField { data_type, .. } => data_type.clone(),
         ASTNode::IfStatement { condition_branches, .. } => condition_branches.first().map_or(NailDataTypeDescriptor::Unknown, |(_, branch)| check_type(branch, state)),
         ASTNode::Block { statements, .. } => statements.last().map_or(NailDataTypeDescriptor::Unknown, |stmt| check_type(stmt, state)),
+        ASTNode::ParallelBlock { statements, .. } => statements.last().map_or(NailDataTypeDescriptor::Unknown, |stmt| check_type(stmt, state)),
         ASTNode::StructDeclaration { name, .. } => NailDataTypeDescriptor::Struct(name.to_string()),
-        ASTNode::StructInstantiation { name, scope, .. } => lookup_symbol(&state.scope_arena, *scope, name).map_or(NailDataTypeDescriptor::Unknown, |s| s.data_type.clone()),
+        ASTNode::StructInstantiation { name, .. } => NailDataTypeDescriptor::Struct(name.to_string()),
         ASTNode::StructInstantiationField { value, .. } => check_type(value, state),
         ASTNode::EnumDeclaration { name, .. } => NailDataTypeDescriptor::Enum(name.to_string()),
         ASTNode::EnumVariant { name, .. } => NailDataTypeDescriptor::Enum(name.to_string()),
-        ASTNode::ArrayLiteral { elements, .. } => elements.first().map_or(NailDataTypeDescriptor::Unknown, |element| check_type(element, state)),
+        ASTNode::ArrayLiteral { elements, .. } => {
+            if elements.is_empty() {
+                NailDataTypeDescriptor::Unknown
+            } else {
+                let element_type = check_type(&elements[0], state);
+                match element_type {
+                    NailDataTypeDescriptor::Int => NailDataTypeDescriptor::ArrayInt,
+                    NailDataTypeDescriptor::Float => NailDataTypeDescriptor::ArrayFloat,
+                    NailDataTypeDescriptor::String => NailDataTypeDescriptor::ArrayString,
+                    NailDataTypeDescriptor::Boolean => NailDataTypeDescriptor::ArrayBoolean,
+                    NailDataTypeDescriptor::Struct(name) => NailDataTypeDescriptor::ArrayStruct(name),
+                    NailDataTypeDescriptor::Enum(name) => NailDataTypeDescriptor::ArrayEnum(name),
+                    _ => NailDataTypeDescriptor::Unknown,
+                }
+            }
+        },
     }
 }
 
 fn add_symbol(state: &mut AnalyzerState, symbol: Symbol) {
-    // Get the current scope index
-    let current_scope_data = state.scope_arena.current_scope();
-
-    // Add the symbol to the current scope
-    if let Some(current_scope) = state.scope_arena.get_scope_mut(current_scope_data) {
-        current_scope.symbols.insert(symbol.name.clone(), symbol);
-    } else {
-        // This should never happen if scopes are managed correctly
-        panic!("Current scope does not exist in ScopeArena");
-    }
+    let scope = state.scope_arena.current_scope();
+    let scope = state.scope_arena.get_scope_mut(scope);
+    scope.symbols.insert(symbol.name.clone(), symbol);
 }
 
 fn lookup_symbol(arena: &ScopeArena, scope: usize, name: &str) -> Option<Symbol> {
     // we don't want to modify the original scope, so we'll use a copy for traversal
     let mut scope_for_traversal = scope;
     loop {
-        if let Some(scope_data) = arena.get_scope(scope_for_traversal) {
-            if let Some(symbol) = scope_data.symbols.get(name) {
-                return Some(symbol.clone());
-            }
-            if scope_for_traversal == GLOBAL_SCOPE {
-                break; // We've checked the global scope and haven't found the symbol
-            }
-            scope_for_traversal = scope_data.parent;
-        } else {
-            panic!("SCOPE TRAVERSAL ERROR. THIS SHOULD NEVER HAPPEN.");
+        let scope_data = arena.get_scope(scope_for_traversal);
+        if let Some(symbol) = scope_data.symbols.get(name) {
+            return Some(symbol.clone());
         }
+        if scope_for_traversal == GLOBAL_SCOPE {
+            break; // We've checked the global scope and haven't found the symbol
+        }
+        scope_for_traversal = scope_data.parent;
     }
     None
 }
@@ -354,30 +508,26 @@ fn lookup_symbol(arena: &ScopeArena, scope: usize, name: &str) -> Option<Symbol>
 fn mark_symbol_as_used(state: &mut AnalyzerState, name: &str) -> bool {
     let mut current_scope = state.scope_arena.current_scope();
     loop {
-        if let Some(scope) = state.scope_arena.get_scope_mut(current_scope) {
-            if let Some(symbol) = scope.symbols.get_mut(name) {
-                symbol.is_used = true;
-                return true;
-            }
-            if current_scope == GLOBAL_SCOPE {
-                break;
-            }
-            current_scope = scope.parent;
-        } else {
+        let scope = state.scope_arena.get_scope_mut(current_scope);
+        if let Some(symbol) = scope.symbols.get_mut(name) {
+            symbol.is_used = true;
+            return true;
+        }
+        if current_scope == GLOBAL_SCOPE {
             break;
         }
+        current_scope = scope.parent;
     }
     false
 }
 
 fn check_unused_symbols(state: &mut AnalyzerState) {
     for scope_data in 0..state.scope_arena.scopes.len() {
-        if let Some(scope) = state.scope_arena.get_scope(scope_data) {
-            for symbol in scope.symbols.values() {
-                if !symbol.is_used {
-                    // this works but is annoying, we need something else for this
-                    // state.errors.push(CodeError { message: format!("Unused variable: {}", symbol.name), code_span: CodeSpan::default() });
-                }
+        let scope = state.scope_arena.get_scope(scope_data);
+        for symbol in scope.symbols.values() {
+            if !symbol.is_used {
+                // this works but is annoying, we need something else for this
+                // state.errors.push(CodeError { message: format!("Unused variable: {}", symbol.name), code_span: CodeSpan::default() });
             }
         }
     }
@@ -387,18 +537,108 @@ fn add_error(state: &mut AnalyzerState, message: String, code_span: &mut CodeSpa
     state.errors.push(CodeError { message, code_span: code_span.clone() });
 }
 
+// TODO: Add comprehensive tests once the lexer/parser interfaces are stable
+// Current issues:
+// 1. LexerState::new() doesn't exist
+// 2. tokenize() function not found  
+// 3. ParserState::new() doesn't exist
+// 4. parse_program() function not found
+// 5. Test data in lexer.rs using non-existent TokenType::Array variant
+//
+// These tests document the current type checker issues:
+// - Comparison operators (==, !=, <, >, etc.) should return Boolean but currently return operand type
+// - Boolean literals need to be properly supported in lexer
+// - Result types (i!e syntax) need proper type checking
+
+fn has_return_statement(node: &ASTNode) -> bool {
+    match node {
+        ASTNode::ReturnDeclaration { .. } => true,
+        ASTNode::Block { statements, .. } => {
+            statements.last().map_or(false, |stmt| has_return_statement(stmt))
+        }
+        ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+            // All branches must return for the if statement to return
+            let mut all_branches_return = true;
+            
+            // Check each condition branch
+            for (_, branch) in condition_branches {
+                if !has_return_statement(branch) {
+                    all_branches_return = false;
+                    break;
+                }
+            }
+            
+            // Check else branch if it exists
+            if let Some(else_branch) = else_branch {
+                if !has_return_statement(else_branch) {
+                    all_branches_return = false;
+                }
+            } else {
+                // No else branch means not all paths return
+                all_branches_return = false;
+            }
+            
+            all_branches_return
+        }
+        _ => false,
+    }
+}
+
 fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     let last_statement = match body {
         ASTNode::Block { statements, .. } => statements.last(),
         _ => None,
     };
 
-    if let Some(ASTNode::ReturnDeclaration { statement, .. }) = last_statement {
-        let actual_return_type = check_type(statement, state);
-        if actual_return_type != *data_type {
-            add_error(state, format!("Type mismatch in return statement of function '{}': expected {:?}, got {:?}", name, data_type, actual_return_type), code_span);
+    match last_statement {
+        Some(ASTNode::ReturnDeclaration { statement, .. }) => {
+            let actual_return_type = check_type(statement, state);
+            
+            // Check if the return type is compatible with the expected type
+            let types_compatible = match (data_type, &actual_return_type) {
+                // Exact match
+                (expected, actual) if expected == actual => true,
+                // Check if actual type is one of the types in Any
+                (NailDataTypeDescriptor::Any(expected_types), actual) => {
+                    expected_types.contains(actual)
+                }
+                _ => false,
+            };
+            
+            if !types_compatible {
+                add_error(state, format!("Type mismatch in return statement of function '{}': expected {:?}, got {:?}", name, data_type, actual_return_type), code_span);
+            }
         }
-    } else if *data_type != NailDataTypeDescriptor::Void {
-        add_error(state, format!("Missing return statement in function '{}'", name), code_span);
+        Some(ASTNode::IfStatement { condition_branches, else_branch, .. }) => {
+            // If statement can provide a return value if all branches return
+            let mut all_branches_return = true;
+            
+            // Check each condition branch
+            for (_, branch) in condition_branches {
+                if !has_return_statement(branch) {
+                    all_branches_return = false;
+                    break;
+                }
+            }
+            
+            // Check else branch if it exists
+            if let Some(else_branch) = else_branch {
+                if !has_return_statement(else_branch) {
+                    all_branches_return = false;
+                }
+            } else {
+                // No else branch means not all paths return
+                all_branches_return = false;
+            }
+            
+            if !all_branches_return && *data_type != NailDataTypeDescriptor::Void {
+                add_error(state, format!("Missing return statement in function '{}'", name), code_span);
+            }
+        }
+        _ => {
+            if *data_type != NailDataTypeDescriptor::Void {
+                add_error(state, format!("Missing return statement in function '{}'", name), code_span);
+            }
+        }
     }
 }

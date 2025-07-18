@@ -1,0 +1,3 @@
+result:i = 5;
+if { result > 0 => { print(`positive`); } };
+print(`done`);

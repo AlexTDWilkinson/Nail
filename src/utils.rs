@@ -6,6 +6,7 @@ use crate::CodeError;
 use crate::Editor;
 use log::error;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use ratatui::prelude::Position;
 use std::backtrace::Backtrace;
 use std::panic;
 use std::path::Path;
@@ -21,8 +22,6 @@ use crate::lexer;
 
 use ratatui::prelude::Alignment;
 
-use rayon::prelude::*;
-
 use ratatui::prelude::Rect;
 use ratatui::widgets::Clear;
 use std::fs;
@@ -34,11 +33,6 @@ use std::thread;
 
 use crate::colorizer::colorize_code;
 
-use ratatui::crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
 use ratatui::text::Span;
 use ratatui::{
     backend::CrosstermBackend,
@@ -48,7 +42,6 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs},
     Frame, Terminal,
 };
-use std::io::Stdout;
 
 #[derive(Debug, PartialEq)]
 pub enum EditorMessage {
@@ -67,7 +60,13 @@ pub enum BuildStatus {
 }
 
 pub fn lock<T>(arc_mutex: &Arc<Mutex<T>>) -> MutexGuard<T> {
-    arc_mutex.lock().expect("Lock function failed to lock the mutex")
+    match arc_mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            log::warn!("Mutex was poisoned, recovering");
+            poisoned.into_inner()
+        }
+    }
 }
 
 pub fn resize_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::Stdout>>>>, rx: Receiver<EditorMessage>) {
@@ -107,17 +106,52 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
         }
 
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(50)); // 20 FPS - balance between smooth UI and mouse selection
         let mut locked_terminal = lock(&terminal_arc);
+        
+        // Check if terminal size is valid before drawing
+        let size = match locked_terminal.size() {
+            Ok(size) => size,
+            Err(e) => {
+                log::error!("Failed to get terminal size: {}", e);
+                continue;
+            }
+        };
+        
+        if size.width == 0 || size.height == 0 {
+            log::warn!("Terminal size is too small: {}x{}", size.width, size.height);
+            continue;
+        }
+        
         let result_draw = locked_terminal.draw(|f| {
-            let mut editor = lock(&editor_arc);
+            let editor = lock(&editor_arc);
+            
+            // Log frame area details
+            log::info!("Drawing frame - area: {:?}", f.area());
+            
+            // Check if frame area is valid
+            if f.area().width == 0 || f.area().height == 0 {
+                log::warn!("Frame area is too small: {}x{}", f.area().width, f.area().height);
+                return;
+            }
+            
+            if f.area().height < 5 {
+                log::warn!("Frame area height too small for layout: {}", f.area().height);
+                return;
+            }
 
-            let chunks = Layout::default().direction(Direction::Vertical).margin(0).constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(1)].as_ref()).split(f.size());
+            let chunks = Layout::default().direction(Direction::Vertical).margin(0).constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(1)].as_ref()).split(f.area());
+            log::info!("Layout chunks: {:?}", chunks);
 
             // Render tabs
             let titles = vec!["Tab1", "Tab2", "Tab3", "Tab4"];
+            let file_title = if editor.modified {
+                format!("FILES [*] - Press Ctrl+S to save")
+            } else {
+                "FILES".to_string()
+            };
             let tabs = Tabs::new(titles)
-                .block(Block::default().borders(Borders::ALL).title("FILES"))
+                .block(Block::default().borders(Borders::ALL).title(file_title))
                 .select(editor.tab_index)
                 .style(Style::default().fg(editor.theme.default))
                 .highlight_style(Style::default().fg(editor.theme.operator));
@@ -127,20 +161,22 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             let content_layout = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Min(0), Constraint::Length(1)].as_ref()).split(chunks[1]);
 
             // Render main content
-            // let visible_content: Vec<Line> = colorize_code(&editor.content.join("\n"), &editor.theme)
-            //     .iter()
-            //     .skip(editor.scroll_position as usize)
-            //     .take(chunks[1].height as usize - 2) // Subtract 2 for the border
-            //     .cloned()
-            //     .collect();
+
+            let visible_lines = if chunks[1].height > 2 {
+                chunks[1].height as usize - 2
+            } else {
+                0
+            };
 
             let visible_content: Vec<Line> = editor
                 .content
                 .iter()
                 .skip(editor.scroll_position as usize)
-                .take(chunks[1].height as usize - 2) // Subtract 2 for the border
+                .take(visible_lines)
                 .map(|line| Line::from(vec![Span::styled(line.clone(), Style::default().fg(editor.theme.default).bg(editor.theme.background))]))
                 .collect();
+
+            let visible_content: Vec<Line> = colorize_code(visible_content, &editor.theme);
 
             let paragraph = Paragraph::new(visible_content).block(Block::default().borders(Borders::ALL).title("NAIL")).style(Style::default().bg(editor.theme.background).fg(editor.theme.default));
 
@@ -159,14 +195,20 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             // Set cursor
             let cursor_y = editor.cursor_y.saturating_sub(editor.scroll_position.into());
+            log::info!("Cursor position calculation - editor.cursor_y: {}, editor.cursor_x: {}, scroll: {}, cursor_y: {}", 
+                editor.cursor_y, editor.cursor_x, editor.scroll_position, cursor_y);
+            
             if cursor_y < content_layout[0].height.saturating_sub(2) as usize {
-                f.set_cursor(content_layout[0].x + editor.cursor_x as u16 + 1, content_layout[0].y + cursor_y as u16 + 1);
+                let cursor_pos = Position { 
+                    x: content_layout[0].x + editor.cursor_x as u16 + 1, 
+                    y: content_layout[0].y + cursor_y as u16 + 1 
+                };
+                log::info!("Setting cursor position: {:?}, content_layout[0]: {:?}", cursor_pos, content_layout[0]);
+                f.set_cursor_position(cursor_pos);
             }
 
-            // Display building indicator
-            if editor.build_status != BuildStatus::Idle {
-                display_build_status(f, &editor);
-            }
+            // Always display status
+            display_build_status(f, &editor);
 
             // Check and draw errors
             if let Some(error) = &editor.code_error {
@@ -182,15 +224,17 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 }
 
 fn display_build_status(f: &mut Frame, editor: &Editor) {
+    let status_text = match &editor.build_status {
+        BuildStatus::Idle => "Ready",
+        BuildStatus::Parsing => "Starting",
+        BuildStatus::Transpiling => "Transpiling",
+        BuildStatus::Compiling => "Compiling",
+        BuildStatus::Complete => "Saved!",
+        BuildStatus::Failed(err) => err,
+    };
+    
     let build_status = Line::from(vec![Span::styled(
-        match &editor.build_status {
-            BuildStatus::Idle => "Not Started",
-            BuildStatus::Parsing => "Starting",
-            BuildStatus::Transpiling => "Transpiling",
-            BuildStatus::Compiling => "Compiling",
-            BuildStatus::Complete => "Complete",
-            BuildStatus::Failed(err) => err,
-        },
+        status_text,
         Style::default().fg(editor.theme.default),
     )]);
 
@@ -201,6 +245,16 @@ fn display_build_status(f: &mut Frame, editor: &Editor) {
     let status_width = build_status_width;
     let status_height = 1;
     let status_area = Rect::new(f.area().width.saturating_sub(status_width), 0, status_width, status_height);
+    
+    log::info!("Build status area: {:?}, frame area: {:?}", status_area, f.area());
+    
+    // Check if status area is within frame bounds
+    if status_area.x + status_area.width > f.area().width || 
+       status_area.y + status_area.height > f.area().height {
+        log::warn!("Build status area exceeds frame bounds, skipping render");
+        return;
+    }
+    
     f.render_widget(Clear, status_area);
     f.render_widget(paragraph, status_area);
 }
@@ -209,6 +263,9 @@ fn display_error(f: &mut Frame, error: &CodeError, editor: &Editor, content_area
     let error_line = error.code_span.start_line.saturating_sub(editor.scroll_position as usize);
     let error_column = error.code_span.start_column;
     let error_message = error.message.clone();
+
+    log::info!("Displaying error - line: {}, column: {}, message: {}", 
+        error.code_span.start_line, error_column, error_message);
 
     // Only display the error if it's within the visible area
 
@@ -222,6 +279,17 @@ fn display_error(f: &mut Frame, error: &CodeError, editor: &Editor, content_area
         error_message.width() as u16,
         1,
     );
+    
+    log::info!("Error area: {:?}, content_area: {:?}, frame area: {:?}", 
+        error_area, content_area, f.area());
+    
+    // Check if error area is within frame bounds
+    if error_area.x + error_area.width > f.area().width || 
+       error_area.y + error_area.height > f.area().height {
+        log::warn!("Error area exceeds frame bounds, skipping render");
+        return;
+    }
+    
     f.render_widget(Clear, error_area);
     f.render_widget(paragraph, error_area);
 }
@@ -238,41 +306,80 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
         }
 
         // Check for key input
-        if event::poll(Duration::from_millis(100)).unwrap() {
-            if let Event::Key(key) = event::read().unwrap() {
-                let mut editor = lock(&editor_arc);
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        // SEND SHUTDOWN SIGNAL
-                        let _ = tx.send(EditorMessage::Shutdown);
-                        break;
-                    }
-                    KeyCode::F(6) => editor.toggle_theme(),
-                    KeyCode::F(7) => {
-                        if editor.build_status == BuildStatus::Idle {
-                            let _ = tx_build.send(EditorMessage::BuildStart);
+        match event::poll(Duration::from_millis(100)) {
+            Ok(true) => {
+                match event::read() {
+                    Ok(Event::Key(key)) => {
+                        let mut editor = lock(&editor_arc);
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                // SEND SHUTDOWN SIGNAL
+                                let _ = tx.send(EditorMessage::Shutdown);
+                                break;
+                            }
+                            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                // Save file with formatting
+                                log::info!("Ctrl+S detected - saving file...");
+                                editor.build_status = BuildStatus::Failed("Saving...".to_string());
+                                drop(editor); // Release lock before save
+                                
+                                let mut editor = lock(&editor_arc);
+                                match editor.save_file() {
+                                    Ok(_) => {
+                                        editor.build_status = BuildStatus::Complete;
+                                        log::info!("File saved successfully");
+                                    }
+                                    Err(e) => {
+                                        editor.build_status = BuildStatus::Failed(format!("Save failed: {}", e));
+                                        log::error!("Failed to save file: {}", e);
+                                    }
+                                }
+                            }
+                            KeyCode::F(6) => editor.toggle_theme(),
+                            KeyCode::F(7) => {
+                                match editor.build_status {
+                                    BuildStatus::Idle | BuildStatus::Failed(_) | BuildStatus::Complete => {
+                                        let _ = tx_build.send(EditorMessage::BuildStart);
+                                    }
+                                    _ => {
+                                        // Don't allow new builds while one is in progress
+                                    }
+                                }
+                            }
+                            KeyCode::Char(c) => editor.insert_char(c),
+                            KeyCode::Up => editor.move_cursor_up(),
+                            KeyCode::Down => editor.move_cursor_down(),
+                            KeyCode::PageDown => editor.scroll_down(),
+                            KeyCode::PageUp => editor.scroll_up(),
+                            KeyCode::Tab => editor.next_tab(),
+                            KeyCode::BackTab => editor.previous_tab(),
+                            KeyCode::Backspace => editor.delete_char(),
+                            KeyCode::Enter => editor.insert_newline(),
+                            KeyCode::Left => editor.move_cursor_left(),
+                            KeyCode::Right => editor.move_cursor_right(),
+                            _ => {}
                         }
                     }
-                    KeyCode::Char(c) => editor.insert_char(c),
-                    KeyCode::Up => editor.move_cursor_up(),
-                    KeyCode::Down => editor.move_cursor_down(),
-                    KeyCode::PageDown => editor.scroll_down(),
-                    KeyCode::PageUp => editor.scroll_up(),
-                    KeyCode::Tab => editor.next_tab(),
-                    KeyCode::BackTab => editor.previous_tab(),
-                    KeyCode::Backspace => editor.delete_char(),
-                    KeyCode::Enter => editor.insert_newline(),
-                    KeyCode::Left => editor.move_cursor_left(),
-                    KeyCode::Right => editor.move_cursor_right(),
-
-                    _ => {}
+                    Ok(_) => {
+                        // Other events (mouse, resize, etc.) - ignore for now
+                    }
+                    Err(e) => {
+                        log::error!("Error reading key event: {}", e);
+                    }
                 }
+            }
+            Ok(false) => {
+                // No events available, continue
+            }
+            Err(e) => {
+                log::error!("Error polling for events: {}", e);
+                std::thread::sleep(Duration::from_millis(100));
             }
         }
     }
 }
 
-pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>, tx: Sender<EditorMessage>) {
+pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>, _tx: Sender<EditorMessage>) {
     panic::set_hook(Box::new(|panic_info| {
         let backtrace = Backtrace::capture();
         error!("Panic occurred: {:?}", panic_info);
@@ -511,6 +618,7 @@ pub fn create_transpilation_cargo_toml() -> String {
 
     [dependencies]
     tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+    Nail = { path = ".." }
 
     # Binary target for the project
     [[bin]]
@@ -520,16 +628,134 @@ pub fn create_transpilation_cargo_toml() -> String {
     .to_string()
 }
 
-static WELCOME_MESSAGE: &str = r#"c welcome:s = `Welcome to NAIL - alpha version`;
+static WELCOME_MESSAGE: &str = r#"// Welcome to NAIL - Simple, Safe, Parallel Programming!
+// Press F7 to compile & run, F6 to toggle theme, Ctrl+C to exit
+// Use backticks for strings: `like this`
 
-c example_text:s = `Here are some quick tips to get you started:
-1. Type your code in this editor
-2. Use F6 to toggle between light and dark themes
-3. Press F7 to build and run your code
-4. Use Ctrl + C or Esc to exit the editor
+// === STRUCTS - Custom Data Types ===
+struct Player {
+    player_name:s,
+    health:i,
+    level:i
+}
 
-Let's start with some cool examples:`;
-"#;
+player:Player = Player {
+    player_name: `Hero`,
+    health: 100,
+    level: 1
+};
+
+// === ENUMS - Choice Types ===
+enum Status {
+    Active,
+    Paused,
+    Stopped
+}
+
+current:Status = Status::Active;
+
+// === ERROR HANDLING - Safe by Default ===
+fn divide(num:i, den:i):i!e {
+    if {
+        den == 0 => { r e(`Cannot divide by zero!`); },
+        else => { r num / den; }
+    }
+}
+
+// safe() function handles errors from i!e types
+fn safe(result:i!e, error_handler:s):i {
+    // This would be implemented in the transpiler
+    // For now, just show the function signature
+    r 42; // Placeholder
+}
+
+// Handle errors gracefully with safe()
+result:i = safe(divide(10, 2), `default_error_message`);
+result_msg:a:s = [`10 / 2 = `, to_string(result)];
+print(string_concat(result_msg));
+
+// === BASIC TYPES ===
+name:s = `Alice`;
+age:i = 25;
+score:f = 95.7;
+
+// === FUNCTIONS ===
+fn greet(person:s):s {
+    parts:a:s = [`Hello, `, person, `!`];
+    r string_concat(parts);
+}
+
+print(greet(name));
+
+// === PARALLEL PROCESSING - Nail's Superpower! ===
+parallel {
+    task1:s = to_string(42);
+    task2:i = time_now();
+    print(`Running in parallel!`);
+    fast_calc:i = 100 * 50;
+}
+
+// === ARRAYS ===
+numbers:a:i = [10, 20, 30, 40, 50];
+names:a:s = [`Alice`, `Bob`, `Charlie`];
+
+// === FUNCTIONAL OPERATIONS (No loops in Nail!) ===
+// Generate a range
+nums:a:i = range(1, 5);  // [1, 2, 3, 4, 5]
+
+// Helper functions for functional operations
+fn double_func(n:i):i { r n * 2; }
+fn is_even_func(n:i):b { 
+    r n % 2 == 0; 
+}
+fn add_func(acc:i, n:i):i { r acc + n; }
+fn square_func(n:i):i { r n * n; }
+
+// Map - transform each element
+doubled:a:i = map_int(nums, double_func);
+
+// Filter - keep only matching elements  
+evens:a:i = filter_int(nums, is_even_func);
+
+// Reduce - combine all elements
+sum:i = reduce_int(nums, 0, add_func);
+sum_msg:a:s = [`Sum 1-5: `, to_string(sum)];
+print(string_concat(sum_msg));
+
+// Chain operations - sum of squares
+sum_squares:i = reduce_int(
+    map_int(nums, square_func),
+    0,
+    add_func
+);
+squares_msg:a:s = [`Sum of squares: `, to_string(sum_squares)];
+print(string_concat(squares_msg));
+
+// === CONTROL FLOW ===
+if {
+    current == Status::Active => {
+        print(`System is active`);
+    },
+    else => {
+        print(`System inactive`);
+    }
+}
+
+// More Functions
+current_time:i = time_now();
+square_root:f = math_sqrt(16.0);
+
+// Print results
+print(`Welcome to Nail programming!`);
+array_length:i = array_len(numbers);
+print(to_string(array_length));
+print(to_string(square_root));
+
+// Comments work everywhere!
+final_message:s = `Nail makes parallel programming easy!`; // Inline comment
+
+// Ready to code? Clear this and write your own Nail program!
+// Try experimenting with structs, enums, and parallel blocks!"#;
 
 // static WELCOME_MESSAGE: &str = r#"
 // fn print(message:s):s {

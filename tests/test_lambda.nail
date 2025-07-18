@@ -1,0 +1,2 @@
+// Test lambda parsing
+value:i = safe(42, |err|:i { r -1; });

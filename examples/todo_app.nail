@@ -1,0 +1,65 @@
+// Todo List Application in Nail
+// Tests: functions, arrays, strings, conditionals, and stdlib functions
+
+// Task priorities as constants
+priority_high:i = 3;
+priority_medium:i = 2;
+priority_low:i = 1;
+
+// Function to format a task with priority
+fn format_task(task_name:s, priority:i):s {
+   priority_text:s = ``;
+    
+    if { 
+        priority == priority_high => {
+           high_text:s = `[HIGH]`;
+        }
+        priority == priority_medium => {
+           priority_text:s = `[MED] `;
+        }
+        priority == priority_low => {
+           priority_text:s = `[LOW] `;
+        }
+    };
+    
+   formatted:s = string_concat([priority_text, ` `, task_name]);
+    r formatted;
+}
+
+// Function to calculate task statistics
+fn calculate_stats(task_count:i, completed_count:i):f {
+   total_float:f = to_float(to_string(task_count));
+   completed_float:f = to_float(to_string(completed_count));
+   percentage:f = math_round(math_max(0.0, completed_float / total_float * 100.0));
+    r percentage;
+}
+
+// Main program
+app_title:s = `=== Nail Todo List Manager ===`;
+separator:s = `==============================`;
+
+// Create some tasks
+task_one:s = format_task(`Write Nail documentation`, priority_high);
+task_two:s = format_task(`Test array functions`, priority_medium);
+task_three:s = format_task(`Fix parser bugs`, priority_high);
+task_four:s = format_task(`Add more examples`, priority_low);
+
+// Store tasks in arrays
+v all_tasks:a:s = [task_one, task_two, task_three, task_four];
+total_tasks:i = array_len(all_tasks);
+
+// Track completed tasks
+completed_tasks:i = 2;
+completion_rate:f = calculate_stats(total_tasks, completed_tasks);
+
+// Build output
+header:s = string_concat([app_title, `\n`, separator]);
+stats_line:s = string_concat([`Total Tasks: `, to_string(total_tasks), ` | Completed: `, to_string(completed_tasks), ` (`, to_string(completion_rate), `%)`]);
+task_list:s = array_join(all_tasks, `\n`);
+timestamp:s = string_concat([`\nGenerated at: `, to_string(time_now()), ` seconds since epoch`]);
+
+// Create final output
+v output_parts:a:s = [header, `\n\n`, stats_line, `\n\n`, `Tasks:\n`, task_list, `\n`, separator, timestamp];
+final_output:s = string_concat(output_parts);
+
+print(final_output);

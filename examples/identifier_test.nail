@@ -1,0 +1,2 @@
+global_var:i = 42;
+test:i = global_var;

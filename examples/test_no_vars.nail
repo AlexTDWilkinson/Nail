@@ -1,0 +1,15 @@
+// Test pure immutability - no variables
+message:s = `Hello from pure Nail!`;
+print(message);
+
+number:i = 42;
+doubled:i = number * 2;
+print(to_string(doubled));
+
+// Test if expressions as values
+age:i = 25;
+status:s = if {
+    age >= 18 => { `adult`; },
+    else => { `minor`; }
+};
+print(status);

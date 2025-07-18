@@ -1,0 +1,18 @@
+// Stdlib demo - shows math, string, and array functions
+
+// Math functions
+sqrt_result:f = math_sqrt(16.0);
+print(to_string(sqrt_result));
+
+// String functions
+upper_result:s = string_to_uppercase(`hello`);
+print(upper_result);
+
+// Array functions
+test_array:a:i = [1, 2, 3];
+array_length:i = array_len(test_array);
+print(to_string(array_length));
+
+// Random number
+random_num:f = math_random();
+print(to_string(random_num));

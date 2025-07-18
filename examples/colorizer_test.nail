@@ -1,0 +1,57 @@
+// Comprehensive Nail program to test colorization
+// This file contains various Nail language features
+
+// Constants and variables
+name:s = `Alice Johnson`;
+age:i = 30;
+score:f = 95.7;
+v counter:i = 0;
+
+// Function calls with different argument types
+greeting:s = to_string(age);
+timestamp:i = time_now();
+print(`Hello world!`);
+
+// Operators and expressions
+result:i = age + 10;
+comparison:i = 1;
+
+// String literals and escaping
+message:s = `This is a "quoted" string`;
+multiline:s = `Line 1
+Line 2
+Line 3`;
+
+// Parallel blocks
+parallel {
+   task1:s = to_string(42);
+   task2:i = time_now();
+    print(`Parallel task`);
+}
+
+// Print based on age
+print(`User age: `);
+print(to_string(age));
+
+// Complex expressions
+complex:f = (age * 2) + (score / 2.0);
+
+// Comments on their own lines
+// TODO: Add more features
+// FIXME: Review this logic
+
+// Inline comments
+value:i = 100; // This is an inline comment
+another:s = `test`; // Another inline comment
+
+// Nested function calls
+nested:s = to_string(time_now());
+
+// Multiple operators
+math:i = 10 + 20 - 5 * 2 / 4;
+logic:i = 1;
+
+// Different punctuation
+array:a:s = [`item1`, `item2`, `item3`];
+// Return statements
+print(`Test complete`);

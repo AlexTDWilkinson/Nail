@@ -1,0 +1,7 @@
+// Test withoutprefix
+message:s = `Hello withoutprefix!`;
+print(message);
+
+number:i = 42;
+doubled:i = number * 2;
+print(to_string(doubled));

@@ -1,0 +1,5 @@
+// Final array test - checking type system fix
+
+test_array:a:i = [10, 20, 30];
+
+print(to_string(array_len(test_array)));

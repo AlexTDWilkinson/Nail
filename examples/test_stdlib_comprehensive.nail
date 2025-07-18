@@ -1,0 +1,32 @@
+// Comprehensive stdlib test with grug-approved names
+
+// Math functions
+negative_number:f = -5.7;
+absolute_value:f = math_abs(negative_number);
+square_root:f = math_sqrt(16.0);
+power_result:f = math_pow(2.0, 3.0);
+rounded_up:f = math_ceil(3.2);
+minimum_value:f = math_min(5.0, 3.0);
+
+// String functions  
+greeting_text:s = `Hello, Nail!`;
+uppercase_greeting:s = string_to_uppercase(greeting_text);
+text_length:i = string_len(greeting_text);
+replaced_text:s = string_replace(greeting_text, `Nail`, `Grug`);
+
+// Array operations
+v number_list:a:i = [10, 20, 30, 40, 50];
+list_length:i = array_len(number_list);
+
+// Type conversions
+number_string:s = `42`;
+parsed_number:i = to_int(number_string);
+
+// Time
+current_timestamp:i = time_now();
+
+// Create output
+math_output:s = to_string(absolute_value);
+final_output:s = string_concat([`Result: `, math_output, `, Text: `, uppercase_greeting]);
+
+print(final_output);

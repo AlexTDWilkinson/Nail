@@ -1,0 +1,13 @@
+// Test nested struct with current syntax
+
+struct Point {
+    x:f,
+    y:f
+}
+
+struct Rectangle {
+    top_left:struct:Point,
+    bottom_right:struct:Point
+}
+
+print(`Testing struct: prefix syntax`);

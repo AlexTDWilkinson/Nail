@@ -1,0 +1,10 @@
+// Very simple Nail program
+
+// Constant declaration
+message:s = `Hello from Nail!`;
+
+// Integer constant
+answer:i = 42;
+
+// Float constant
+pi:f = 3.14159;

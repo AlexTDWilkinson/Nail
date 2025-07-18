@@ -1,0 +1,41 @@
+// 🔥 Welcome to NAIL - Let's start with some cool examples! 🔥
+// Press F7 to build and run • F6 to toggle theme • Ctrl+C to exit
+
+// ⚡ Basic Variables and Types
+name:s = `Alice`;
+age:i = 25;
+score:f = 95.7;
+
+// 🎯 Function Calls and String Conversion
+greeting:s = to_string(age);
+timestamp:i = time_now();
+print(`Hello from Nail! 👋`);
+
+// 🔢 Math and Operators
+result:i = age + 10;
+average:f = (score + 85.3) / 2.0;
+
+// 🚀 Parallel Processing (Nail's superpower!)
+parallel {
+   task1:s = to_string(42);
+   task2:i = time_now();
+    print(`Running in parallel! 🚄`);
+   fast_calc:i = 100 * 50;
+}
+
+// 🌟 Control Flow
+if age >= 18 {
+    print(`Welcome, adult user! 🎉`);
+} else {
+    print(`Hello, young user! 🌱`);
+}
+
+// 💡 Complex Expressions
+complex_result:i = age * 2;
+
+// 🔧 Built-in Functions Demo
+current_time:i = time_now();
+name_length:i = string_len(name);
+
+// 📝 Comments work everywhere!
+final_message:s = `Nail makes parallel programming easy!`; // Inline comment

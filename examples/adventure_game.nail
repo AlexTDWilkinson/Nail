@@ -1,0 +1,81 @@
+// Adventure Game Stats Calculator
+// A comprehensive Nail program testing various features
+
+// Game constants
+max_health:i = 100;
+max_mana:i = 50;
+level_cap:i = 20;
+
+// Player stats
+player_name:s = `Grug the Mighty`;
+player_level:i = 15;
+player_health:i = 75;
+player_mana:i = 30;
+player_gold:i = 1337;
+
+// Calculate player percentages
+health_float:f = to_float(to_string(player_health));
+max_health_float:f = to_float(to_string(max_health));
+health_ratio:f = health_float / max_health_float;
+health_percent:f = math_round(health_ratio * 100.0);
+
+mana_float:f = to_float(to_string(player_mana));
+max_mana_float:f = to_float(to_string(max_mana));
+mana_ratio:f = mana_float / max_mana_float;
+mana_percent:f = math_round(mana_ratio * 100.0);
+
+level_float:f = to_float(to_string(player_level));
+cap_float:f = to_float(to_string(level_cap));
+level_ratio:f = level_float / cap_float;
+level_progress:f = math_round(level_ratio * 100.0);
+
+// Create health bar visualization
+health_bar_ratio:f = health_percent / 10.0;
+health_bar_length:i = to_int(to_string(math_floor(health_bar_ratio)));
+empty_bar_length:i = 10 - health_bar_length;
+
+// Player inventory
+v inventory_items:a:s = [`Sword of Truth`, `Shield of Honor`, `Potion of Healing`, `Magic Scroll`, `Dragon Scale`];
+inventory_count:i = array_len(inventory_items);
+inventory_list:s = array_join(inventory_items, `, `);
+
+// Recent achievements
+v achievements:a:s = [`Dragon Slayer`, `Dungeon Master`, `Gold Hoarder`];
+achievement_count:i = array_len(achievements);
+
+// Calculate game time
+start_time:i = 1700000000;
+current_time:i = time_now();
+play_time_seconds:i = current_time - start_time;
+seconds_per_hour:i = 3600;
+play_time_hours:i = play_time_seconds / seconds_per_hour;
+
+// Build the game status display
+title_line:s = string_concat([`===== `, string_to_uppercase(player_name), ` =====`]);
+separator:s = `=====================================`;
+level_line:s = string_concat([`Level: `, to_string(player_level), `/`, to_string(level_cap), ` (`, to_string(level_progress), `% to cap)`]);
+health_line:s = string_concat([`Health: `, to_string(player_health), `/`, to_string(max_health), ` (`, to_string(health_percent), `%)`]);
+mana_line:s = string_concat([`Mana: `, to_string(player_mana), `/`, to_string(max_mana), ` (`, to_string(mana_percent), `%)`]);
+gold_line:s = string_concat([`Gold: `, to_string(player_gold), ` coins`]);
+inventory_line:s = string_concat([`Inventory (`, to_string(inventory_count), ` items): `, inventory_list]);
+achievement_line:s = string_concat([`Achievements unlocked: `, to_string(achievement_count)]);
+time_line:s = string_concat([`Total playtime: `, to_string(play_time_hours), ` hours`]);
+
+// Combine all parts
+display_parts:a:s = [
+    title_line, `\n`,
+    separator, `\n\n`,
+    level_line, `\n`,
+    health_line, `\n`,
+    mana_line, `\n`,
+    gold_line, `\n\n`,
+    inventory_line, `\n`,
+    achievement_line, `\n\n`,
+    time_line, `\n`,
+    separator
+];
+
+final_display:s = string_concat(display_parts);
+
+// Output the game status
+print(final_display);

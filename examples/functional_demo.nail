@@ -1,0 +1,35 @@
+// Functional Programming in Nail - No Loops!
+// This shows how to work with collections without traditional loops
+
+// Generate a range of numbers
+numbers:a:i = range(1, 10);  // [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+// Map: Transform each element
+squared:a:i = map_int(numbers, |n:i|:i { r n * n; });
+print(`Squared first 10 numbers`);
+
+// Filter: Keep only elements that match
+evens:a:i = filter_int(numbers, |n:i|:b { r n % 2 == 0; });
+print(`Found even numbers`);
+
+// Reduce: Combine all elements into one value
+sum:i = reduce_int(numbers, 0, |acc:i, n:i|:i { r acc + n; });
+product:i = reduce_int(range(1, 5), 1, |acc:i, n:i|:i { r acc * n; });
+print(string_concat([`Sum 1-10: `, to_string(sum)]));
+print(string_concat([`Product 1-5: `, to_string(product)]));
+
+// Chain operations
+doubled_evens:a:i = map_int(
+    filter_int(numbers, |n:i|:b { r n % 2 == 0; }),
+    |n:i|:i { r n * 2; }
+);
+
+// Calculate sum of squares
+sum_of_squares:i = reduce_int(
+    map_int(range(1, 5), |n:i|:i { r n * n; }),
+    0,
+    |acc:i, n:i|:i { r acc + n; }
+);
+print(string_concat([`Sum of squares 1-5: `, to_string(sum_of_squares)]));
+
+print(`Done! No loops were used.`);

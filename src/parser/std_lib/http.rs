@@ -1,28 +1,59 @@
-use std::any::Any;
-use std::io::{Read, Write};
-use std::net::TcpListener;
+use axum::{Router, response::Html, routing::get};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
-// Adjust start_server to accept Box<dyn Any> for arguments and return Result<Box<dyn Any>, String>
-pub fn start_server(args: Box<dyn Any>) -> Result<Box<dyn Any>, String> {
-    !!("start_server function has at least ran");
-    println!("here are the args {:?}", args);
-    if let Ok(address) = args.downcast::<String>() {
-        let listener = TcpListener::bind(&**address).map_err(|e| e.to_string())?;
-        println!("Server is running on {}", address);
+// Simple HTTP route handler type - returns HTML string
+type RouteHandler = Arc<dyn Fn() -> String + Send + Sync>;
 
-        for stream in listener.incoming() {
-            let mut stream = stream.map_err(|e| e.to_string())?;
-            let mut buffer = [0; 512];
-            stream.read(&mut buffer).map_err(|e| e.to_string())?;
+// Nail callable function: http_server_start
+// This function is called from transpiled Nail code which is already async
+pub async fn http_server_start(port: i64, html: String) -> Result<(), String> {
+    // Create a simple handler that returns the HTML
+    let html_clone = html.clone();
+    let app = Router::new()
+        .route("/", get(move || async move {
+            Html(html_clone.clone())
+        }));
+    
+    let addr = SocketAddr::from(([127, 0, 0, 1], port as u16));
+    println!("🔨 Nail HTTP server listening on http://{}", addr);
+    
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| format!("Failed to bind to port {}: {}", port, e))?;
+    
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| format!("Server error: {}", e))?;
+    
+    Ok(())
+}
 
-            let response = "HTTP/1.1 200 OK\r\n\r\nHello, world!";
-            stream
-                .write(response.as_bytes())
-                .map_err(|e| e.to_string())?;
-            stream.flush().map_err(|e| e.to_string())?;
-        }
-        Ok(Box::new(())) // Return an empty tuple to indicate success
-    } else {
-        Err("Invalid argument for start_server".into())
+// For more complex routing, we could have:
+pub async fn http_server_route(port: i64, routes: HashMap<String, String>) -> Result<(), String> {
+    let mut app = Router::new();
+    
+    let route_count = routes.len();
+    
+    // Add each route
+    for (path, html) in routes {
+        let html_clone = html.clone();
+        app = app.route(&path, get(move || async move {
+            Html(html_clone.clone())
+        }));
     }
+    
+    let addr = SocketAddr::from(([127, 0, 0, 1], port as u16));
+    println!("🔨 Nail HTTP server with {} routes listening on http://{}", route_count, addr);
+    
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| format!("Failed to bind to port {}: {}", port, e))?;
+    
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| format!("Server error: {}", e))?;
+    
+    Ok(())
 }

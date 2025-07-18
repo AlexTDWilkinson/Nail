@@ -1,0 +1,128 @@
+// Welcome to NAIL - Simple, Safe, Parallel Programming!
+// Press F7 to compile & run, F6 to toggle theme, Ctrl+C to exit
+// Use backticks for strings: `like this`
+
+// === STRUCTS - Custom Data Types ===
+struct Player {
+    player_name:s,
+    health:i,
+    level:i
+}
+
+player:Player = Player {
+    player_name: `Hero`,
+    health: 100,
+    level: 1
+};
+
+// === ENUMS - Choice Types ===
+enum Status {
+    Active,
+    Paused,
+    Stopped
+}
+
+current:Status = Status::Active;
+
+// === ERROR HANDLING - Safe by Default ===
+fn divide(num:i, den:i):i!e {
+    if {
+        den == 0 => { r e(`Cannot divide by zero!`); },
+        else => { r num / den; }
+    }
+}
+
+// safe() function handles errors from i!e types
+fn safe(result:i!e, error_handler:s):i {
+    // This would be implemented in the transpiler
+    // For now, just show the function signature
+    r 42; // Placeholder
+}
+
+// Handle errors gracefully with safe()
+result:i = safe(divide(10, 2), `default_error_message`);
+result_msg:a:s = [`10 / 2 = `, to_string(result)];
+print(string_concat(result_msg));
+
+// === BASIC TYPES ===
+name:s = `Alice`;
+age:i = 25;
+score:f = 95.7;
+
+// === FUNCTIONS ===
+fn greet(person:s):s {
+    parts:a:s = [`Hello, `, person, `!`];
+    r string_concat(parts);
+}
+
+print(greet(name));
+
+// === PARALLEL PROCESSING - Nail's Superpower! ===
+parallel {
+    task1:s = to_string(42);
+    task2:i = time_now();
+    print(`Running in parallel!`);
+    fast_calc:i = 100 * 50;
+}
+
+// === ARRAYS ===
+numbers:a:i = [10, 20, 30, 40, 50];
+names:a:s = [`Alice`, `Bob`, `Charlie`];
+
+// === FUNCTIONAL OPERATIONS (No loops in Nail!) ===
+// Generate a range
+nums:a:i = range(1, 5); // [1, 2, 3, 4, 5]
+
+// Helper functions for functional operations
+fn double_func(n:i):i { r n * 2; }
+
+fn is_even_func(n:i):b {
+    r n % 2 == 0;
+}
+
+fn add_func(acc:i, n:i):i { r acc + n; }
+
+fn square_func(n:i):i { r n * n;}
+
+// Map - transform each element
+doubled:a:i = map_int(nums, double_func);
+
+// Filter - keep only matching elements
+evens:a:i = filter_int(nums, is_even_func);
+
+// Reduce - combine all elements
+sum:i = reduce_int(nums, 0, add_func);
+sum_msg:a:s = [`Sum 1-5: `, to_string(sum)];
+print(string_concat(sum_msg));
+
+// Chain operations - sum of squares
+sum_squares:i = reduce_int(map_int(nums, square_func), 0, add_func);
+
+squares_msg:a:s = [`Sum of squares: `, to_string(sum_squares)];
+print(string_concat(squares_msg));
+
+// === CONTROL FLOW ===
+if {
+    current == Status::Active => {
+        print(`System is active`);
+    },
+    else => {
+        print(`System inactive`);
+    }
+}
+
+// More Functions
+current_time:i = time_now();
+square_root:f = math_sqrt(16.0);
+
+// Print results
+print(`Welcome to Nail programming!`);
+array_length:i = array_len(numbers);
+print(to_string(array_length));
+print(to_string(square_root));
+
+// Comments work everywhere!
+final_message:s = `Nail makes parallel programming easy!`; // Inline comment
+
+// Ready to code? Clear this and write your own Nail program!
+// Try experimenting with structs, enums, and parallel blocks!

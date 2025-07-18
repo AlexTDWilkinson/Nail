@@ -1,0 +1,12 @@
+// Test if v (variable) declarations are actually mutable
+
+v counter:i = 0;
+print(to_string(counter));
+
+// Try to reassign
+counter = 5;
+print(to_string(counter));
+
+// Try another reassignment
+counter = counter + 1;
+print(to_string(counter));

@@ -1,0 +1,4 @@
+first_value:i = 10;
+second_value:i = 20;
+print(to_string(first_value));
+print(to_string(second_value));

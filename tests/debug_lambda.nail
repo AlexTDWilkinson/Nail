@@ -1,0 +1,2 @@
+// Simple lambda test
+|x:i|:i { r x; }

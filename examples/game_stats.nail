@@ -1,0 +1,26 @@
+// Game Stats Display - Testing Nail features
+
+player_name:s = `Grug the Warrior`;
+player_level:i = 15;
+player_health:i = 75;
+player_gold:i = 1337;
+
+inventory:a:s = [`Sword`, `Shield`, `Potion`, `Scroll`];
+item_count:i = array_len(inventory);
+item_list:s = array_join(inventory, `, `);
+
+upper_name:s = string_to_uppercase(player_name);
+health_str:s = to_string(player_health);
+level_str:s = to_string(player_level);
+gold_str:s = to_string(player_gold);
+count_str:s = to_string(item_count);
+
+output_lines:a:s = [
+    `===== GAME STATS =====`,
+    `Player: `, upper_name,
+    `\nLevel: `, level_str, ` | Health: `, health_str, ` | Gold: `, gold_str,
+    `\nInventory (`, count_str, ` items): `, item_list,
+    `\n=====================`
+];
+
+print(string_concat(output_lines));

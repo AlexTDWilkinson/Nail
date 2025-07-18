@@ -1,0 +1,9 @@
+// Final stdlib demo
+
+sqrt_result:s = to_string(math_sqrt(16.0));
+upper_result:s = string_to_uppercase(`hello world`);
+arr_len_result:s = to_string(array_len([1, 2, 3, 4, 5]));
+v parts:a:s = [`Math: sqrt(16) = `, sqrt_result, ` | String: `, upper_result, ` | Array length: `, arr_len_result];
+output:s = string_concat(parts);
+
+print(output);

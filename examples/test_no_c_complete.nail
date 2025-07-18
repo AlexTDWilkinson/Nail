@@ -1,0 +1,25 @@
+// Complete test withoutprefix
+message:s = `Hello, Nail without c!`;
+print(message);
+
+// Math operations
+base:i = 10;
+squared:i = base * base;
+print(to_string(squared));
+
+// If expressions
+age:i = 21;
+status:s = if {
+    age >= 18 => { `adult`; },
+    else => { `minor`; }
+};
+print(status);
+
+// Nested expressions
+result:i = if {
+    squared > 50 => { squared * 2; },
+    else => { squared / 2; }
+};
+print(to_string(result));
+
+print(`All done!`);

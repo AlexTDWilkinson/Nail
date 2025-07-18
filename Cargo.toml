@@ -2,6 +2,20 @@
 name = "Nail"
 version = "0.0.1"
 edition = "2021"
+default-run = "Nail"
+
+[[bin]]
+name = "Nail"
+path = "src/main.rs"
+
+[[bin]]
+name = "nailc"
+path = "src/bin/nailc.rs"
+
+[lib]
+name = "Nail"
+path = "src/lib.rs"
+
 
 [dependencies]
 dashmap = "6.1.0"
@@ -11,4 +25,9 @@ log = "0.4.22"
 ratatui = { version = "0.28.1", features = ["all-widgets", "crossterm"] }
 rayon = "1.10.0"
 regex = "1.10.6"
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = "0.8"
 

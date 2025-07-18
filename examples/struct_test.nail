@@ -1,0 +1,24 @@
+// Test struct and enum declarations
+// Note: Currently only declarations are supported
+// Instantiation and field access are not yet implemented
+
+struct Player {
+    player_name:s,
+    player_level:i,
+    health_points:f
+}
+
+enum GameState {
+    MainMenu,
+    Playing,
+    GameOver
+}
+
+// For now, we can only declare structs and enums
+// Future features will include:
+// - Struct instantiation: Player { player_name: `Grug`, ... }
+// - Enum variant usage: GameState::Playing
+// - Field access: player.player_name
+// - Pattern matching on enums
+
+print(`Struct and enum declarations compiled successfully!`);

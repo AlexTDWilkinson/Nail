@@ -1,0 +1,2 @@
+// Just the problematic line
+result:i = if { 1 > 0 => { r 1; }, else => { r 0; } };

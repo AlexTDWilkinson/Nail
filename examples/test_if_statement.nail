@@ -1,0 +1,34 @@
+// Test if statements in Nail (match-like syntax)
+
+age:i = 25;
+score:f = 85.5;
+
+// Simple if statement with pattern matching syntax
+if {
+    age >= 18 => { print(`Adult`); }
+};
+
+// If-else statement
+if {
+    score >= 90.0 => { print(`Excellent score!`); },
+    else => { print(`Good score!`); }
+};
+
+// Multiple conditions (like if-else if-else)
+if {
+    age < 13 => { print(`Child`); },
+    age < 20 => { print(`Teenager`); },
+    age < 65 => { print(`Adult`); },
+    else => { print(`Senior`); }
+};
+
+// Testing with exact values
+status_code:i = 200;
+if {
+    status_code == 200 => { print(`OK`); },
+    status_code == 404 => { print(`Not Found`); },
+    status_code == 500 => { print(`Server Error`); },
+    else => { print(`Unknown Status`); }
+};
+
+print(`If statement test complete`);
