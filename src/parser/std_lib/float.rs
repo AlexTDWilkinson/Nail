@@ -1,7 +1,7 @@
 // Float conversion and utility functions
 
 // Convert string to float
-pub fn float_from(s: String) -> Result<f64, String> {
+pub fn from(s: String) -> Result<f64, String> {
     s.parse::<f64>().map_err(|e| e.to_string())
 }
 
@@ -37,12 +37,20 @@ pub fn ceil(x: f64) -> f64 {
 
 // Minimum of two values
 pub fn min(a: f64, b: f64) -> f64 {
-    if a < b { a } else { b }
+    if a < b {
+        a
+    } else {
+        b
+    }
 }
 
 // Maximum of two values
 pub fn max(a: f64, b: f64) -> f64 {
-    if a > b { a } else { b }
+    if a > b {
+        a
+    } else {
+        b
+    }
 }
 
 // Random number between 0 and 1

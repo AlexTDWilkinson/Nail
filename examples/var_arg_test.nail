@@ -1,2 +1,2 @@
 num:i = 42;
-test:s = to_string(num);
+test:s = string_from(num);

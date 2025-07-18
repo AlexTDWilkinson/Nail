@@ -17,7 +17,7 @@ if {
 };
 
 print(message);
-print(to_string(score));
+print(string_from(score));
 
 // Test 2: Declaring new constants inside if branches
 if {
@@ -37,11 +37,11 @@ if {
     age < 30 => {
         counter = counter + 1;
         counter = counter * 2;
-        print(to_string(counter));
+        print(string_from(counter));
     },
     else => {
         counter = counter + 10;
-        print(to_string(counter));
+        print(string_from(counter));
     }
 };
 

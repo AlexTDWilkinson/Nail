@@ -9,18 +9,18 @@ async fn main() {
     let result_sum: i64 = first_number + second_number;
     let temperature: f64 = 98.6;
     let celsius: f64 = temperature - 32.0 * 5.0 / 9.0;
-    let user_name: String = "Grug".to_string();
+    let user_name: String = "Grug".string_from();
     let (parallel_result_0, parallel_result_1, parallel_result_2) = tokio::join!(
         async {
-            println!("{}", "Processing task one".to_string());
+            println!("{}", "Processing task one".string_from());
             ()
         },
         async {
-            println!("{}", "Processing task two".to_string());
+            println!("{}", "Processing task two".string_from());
             ()
         },
         async {
-            println!("{}", "Processing task three".to_string());
+            println!("{}", "Processing task three".string_from());
             ()
         }
     );

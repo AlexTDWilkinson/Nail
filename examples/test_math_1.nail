@@ -1,7 +1,7 @@
 // Test math functions part 1
 
 print(string_concat([
-    `abs(-5.7) = `, to_string(math_abs(-5.7)),
-    `, sqrt(16) = `, to_string(math_sqrt(16.0)),
-    `, pow(2,3) = `, to_string(math_pow(2.0, 3.0))
+    `abs(-5.7) = `, string_from(math_abs(-5.7)),
+    `, sqrt(16) = `, string_from(math_sqrt(16.0)),
+    `, pow(2,3) = `, string_from(math_pow(2.0, 3.0))
 ]));

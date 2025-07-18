@@ -4,9 +4,9 @@ abs_result:f = math_abs(-5.7);
 sqrt_result:f = math_sqrt(16.0);
 pow_result:f = math_pow(2.0, 3.0);
 
-abs_str:s = to_string(abs_result);
-sqrt_str:s = to_string(sqrt_result);
-pow_str:s = to_string(pow_result);
+abs_str:s = string_from(abs_result);
+sqrt_str:s = string_from(sqrt_result);
+pow_str:s = string_from(pow_result);
 
 v results:a:s = [abs_str, ` `, sqrt_str, ` `, pow_str];
 output:s = string_concat(results);

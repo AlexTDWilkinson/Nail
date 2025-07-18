@@ -4,7 +4,7 @@ use Nail::std_lib::string::string_from;
 
 #[tokio::main]
 async fn main() {
-    let message: String = "Hello withoutprefix!".to_string();
+    let message: String = "Hello withoutprefix!".string_from();
     println!("{}", message);
     let number: i64 = 42;
     let doubled: i64 = number * 2;

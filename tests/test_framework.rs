@@ -1,24 +1,24 @@
 // Comprehensive test framework for the entire Nail language
 // Tests lexer, parser, type checker, and transpiler
 
-use Nail::lexer::*;
-use Nail::parser::*;
 use Nail::checker::*;
 use Nail::common::*;
+use Nail::lexer::*;
+use Nail::parser::*;
 
 /// Test helper to run the entire pipeline: code -> tokens -> AST -> type check
 pub fn test_full_pipeline(code: &str) -> TestResult {
     let mut result = TestResult::new(code);
-    
+
     // Step 1: Lexer
     let tokens = lexer(code);
     result.tokens = Some(tokens.clone());
-    
+
     // Step 2: Parser
     match parse(tokens) {
         Ok(mut ast) => {
             result.ast = Some(ast.clone());
-            
+
             // Step 3: Type Checker
             match checker(&mut ast) {
                 Ok(()) => {
@@ -33,7 +33,7 @@ pub fn test_full_pipeline(code: &str) -> TestResult {
             result.parser_errors = vec![error];
         }
     }
-    
+
     result
 }
 
@@ -56,49 +56,39 @@ pub struct TestResult {
 
 impl TestResult {
     fn new(code: &str) -> Self {
-        Self {
-            code: code.to_string(),
-            tokens: None,
-            ast: None,
-            lexer_errors: vec![],
-            parser_errors: vec![],
-            checker_errors: vec![],
-            checker_success: false,
-        }
+        Self { code: code.to_string(), tokens: None, ast: None, lexer_errors: vec![], parser_errors: vec![], checker_errors: vec![], checker_success: false }
     }
-    
+
     pub fn has_any_errors(&self) -> bool {
-        !self.lexer_errors.is_empty() || 
-        !self.parser_errors.is_empty() || 
-        !self.checker_errors.is_empty()
+        !self.lexer_errors.is_empty() || !self.parser_errors.is_empty() || !self.checker_errors.is_empty()
     }
-    
+
     pub fn should_succeed(&self) -> bool {
         !self.has_any_errors() && self.checker_success
     }
-    
+
     pub fn print_summary(&self) {
         println!("=== TEST RESULT ===");
         println!("Code: {}", self.code);
         println!("Lexer errors: {}", self.lexer_errors.len());
-        println!("Parser errors: {}", self.parser_errors.len()); 
+        println!("Parser errors: {}", self.parser_errors.len());
         println!("Checker errors: {}", self.checker_errors.len());
         println!("Checker success: {}", self.checker_success);
-        
+
         if !self.lexer_errors.is_empty() {
             println!("LEXER ERRORS:");
             for error in &self.lexer_errors {
                 println!("  - {}", error.message);
             }
         }
-        
+
         if !self.parser_errors.is_empty() {
             println!("PARSER ERRORS:");
             for error in &self.parser_errors {
                 println!("  - {}", error.message);
             }
         }
-        
+
         if !self.checker_errors.is_empty() {
             println!("CHECKER ERRORS:");
             for error in &self.checker_errors {

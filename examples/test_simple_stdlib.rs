@@ -4,7 +4,7 @@ use Nail::std_lib;
 
 #[tokio::main]
 async fn main() {
-    let greeting: String = "Hello, World!".to_string();
+    let greeting: String = "Hello, World!".string_from();
     let upper: String = std_lib::string::to_uppercase(greeting.clone());
     println!("{}", upper);
     let len: i64 = std_lib::string::len(greeting.clone());
@@ -21,5 +21,5 @@ async fn main() {
     let array_length: i64 = std_lib::array::len(numbers.clone());
     let length_str: String = string_from(array_length.clone());
     println!("{}", length_str);
-    println!("{}", "Test complete".to_string());
+    println!("{}", "Test complete".string_from());
 }

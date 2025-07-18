@@ -38,7 +38,7 @@ result:i = safe(divide(10, 2), |e|:i {
     print(e); // Print the error message
     r 0; // Return default value
 });
-result_msg:a:s = [`10 / 2 = `, to_string(result)];
+result_msg:a:s = [`10 / 2 = `, string_from(result)];
 print(string_concat(result_msg));
 
 // Use dangerous() when you're certain the operation won't fail (temporary code to be replaced with safe() later)
@@ -62,7 +62,7 @@ print(greet(name));
 
 // === PARALLEL PROCESSING - Nail's Superpower! ===
 p
-task1:s = to_string(42);
+task1:s = string_from(42);
 task2:i = time_now();
 fast_calc:i = 100 * 50;
 / p
@@ -96,7 +96,7 @@ evens:a:i = filter_int(nums, is_even_func);
 
 // Reduce - combine all elements
 sum:i = reduce_int(nums, 0, add_func);
-sum_msg:a:s = [`Sum 1-5: `, to_string(sum)];
+sum_msg:a:s = [`Sum 1-5: `, string_from(sum)];
 print(string_concat(sum_msg));
 
 // Chain operations - sum of squares
@@ -105,7 +105,7 @@ map_int(nums, square_func),
 0,
 add_func
 );
-squares_msg:a:s = [`Sum of squares: `, to_string(sum_squares)];
+squares_msg:a:s = [`Sum of squares: `, string_from(sum_squares)];
 print(string_concat(squares_msg));
 
 // === CONTROL FLOW ===
@@ -125,8 +125,8 @@ square_root:f = math_sqrt(16.0);
 // Print results
 print(`Welcome to Nail programming!`);
 array_length:i = array_len(numbers);
-print(to_string(array_length));
-print(to_string(square_root));
+print(string_from(array_length));
+print(string_from(square_root));
 
 // Comments work everywhere!
 final_message:s = `Nail makes parallel programming easy!`; // Inline comment

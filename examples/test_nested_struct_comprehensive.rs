@@ -42,5 +42,5 @@ async fn main() {
     struct Scene {
         name: String,
     }
-    println!("{}", "Comprehensive nested struct test completed!".to_string());
+    println!("{}", "Comprehensive nested struct test completed!".string_from());
 }

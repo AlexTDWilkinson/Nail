@@ -47,7 +47,7 @@ result:i = safe(divide(10, 2), |err:s|:i {
     print(string_concat([`Error: `, err]));
     r 0;  // Default value
 });
-print(string_concat([`10 / 2 = `, to_string(result)]));
+print(string_concat([`10 / 2 = `, string_from(result)]));
 
 // Or panic on errors with dangerous()
 // result2:i = dangerous(divide(10, 0)); // This would panic!

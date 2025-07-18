@@ -28,5 +28,5 @@ async fn main() {
         char_health: i64,
         char_mana: i64,
     }
-    println!("{}", "Struct declarations test completed".to_string());
+    println!("{}", "Struct declarations test completed".string_from());
 }

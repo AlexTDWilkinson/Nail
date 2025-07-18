@@ -7,7 +7,7 @@ if {
     age > 18 => { print(`adult`); },
     else => { 
        temp:i = 100;
-        print(to_string(temp)); 
+        print(string_from(temp)); 
     }
 };
 

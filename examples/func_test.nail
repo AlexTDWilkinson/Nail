@@ -1,1 +1,1 @@
-test:s = to_string(42);
+test:s = string_from(42);

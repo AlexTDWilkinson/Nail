@@ -184,7 +184,7 @@ ALWAYS used instead of traditional loops:
 
 ```js
 numbers:a:i = [1, 2, 3, 4, 5];
-for_each(numbers, |num:i|:v { print(`Number: ` + to_string(num)); });
+for_each(numbers, |num:i|:v { print(`Number: ` + string_from(num)); });
 ```
 
 ## Functions
@@ -813,7 +813,7 @@ parallel {
 
 // All variables are available here after parallel execution completes
 print(user_data);
-print(to_string(notifications));
+print(string_from(notifications));
 ```
 
 ## Structs

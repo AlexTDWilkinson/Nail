@@ -14,5 +14,5 @@ fn main():v {
         r -1; 
     });
     
-    print(`Result: ` + to_string(result));
+    print(`Result: ` + string_from(result));
 }

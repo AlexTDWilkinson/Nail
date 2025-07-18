@@ -30,5 +30,5 @@ async fn main() {
         player_two: Player,
         world_bounds: Rectangle,
     }
-    println!("{}", "Nested struct declarations test".to_string());
+    println!("{}", "Nested struct declarations test".string_from());
 }

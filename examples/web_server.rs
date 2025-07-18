@@ -37,7 +37,7 @@ async fn main() {
     <div class=\"nail-box\">
         <h1>🔨 Hello from Nail!</h1>
         <p>This webpage is being served by a Nail program using Axum under the hood.</p>
-        <p>The server is running on port <code>".to_string(), port_string.clone(), "</code></p>
+        <p>The server is running on port <code>".string_from(), port_string.clone(), "</code></p>
         <p>Nail features demonstrated:</p>
         <ul>
             <li>String interpolation with backticks</li>
@@ -48,6 +48,6 @@ async fn main() {
     </div>
 </body>
 </html>
-".to_string()]);
+".string_from()]);
     std_lib::http::http_server_start(port.clone(), html_content.clone()).await.unwrap();
 }

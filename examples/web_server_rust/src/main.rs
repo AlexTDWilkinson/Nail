@@ -34,7 +34,7 @@ async fn main() {
         <p>Grug happy. Complexity bad. Nail good. 🎉</p>
     </div>
 </body>
-</html>".to_string();
+</html>".string_from();
 
     std_lib::http::http_server_start(port, html_content).await.unwrap()
 

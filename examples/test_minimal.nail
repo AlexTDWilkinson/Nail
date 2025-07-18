@@ -1,3 +1,3 @@
 input_value:f = 16.0;
 
-print(to_string(input_value));
+print(string_from(input_value));

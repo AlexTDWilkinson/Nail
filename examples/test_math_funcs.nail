@@ -11,15 +11,15 @@ max_test:f = math_max(5.0, 3.0);
 random_test:f = math_random();
 
 result:s = string_concat([
-    `abs(-5.7) = `, to_string(abs_test),
-    `, sqrt(16) = `, to_string(sqrt_test),
-    `, pow(2,3) = `, to_string(pow_test),
-    `, round(3.7) = `, to_string(round_test),
-    `, floor(3.7) = `, to_string(floor_test),
-    `, ceil(3.2) = `, to_string(ceil_test),
-    `, min(5,3) = `, to_string(min_test),
-    `, max(5,3) = `, to_string(max_test),
-    `, random = `, to_string(random_test)
+    `abs(-5.7) = `, string_from(abs_test),
+    `, sqrt(16) = `, string_from(sqrt_test),
+    `, pow(2,3) = `, string_from(pow_test),
+    `, round(3.7) = `, string_from(round_test),
+    `, floor(3.7) = `, string_from(floor_test),
+    `, ceil(3.2) = `, string_from(ceil_test),
+    `, min(5,3) = `, string_from(min_test),
+    `, max(5,3) = `, string_from(max_test),
+    `, random = `, string_from(random_test)
 ]);
 
 print(result);

@@ -22,12 +22,12 @@ async fn main() {
         Playing,
         GameOver,
     }
-    let name: String = "Alice".to_string();
+    let name: String = "Alice".string_from();
     let age: i64 = 25;
     let score: f64 = 95.7;
     let greeting: String = string_from(age.clone());
     let timestamp: i64 = std_lib::time::now();
-    println!("{}", "Hello from Nail!".to_string());
+    println!("{}", "Hello from Nail!".string_from());
     let result: i64 = age + 10;
     let average: f64 = score + 85.3 / 2.0;
     let (parallel_result_0, parallel_result_1, parallel_result_2, parallel_result_3) = tokio::join!(
@@ -40,7 +40,7 @@ async fn main() {
             ()
         },
         async {
-            println!("{}", "Running in parallel!".to_string());
+            println!("{}", "Running in parallel!".string_from());
             ()
         },
         async {
@@ -52,8 +52,8 @@ async fn main() {
     let array_length: i64 = std_lib::array::len(numbers.clone());
     let current_time: i64 = std_lib::time::now();
     let square_root: f64 = std_lib::math::sqrt(16.0);
-    println!("{}", "Welcome to Nail programming!".to_string());
+    println!("{}", "Welcome to Nail programming!".string_from());
     println!("{}", string_from(array_length.clone()));
     println!("{}", string_from(square_root.clone()));
-    let final_message: String = "Nail makes parallel programming easy!".to_string();
+    let final_message: String = "Nail makes parallel programming easy!".string_from();
 }

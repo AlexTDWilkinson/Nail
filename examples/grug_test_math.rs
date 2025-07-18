@@ -10,7 +10,7 @@ async fn main() {
     let abs_str: String = string_from(abs_result);
     let sqrt_str: String = string_from(sqrt_result);
     let pow_str: String = string_from(pow_result);
-    let mut results: Vec<String> = vec! [abs_str, " ".to_string(), sqrt_str, " ".to_string(), pow_str];
+    let mut results: Vec<String> = vec! [abs_str, " ".string_from(), sqrt_str, " ".string_from(), pow_str];
     let output: String = std_lib::string::concat(results);
     println!("{}", output);
 }

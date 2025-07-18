@@ -15,41 +15,41 @@ replaced:s = string_replace(greeting, `World`, `Nail`);
 print(replaced);
 
 str_len:i = string_len(greeting);
-print(to_string(str_len));
+print(string_from(str_len));
 
 // Math functions
 x_value:f = -5.7;
 abs_x:f = math_abs(x_value);
-print(to_string(abs_x));
+print(string_from(abs_x));
 
 sqrt_val:f = math_sqrt(16.0);
-print(to_string(sqrt_val));
+print(string_from(sqrt_val));
 
 power:f = math_pow(2.0, 3.0);
-print(to_string(power));
+print(string_from(power));
 
 rounded:f = math_round(3.7);
-print(to_string(rounded));
+print(string_from(rounded));
 
 floored:f = math_floor(3.7);
-print(to_string(floored));
+print(string_from(floored));
 
 ceiled:f = math_ceil(3.2);
-print(to_string(ceiled));
+print(string_from(ceiled));
 
 min_val:f = math_min(5.0, 3.0);
-print(to_string(min_val));
+print(string_from(min_val));
 
 max_val:f = math_max(5.0, 3.0);
-print(to_string(max_val));
+print(string_from(max_val));
 
 random_val:f = math_random();
-print(to_string(random_val));
+print(string_from(random_val));
 
 // Array functions
 v numbers:[i] = [1, 2, 3, 4, 5];
 arr_len:i = array_len(numbers);
-print(to_string(arr_len));
+print(string_from(arr_len));
 
 v strings:[s] = [`hello`, `world`, `from`, `nail`];
 joined:s = array_join(strings, ` `);
@@ -57,23 +57,23 @@ print(joined);
 
 // Time functions
 now_time:i = time_now();
-print(to_string(now_time));
+print(string_from(now_time));
 
 formatted_time:s = time_format(now_time, `%Y-%m-%d`);
 print(formatted_time);
 
 // Environment functions
 args:[s] = env_args();
-print(to_string(array_len(args)));
+print(string_from(array_len(args)));
 
 // Type conversions
 num_str:s = `42`;
 number:i = to_int(num_str);
-print(to_string(number));
+print(string_from(number));
 
 float_str:s = `3.14`;
 float_num:f = to_float(float_str);
-print(to_string(float_num));
+print(string_from(float_num));
 
 // Path functions
 joined_path:s = path_join(`/home`, `user`);

@@ -33,5 +33,5 @@ function main():v {
     // This should return -1
     safe_result:i = test_safe();
     
-    print(`Safe result: ` + to_string(safe_result));
+    print(`Safe result: ` + string_from(safe_result));
 }

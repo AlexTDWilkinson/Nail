@@ -28,8 +28,8 @@ fn format_task(task_name:s, priority:i):s {
 
 // Function to calculate task statistics
 fn calculate_stats(task_count:i, completed_count:i):f {
-   total_float:f = to_float(to_string(task_count));
-   completed_float:f = to_float(to_string(completed_count));
+   total_float:f = to_float(string_from(task_count));
+   completed_float:f = to_float(string_from(completed_count));
    percentage:f = math_round(math_max(0.0, completed_float / total_float * 100.0));
     r percentage;
 }
@@ -54,9 +54,9 @@ completion_rate:f = calculate_stats(total_tasks, completed_tasks);
 
 // Build output
 header:s = string_concat([app_title, `\n`, separator]);
-stats_line:s = string_concat([`Total Tasks: `, to_string(total_tasks), ` | Completed: `, to_string(completed_tasks), ` (`, to_string(completion_rate), `%)`]);
+stats_line:s = string_concat([`Total Tasks: `, string_from(total_tasks), ` | Completed: `, string_from(completed_tasks), ` (`, string_from(completion_rate), `%)`]);
 task_list:s = array_join(all_tasks, `\n`);
-timestamp:s = string_concat([`\nGenerated at: `, to_string(time_now()), ` seconds since epoch`]);
+timestamp:s = string_concat([`\nGenerated at: `, string_from(time_now()), ` seconds since epoch`]);
 
 // Create final output
 v output_parts:a:s = [header, `\n\n`, stats_line, `\n\n`, `Tasks:\n`, task_list, `\n`, separator, timestamp];

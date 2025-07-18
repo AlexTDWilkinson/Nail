@@ -14,9 +14,9 @@ fn main():v {
         print(`Error: ` + err);
         r -1;
     });
-    print(`Value: ` + to_string(value));
+    print(`Value: ` + string_from(value));
     
     // Test dangerous - this would panic if test_result_type returns error
     value2:i = dangerous(test_result_type());
-    print(`Value2: ` + to_string(value2));
+    print(`Value2: ` + string_from(value2));
 }

@@ -13,5 +13,5 @@ async fn main() {
         top_left: Point,
         bottom_right: Point,
     }
-    println!("{}", "Testing struct: prefix syntax".to_string());
+    println!("{}", "Testing struct: prefix syntax".string_from());
 }

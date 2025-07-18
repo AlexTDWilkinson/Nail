@@ -5,11 +5,11 @@ use Nail::std_lib;
 async fn main() {
     let (parallel_result_0, parallel_result_1) = tokio::join!(
         async {
-            println!("{}", "test1".to_string());
+            println!("{}", "test1".string_from());
             ()
         },
         async {
-            println!("{}", "test2".to_string());
+            println!("{}", "test2".string_from());
             ()
         }
     );

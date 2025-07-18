@@ -13,5 +13,5 @@ async fn main() {
         top_left: Point,
         bottom_right: Point,
     }
-    println!("{}", "Testing nested structs".to_string());
+    println!("{}", "Testing nested structs".string_from());
 }

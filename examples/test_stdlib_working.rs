@@ -8,7 +8,7 @@ async fn main() {
     let sqrt_result: f64 = std_lib::math::sqrt(x_value.clone());
     let abs_result: f64 = std_lib::math::abs(-5.7);
     let power_result: f64 = std_lib::math::pow(2.0, 3.0);
-    let greeting: String = "Hello, World!".to_string();
+    let greeting: String = "Hello, World!".string_from();
     let upper: String = std_lib::string::to_uppercase(greeting.clone());
     let numbers: Vec<i64> = vec! [1, 2, 3, 4, 5];
     let arr_len: i64 = std_lib::array::len(numbers.clone());

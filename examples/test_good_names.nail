@@ -2,4 +2,4 @@
 
 input_number:f = 16.0;
 
-print(to_string(math_sqrt(input_number)));
+print(string_from(math_sqrt(input_number)));

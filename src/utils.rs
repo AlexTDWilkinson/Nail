@@ -108,7 +108,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
         thread::sleep(Duration::from_millis(50)); // 20 FPS - balance between smooth UI and mouse selection
         let mut locked_terminal = lock(&terminal_arc);
-        
+
         // Check if terminal size is valid before drawing
         let size = match locked_terminal.size() {
             Ok(size) => size,
@@ -117,24 +117,24 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 continue;
             }
         };
-        
+
         if size.width == 0 || size.height == 0 {
             log::warn!("Terminal size is too small: {}x{}", size.width, size.height);
             continue;
         }
-        
+
         let result_draw = locked_terminal.draw(|f| {
             let editor = lock(&editor_arc);
-            
+
             // Log frame area details
             log::info!("Drawing frame - area: {:?}", f.area());
-            
+
             // Check if frame area is valid
             if f.area().width == 0 || f.area().height == 0 {
                 log::warn!("Frame area is too small: {}x{}", f.area().width, f.area().height);
                 return;
             }
-            
+
             if f.area().height < 5 {
                 log::warn!("Frame area height too small for layout: {}", f.area().height);
                 return;
@@ -145,11 +145,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             // Render tabs
             let titles = vec!["Tab1", "Tab2", "Tab3", "Tab4"];
-            let file_title = if editor.modified {
-                format!("FILES [*] - Press Ctrl+S to save")
-            } else {
-                "FILES".to_string()
-            };
+            let file_title = if editor.modified { format!("FILES [*] - Press Ctrl+S to save") } else { "FILES".to_string() };
             let tabs = Tabs::new(titles)
                 .block(Block::default().borders(Borders::ALL).title(file_title))
                 .select(editor.tab_index)
@@ -162,11 +158,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             // Render main content
 
-            let visible_lines = if chunks[1].height > 2 {
-                chunks[1].height as usize - 2
-            } else {
-                0
-            };
+            let visible_lines = if chunks[1].height > 2 { chunks[1].height as usize - 2 } else { 0 };
 
             let visible_content: Vec<Line> = editor
                 .content
@@ -178,12 +170,9 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             let visible_content: Vec<Line> = colorize_code(visible_content, &editor.theme);
 
-            let editor_title = if let Some(ref filename) = editor.current_file {
-                format!("NAIL - {}", filename)
-            } else {
-                "NAIL".to_string()
-            };
-            let paragraph = Paragraph::new(visible_content).block(Block::default().borders(Borders::ALL).title(editor_title)).style(Style::default().bg(editor.theme.background).fg(editor.theme.default));
+            let editor_title = if let Some(ref filename) = editor.current_file { format!("NAIL - {}", filename) } else { "NAIL".to_string() };
+            let paragraph =
+                Paragraph::new(visible_content).block(Block::default().borders(Borders::ALL).title(editor_title)).style(Style::default().bg(editor.theme.background).fg(editor.theme.default));
 
             f.render_widget(paragraph, content_layout[0]);
 
@@ -200,14 +189,10 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             // Set cursor
             let cursor_y = editor.cursor_y.saturating_sub(editor.scroll_position.into());
-            log::info!("Cursor position calculation - editor.cursor_y: {}, editor.cursor_x: {}, scroll: {}, cursor_y: {}", 
-                editor.cursor_y, editor.cursor_x, editor.scroll_position, cursor_y);
-            
+            log::info!("Cursor position calculation - editor.cursor_y: {}, editor.cursor_x: {}, scroll: {}, cursor_y: {}", editor.cursor_y, editor.cursor_x, editor.scroll_position, cursor_y);
+
             if cursor_y < content_layout[0].height.saturating_sub(2) as usize {
-                let cursor_pos = Position { 
-                    x: content_layout[0].x + editor.cursor_x as u16 + 1, 
-                    y: content_layout[0].y + cursor_y as u16 + 1 
-                };
+                let cursor_pos = Position { x: content_layout[0].x + editor.cursor_x as u16 + 1, y: content_layout[0].y + cursor_y as u16 + 1 };
                 log::info!("Setting cursor position: {:?}, content_layout[0]: {:?}", cursor_pos, content_layout[0]);
                 f.set_cursor_position(cursor_pos);
             }
@@ -237,11 +222,8 @@ fn display_build_status(f: &mut Frame, editor: &Editor) {
         BuildStatus::Complete => "Saved!",
         BuildStatus::Failed(err) => err,
     };
-    
-    let build_status = Line::from(vec![Span::styled(
-        status_text,
-        Style::default().fg(editor.theme.default),
-    )]);
+
+    let build_status = Line::from(vec![Span::styled(status_text, Style::default().fg(editor.theme.default))]);
 
     let build_status_width = build_status.width() as u16;
 
@@ -250,16 +232,15 @@ fn display_build_status(f: &mut Frame, editor: &Editor) {
     let status_width = build_status_width;
     let status_height = 1;
     let status_area = Rect::new(f.area().width.saturating_sub(status_width), 0, status_width, status_height);
-    
+
     log::info!("Build status area: {:?}, frame area: {:?}", status_area, f.area());
-    
+
     // Check if status area is within frame bounds
-    if status_area.x + status_area.width > f.area().width || 
-       status_area.y + status_area.height > f.area().height {
+    if status_area.x + status_area.width > f.area().width || status_area.y + status_area.height > f.area().height {
         log::warn!("Build status area exceeds frame bounds, skipping render");
         return;
     }
-    
+
     f.render_widget(Clear, status_area);
     f.render_widget(paragraph, status_area);
 }
@@ -269,8 +250,7 @@ fn display_error(f: &mut Frame, error: &CodeError, editor: &Editor, content_area
     let error_column = error.code_span.start_column;
     let error_message = error.message.clone();
 
-    log::info!("Displaying error - line: {}, column: {}, message: {}", 
-        error.code_span.start_line, error_column, error_message);
+    log::info!("Displaying error - line: {}, column: {}, message: {}", error.code_span.start_line, error_column, error_message);
 
     // Only display the error if it's within the visible area
 
@@ -284,17 +264,15 @@ fn display_error(f: &mut Frame, error: &CodeError, editor: &Editor, content_area
         error_message.width() as u16,
         1,
     );
-    
-    log::info!("Error area: {:?}, content_area: {:?}, frame area: {:?}", 
-        error_area, content_area, f.area());
-    
+
+    log::info!("Error area: {:?}, content_area: {:?}, frame area: {:?}", error_area, content_area, f.area());
+
     // Check if error area is within frame bounds
-    if error_area.x + error_area.width > f.area().width || 
-       error_area.y + error_area.height > f.area().height {
+    if error_area.x + error_area.width > f.area().width || error_area.y + error_area.height > f.area().height {
         log::warn!("Error area exceeds frame bounds, skipping render");
         return;
     }
-    
+
     f.render_widget(Clear, error_area);
     f.render_widget(paragraph, error_area);
 }
@@ -327,7 +305,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                 log::info!("Ctrl+S detected - saving file...");
                                 editor.build_status = BuildStatus::Failed("Saving...".to_string());
                                 drop(editor); // Release lock before save
-                                
+
                                 let mut editor = lock(&editor_arc);
                                 match editor.save_file() {
                                     Ok(_) => {
@@ -343,7 +321,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                             KeyCode::F(5) => {
                                 // Load example files
                                 log::info!("F5 pressed - cycling through example files");
-                                
+
                                 // List of example files to cycle through
                                 let example_files = vec![
                                     "example.nail",
@@ -355,18 +333,14 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     "examples/functional_demo.nail",
                                     "examples/test_parallel.nail",
                                 ];
-                                
+
                                 // Find current file index
-                                let current_index = if let Some(ref current) = editor.current_file {
-                                    example_files.iter().position(|&f| f == current).unwrap_or(0)
-                                } else {
-                                    0
-                                };
-                                
+                                let current_index = if let Some(ref current) = editor.current_file { example_files.iter().position(|&f| f == current).unwrap_or(0) } else { 0 };
+
                                 // Load next file in the cycle
                                 let next_index = (current_index + 1) % example_files.len();
                                 let next_file = example_files[next_index];
-                                
+
                                 match editor.load_file(next_file) {
                                     Ok(_) => {
                                         editor.build_status = BuildStatus::Failed(format!("Loaded: {}", next_file));
@@ -718,7 +692,7 @@ result:i = safe(divide(10, 2), |e|:i {
     print(e); // Print the error message
     r 0;      // Return default value
 });
-result_msg:a:s = [`10 / 2 = `, to_string(result)];
+result_msg:a:s = [`10 / 2 = `, string_from(result)];
 print(string_concat(result_msg));
 
 // Use dangerous() when you're certain the operation won't fail (temporary code to be replaced with safe() later)
@@ -742,12 +716,12 @@ print(greet(name));
 
 // === PARALLEL PROCESSING - Nail's Superpower! ===
 p
-    task1:s = to_string(42);
+    task1:s = string_from(42);
     task2:i = time_now();
     fast_calc:i = 100 * 50;
 /p
 print(string_concat([`Task 1 result: `, task1]));
-print(string_concat([`Fast calculation: `, to_string(fast_calc)]));
+print(string_concat([`Fast calculation: `, string_from(fast_calc)]));
 
 // === ARRAYS ===
 numbers:a:i = [10, 20, 30, 40, 50];
@@ -773,7 +747,7 @@ evens:a:i = filter_int(nums, is_even_func);
 
 // Reduce - combine all elements
 sum:i = reduce_int(nums, 0, add_func);
-sum_msg:a:s = [`Sum 1-5: `, to_string(sum)];
+sum_msg:a:s = [`Sum 1-5: `, string_from(sum)];
 print(string_concat(sum_msg));
 
 // Chain operations - sum of squares
@@ -782,7 +756,7 @@ sum_squares:i = reduce_int(
     0,
     add_func
 );
-squares_msg:a:s = [`Sum of squares: `, to_string(sum_squares)];
+squares_msg:a:s = [`Sum of squares: `, string_from(sum_squares)];
 print(string_concat(squares_msg));
 
 // === CONTROL FLOW ===
@@ -802,8 +776,8 @@ square_root:f = math_sqrt(16.0);
 // Print results
 print(`Welcome to Nail programming!`);
 array_length:i = array_len(numbers);
-print(to_string(array_length));
-print(to_string(square_root));
+print(string_from(array_length));
+print(string_from(square_root));
 
 // Comments work everywhere!
 final_message:s = `Nail makes parallel programming easy!`; // Inline comment

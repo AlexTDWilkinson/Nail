@@ -33,5 +33,5 @@ async fn main() {
         Talk,
         Rest,
     }
-    println!("{}", "Enum declarations test completed".to_string());
+    println!("{}", "Enum declarations test completed".string_from());
 }

@@ -6,23 +6,23 @@ upper:s = string_to_uppercase(greeting);
 print(upper);
 
 len:i = string_len(greeting);
-len_str:s = to_string(len);
+len_str:s = string_from(len);
 print(len_str);
 
 // Test math
 x_val:f = -5.7;
 abs_x:f = math_abs(x_val);
-abs_str:s = to_string(abs_x);
+abs_str:s = string_from(abs_x);
 print(abs_str);
 
 sqrt_val:f = math_sqrt(16.0);
-sqrt_str:s = to_string(sqrt_val);
+sqrt_str:s = string_from(sqrt_val);
 print(sqrt_str);
 
 // Test arrays
 numbers:a:i = [1, 2, 3, 4, 5];
 array_length:i = array_len(numbers);
-length_str:s = to_string(array_length);
+length_str:s = string_from(array_length);
 print(length_str);
 
 print(`Test complete`);

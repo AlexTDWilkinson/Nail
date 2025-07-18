@@ -4,7 +4,7 @@ use Nail::std_lib::string::string_from;
 
 #[tokio::main]
 async fn main() {
-    let greeting: String = "Hello, Nail!".to_string();
+    let greeting: String = "Hello, Nail!".string_from();
     let magic_number: i64 = 42;
     let result_number: i64 = magic_number + 10;
     let number_string: String = string_from(magic_number.clone());

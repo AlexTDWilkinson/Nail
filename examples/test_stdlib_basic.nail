@@ -9,5 +9,5 @@ x_value:f = math_sqrt(16.0);
 rounded:f = math_round(3.7);
 
 // Convert and print result
-result:s = to_string(x_value);
+result:s = string_from(x_value);
 print(result);

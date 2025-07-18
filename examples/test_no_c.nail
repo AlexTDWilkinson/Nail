@@ -4,4 +4,4 @@ print(message);
 
 number:i = 42;
 doubled:i = number * 2;
-print(to_string(doubled));
+print(string_from(doubled));

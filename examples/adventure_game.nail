@@ -14,24 +14,24 @@ player_mana:i = 30;
 player_gold:i = 1337;
 
 // Calculate player percentages
-health_float:f = to_float(to_string(player_health));
-max_health_float:f = to_float(to_string(max_health));
+health_float:f = float_from(string_from(player_health));
+max_health_float:f = float_from(string_from(max_health));
 health_ratio:f = health_float / max_health_float;
 health_percent:f = math_round(health_ratio * 100.0);
 
-mana_float:f = to_float(to_string(player_mana));
-max_mana_float:f = to_float(to_string(max_mana));
+mana_float:f = float_from(string_from(player_mana));
+max_mana_float:f = float_from(string_from(max_mana));
 mana_ratio:f = mana_float / max_mana_float;
 mana_percent:f = math_round(mana_ratio * 100.0);
 
-level_float:f = to_float(to_string(player_level));
-cap_float:f = to_float(to_string(level_cap));
+level_float:f = float_from(string_from(player_level));
+cap_float:f = float_from(string_from(level_cap));
 level_ratio:f = level_float / cap_float;
 level_progress:f = math_round(level_ratio * 100.0);
 
 // Create health bar visualization
 health_bar_ratio:f = health_percent / 10.0;
-health_bar_length:i = to_int(to_string(math_floor(health_bar_ratio)));
+health_bar_length:i = to_int(string_from(math_floor(health_bar_ratio)));
 empty_bar_length:i = 10 - health_bar_length;
 
 // Player inventory
@@ -53,13 +53,13 @@ play_time_hours:i = play_time_seconds / seconds_per_hour;
 // Build the game status display
 title_line:s = string_concat([`===== `, string_to_uppercase(player_name), ` =====`]);
 separator:s = `=====================================`;
-level_line:s = string_concat([`Level: `, to_string(player_level), `/`, to_string(level_cap), ` (`, to_string(level_progress), `% to cap)`]);
-health_line:s = string_concat([`Health: `, to_string(player_health), `/`, to_string(max_health), ` (`, to_string(health_percent), `%)`]);
-mana_line:s = string_concat([`Mana: `, to_string(player_mana), `/`, to_string(max_mana), ` (`, to_string(mana_percent), `%)`]);
-gold_line:s = string_concat([`Gold: `, to_string(player_gold), ` coins`]);
-inventory_line:s = string_concat([`Inventory (`, to_string(inventory_count), ` items): `, inventory_list]);
-achievement_line:s = string_concat([`Achievements unlocked: `, to_string(achievement_count)]);
-time_line:s = string_concat([`Total playtime: `, to_string(play_time_hours), ` hours`]);
+level_line:s = string_concat([`Level: `, string_from(player_level), `/`, string_from(level_cap), ` (`, string_from(level_progress), `% to cap)`]);
+health_line:s = string_concat([`Health: `, string_from(player_health), `/`, string_from(max_health), ` (`, string_from(health_percent), `%)`]);
+mana_line:s = string_concat([`Mana: `, string_from(player_mana), `/`, string_from(max_mana), ` (`, string_from(mana_percent), `%)`]);
+gold_line:s = string_concat([`Gold: `, string_from(player_gold), ` coins`]);
+inventory_line:s = string_concat([`Inventory (`, string_from(inventory_count), ` items): `, inventory_list]);
+achievement_line:s = string_concat([`Achievements unlocked: `, string_from(achievement_count)]);
+time_line:s = string_concat([`Total playtime: `, string_from(play_time_hours), ` hours`]);
 
 // Combine all parts
 display_parts:a:s = [

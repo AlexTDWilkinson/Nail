@@ -2,4 +2,4 @@
 
 test_array:a:i = [10, 20, 30];
 
-print(to_string(array_len(test_array)));
+print(string_from(array_len(test_array)));

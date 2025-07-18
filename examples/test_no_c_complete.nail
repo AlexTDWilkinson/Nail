@@ -5,7 +5,7 @@ print(message);
 // Math operations
 base:i = 10;
 squared:i = base * base;
-print(to_string(squared));
+print(string_from(squared));
 
 // If expressions
 age:i = 21;
@@ -20,6 +20,6 @@ result:i = if {
     squared > 50 => { squared * 2; },
     else => { squared / 2; }
 };
-print(to_string(result));
+print(string_from(result));
 
 print(`All done!`);

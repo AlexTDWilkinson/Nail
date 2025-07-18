@@ -25,6 +25,6 @@ square_root:f = math_sqrt(16.0);
 
 // Print results
 print(user_name);
-print(to_string(result_sum));
-print(to_string(celsius));
-print(to_string(square_root));
+print(string_from(result_sum));
+print(string_from(celsius));
+print(string_from(square_root));

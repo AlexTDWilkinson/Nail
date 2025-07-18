@@ -2,4 +2,4 @@
 
 x:f = 16.0;
 
-print(to_string(x));
+print(string_from(x));
