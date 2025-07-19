@@ -8,7 +8,7 @@ magic_number:i = 42;
 result_number:i = magic_number + 10;
 
 // String conversion
-number_string:s =from(magic_number);
+number_string:s =string_from(magic_number);
 
 // Print results
 print(greeting);

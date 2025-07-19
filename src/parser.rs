@@ -1,6 +1,8 @@
 use crate::checker::GLOBAL_SCOPE;
 use crate::common::{CodeError, CodeSpan};
 use crate::lexer::*;
+use crate::stdlib_registry;
+use std::collections::HashSet;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
@@ -10,7 +12,7 @@ pub mod std_lib;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ASTNode {
-    Program { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    Program { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize, used_stdlib_functions: HashSet<String> },
     FunctionDeclaration { name: String, params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     LambdaDeclaration { params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     FunctionCall { name: String, args: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
@@ -25,6 +27,7 @@ pub enum ASTNode {
     StructDeclarationField { name: String, data_type: NailDataTypeDescriptor, scope: usize },
     StructInstantiation { name: String, fields: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     StructInstantiationField { name: String, value: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    StructFieldAccess { struct_name: String, field_name: String, code_span: CodeSpan, scope: usize },
     EnumDeclaration { name: String, variants: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     EnumVariant { name: String, variant: String, code_span: CodeSpan, scope: usize },
     ArrayLiteral { elements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
@@ -36,7 +39,7 @@ pub enum ASTNode {
 
 impl Default for ASTNode {
     fn default() -> Self {
-        ASTNode::Program { statements: Vec::new(), code_span: CodeSpan::default(), scope: 0 }
+        ASTNode::Program { statements: Vec::new(), code_span: CodeSpan::default(), scope: 0, used_stdlib_functions: HashSet::new() }
     }
 }
 
@@ -44,11 +47,18 @@ pub struct ParserState {
     tokens: Peekable<IntoIter<Token>>,
     current_token: Option<Token>,
     previous_token: Option<Token>,
+    used_stdlib_functions: HashSet<String>,
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, CodeError> {
-    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None };
-    parse_inner(&mut state)
+pub fn parse(tokens: Vec<Token>) -> Result<(ASTNode, HashSet<String>), CodeError> {
+    let mut state = ParserState { 
+        tokens: tokens.into_iter().peekable(), 
+        current_token: None, 
+        previous_token: None,
+        used_stdlib_functions: HashSet::new(),
+    };
+    let ast = parse_inner(&mut state)?;
+    Ok((ast, state.used_stdlib_functions))
 }
 
 fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
@@ -56,7 +66,12 @@ fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     while state.tokens.peek().is_some() {
         program.push(parse_statement(state)?);
     }
-    Ok(ASTNode::Program { statements: program, code_span: CodeSpan::default(), scope: GLOBAL_SCOPE })
+    Ok(ASTNode::Program { 
+        statements: program, 
+        code_span: CodeSpan::default(), 
+        scope: GLOBAL_SCOPE,
+        used_stdlib_functions: state.used_stdlib_functions.clone()
+    })
 }
 
 fn advance(state: &mut ParserState) -> Option<Token> {
@@ -72,8 +87,27 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                 advance(state);
                 parse_struct_instantiation_token(&token)
             }
+            TokenType::StructFieldAccess(struct_name, field_name) => {
+                advance(state);
+                Ok(ASTNode::StructFieldAccess { 
+                    struct_name, 
+                    field_name, 
+                    code_span: token.code_span, 
+                    scope: GLOBAL_SCOPE 
+                })
+            }
             TokenType::Identifier(name) => {
                 advance(state);
+                if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::ParenthesisOpen)) {
+                    parse_function_call(state, name)
+                } else {
+                    Ok(ASTNode::Identifier { name, code_span: token.code_span, scope: GLOBAL_SCOPE })
+                }
+            }
+            TokenType::ConstDeclaration => {
+                // In expression context, treat 'c' as an identifier
+                advance(state);
+                let name = "c".to_string();
                 if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::ParenthesisOpen)) {
                     parse_function_call(state, name)
                 } else {
@@ -232,6 +266,11 @@ fn parse_function_call(state: &mut ParserState, name: String) -> Result<ASTNode,
     }
     let code_span = expect_token(state, TokenType::ParenthesisClose)?;
 
+    // Track stdlib function usage
+    if stdlib_registry::is_stdlib_function(&name) {
+        state.used_stdlib_functions.insert(name.clone());
+    }
+    
     Ok(ASTNode::FunctionCall { name, args, code_span, scope: GLOBAL_SCOPE })
 }
 
@@ -701,8 +740,8 @@ mod tests {
 
     #[test]
     fn test_function_declaration() {
-        let input = "fn add(yay:i, bah:i):i { r yay + bah; }";
-        let result = parse(lexer(input)).unwrap();
+        let input = "f add(yay:i, bah:i):i { r yay + bah; }";
+        let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         let what_the_ast_should_be = r#"Program(
     [
@@ -745,7 +784,7 @@ mod tests {
     #[test]
     fn test_if_statement() {
         let input = "if { a > 5 => {} };";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         let expected = r#"
       Program([
     IfStatement {
@@ -767,7 +806,7 @@ mod tests {
     #[test]
     fn test_lambda() {
         let input = "| x:i |:i { result:i = x + 1; r result; }";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         let expected = r#"
         Program(
             [
@@ -812,7 +851,7 @@ mod tests {
     #[test]
     fn test_struct_declaration() {
         let input = "struct Point { x:i, y:i }";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         let expected = r#"
        Program([StructDeclaration{name:"Point",fields:[StructDeclarationField{name:"x",data_type:Int,},StructDeclarationField{name:"y",data_type:Int,},],},],)
         "#;
@@ -824,7 +863,7 @@ mod tests {
     fn test_enum_declaration() {
         let input = "enum Color { Red, Green, Blue }";
         let lexer = lexer(input);
-        let result = parse(lexer).unwrap();
+        let (result, _) = parse(lexer).unwrap();
         let expected = r#"
        Program([EnumDeclaration{name:"Color",variants:[EnumVariant{name:"Color",variant:"Red",},EnumVariant{name:"Color",variant:"Green",},EnumVariant{name:"Color",variant:"Blue",},],},],)
         "#;
@@ -835,7 +874,7 @@ mod tests {
     #[test]
     fn test_function_call() {
         let input = "fun(param);";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         let expected = r#"
         Program(
             [
@@ -857,7 +896,7 @@ mod tests {
     #[test]
     fn test_function_nested_call() {
         let input = "fun(times(param));";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         let expected = r#"
         Program(
             [
@@ -884,7 +923,7 @@ mod tests {
     #[test]
     fn test_if_else_statement() {
         let input = "if { a > 5 => {}, else => {} };";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         let expected = r#"
         Program([IfStatement{condition_branches:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
         "#;
@@ -895,7 +934,7 @@ mod tests {
     #[test]
     fn test_if_else_if_else_statement() {
         let input = "if { a > 5 => {}, b < 5 => {}, else => {} };";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         let expected = r#"
         Program([IfStatement{condition_branches:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),(BinaryOperation{left:Identifier("b",),operator:Lt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
         "#;
@@ -908,7 +947,7 @@ mod tests {
         let input = "test_array:a:i = [1, 2, 3];";
         let lexer = lexer(input);
 
-        let result = parse(lexer).unwrap();
+        let (result, _) = parse(lexer).unwrap();
         let expected = r#"
      Program([ConstDeclaration{name:"test_array",data_type:ArrayInt,value:ArrayLiteral([NumberLiteral("1",),NumberLiteral("2",),NumberLiteral("3",),],),},],)
         "#;
@@ -922,7 +961,7 @@ mod tests {
         let input = "test_array:a:i = 1;";
         let lexer = lexer(input);
 
-        let result = parse(lexer).unwrap();
+        let (result, _) = parse(lexer).unwrap();
         let expected = r#"
      Program([ConstDeclaration{name:"test_array",data_type:ArrayInt,value:NumberLiteral("1",),},],)
         "#;
@@ -935,7 +974,7 @@ mod tests {
         let input = "test_array:a:i = [1, 2, 3];";
         let lexer = lexer(input);
 
-        let result = parse(lexer).unwrap();
+        let (result, _) = parse(lexer).unwrap();
         let expected = r#"
         Program(
             [
@@ -965,8 +1004,8 @@ mod tests {
 
     #[test]
     fn test_function_declaration_multiple_params() {
-        let input = r#"fn random(x:i, y:f):s { result:s = `test`; r result; }"#;
-        let result = parse(lexer(input)).unwrap();
+        let input = r#"f random(x:i, y:f):s { result:s = `test`; r result; }"#;
+        let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
 
         let expected = r#"
@@ -1012,7 +1051,7 @@ mod tests {
     #[test]
     fn test_enum_variant() {
         let input = "my_color:enum:Color = Color::Red;";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         let expected = r#"
         Program(
@@ -1035,7 +1074,7 @@ mod tests {
     #[test]
     fn test_const_declaration() {
         let input = "counter:i = 10;";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         // Add assertion here
     }
@@ -1045,7 +1084,7 @@ mod tests {
     #[test]
     fn test_any_type_declaration() {
         let input = "c every_nail_type:any(i|f|s|b|a:i|a:f|a:struct:any|a:enum:any) = 13;";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         // Just verify it parses successfully and has const declaration
         if let ASTNode::Program { statements, .. } = result {
@@ -1059,7 +1098,7 @@ mod tests {
     #[test]
     fn test_lambda_multi_param() {
         let input = "| x:i, y:f |:i { result:i = x + 1; r result; }";
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         // Just verify it parses successfully and has lambda declaration
         if let ASTNode::Program { statements, .. } = result {
@@ -1077,7 +1116,7 @@ mod tests {
         let result = parse(lexer(input));
         assert!(result.is_ok(), "Failed to parse lambda with error parameter: {:?}", result.err());
         
-        let ast = result.unwrap();
+        let (ast, _) = result.unwrap();
         
         // The lambda should be at the top level
         if let ASTNode::Program { statements, .. } = ast {
@@ -1137,7 +1176,7 @@ mod tests {
         let input = r#"
             points:a:struct:Point = [Point { x: 1, y: 5 }, Point { x: 3, y: 4 }];
             "#;
-        let result = parse(lexer(input)).unwrap();
+        let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         let expected = r#"
         Program(

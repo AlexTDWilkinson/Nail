@@ -5,19 +5,19 @@ use Nail::parser::*;
 use Nail::common::*;
 
 /// Helper function to parse code and return AST or errors
-fn parse_code(code: &str) -> Result<ASTNode, CodeError> {
+fn parse_code(code: &str) -> Result<(ASTNode, std::collections::HashSet<String>), CodeError> {
     let tokens = lexer(code);
     parse(tokens)
 }
 
 #[test]
 fn test_simple_function() {
-    let code = "fn test():i { r 42; }";
+    let code = "f test():i { r 42; }";
     let result = parse_code(code);
     
     assert!(result.is_ok(), "Failed to parse simple function: {:?}", result);
     
-    let ast = result.unwrap();
+    let (ast, _) = result.unwrap();
     println!("Simple function AST: {:?}", ast);
     
     // Check it's a program with a function
@@ -37,12 +37,12 @@ fn test_simple_function() {
 
 #[test]
 fn test_function_with_parameters() {
-    let code = "fn add(x:i, y:i):i { r x + y; }";
+    let code = "f add(x:i, y:i):i { r x + y; }";
     let result = parse_code(code);
     
     assert!(result.is_ok(), "Failed to parse function with parameters: {:?}", result);
     
-    let ast = result.unwrap();
+    let (ast, _) = result.unwrap();
     println!("Function with params AST: {:?}", ast);
     
     match ast {
@@ -67,7 +67,7 @@ fn test_variable_declaration() {
     
     assert!(result.is_ok(), "Failed to parse variable declaration: {:?}", result);
     
-    let ast = result.unwrap();
+    let (ast, _) = result.unwrap();
     println!("Variable declaration AST: {:?}", ast);
 }
 
@@ -93,7 +93,7 @@ fn test_binary_operations() {
         
         assert!(result.is_ok(), "Failed to parse binary operation '{}': {:?}", expr, result);
         
-        let ast = result.unwrap();
+        let (ast, _) = result.unwrap();
         println!("Binary operation '{}' AST: {:?}", expr, ast);
     }
 }
@@ -110,7 +110,7 @@ fn test_boolean_literals() {
         
         // For now, just check if it parses without crashing
         // We'll see what the actual behavior is
-        if let Ok(ast) = result {
+        if let Ok((ast, _)) = result {
             println!("Boolean literal '{}' AST: {:?}", literal, ast);
         }
     }
@@ -123,7 +123,7 @@ fn test_function_calls() {
     
     assert!(result.is_ok(), "Failed to parse function call: {:?}", result);
     
-    let ast = result.unwrap();
+    let (ast, _) = result.unwrap();
     println!("Function call AST: {:?}", ast);
 }
 
@@ -134,18 +134,18 @@ fn test_nested_expressions() {
     
     assert!(result.is_ok(), "Failed to parse nested expressions: {:?}", result);
     
-    let ast = result.unwrap();
+    let (ast, _) = result.unwrap();
     println!("Nested expressions AST: {:?}", ast);
 }
 
 #[test]
 fn test_comparison_in_function() {
-    let code = "fn is_even(n:i):b { r n % 2 == 0; }";
+    let code = "f is_even(n:i):b { r n % 2 == 0; }";
     let result = parse_code(code);
     
     println!("Comparison function result: {:?}", result);
     
-    if let Ok(ast) = result {
+    if let Ok((ast, _)) = result {
         println!("Comparison function AST: {:?}", ast);
         
         // Check the structure
@@ -180,7 +180,7 @@ fn test_type_annotations() {
         
         println!("Type annotation {} ({}) result: {:?}", decl, desc, result);
         
-        if let Ok(ast) = result {
+        if let Ok((ast, _)) = result {
             println!("Type annotation {} AST: {:?}", decl, ast);
         }
     }
@@ -189,7 +189,7 @@ fn test_type_annotations() {
 #[test]
 fn test_multiple_statements() {
     let code = r#"
-fn test():i {
+f test():i {
     x_val:i = 5;
     y_val:i = 10;
     r x_val + y_val;
@@ -199,7 +199,7 @@ fn test():i {
     
     assert!(result.is_ok(), "Failed to parse multiple statements: {:?}", result);
     
-    let ast = result.unwrap();
+    let (ast, _) = result.unwrap();
     println!("Multiple statements AST: {:?}", ast);
 }
 
@@ -210,16 +210,16 @@ fn test_string_literals() {
     
     assert!(result.is_ok(), "Failed to parse string literal: {:?}", result);
     
-    let ast = result.unwrap();
+    let (ast, _) = result.unwrap();
     println!("String literal AST: {:?}", ast);
 }
 
 #[test]
 fn test_error_cases() {
     let error_cases = vec![
-        "fn test() {",  // Missing closing brace
+        "f test() {",  // Missing closing brace
         "x_val:i =;",       // Missing expression
-        "fn ():i {}",   // Missing function name
+        "f ():i {}",   // Missing function name
         "+ 5",          // Invalid expression start
     ];
     
@@ -247,7 +247,7 @@ fn test_operator_precedence() {
         
         println!("Precedence test '{}' result: {:?}", expr, result);
         
-        if let Ok(ast) = result {
+        if let Ok((ast, _)) = result {
             println!("Precedence '{}' AST: {:?}", expr, ast);
         }
     }
@@ -267,7 +267,7 @@ fn test_return_statements() {
         
         println!("Return statement '{}' result: {:?}", ret_stmt, result);
         
-        if let Ok(ast) = result {
+        if let Ok((ast, _)) = result {
             println!("Return statement '{}' AST: {:?}", ret_stmt, ast);
         }
     }

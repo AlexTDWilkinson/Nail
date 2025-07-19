@@ -324,32 +324,43 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
 
                                 // List of example files to cycle through
                                 let example_files = vec![
-                                    "example.nail",
-                                    "examples/web_server.nail",
+                                    "examples/hello.nail",
+                                    "examples/simple.nail",
                                     "examples/adventure_game.nail",
                                     "examples/todo_app.nail",
-                                    "examples/simple_web.nail",
-                                    "examples/demo_all_stdlib.nail",
+                                    "examples/web_server.nail",
                                     "examples/functional_demo.nail",
-                                    "examples/test_parallel.nail",
+                                    "examples/game_stats.nail",
+                                    "examples/iteration_demo.nail",
+                                    "examples/welcome_comprehensive.nail",
                                 ];
 
                                 // Find current file index
                                 let current_index = if let Some(ref current) = editor.current_file { example_files.iter().position(|&f| f == current).unwrap_or(0) } else { 0 };
 
-                                // Load next file in the cycle
-                                let next_index = (current_index + 1) % example_files.len();
-                                let next_file = example_files[next_index];
+                                // Try to load files until we find one that exists
+                                let mut attempts = 0;
+                                let mut loaded = false;
+                                while attempts < example_files.len() && !loaded {
+                                    let next_index = (current_index + 1 + attempts) % example_files.len();
+                                    let next_file = example_files[next_index];
 
-                                match editor.load_file(next_file) {
-                                    Ok(_) => {
-                                        editor.build_status = BuildStatus::Failed(format!("Loaded: {}", next_file));
-                                        log::info!("Successfully loaded file: {}", next_file);
+                                    match editor.load_file(next_file) {
+                                        Ok(_) => {
+                                            editor.build_status = BuildStatus::Idle;
+                                            editor.code_error = Some(format!("Loaded: {}", next_file).into());
+                                            log::info!("Successfully loaded file: {}", next_file);
+                                            loaded = true;
+                                        }
+                                        Err(e) => {
+                                            log::warn!("Failed to load file {}: {}", next_file, e);
+                                            attempts += 1;
+                                        }
                                     }
-                                    Err(e) => {
-                                        editor.build_status = BuildStatus::Failed(format!("Failed to load {}: {}", next_file, e));
-                                        log::error!("Failed to load file {}: {}", next_file, e);
-                                    }
+                                }
+
+                                if !loaded {
+                                    editor.build_status = BuildStatus::Failed("No example files found".to_string());
                                 }
                             }
                             KeyCode::F(6) => editor.toggle_theme(),
@@ -430,7 +441,7 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             drop(editor);
 
             let mut ast = match parse(tokens) {
-                Ok(ast) => {
+                Ok((ast, _used_functions)) => {
                     log::info!("AST (parsed): {:#?}", ast);
                     ast
                 }
@@ -606,7 +617,7 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         // if the above is successful, get the parser errors and do the same thing
 
         let (mut ast, parse_succeeded) = match parse(tokens) {
-            Ok(ast) => (ast, true),
+            Ok((ast, _used_functions)) => (ast, true),
             Err(e) => {
                 let mut editor = lock(&editor_arc);
                 editor.code_error = Some(CodeError { message: format!("^ {}", e.message), code_span: e.code_span });
@@ -679,7 +690,7 @@ enum Status {
 current:Status = Status::Active;
 
 // === ERROR HANDLING - Safe by Default ===
-fn divide(num:i, den:i):i!e {
+f divide(num:i, den:i):i!e {
     if {
         den == 0 => { r e(`Cannot divide by zero!`); },
         else => { r num / den; }
@@ -707,7 +718,7 @@ age:i = 25;
 score:f = 95.7;
 
 // === FUNCTIONS ===
-fn greet(person:s):s {
+f greet(person:s):s {
     parts:a:s = [`Hello, `, person, `!`];
     r string_concat(parts);
 }
@@ -732,12 +743,12 @@ names:a:s = [`Alice`, `Bob`, `Charlie`];
 nums:a:i = range(1, 5);  // [1, 2, 3, 4, 5]
 
 // Helper functions for functional operations
-fn double_func(n:i):i { r n * 2; }
-fn is_even_func(n:i):b { 
+f double_func(n:i):i { r n * 2; }
+f is_even_func(n:i):b { 
     r n % 2 == 0; 
 }
-fn add_func(acc:i, n:i):i { r acc + n; }
-fn square_func(n:i):i { r n * n; }
+f add_func(acc:i, n:i):i { r acc + n; }
+f square_func(n:i):i { r n * n; }
 
 // Map - transform each element
 doubled:a:i = map_int(nums, double_func);
@@ -786,7 +797,7 @@ final_message:s = `Nail makes parallel programming easy!`; // Inline comment
 // Try experimenting with structs, enums, and parallel blocks!"#;
 
 // static WELCOME_MESSAGE: &str = r#"
-// fn print(message:s):s {
+// f print(message:s):s {
 //     R{ println!("{}", message); }
 // }"#;
 

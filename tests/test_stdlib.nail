@@ -1,0 +1,26 @@
+// Test various stdlib functions
+
+// Test string functions
+greeting:s = `Hello World`;
+upper:s = string_to_uppercase(greeting);
+println(upper);
+
+// Test math functions
+x_value:f = -5.7;
+abs_x:f = math_abs(x_value);
+abs_str:s =string_from(abs_x);
+println(abs_str);
+
+rounded:f = math_round(abs_x);
+rounded_str:s =string_from(rounded);
+println(rounded_str);
+
+sqrt_val:f = math_sqrt(16.0);
+sqrt_str:s =string_from(sqrt_val);
+println(sqrt_str);
+
+// Test array functions
+numbers:[i] = [1, 2, 3, 4, 5];
+length:i = array_len(numbers);
+len_str:s =string_from(length);
+println(len_str);

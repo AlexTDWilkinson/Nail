@@ -27,7 +27,7 @@ enum Status {
 status:Status = Status::Active;
 
 // === Error Handling (NEW!) ===
-fn safe_divide(num:i, den:i):i!e {
+f safe_divide(num:i, den:i):i!e {
     if {
         den == 0 => { r e(`Division by zero!`); },
         else => { r num / den; }
@@ -39,15 +39,15 @@ result:i = safe(safe_divide(10, 2), |err:s|:i {
     print(string_concat([`Error occurred: `, err]));
     r -1;
 });
-print(string_concat([`10 / 2 = `,from(result)]));
+print(string_concat([`10 / 2 = `, string_from(result)]));
 
 // === Functions ===
-fn add(first:i, second:i):i {
+f add(first:i, second:i):i {
     r first + second;
 }
 
 total:i = add(5, 3);
-print(string_concat([`5 + 3 = `,from(total)]));
+print(string_concat([`5 + 3 = `, string_from(total)]));
 
 // === Control Flow ===
 if {

@@ -1,0 +1,11 @@
+struct Player {
+    name:s,
+    health:i
+}
+
+player:Player = Player {
+    name: `Test`,
+    health: 100
+};
+
+print(player.name);

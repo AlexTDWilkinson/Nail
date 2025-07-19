@@ -67,6 +67,15 @@ where
     arr.into_par_iter().fold(|| initial.clone(), |acc, x| f(acc, x)).reduce(|| initial.clone(), |a, b| f(a, b))
 }
 
+pub async fn reduce_struct<T, U, F>(arr: Vec<T>, initial: U, f: F) -> U
+where
+    T: Clone + Send + Sync,
+    U: Clone + Send + Sync,
+    F: Fn(U, T) -> U + Send + Sync
+{
+    arr.into_iter().fold(initial, |acc, x| f(acc, x))
+}
+
 // Each function - performs side effects for each element
 pub async fn each_int<F>(arr: Vec<i64>, f: F)
 where

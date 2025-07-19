@@ -6,12 +6,12 @@ number_array:a:i = [1, 2, 3, 4, 5];
 string_array:a:s = [`Nail`, `is`, `simple`];
 
 // Test results
-sqrt_result:s =from(math_sqrt(test_number));
-abs_result:s =from(math_abs(-5.7));
+sqrt_result:s =string_from(math_sqrt(test_number));
+abs_result:s =string_from(math_abs(-5.7));
 upper_text:s = string_to_uppercase(greeting_text);
-array_size:s =from(array_len(number_array));
+array_size:s =string_from(array_len(number_array));
 joined_text:s = array_join(string_array, ` `);
-time_now_str:s =from(time_now());
+time_now_str:s =string_from(time_now());
 path_result:s = path_join(`/home`, `grug`);
 
 output_parts:a:s = [

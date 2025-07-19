@@ -1,0 +1,3 @@
+f complex_calc(a:i, b:i, c:i):i!e {
+    r 5;
+}

@@ -14,7 +14,7 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
         }
         
         // Check if this line starts a new block (function, struct, enum, etc.)
-        let starts_new_top_level_block = trimmed.starts_with("fn ") || 
+        let starts_new_top_level_block = trimmed.starts_with("f ") || 
                                          trimmed.starts_with("struct ") || 
                                          trimmed.starts_with("enum ") ||
                                          trimmed.starts_with("parallel ");
@@ -33,7 +33,7 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
                 // - Previous line is a single-line function
                 // - Not after a comment section
                 if (last_line.ends_with('}') || last_line.ends_with(';') || 
-                    (last_line.starts_with("fn ") && last_line.contains('{'))) && 
+                    (last_line.starts_with("f ") && last_line.contains('{'))) && 
                    !last_line.starts_with("//") {
                     // Check if there's already a blank line
                     if formatted_lines.last().map_or(true, |l| !l.trim().is_empty()) {
@@ -292,7 +292,7 @@ mod tests {
     #[test]
     fn test_function_calls() {
         assert_eq!(format_nail_line("print (x)"), "print(x)");
-        assert_eq!(format_nail_line("fn greet (name)"), "fn greet(name)");
+        assert_eq!(format_nail_line("f greet (name)"), "f greet(name)");
         assert_eq!(format_nail_line("safe(divide(10, 2),msg)"), "safe(divide(10, 2), msg)");
     }
 
@@ -319,10 +319,10 @@ mod tests {
 
     #[test]
     fn test_error_types() {
-        assert_eq!(format_nail_line("fn div():i!e"), "fn div():i!e");
+        assert_eq!(format_nail_line("f div():i!e"), "f div():i!e");
         assert_eq!(format_nail_line("result:i!e = divide(a,b)"), "result:i!e = divide(a, b)");
-        assert_eq!(format_nail_line("fn divide(num:i, den:i):i!e {"), "fn divide(num:i, den:i):i!e {");
-        assert_eq!(format_nail_line("fn safe(result:i!e, handler:s):i {"), "fn safe(result:i!e, handler:s):i {");
+        assert_eq!(format_nail_line("f divide(num:i, den:i):i!e {"), "f divide(num:i, den:i):i!e {");
+        assert_eq!(format_nail_line("f safe(result:i!e, handler:s):i {"), "f safe(result:i!e, handler:s):i {");
         assert_eq!(format_nail_line("value:f!e = parse_float(str)"), "value:f!e = parse_float(str)");
         assert_eq!(format_nail_line("data:s!e = read_file(path)"), "data:s!e = read_file(path)");
     }
@@ -366,14 +366,14 @@ mod tests {
     #[test]
     fn test_code_indentation() {
         let input = vec![
-            "fn greet(name:s):s {".to_string(),
+            "f greet(name:s):s {".to_string(),
             "parts:a:s = [`Hello, `, name, `!`];".to_string(),
             "r string_concat(parts);".to_string(),
             "}".to_string(),
         ];
         
         let expected = vec![
-            "fn greet(name:s):s {".to_string(),
+            "f greet(name:s):s {".to_string(),
             "    parts:a:s = [`Hello, `, name, `!`];".to_string(),
             "    r string_concat(parts);".to_string(),
             "}".to_string(),
@@ -412,21 +412,21 @@ mod tests {
     #[test]
     fn test_function_spacing() {
         let input = vec![
-            "fn double_func(n:i):i { r n * 2; }".to_string(),
-            "fn is_even_func(n:i):b {".to_string(),
+            "f double_func(n:i):i { r n * 2; }".to_string(),
+            "f is_even_func(n:i):b {".to_string(),
             "r n % 2 == 0;".to_string(),
             "}".to_string(),
-            "fn add_func(acc:i, n:i):i { r acc + n; }".to_string(),
+            "f add_func(acc:i, n:i):i { r acc + n; }".to_string(),
         ];
         
         let expected = vec![
-            "fn double_func(n:i):i { r n * 2; }".to_string(),
+            "f double_func(n:i):i { r n * 2; }".to_string(),
             "".to_string(),
-            "fn is_even_func(n:i):b {".to_string(),
+            "f is_even_func(n:i):b {".to_string(),
             "    r n % 2 == 0;".to_string(),
             "}".to_string(),
             "".to_string(),
-            "fn add_func(acc:i, n:i):i { r acc + n; }".to_string(),
+            "f add_func(acc:i, n:i):i { r acc + n; }".to_string(),
         ];
         
         assert_eq!(format_nail_code(&input), expected);

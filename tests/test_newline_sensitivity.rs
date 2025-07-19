@@ -9,7 +9,7 @@ fn test_code(name: &str, code: &str) {
     println!("Tokens: {:#?}", tokens);
 
     match parser::parse(tokens) {
-        Ok(ast) => println!("Parse successful: {:#?}", ast),
+        Ok((ast, _)) => println!("Parse successful: {:#?}", ast),
         Err(e) => println!("Parse failed: {:?}", e),
     }
 }

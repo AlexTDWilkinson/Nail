@@ -15,7 +15,7 @@ print(task1);
         let tokens = lexer(code);
         println!("Tokens: {:?}", tokens);
         
-        let ast = parse(tokens).unwrap();
+        let (ast, _) = parse(tokens).unwrap();
         println!("AST: {:?}", ast);
         
         // Verify we have a ParallelAssignment node

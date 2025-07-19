@@ -120,10 +120,58 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::String,
         });
         
+        // Safe array indexing functions - need specific types for type checker
+        // array_get for integers
+        m.insert("array_get", StdlibFunctionType {
+            parameters: vec![
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::ArrayInt },
+                StdlibParameter { name: "index".to_string(), param_type: NailDataTypeDescriptor::Int }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+        });
+        m.insert("array_first", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::ArrayInt }],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+        });
+        m.insert("array_last", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::ArrayInt }],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+        });
+        m.insert("array_slice", StdlibFunctionType {
+            parameters: vec![
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::ArrayInt },
+                StdlibParameter { name: "start".to_string(), param_type: NailDataTypeDescriptor::Int },
+                StdlibParameter { name: "end".to_string(), param_type: NailDataTypeDescriptor::Int }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::ArrayInt)),
+        });
+        m.insert("array_take", StdlibFunctionType {
+            parameters: vec![
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::ArrayInt },
+                StdlibParameter { name: "n".to_string(), param_type: NailDataTypeDescriptor::Int }
+            ],
+            return_type: NailDataTypeDescriptor::ArrayInt,
+        });
+        m.insert("array_skip", StdlibFunctionType {
+            parameters: vec![
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::ArrayInt },
+                StdlibParameter { name: "n".to_string(), param_type: NailDataTypeDescriptor::Int }
+            ],
+            return_type: NailDataTypeDescriptor::ArrayInt,
+        });
+        
         // Type conversion - string_from replaced to_string
         m.insert("string_from", StdlibFunctionType {
             parameters: vec![StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Unknown }], // Accept any type
             return_type: NailDataTypeDescriptor::String,
+        });
+        m.insert("int_from", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+        });
+        m.insert("float_from", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float)),
         });
         m.insert("to_int", StdlibFunctionType {
             parameters: vec![StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::String }],
@@ -177,6 +225,12 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::Void,
         });
         
+        // Process
+        m.insert("process_exit", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "code".to_string(), param_type: NailDataTypeDescriptor::Int }],
+            return_type: NailDataTypeDescriptor::Void,
+        });
+        
         // HTTP
         m.insert("http_server_start", StdlibFunctionType {
             parameters: vec![
@@ -189,6 +243,51 @@ lazy_static! {
         // IO
         m.insert("print", StdlibFunctionType {
             parameters: vec![StdlibParameter { name: "message".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::Void,
+        });
+        
+        m.insert("print_no_newline", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "message".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::Void,
+        });
+        
+        m.insert("io_read_line", StdlibFunctionType {
+            parameters: vec![],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+        });
+        
+        m.insert("io_read_line_prompt", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "prompt".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+        });
+        
+        m.insert("io_read_int", StdlibFunctionType {
+            parameters: vec![],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+        });
+        
+        m.insert("io_read_int_prompt", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "prompt".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+        });
+        
+        m.insert("io_read_float", StdlibFunctionType {
+            parameters: vec![],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float)),
+        });
+        
+        m.insert("io_read_float_prompt", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "prompt".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float)),
+        });
+        
+        m.insert("print_clear_screen", StdlibFunctionType {
+            parameters: vec![],
+            return_type: NailDataTypeDescriptor::Void,
+        });
+        
+        m.insert("print_debug", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Unknown }],
             return_type: NailDataTypeDescriptor::Void,
         });
         
@@ -257,6 +356,15 @@ lazy_static! {
                 StdlibParameter { name: "function".to_string(), param_type: NailDataTypeDescriptor::Unknown } // Lambda function
             ],
             return_type: NailDataTypeDescriptor::Int,
+        });
+        
+        m.insert("reduce_struct", StdlibFunctionType {
+            parameters: vec![
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Unknown }, // Accept any array of structs
+                StdlibParameter { name: "initial".to_string(), param_type: NailDataTypeDescriptor::Unknown }, // Struct type
+                StdlibParameter { name: "function".to_string(), param_type: NailDataTypeDescriptor::Unknown } // Lambda function
+            ],
+            return_type: NailDataTypeDescriptor::Unknown, // Returns same type as initial struct
         });
         
         m.insert("each_int", StdlibFunctionType {

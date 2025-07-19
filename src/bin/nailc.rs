@@ -47,10 +47,11 @@ fn main() {
     
     // Run parser
     println!("\n=== Parsing ===");
-    let ast = match parse(tokens) {
-        Ok(ast) => {
+    let (ast, used_stdlib_functions) = match parse(tokens) {
+        Ok((ast, used_functions)) => {
             println!("Parse successful!");
-            ast
+            println!("Used stdlib functions: {:?}", used_functions);
+            (ast, used_functions)
         }
         Err(e) => {
             eprintln!("Parse error: {:?}", e);

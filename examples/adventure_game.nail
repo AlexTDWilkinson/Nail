@@ -1,81 +1,132 @@
-// Adventure Game Stats Calculator
-// A comprehensive Nail program testing various features
+// Adventure Game
+// Interactive text adventure demonstrating Nail features with structs
+
+// Define game struct
+struct Player {
+    name:s,
+    health:i,
+    gold:i
+}
 
 // Game constants
 max_health:i = 100;
-max_mana:i = 50;
-level_cap:i = 20;
+initial_gold:i = 10;
 
-// Player stats
-player_name:s = `Grug the Mighty`;
-player_level:i = 15;
-player_health:i = 75;
-player_mana:i = 30;
-player_gold:i = 1337;
+// Get player name
+print(`Welcome to the Adventure Game!`);
+print(`================================\n`);
+player_name:s = dangerous(io_read_line_prompt(`Enter your character name: `));
 
-// Calculate player percentages
-health_float:f = float_from(string_from(player_health));
-max_health_float:f = float_from(string_from(max_health));
-health_ratio:f = health_float / max_health_float;
-health_percent:f = math_round(health_ratio * 100.0);
+// Initialize player with struct instantiation
+player:Player = Player {
+    name: player_name,
+    health: max_health,
+    gold: initial_gold
+};
 
-mana_float:f = float_from(string_from(player_mana));
-max_mana_float:f = float_from(string_from(max_mana));
-mana_ratio:f = mana_float / max_mana_float;
-mana_percent:f = math_round(mana_ratio * 100.0);
+// Display initial stats using field access
+print(string_concat([`\nWelcome, `, player.name, `!`]));
+print(string_concat([`Starting Health: `, string_from(player.health)]));
+print(string_concat([`Starting Gold: `, string_from(player.gold)]));
+print(`\nYour adventure begins...\n`);
 
-level_float:f = float_from(string_from(player_level));
-cap_float:f = float_from(string_from(level_cap));
-level_ratio:f = level_float / cap_float;
-level_progress:f = math_round(level_ratio * 100.0);
+// Turn 1
+print(`=== Turn 1 ===`);
+print(`You encounter a goblin!`);
+choice1:s = dangerous(io_read_line_prompt(`Fight (f) or run (r)? `));
 
-// Create health bar visualization
-health_bar_ratio:f = health_percent / 10.0;
-health_bar_length:i = to_int(string_from(math_floor(health_bar_ratio)));
-empty_bar_length:i = 10 - health_bar_length;
+health_after_fight:i = if {
+    string_contains(choice1, `f`) => {
+        print(`You defeat the goblin and earn 20 gold!`);
+        print(`But you take 10 damage.`);
+        player.health - 10;
+    },
+    else => {
+        print(`You run away safely.`);
+        player.health;
+    }
+};
 
-// Player inventory
-v inventory_items:a:s = [`Sword of Truth`, `Shield of Honor`, `Potion of Healing`, `Magic Scroll`, `Dragon Scale`];
-inventory_count:i = array_len(inventory_items);
-inventory_list:s = array_join(inventory_items, `, `);
+gold_after_fight:i = if {
+    string_contains(choice1, `f`) => { player.gold + 20; },
+    else => { player.gold; }
+};
 
-// Recent achievements
-v achievements:a:s = [`Dragon Slayer`, `Dungeon Master`, `Gold Hoarder`];
-achievement_count:i = array_len(achievements);
+current_name:s = player.name;
 
-// Calculate game time
-start_time:i = 1700000000;
-current_time:i = time_now();
-play_time_seconds:i = current_time - start_time;
-seconds_per_hour:i = 3600;
-play_time_hours:i = play_time_seconds / seconds_per_hour;
+player_turn1:Player = Player {
+    name: current_name,
+    health: health_after_fight,
+    gold: gold_after_fight
+};
 
-// Build the game status display
-title_line:s = string_concat([`===== `, string_to_uppercase(player_name), ` =====`]);
-separator:s = `=====================================`;
-level_line:s = string_concat([`Level: `,from(player_level), `/`,from(level_cap), ` (`,from(level_progress), `% to cap)`]);
-health_line:s = string_concat([`Health: `,from(player_health), `/`,from(max_health), ` (`,from(health_percent), `%)`]);
-mana_line:s = string_concat([`Mana: `,from(player_mana), `/`,from(max_mana), ` (`,from(mana_percent), `%)`]);
-gold_line:s = string_concat([`Gold: `,from(player_gold), ` coins`]);
-inventory_line:s = string_concat([`Inventory (`,from(inventory_count), ` items): `, inventory_list]);
-achievement_line:s = string_concat([`Achievements unlocked: `,from(achievement_count)]);
-time_line:s = string_concat([`Total playtime: `,from(play_time_hours), ` hours`]);
+print(string_concat([`Health: `, string_from(player_turn1.health), ` Gold: `, string_from(player_turn1.gold)]));
 
-// Combine all parts
-display_parts:a:s = [
-    title_line, `\n`,
-    separator, `\n\n`,
-    level_line, `\n`,
-    health_line, `\n`,
-    mana_line, `\n`,
-    gold_line, `\n\n`,
-    inventory_line, `\n`,
-    achievement_line, `\n\n`,
-    time_line, `\n`,
-    separator
-];
+// Turn 2
+print(`\n=== Turn 2 ===`);
+print(`You find a treasure chest with 30 gold!`);
+name_turn2:s = player_turn1.name;
+health_turn2:i = player_turn1.health;
+gold_turn2:i = player_turn1.gold + 30;
 
-final_display:s = string_concat(display_parts);
+player_turn2:Player = Player {
+    name: name_turn2,
+    health: health_turn2,
+    gold: gold_turn2
+};
+print(string_concat([`You now have `, string_from(player_turn2.gold), ` gold!`]));
 
-// Output the game status
-print(final_display);
+// Turn 3
+print(`\n=== Turn 3 ===`);
+print(`A merchant offers to heal you for 20 gold.`);
+choice3:s = dangerous(io_read_line_prompt(`Accept (y) or decline (n)? `));
+
+can_afford:b = player_turn2.gold >= 20;
+
+final_health:i = if {
+    string_contains(choice3, `y`) => {
+        if {
+            can_afford => {
+                print(`You are fully healed!`);
+                max_health;
+            },
+            else => {
+                print(`Not enough gold!`);
+                player_turn2.health;
+            }
+        };
+    },
+    else => {
+        print(`You decline the offer.`);
+        player_turn2.health;
+    }
+};
+
+final_gold:i = if {
+    string_contains(choice3, `y`) => {
+        if {
+            can_afford => { player_turn2.gold - 20; },
+            else => { player_turn2.gold; }
+        };
+    },
+    else => { player_turn2.gold; }
+};
+
+final_name:s = player_turn2.name;
+
+player_final:Player = Player {
+    name: final_name,
+    health: final_health,
+    gold: final_gold
+};
+
+print(string_concat([`Health: `, string_from(player_final.health), ` Gold: `, string_from(player_final.gold)]));
+
+// Game Over
+print(`\n=== Game Over ===`);
+print(string_concat([`Thanks for playing, `, player_final.name, `!`]));
+print(`Final stats:`);
+print(`- Survived 3 turns`);
+print(string_concat([`- Final health: `, string_from(player_final.health), `/`, string_from(max_health)]));
+print(string_concat([`- Final gold: `, string_from(player_final.gold), ` coins`]));
+print(`\nRun the game again for a different adventure!`);

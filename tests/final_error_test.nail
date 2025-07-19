@@ -1,13 +1,13 @@
 // Comprehensive error handling test
 
-fn divide(a:i, b:i):i!e {
+f divide(a:i, b:i):i!e {
     if {
         b == 0 => { r e(`Cannot divide by zero`); },
         else => { r a / b; }
     }
 }
 
-fn main():v {
+f main():v {
     // Test 1: Using dangerous() - will panic if divide returns error
     print(`Test 1: dangerous with valid division`);
     result1:i = dangerous(divide(10, 2));

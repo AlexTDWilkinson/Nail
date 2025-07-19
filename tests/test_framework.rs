@@ -16,7 +16,7 @@ pub fn test_full_pipeline(code: &str) -> TestResult {
 
     // Step 2: Parser
     match parse(tokens) {
-        Ok(mut ast) => {
+        Ok((mut ast, _)) => {
             result.ast = Some(ast.clone());
 
             // Step 3: Type Checker

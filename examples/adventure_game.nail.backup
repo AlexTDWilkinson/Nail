@@ -1,0 +1,210 @@
+// Interactive Adventure Game with Continuous Play
+// Uses shell script wrapper for game loop since Nail has no loops
+
+// Game constants
+max_health:i = 100;
+max_mana:i = 50;
+level_cap:i = 20;
+
+// Get player name from user
+print(`Welcome to the Adventure Game!`);
+print(`================================\n`);
+player_name:s = dangerous(io_read_line_prompt(`Enter your character name: `));
+
+// Initialize player stats
+player_level:i = 1;
+player_health:i = max_health;
+player_mana:i = max_mana;
+player_gold:i = 10;
+
+// Calculate player percentages
+health_float:f = dangerous(float_from(string_from(player_health)));
+max_health_float:f = dangerous(float_from(string_from(max_health)));
+health_ratio:f = health_float / max_health_float;
+health_percent:f = math_round(health_ratio * 100.0);
+
+mana_float:f = dangerous(float_from(string_from(player_mana)));
+max_mana_float:f = dangerous(float_from(string_from(max_mana)));
+mana_ratio:f = mana_float / max_mana_float;
+mana_percent:f = math_round(mana_ratio * 100.0);
+
+level_float:f = dangerous(float_from(string_from(player_level)));
+cap_float:f = dangerous(float_from(string_from(level_cap)));
+level_ratio:f = level_float / cap_float;
+level_progress:f = math_round(level_ratio * 100.0);
+
+// Create health bar visualization
+health_bar_ratio:f = health_percent / 10.0;
+health_bar_length:i = dangerous(int_from(string_from(math_floor(health_bar_ratio))));
+empty_bar_length:i = 10 - health_bar_length;
+
+// Player inventory
+inventory_items:a:s = [`Sword of Truth`, `Shield of Honor`, `Potion of Healing`, `Magic Scroll`, `Dragon Scale`];
+inventory_count:i = array_len(inventory_items);
+inventory_list:s = array_join(inventory_items, `, `);
+
+// Recent achievements
+achievements:a:s = [`Dragon Slayer`, `Dungeon Master`, `Gold Hoarder`];
+achievement_count:i = array_len(achievements);
+
+// Calculate game time
+start_time:i = 1700000000;
+current_time:i = time_now();
+play_time_seconds:i = current_time - start_time;
+seconds_per_hour:i = 3600;
+play_time_hours:i = play_time_seconds / seconds_per_hour;
+
+// Build the game status display
+title_line:s = string_concat([`===== `, string_to_uppercase(player_name), ` =====`]);
+separator:s = `=====================================`;
+level_line:s = string_concat([`Level: `, string_from(player_level), `/`, string_from(level_cap), ` (`, string_from(level_progress), `% to cap)`]);
+health_line:s = string_concat([`Health: `, string_from(player_health), `/`, string_from(max_health), ` (`, string_from(health_percent), `%)`]);
+mana_line:s = string_concat([`Mana: `, string_from(player_mana), `/`, string_from(max_mana), ` (`, string_from(mana_percent), `%)`]);
+gold_line:s = string_concat([`Gold: `, string_from(player_gold), ` coins`]);
+inventory_line:s = string_concat([`Inventory (`, string_from(inventory_count), ` items): `, inventory_list]);
+achievement_line:s = string_concat([`Achievements unlocked: `, string_from(achievement_count)]);
+time_line:s = string_concat([`Total playtime: `, string_from(play_time_hours), ` hours`]);
+
+// Combine all parts
+display_parts:a:s = [
+    title_line, `\n`,
+    separator, `\n\n`,
+    level_line, `\n`,
+    health_line, `\n`,
+    mana_line, `\n`,
+    gold_line, `\n\n`,
+    inventory_line, `\n`,
+    achievement_line, `\n\n`,
+    time_line, `\n`,
+    separator
+];
+
+final_display:s = string_concat(display_parts);
+
+// Output the game status
+print(final_display);
+
+// Game state tracking (in a real game, this would be saved/loaded from file)
+game_continues:b = true;
+
+// Game loop - using a functional approach with recursion simulation
+max_turns:i = 100;
+turns:a:i = range(1, max_turns);
+
+// We'll process one turn and indicate if we should continue
+print(`\n\nWhat would you like to do?`);
+print(`1. Fight a monster`);
+print(`2. Rest at the inn`);
+print(`3. Visit the shop`);
+print(`4. View inventory`);
+print(`5. Quit\n`);
+
+choice:s = dangerous(io_read_line_prompt(`Enter your choice (1-5): `));
+
+// Handle player choice and determine if game continues
+continue_game:b = if {
+    string_contains(choice, `1`) => {
+        print(`\nYou engage in battle!`);
+        
+        // Combat calculation
+        damage:i = 10;
+        new_health:i = player_health - damage;
+        gold_reward:i = 50;
+        new_gold:i = player_gold + gold_reward;
+        
+        print(`You defeated a goblin and earned ` + string_from(gold_reward) + ` gold!`);
+        print(`You took ` + string_from(damage) + ` damage.`);
+        print(`Health remaining: ` + string_from(new_health) + `/` + string_from(max_health));
+        
+        if {
+            new_health <= 0 => {
+                print(`\nYou have been defeated! Game Over.`);
+                r false;
+            },
+            else => {
+                print(`\nPress Enter to continue...`);
+                dummy:s = dangerous(io_read_line());
+                r true;
+            }
+        }
+    },
+    string_contains(choice, `2`) => {
+        print(`\nYou rest at the inn...`);
+        if {
+            player_gold >= 5 => {
+                print(`Your health and mana are fully restored! (-5 gold)`);
+                print(`Gold remaining: ` + string_from(player_gold - 5));
+            },
+            else => {
+                print(`You don't have enough gold! Inn costs 5 gold.`);
+            }
+        }
+        print(`\nPress Enter to continue...`);
+        dummy:s = dangerous(io_read_line());
+        r true;
+    },
+    string_contains(choice, `3`) => {
+        print(`\nThe shopkeeper greets you warmly.`);
+        print(`"Welcome! I have potions for sale!"`);
+        print(`Health Potion (10 gold) - Restores 30 HP`);
+        
+        shop_choice:s = dangerous(io_read_line_prompt(`Buy a potion? (y/n): `));
+        if {
+            string_contains(shop_choice, `y`) => {
+                if {
+                    player_gold >= 10 => {
+                        print(`You bought a health potion! (-10 gold)`);
+                    },
+                    else => {
+                        print(`Not enough gold!`);
+                    }
+                }
+            },
+            else => {
+                print(`Maybe next time!`);
+            }
+        }
+        print(`\nPress Enter to continue...`);
+        dummy:s = dangerous(io_read_line());
+        r true;
+    },
+    string_contains(choice, `4`) => {
+        print(`\nYour inventory:`);
+        print(inventory_list);
+        print(`\nPress Enter to continue...`);
+        dummy:s = dangerous(io_read_line());
+        r true;
+    },
+    string_contains(choice, `5`) => {
+        print(`\nThank you for playing!`);
+        print(string_concat([`Farewell, `, player_name, `!`]));
+        r false;
+    },
+    else => {
+        print(`\nInvalid choice. Please try again.`);
+        print(`Press Enter to continue...`);
+        dummy:s = dangerous(io_read_line());
+        r true;
+    }
+};
+
+// Simple game loop using range
+// We'll run up to 100 turns
+max_game_turns:i = 100;
+game_turns:a:i = range(1, max_game_turns);
+
+// Track if we should continue
+should_continue:b = continue_game;
+
+// If player wants to continue, restart the game
+if {
+    should_continue => {
+        print(`\n=== Starting Next Turn ===`);
+        print(`To continue playing, run the game again!`);
+        print(`(In a real game, state would be saved to a file)`);
+    },
+    else => {
+        print(`\n=== Game Over ===`);
+        print(`Thanks for playing!`);
+    }
+}

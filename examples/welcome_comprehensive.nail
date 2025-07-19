@@ -35,7 +35,7 @@ enum GameState {
 current_state:GameState = GameState::Playing;
 
 // === Error Handling - Safe by Default ===
-fn divide(num:i, den:i):i!e {
+f divide(num:i, den:i):i!e {
     if {
         den == 0 => { r e(`Cannot divide by zero!`); },
         else => { r num / den; }
@@ -47,13 +47,13 @@ result:i = safe(divide(10, 2), |err:s|:i {
     print(string_concat([`Error: `, err]));
     r 0;  // Default value
 });
-print(string_concat([`10 / 2 = `,from(result)]));
+print(string_concat([`10 / 2 = `, string_from(result)]));
 
 // Or panic on errors with dangerous()
 // result2:i = dangerous(divide(10, 0)); // This would panic!
 
 // === Functions ===
-fn greet(person_name:s):s {
+f greet(person_name:s):s {
     r string_concat([`Hello, `, person_name, `!`]);
 }
 

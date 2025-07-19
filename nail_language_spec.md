@@ -210,7 +210,7 @@ function calculate_monthly_payment(principal:i, annual_rate:i, years:i):i!e {
     }
     
     payment:f = to_float(principal) * monthly_rate / denominator;
-    return to_int(payment); 
+    return int_from(payment); 
 }
 ```
 
@@ -639,7 +639,7 @@ max_attempts:s = `Three`; // Shadows can even change the type (like Rust)
 In Nail, function declarations are similar to Rust but with simplified generics. The basic syntax is:
 
 ```js
-fn function_name(param_name:Type, another_param:Type):Type {
+f function_name(param_name:Type, another_param:Type):Type {
     // Function body
 }
 ```
@@ -647,7 +647,7 @@ fn function_name(param_name:Type, another_param:Type):Type {
 Example:
 
 ```js
-fn add(a:i, b:i):i {
+f add(a:i, b:i):i {
    r a + b;
 }
 ```
@@ -657,7 +657,7 @@ fn add(a:i, b:i):i {
 In Nail, function parameters must always be named, unless the name of the constant being passed is an exact match to the parameter name. This encourages clear and self-documenting function calls.
 
 ```js
-fn greet(name:s) {
+f greet(name:s) {
     print(`Hello, ` + name + `!`);
 }
 
@@ -677,17 +677,17 @@ They must just be defined as regular functions if they need to be reused.
 multiply:i = |x:i, y:i|:i { r x * y; };
 
 // ALLOWED. Normal function declaration of same thing.
-fn multiply(x:i, y:i):i {
+f multiply(x:i, y:i):i {
    r x * y;
 }
 
 // NOT ALLOWED. You cannot use a lambda inside a function declaration. You should make the lambda a seperate function and call it.
-fn multiply(x:i, y:i):i {
+f multiply(x:i, y:i):i {
   r |x:i, y:i|:i { r x * y; }
 }
 
 // ALLOWED. You can call functions inside other functions, as long as they are not lambdas in the declaration.
-fn multiply_example(x:i, y:i):i {
+f multiply_example(x:i, y:i):i {
  one_to_five:a:i = [1, 2, 3, 4, 5];
  x:a:i = map(one_to_five, |num:i|:i { r num * 2; }); // Allowed, because the lambda is inside a function call.
   r multiply(x, y);
@@ -705,8 +705,8 @@ The lambda syntax in Nail is `|parameters|:return_type { body }`. This clearly s
 Nail supports higher-order functions, allowing functions to be passed as arguments or returned from other functions:
 
 ```js
-fn apply_i(f:fn(i):i, x:i):i {
-   r f(x);
+f apply_i(func:fn(i):i, x:i):i {
+   r func(x);
 }
 
 result:i = apply_i(|x:i|:i { r x * 2; }, 5);
@@ -724,7 +724,7 @@ Using this lets us avoid monomorphizing the library functions, which would be a 
 For example instead of simply map(), you would have combinatorial explosion like map_ai_i(), map_af_i(), etc for many functions.
 
 ```js
-fn generic_function(x:(i|f)):i {
+f generic_function(x:(i|f)):i {
     // Function body
 }
 ```
@@ -834,7 +834,7 @@ struct UserRecord {
     age:i
 }
 
-fn map_user_input_to_record(input:UserInput, id:i):UserRecord {
+f map_user_input_to_record(input:UserInput, id:i):UserRecord {
    name_parts:a:s = split(input.full_name, ` `);
     r UserRecord {
         id:id,

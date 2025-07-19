@@ -15,7 +15,7 @@ fn test_boolean_pipeline(code: &str) -> BooleanTestResult {
 
     // Step 2: Parser
     match parse(tokens) {
-        Ok(mut ast) => {
+        Ok((mut ast, _)) => {
             result.ast = Some(ast.clone());
 
             // Step 3: Type Checker
@@ -151,7 +151,7 @@ fn boolean_step_3_boolean_type_annotation() {
 fn boolean_step_4_simple_boolean_function() {
     println!("BOOLEAN STEP 4: Test simple boolean function");
 
-    let code = "fn test():b { r true; }";
+    let code = "f test():b { r true; }";
     let result = test_boolean_pipeline(code);
     result.print_detailed();
 
@@ -186,7 +186,7 @@ fn boolean_step_5_integer_comparison() {
 fn boolean_step_6_comparison_in_function_returning_int() {
     println!("BOOLEAN STEP 6: Test comparison in function returning Int (current behavior)");
 
-    let code = "fn test():i { r 5 == 5; }";
+    let code = "f test():i { r 5 == 5; }";
     let result = test_boolean_pipeline(code);
     result.print_detailed();
 
@@ -201,7 +201,7 @@ fn boolean_step_6_comparison_in_function_returning_int() {
 fn boolean_step_7_comparison_in_function_returning_boolean() {
     println!("BOOLEAN STEP 7: Test comparison in function returning Boolean (desired behavior)");
 
-    let code = "fn test():b { r 5 == 5; }";
+    let code = "f test():b { r 5 == 5; }";
     let result = test_boolean_pipeline(code);
     result.print_detailed();
 
@@ -222,7 +222,7 @@ fn boolean_step_7_comparison_in_function_returning_boolean() {
 fn boolean_step_8_the_exact_problem() {
     println!("BOOLEAN STEP 8: Test the exact problem case");
 
-    let code = "fn is_even_func(n:i):b { r n % 2 == 0; }";
+    let code = "f is_even_func(n:i):b { r n % 2 == 0; }";
     let result = test_boolean_pipeline(code);
     result.print_detailed();
 
@@ -247,7 +247,7 @@ fn boolean_step_9_all_comparison_operators() {
 
     for op in operators {
         println!("Testing operator: {}", op);
-        let code = format!("fn test():b {{ r 5 {} 3; }}", op);
+        let code = format!("f test():b {{ r 5 {} 3; }}", op);
         let result = test_boolean_pipeline(&code);
 
         println!("Operator {} result:", op);
@@ -302,29 +302,29 @@ fn boolean_comprehensive_test() {
 
     let test_cases = vec![
         // Basic types that should work
-        ("fn test():i { r 42; }", "basic integer", true),
-        ("fn test():s { r `hello`; }", "basic string", true),
+        ("f test():i { r 42; }", "basic integer", true),
+        ("f test():s { r `hello`; }", "basic string", true),
         // Boolean type tests
-        ("fn test():b { r true; }", "boolean with true", false),   // Might fail
-        ("fn test():b { r false; }", "boolean with false", false), // Might fail
+        ("f test():b { r true; }", "boolean with true", false),   // Might fail
+        ("f test():b { r false; }", "boolean with false", false), // Might fail
         // Arithmetic (should work)
-        ("fn test():i { r 5 + 3; }", "addition", true),
-        ("fn test():i { r 5 - 3; }", "subtraction", true),
-        ("fn test():i { r 5 * 3; }", "multiplication", true),
-        ("fn test():i { r 5 / 3; }", "division", true),
-        ("fn test():i { r 5 % 3; }", "modulo", true),
+        ("f test():i { r 5 + 3; }", "addition", true),
+        ("f test():i { r 5 - 3; }", "subtraction", true),
+        ("f test():i { r 5 * 3; }", "multiplication", true),
+        ("f test():i { r 5 / 3; }", "division", true),
+        ("f test():i { r 5 % 3; }", "modulo", true),
         // Comparisons returning int (current buggy behavior)
-        ("fn test():i { r 5 == 3; }", "equality as int", true),
-        ("fn test():i { r 5 != 3; }", "inequality as int", true),
-        ("fn test():i { r 5 < 3; }", "less than as int", true),
-        ("fn test():i { r 5 > 3; }", "greater than as int", true),
+        ("f test():i { r 5 == 3; }", "equality as int", true),
+        ("f test():i { r 5 != 3; }", "inequality as int", true),
+        ("f test():i { r 5 < 3; }", "less than as int", true),
+        ("f test():i { r 5 > 3; }", "greater than as int", true),
         // Comparisons returning boolean (the fix we want)
-        ("fn test():b { r 5 == 3; }", "equality as boolean", false),    // Currently fails
-        ("fn test():b { r 5 != 3; }", "inequality as boolean", false),  // Currently fails
-        ("fn test():b { r 5 < 3; }", "less than as boolean", false),    // Currently fails
-        ("fn test():b { r 5 > 3; }", "greater than as boolean", false), // Currently fails
+        ("f test():b { r 5 == 3; }", "equality as boolean", false),    // Currently fails
+        ("f test():b { r 5 != 3; }", "inequality as boolean", false),  // Currently fails
+        ("f test():b { r 5 < 3; }", "less than as boolean", false),    // Currently fails
+        ("f test():b { r 5 > 3; }", "greater than as boolean", false), // Currently fails
         // The original problem
-        ("fn is_even(n:i):b { r n % 2 == 0; }", "the original problem", false),
+        ("f is_even(n:i):b { r n % 2 == 0; }", "the original problem", false),
     ];
 
     let mut passed = 0;

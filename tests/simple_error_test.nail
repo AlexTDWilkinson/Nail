@@ -1,14 +1,14 @@
 // Simple test to verify error handling syntax parsing
 
-fn test_result_type():i!e {
+f test_result_type():i!e {
     r 42;
 }
 
-fn test_error():i!e {
+f test_error():i!e {
     r e(`Something went wrong`);
 }
 
-fn main():v {
+f main():v {
     // Test safe
     value:i = safe(test_result_type(), |err|:i {
         print(`Error: ` + err);

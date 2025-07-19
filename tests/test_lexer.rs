@@ -5,7 +5,7 @@ use Nail::common::*;
 
 #[test]
 fn test_basic_tokens() {
-    let tokens = lexer("fn x y z");
+    let tokens = lexer("f x y z");
     
     println!("Basic tokens: {:?}", tokens);
     println!("Number of tokens: {}", tokens.len());
@@ -88,7 +88,7 @@ fn test_type_annotations() {
 
 #[test]
 fn test_function_declaration() {
-    let tokens = lexer("fn test(x:i):b { r true; }");
+    let tokens = lexer("f test(x:i):b { r true; }");
     
     println!("Function tokens: {:?}", tokens);
     
@@ -225,7 +225,7 @@ fn test_error_cases() {
 
 #[test]
 fn test_multiline_code() {
-    let code = r#"fn test():i {
+    let code = r#"f test():i {
     x:i = 5;
     r x + 1;
 }"#;

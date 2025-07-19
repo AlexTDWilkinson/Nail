@@ -1,0 +1,6 @@
+// Test math functions
+
+x_value:f = 16.0;
+result:f = math_sqrt(x_value);
+output:s =string_from(result);
+print(output);

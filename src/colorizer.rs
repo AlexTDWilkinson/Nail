@@ -378,7 +378,7 @@ fn tokenize_code(content: &str) -> Vec<String> {
                         continue;
                     }
                 }
-                
+
                 // Special case for parallel end: check if / is followed by p
                 if ch == '/' && chars.peek() == Some(&'p') {
                     // This is /p for parallel end, keep it as one token
@@ -509,7 +509,7 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
         // Keywords
         "parallel" => Span::styled(word.to_string(), Style::default().fg(theme.parallel_keyword)),
         "if" | "else" => Span::styled(word.to_string(), Style::default().fg(theme.keyword)),
-        "fn" => Span::styled(word.to_string(), Style::default().fg(theme.function)),
+        "f" => Span::styled(word.to_string(), Style::default().fg(theme.function)),
         "struct" => Span::styled(word.to_string(), Style::default().fg(theme.struct_keyword)),
         "enum" => Span::styled(word.to_string(), Style::default().fg(theme.enum_keyword)),
         "r" | "return" => Span::styled(word.to_string(), Style::default().fg(theme.return_keyword)),
@@ -830,7 +830,7 @@ mod tests {
     #[test]
     fn test_error_type_tokenization() {
         // Test that error types like i!e are kept as single tokens without spaces
-        let content = "fn divide(num:i, den:i):i!e {";
+        let content = "f divide(num:i, den:i):i!e {";
         let tokens = tokenize_code(content);
 
         // Check that i!e is a single token

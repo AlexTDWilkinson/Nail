@@ -193,6 +193,7 @@ impl Transpiler {
                         NailDataTypeDescriptor::Any(types) => {
                             types.len() == 2 && types[1] == NailDataTypeDescriptor::Error
                         }
+                        NailDataTypeDescriptor::Result(_) => true,
                         _ => false
                     }
                 } else {
@@ -282,6 +283,9 @@ impl Transpiler {
                 }
                 write!(output, " }}")?;
             }
+            ASTNode::StructFieldAccess { struct_name, field_name, .. } => {
+                write!(output, "{}.{}.clone()", struct_name, field_name)?;
+            }
             ASTNode::EnumVariant { name, variant, .. } => {
                 write!(output, "{}{}::{}", self.indent(), name, variant)?;
             }
@@ -329,6 +333,9 @@ impl Transpiler {
                 } else {
                     panic!("Unsupported Any type combination during transpilation")
                 }
+            },
+            NailDataTypeDescriptor::Result(inner_type) => {
+                format!("Result<{}, String>", self.rust_type(inner_type, _name))
             },
             NailDataTypeDescriptor::Fn(_, _) => panic!("NailDataTypeDescriptor::Fn data type found during transpilation. This should not happen."),
             NailDataTypeDescriptor::Unknown => panic!("NailDataTypeDescriptor::Unknown data type found during transpilation. This should not happen."),

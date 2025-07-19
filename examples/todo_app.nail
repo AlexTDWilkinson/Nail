@@ -7,29 +7,22 @@ priority_medium:i = 2;
 priority_low:i = 1;
 
 // Function to format a task with priority
-fn format_task(task_name:s, priority:i):s {
-   priority_text:s = ``;
-    
-    if { 
-        priority == priority_high => {
-           high_text:s = `[HIGH]`;
-        }
-        priority == priority_medium => {
-           priority_text:s = `[MED] `;
-        }
-        priority == priority_low => {
-           priority_text:s = `[LOW] `;
-        }
+f format_task(task_name:s, priority:i):s {
+    priority_text:s = if {
+        priority == priority_high => { r `[HIGH]`; },
+        priority == priority_medium => { r `[MED] `; },
+        priority == priority_low => { r `[LOW] `; },
+        else => { r ``; }
     };
     
-   formatted:s = string_concat([priority_text, ` `, task_name]);
+    formatted:s = string_concat([priority_text, ` `, task_name]);
     r formatted;
 }
 
 // Function to calculate task statistics
-fn calculate_stats(task_count:i, completed_count:i):f {
-   total_float:f = to_float(string_from(task_count));
-   completed_float:f = to_float(string_from(completed_count));
+f calculate_stats(task_count:i, completed_count:i):f {
+   total_float:f = dangerous(float_from(string_from(task_count)));
+   completed_float:f = dangerous(float_from(string_from(completed_count)));
    percentage:f = math_round(math_max(0.0, completed_float / total_float * 100.0));
     r percentage;
 }
@@ -45,7 +38,7 @@ task_three:s = format_task(`Fix parser bugs`, priority_high);
 task_four:s = format_task(`Add more examples`, priority_low);
 
 // Store tasks in arrays
-v all_tasks:a:s = [task_one, task_two, task_three, task_four];
+all_tasks:a:s = [task_one, task_two, task_three, task_four];
 total_tasks:i = array_len(all_tasks);
 
 // Track completed tasks
@@ -54,12 +47,12 @@ completion_rate:f = calculate_stats(total_tasks, completed_tasks);
 
 // Build output
 header:s = string_concat([app_title, `\n`, separator]);
-stats_line:s = string_concat([`Total Tasks: `,from(total_tasks), ` | Completed: `,from(completed_tasks), ` (`,from(completion_rate), `%)`]);
+stats_line:s = string_concat([`Total Tasks: `, string_from(total_tasks), ` | Completed: `, string_from(completed_tasks), ` (`, string_from(completion_rate), `%)`]);
 task_list:s = array_join(all_tasks, `\n`);
-timestamp:s = string_concat([`\nGenerated at: `,from(time_now()), ` seconds since epoch`]);
+timestamp:s = string_concat([`\nGenerated at: `, string_from(time_now()), ` seconds since epoch`]);
 
 // Create final output
-v output_parts:a:s = [header, `\n\n`, stats_line, `\n\n`, `Tasks:\n`, task_list, `\n`, separator, timestamp];
+output_parts:a:s = [header, `\n\n`, stats_line, `\n\n`, `Tasks:\n`, task_list, `\n`, separator, timestamp];
 final_output:s = string_concat(output_parts);
 
 print(final_output);

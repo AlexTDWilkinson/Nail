@@ -2,9 +2,9 @@
 
 #[cfg(test)]
 mod boolean_step_tests {
+    use crate::checker::*;
     use crate::lexer::*;
     use crate::parser::*;
-    use crate::checker::*;
 
     #[test]
     fn step1_boolean_type_exists() {
@@ -14,7 +14,7 @@ mod boolean_step_tests {
         assert_eq!(format!("{:?}", bool_type), "Boolean");
     }
 
-    #[test] 
+    #[test]
     fn step2_parse_boolean_type_annotation() {
         println!("STEP 2: Testing if we can parse 'b' type annotation");
         let result = parse_data_type("b");
@@ -30,26 +30,26 @@ mod boolean_step_tests {
         // We'll see if this causes issues
         let test_code = "x:b = true;";
         println!("Testing code: {}", test_code);
-        
+
         // Try to tokenize it
         let mut state = LexerState { line: 1, column: 1, errors: vec![] };
         let result = tokenize(test_code, &mut state);
-        
+
         println!("Tokenize result: {:?}", result);
         println!("Lexer errors: {:?}", state.errors);
-        
+
         // Don't assert success yet, just see what happens
     }
 
     #[test]
     fn step4_boolean_function_signature() {
         println!("STEP 4: Testing function with boolean return type");
-        let test_code = "fn test():b { r true; }";
+        let test_code = "f test():b { r true; }";
         println!("Testing code: {}", test_code);
-        
+
         let mut state = LexerState { line: 1, column: 1, errors: vec![] };
         let result = tokenize(test_code, &mut state);
-        
+
         println!("Tokenize result: {:?}", result);
         println!("Lexer errors: {:?}", state.errors);
     }
@@ -59,10 +59,10 @@ mod boolean_step_tests {
         println!("STEP 5: Testing comparison operator");
         let test_code = "x:i = 5 == 5;";
         println!("Testing code: {}", test_code);
-        
+
         let mut state = LexerState { line: 1, column: 1, errors: vec![] };
         let result = tokenize(test_code, &mut state);
-        
+
         println!("Tokenize result: {:?}", result);
         println!("Lexer errors: {:?}", state.errors);
     }

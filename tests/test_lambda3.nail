@@ -1,5 +1,5 @@
 // Test lambda in expression context
-fn test():i {
+f test():i {
     result:i = safe(42, |e|:i { r -1; });
     r result;
 }

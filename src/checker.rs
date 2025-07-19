@@ -124,6 +124,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         | ASTNode::FunctionDeclaration { scope, .. }
         | ASTNode::StructInstantiation { scope, .. }
         | ASTNode::StructInstantiationField { scope, .. }
+        | ASTNode::StructFieldAccess { scope, .. }
         | ASTNode::StructDeclarationField { scope, .. }
         | ASTNode::EnumVariant { scope, .. } => {
             *scope = current_scope;
@@ -142,6 +143,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         }
         ASTNode::IfStatement { condition_branches, else_branch, code_span, .. } => visit_if_statement(condition_branches, else_branch, state),
         ASTNode::StructDeclaration { name, fields, code_span, .. } => visit_struct_declaration(name, fields, state, code_span),
+        ASTNode::StructFieldAccess { struct_name, field_name, code_span, .. } => visit_struct_field_access(struct_name, field_name, state, code_span),
         ASTNode::EnumDeclaration { name, variants, code_span, .. } => visit_enum_declaration(name, variants, state, code_span),
         ASTNode::ArrayLiteral { elements, code_span, .. } => visit_array_literal(elements, state, code_span),
         ASTNode::FunctionCall { name, args, code_span, scope } => {
@@ -210,7 +212,7 @@ fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value
     };
 
     if !types_compatible {
-        add_error(state, format!("Type mismatch in constant declaration named `{}`: expected {:?}, got {:?}", name, data_type, value_type), code_span);
+        add_error(state, format!("Type mismatch in constant declaration named `{}`: expected {}, got {}", name, data_type, value_type), code_span);
     }
 
     // Use the actual value type for the symbol, not the annotation type
@@ -269,6 +271,42 @@ fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], e
     }
     if let Some(branch) = else_branch {
         visit_node(branch, state);
+    }
+}
+
+fn visit_struct_field_access(struct_name: &str, field_name: &str, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+    // Check if the struct variable exists
+    if !mark_symbol_as_used(state, struct_name) {
+        add_error(state, format!("Undefined variable: {}", struct_name), code_span);
+        return;
+    }
+
+    // Get the struct type from the symbol table
+    if let Some(symbol) = lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), struct_name) {
+        match &symbol.data_type {
+            NailDataTypeDescriptor::Struct(struct_type_name) => {
+                // Check if the struct type exists
+                if let Some(struct_fields) = state.structs.get(struct_type_name) {
+                    // Check if the field exists in the struct
+                    let field_exists = struct_fields.iter().any(|field| {
+                        if let ASTNode::StructDeclarationField { name, .. } = field {
+                            name == field_name
+                        } else {
+                            false
+                        }
+                    });
+                    
+                    if !field_exists {
+                        add_error(state, format!("Field '{}' does not exist in struct '{}'", field_name, struct_type_name), code_span);
+                    }
+                } else {
+                    add_error(state, format!("Unknown struct type: {}", struct_type_name), code_span);
+                }
+            }
+            _ => {
+                add_error(state, format!("Variable '{}' is not a struct", struct_name), code_span);
+            }
+        }
     }
 }
 
@@ -450,12 +488,19 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                 // We need to infer T from the first argument
                 if let Some(first_arg) = args.first() {
                     let arg_type = check_type(first_arg, state);
-                    // If the argument is a Result type (Any with 2 types where second is Error)
-                    if let NailDataTypeDescriptor::Any(types) = arg_type {
-                        if types.len() == 2 && types[1] == NailDataTypeDescriptor::Error {
-                            // Return the base type (first type in the Any)
-                            return types[0].clone();
+                    // If the argument is a Result type
+                    match arg_type {
+                        NailDataTypeDescriptor::Result(inner) => {
+                            // Return the inner type of Result<T, E>
+                            return (*inner).clone();
                         }
+                        NailDataTypeDescriptor::Any(types) => {
+                            // Legacy support for Any representation
+                            if types.len() == 2 && types[1] == NailDataTypeDescriptor::Error {
+                                return types[0].clone();
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // If we can't infer, return Unknown
@@ -504,6 +549,27 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                 }
             }
         },
+        ASTNode::StructFieldAccess { struct_name, field_name, .. } => {
+            // Get the struct type from the symbol table
+            if let Some(symbol) = lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), struct_name) {
+                match &symbol.data_type {
+                    NailDataTypeDescriptor::Struct(struct_type_name) => {
+                        // Find the field type in the struct definition
+                        if let Some(struct_fields) = state.structs.get(struct_type_name) {
+                            for field in struct_fields {
+                                if let ASTNode::StructDeclarationField { name, data_type, .. } = field {
+                                    if name == field_name {
+                                        return data_type.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            NailDataTypeDescriptor::Unknown
+        }
     }
 }
 
@@ -683,5 +749,69 @@ fn visit_parallel_assignment(assignments: &mut [(String, NailDataTypeDescriptor,
             data_type: data_type.clone(),
             is_used: false,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::lexer;
+    use crate::parser::parse;
+    
+    #[test]
+    fn test_error_type_display() {
+        // Test that error types like f!e are displayed correctly
+        let code = "health_float:f = float_from(string_from(75));";
+        
+        let tokens = lexer(code);
+        let parse_result = parse(tokens);
+        let ast = match parse_result {
+            Ok((ast, _)) => ast,
+            Err(e) => panic!("Parse error: {}", e),
+        };
+        
+        let mut ast_mut = ast.clone();
+        let result = checker(&mut ast_mut);
+        let errors = match result {
+            Err(errs) => errs,
+            Ok(_) => vec![],
+        };
+        assert!(!errors.is_empty(), "Expected type error for float_from result");
+        
+        let error_message = &errors[0].message;
+        assert!(error_message.contains("expected f, got f!e"), 
+            "Error message should show 'f!e' not 'Unknown'. Got: {}", error_message);
+    }
+    
+    #[test]
+    fn test_dangerous_unwraps_result_type() {
+        // Test that dangerous() properly unwraps Result types
+        let code = "result:f!e = float_from(`42`); unwrapped:f = dangerous(result);";
+        
+        let tokens = lexer(code);
+        let parse_result = parse(tokens);
+        let ast = match parse_result {
+            Ok((ast, _)) => ast,
+            Err(e) => panic!("Parse error: {}", e),
+        };
+        
+        let mut ast_mut = ast.clone();
+        let result = checker(&mut ast_mut);
+        
+        // Should type check successfully
+        assert!(result.is_ok(), "dangerous() should properly unwrap f!e to f");
+    }
+    
+    #[test]
+    fn test_result_type_display() {
+        // Test Display implementation for Result types
+        let result_int = NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int));
+        assert_eq!(format!("{}", result_int), "i!e");
+        
+        let result_float = NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float));
+        assert_eq!(format!("{}", result_float), "f!e");
+        
+        let result_string = NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String));
+        assert_eq!(format!("{}", result_string), "s!e");
     }
 }
