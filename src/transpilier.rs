@@ -507,7 +507,7 @@ impl Transpiler {
 
                 // For now, unwrap all Results
                 // TODO: Proper error handling
-                if name.starts_with("http_") || name.starts_with("fs_") || name.starts_with("env_") || name.starts_with("process_run") || name == "to_int" || name == "to_float" {
+                if name.starts_with("http_") || name.starts_with("env_") || name.starts_with("process_run") || name == "to_int" || name == "to_float" {
                     write!(output, ".unwrap()")?;
                 }
             }

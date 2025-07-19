@@ -1,0 +1,5 @@
+// Corrected blog example demonstrating Nail's syntax
+numbers:a:i = [1, 2, 3, 4, 5];
+doubled:a:i = map_int(numbers, |n:i|:i { r n * 2; });
+sum:i = reduce_int(doubled, 0, |acc:i, n:i|:i { r acc + n; });
+print(sum); // Output: 30

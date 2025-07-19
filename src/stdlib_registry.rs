@@ -10,6 +10,7 @@ pub enum CrateDependency {
     Regex,
     Rand,
     DashMap,
+    Pulldown,
 }
 
 impl CrateDependency {
@@ -22,6 +23,7 @@ impl CrateDependency {
             CrateDependency::Regex => "regex",
             CrateDependency::Rand => "rand",
             CrateDependency::DashMap => "dashmap",
+            CrateDependency::Pulldown => "pulldown-cmark",
         }
     }
 
@@ -34,6 +36,7 @@ impl CrateDependency {
             CrateDependency::Regex => "use regex;",
             CrateDependency::Rand => "use rand;",
             CrateDependency::DashMap => "use dashmap;",
+            CrateDependency::Pulldown => "use pulldown_cmark;",
         }
     }
 }
@@ -82,6 +85,7 @@ pub enum StdlibModule {
     HashMap,
     IO,
     Print,
+    Markdown,
 }
 
 impl StdlibModule {
@@ -104,6 +108,7 @@ impl StdlibModule {
             StdlibModule::HashMap => "std_lib::hashmap",
             StdlibModule::IO => "std_lib::io",
             StdlibModule::Print => "std_lib::print",
+            StdlibModule::Markdown => "std_lib::markdown",
         }
     }
 }
@@ -1109,6 +1114,23 @@ lazy_static! {
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
             module: StdlibModule::HashMap,
+        });
+
+        // Markdown functions
+        m.insert("markdown_to_html", StdlibFunction {
+            rust_path: "std_lib::markdown::to_html".to_string(),
+            is_async: false,
+            crate_deps: vec![CrateDependency::Pulldown],
+            struct_derives: vec![],
+            module: StdlibModule::Markdown,
+        });
+
+        m.insert("markdown_to_html_with_options", StdlibFunction {
+            rust_path: "std_lib::markdown::to_html_with_options".to_string(),
+            is_async: false,
+            crate_deps: vec![CrateDependency::Pulldown],
+            struct_derives: vec![],
+            module: StdlibModule::Markdown,
         });
 
         m
