@@ -291,6 +291,26 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::Void,
         });
         
+        // File system functions
+        m.insert("fs_read", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+        });
+        
+        m.insert("fs_write", StdlibFunctionType {
+            parameters: vec![
+                StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String },
+                StdlibParameter { name: "content".to_string(), param_type: NailDataTypeDescriptor::String }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
+        });
+        
+        // Markdown functions
+        m.insert("markdown_to_html", StdlibFunctionType {
+            parameters: vec![StdlibParameter { name: "markdown".to_string(), param_type: NailDataTypeDescriptor::String }],
+            return_type: NailDataTypeDescriptor::String,
+        });
+        
         // safe() handles errors by providing a fallback
         m.insert("safe", StdlibFunctionType {
             parameters: vec![

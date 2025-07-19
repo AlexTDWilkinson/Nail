@@ -1,22 +1,24 @@
 #!/bin/bash
+cd /home/alex/Nail
+
 echo "Compiling blog example..."
-cargo run --bin nailc examples/blog_with_files.nail --skip-check
+cargo run --bin nailc examples/blog_with_files.nail
 
-echo -e "\nCompiling Rust code..."
+echo -e "\nRunning generated Rust code directly..."
 cd examples
-rustc blog_with_files.rs -o blog_with_files --edition 2021 -L ../target/debug/deps -L ../target/debug --extern tokio=../target/debug/deps/libtokio*.rlib --extern Nail=../target/debug/libNail.rlib 2>&1 || {
-    echo "Direct compilation failed, trying with cargo..."
-    cd ..
-    cargo build --bin blog_with_files 2>&1 || {
-        echo "Cargo build failed, running the Rust file directly..."
-        cd examples
-        cargo init --name blog_with_files . 2>/dev/null || true
-        echo '[dependencies]' >> Cargo.toml
-        echo 'tokio = { version = "1", features = ["full"] }' >> Cargo.toml
-        echo 'Nail = { path = ".." }' >> Cargo.toml
-        cargo run --bin blog_with_files
-    }
-}
+rustc blog_with_files.rs \
+  --edition 2021 \
+  -L ../target/debug/deps \
+  --extern tokio=$(ls ../target/debug/deps/libtokio-*.rlib | head -1) \
+  --extern axum=$(ls ../target/debug/deps/libaxum-*.rlib | head -1) \
+  --extern pulldown_cmark=$(ls ../target/debug/deps/libpulldown_cmark-*.rlib | head -1) \
+  --extern Nail=../target/debug/libNail.rlib \
+  -o blog_server
 
-echo -e "\nRunning blog server..."
-./blog_with_files
+if [ $? -eq 0 ]; then
+  echo -e "\nStarting blog server..."
+  echo "Visit http://localhost:8080 to see the blog"
+  ./blog_server
+else
+  echo "Compilation failed"
+fi
