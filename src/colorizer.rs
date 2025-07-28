@@ -39,7 +39,7 @@ pub struct ColorScheme {
 }
 
 /// Convert a hex color string (e.g., "#FF5733") to a `tui::style::Color`
-fn hex_to_color(hex: &str) -> Color {
+pub fn hex_to_color(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
 
     if hex.len() == 6 {

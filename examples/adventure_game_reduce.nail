@@ -1,0 +1,131 @@
+// Adventure Game with Reduce
+// Uses reduce to process turns
+
+struct Player {
+    name:s,
+    health:i,
+    gold:i
+}
+
+// Game constants
+max_health:i = 100;
+initial_gold:i = 10;
+
+// Get player name
+print(`Welcome to the Adventure Game!`);
+print(`================================`);
+print(``);
+player_name:s = danger(io_read_line_prompt(`Enter your character name: `));
+
+// Initialize player
+initial_player:Player = Player { name: player_name, health: max_health, gold: initial_gold };
+
+// Display initial stats
+print(``);
+print(array_join([`Welcome, `, initial_player.name, `!`], ``));
+print(array_join([`Starting Health: `, danger(string_from(initial_player.health))], ``));
+print(array_join([`Starting Gold: `, danger(string_from(initial_player.gold))], ``));
+print(``);
+print(`Your adventure begins...`);
+print(``);
+
+// Process 3 turns using reduce
+turns:a:i = [1, 2, 3];
+
+final_player:Player = reduce player turn idx in turns from initial_player {
+    result:Player = if {
+        turn == 1 => {
+            print(`=== Turn 1 ===`);
+            print(`You encounter a goblin!`);
+            choice:s = danger(io_read_line_prompt(`Fight (f) or run (r)? `));
+            
+            fought:b = string_contains(choice, `f`);
+            if {
+                fought => {
+                    print(`You defeat the goblin and earn 20 gold!`);
+                    print(`But you take 10 damage.`);
+                },
+                else => {
+                    print(`You run away safely.`);
+                }
+            };
+            
+            // Extract all values first
+            current_name:s = player.name;
+            current_health:i = player.health;
+            current_gold:i = player.gold;
+            
+            new_health:i = if { fought => { current_health - 10; }, else => { current_health; } };
+            new_gold:i = if { fought => { current_gold + 20; }, else => { current_gold; } };
+            
+            Player { name: current_name, health: new_health, gold: new_gold };
+        },
+        turn == 2 => {
+            print(``);
+            print(`=== Turn 2 ===`);
+            print(`You find a treasure chest with 30 gold!`);
+            
+            // Extract all values first
+            current_name:s = player.name;
+            current_health:i = player.health;
+            current_gold:i = player.gold;
+            
+            new_gold:i = current_gold + 30;
+            
+            Player { name: current_name, health: current_health, gold: new_gold };
+        },
+        turn == 3 => {
+            print(`\n=== Turn 3 ===`);
+            print(`A merchant offers to heal you for 20 gold.`);
+            choice:s = danger(io_read_line_prompt(`Accept (y) or decline (n)? `));
+            
+            // Extract all values first
+            current_name:s = player.name;
+            current_health:i = player.health;
+            current_gold:i = player.gold;
+            
+            wants_heal:b = string_contains(choice, `y`);
+            can_afford:b = current_gold >= 20;
+            healed:b = wants_heal && can_afford;
+            
+            if {
+                wants_heal => {
+                    if {
+                        can_afford => { print(`You are fully healed!`); },
+                        else => { print(`Not enough gold!`); }
+                    };
+                },
+                else => {
+                    print(`You decline the offer.`);
+                }
+            };
+            
+            new_health:i = if { healed => { max_health; }, else => { current_health; } };
+            new_gold:i = if { healed => { current_gold - 20; }, else => { current_gold; } };
+            
+            Player { name: current_name, health: new_health, gold: new_gold };
+        },
+        else => { player; }
+    };
+    
+    // Print current stats
+    if {
+        turn == 2 => {
+            print(array_join([`You now have `, danger(string_from(result.gold)), ` gold!`], ``));
+        },
+        else => {
+            print(array_join([`Health: `, danger(string_from(result.health)), ` Gold: `, danger(string_from(result.gold))], ``));
+        }
+    };
+    
+    y result;
+};
+
+// Game Over
+print(`\n=== Game Over ===`);
+print(array_join([`Thanks for playing, `, final_player.name, `!`], ``));
+print(`Final stats:`);
+print(`- Survived 3 turns`);
+print(array_join([`- Final health: `, danger(string_from(final_player.health)), `/`, danger(string_from(max_health))], ``));
+print(array_join([`- Final gold: `, danger(string_from(final_player.gold)), ` coins`], ``));
+print(`\nRun the game again for a different adventure!`);

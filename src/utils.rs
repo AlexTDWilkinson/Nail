@@ -6,6 +6,7 @@ use crate::CodeError;
 use crate::Editor;
 use log::error;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use ratatui::crossterm::execute;
 use ratatui::prelude::Position;
 use std::backtrace::Backtrace;
 use std::panic;
@@ -165,8 +166,43 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 editor.content.iter().map(|line| Line::from(vec![Span::styled(line.clone(), Style::default().fg(editor.theme.default).bg(editor.theme.background))])).collect();
             let all_colorized = colorize_code(all_content_lines, &editor.theme);
 
-            // Then extract the visible portion
-            let visible_content: Vec<Line> = all_colorized.into_iter().skip(editor.scroll_position as usize).take(visible_lines).collect();
+            // Then extract the visible portion and apply cursor highlighting
+            let mut visible_content: Vec<Line> = all_colorized.into_iter().skip(editor.scroll_position as usize).take(visible_lines).collect();
+            
+            // Apply special styling to the cursor position to ensure it appears white
+            let cursor_y_visible = editor.cursor_y.saturating_sub(editor.scroll_position as usize);
+            if cursor_y_visible < visible_content.len() {
+                if let Some(line) = visible_content.get_mut(cursor_y_visible) {
+                    let mut new_spans = Vec::new();
+                    let mut char_pos = 0;
+                    
+                    for span in line.spans.iter() {
+                        let text = span.content.to_string();
+                        let span_style = span.style;
+                        
+                        for ch in text.chars() {
+                            if char_pos == editor.cursor_x {
+                                // Simply ensure the cursor position has white text
+                                // Most terminals will then properly show their cursor on top
+                                new_spans.push(Span::styled(
+                                    ch.to_string(), 
+                                    span_style.fg(Color::White)
+                                ));
+                            } else {
+                                new_spans.push(Span::styled(ch.to_string(), span_style));
+                            }
+                            char_pos += 1;
+                        }
+                    }
+                    
+                    // Handle case where cursor is at the end of the line
+                    if char_pos == editor.cursor_x {
+                        new_spans.push(Span::styled(" ", Style::default().fg(Color::White)));
+                    }
+                    
+                    *line = Line::from(new_spans);
+                }
+            }
 
             let editor_title = if let Some(ref filename) = editor.current_file { format!("NAIL - {}", filename) } else { "NAIL".to_string() };
             let paragraph =
