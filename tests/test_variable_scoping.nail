@@ -1,0 +1,25 @@
+// Variable Scoping and Shadowing Tests
+
+// Basic shadowing
+outer_value:i = 100;
+print(outer_value);
+
+result:i = if {
+    true => {
+        inner_value:i = 200;
+        r inner_value;
+    },
+    else => { r outer_value; }
+};
+print(result);
+
+// Shadow with different type
+outer_value:s = `Now I'm a string!`;
+print(outer_value);
+
+// Struct field shadowing
+struct Data { value_field:i, other_field:s }
+value_field:i = 42;
+data:Data = Data { value_field: 99, other_field: `test` };
+print(value_field);
+print(data.value_field);

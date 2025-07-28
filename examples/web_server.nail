@@ -1,9 +1,9 @@
 // Simple web server example in Nail
 
 port:i = 3000;
+port_string:s = expect(string_from(port));
 
-port_string:s =string_from(port);
-html_content:s = string_concat([`
+html_content:s = array_join([`
 <!DOCTYPE html>
 <html>
 <head>
@@ -40,12 +40,37 @@ html_content:s = string_concat([`
             <li>String interpolation with backticks</li>
             <li>Automatic standard library imports</li>
             <li>Simple HTTP server with one function call</li>
+            <li>Collection operations: map, filter, reduce, each, find, all, any</li>
         </ul>
         <p>Grug happy. Complexity bad. Nail good. 🎉</p>
     </div>
 </body>
 </html>
-`]);
+`], ``);
+
+// Demonstrate collection operations in server context
+ports:a:i = [3000, 3001, 3002, 3003];
+
+// Check if our port is in the valid range
+valid_ports:a:i = filter port_num in ports {
+    y port_num >= 3000 && port_num <= 3010;
+};
+is_valid_port:b = any valid_port in valid_ports {
+    y valid_port == port;
+};
+
+// Generate port options using map
+port_options:a:s = map port_num in valid_ports {
+    y array_join([`Port `, danger(string_from(port_num)), ` available`], ``);
+};
+
+print(`=== Server Configuration ===`);
+print(array_join([`Selected port: `, danger(string_from(port))], ``));
+print(array_join([`Port is valid: `, danger(string_from(is_valid_port))], ``));
+print(`Available ports:`);
+each option in port_options {
+    print(array_join([`- `, option], ``));
+}
 
 // Start the HTTP server
 http_server_start(port, html_content);

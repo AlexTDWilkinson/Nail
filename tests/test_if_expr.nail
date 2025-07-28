@@ -1,3 +1,0 @@
-number:i = 5;
-result:i = if { number > 0 => { 1; }, else => { 0; } };
-print(string_from(result));

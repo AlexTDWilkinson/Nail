@@ -2,64 +2,115 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL: Test After Every Change
+
+**IMPORTANT**: After making ANY changes to the Nail language implementation (lexer, parser, checker, transpiler), you MUST:
+
+1. Run `./run_comprehensive_tests.sh` immediately after your changes
+2. Verify all previously passing tests still pass
+3. If any tests fail that previously passed, investigate and fix the regression
+4. Only proceed with additional changes after all tests pass
+
+This is non-negotiable to maintain language stability and prevent regressions.
+
+## CRITICAL: Never Use Workarounds
+
+**NEVER implement workarounds for bugs in the Nail language implementation**. If you encounter a bug:
+
+1. Fix the bug at its source in the compiler/checker/lexer/parser
+2. Do NOT modify test files to work around the bug
+3. Do NOT suggest temporary solutions
+4. Always implement the proper fix in the codebase
+
+This ensures the language remains consistent and bugs are actually fixed, not hidden.
+
+## CRITICAL: Maintain Clean Architecture
+
+**NEVER hard-code special cases for individual functions in core compiler components**. This is terrible architecture:
+
+1. Do NOT add function-specific logic in the type checker (e.g., special handling for "reduce", "map", "filter", etc.)
+2. Do NOT hard-code function names in the parser, lexer, checker, or transpiler
+3. Do NOT hard-code imports, dependencies, or library calls in the transpiler - generate them based on what's actually used
+4. The ONLY exception is `print()` which may need special handling for formatting
+5. Instead, design proper abstractions:
+   - Use type system features that can express generic relationships
+   - Create extensible mechanisms for type inference
+   - Keep ALL function-specific logic in configuration files or registries (like stdlib_registry.rs)
+   - The core compiler should be completely agnostic to what functions exist
+   - Generate imports based on actual usage, not hardcoded assumptions
+6. If you must add special handling, it belongs in the registry, not in core compiler logic
+
+## CRITICAL: No TODOs in Code
+
+**NEVER leave TODO comments in code**. This is unprofessional:
+
+1. Do NOT write "TODO: fix this later" or similar comments
+2. Do NOT commit half-finished implementations with TODOs
+3. Either implement it properly or don't implement it all
+4. If something needs future work, track it properly in documentation or issues, not in code comments
+
+## Testing Guidelines
+
+**ABSOLUTELY MOST IMPORTANT THING Testing Principle**:
+- The only tool that should EVER be used for testing is run_comprehensive_tests.sh with no flags (except to specify the specific test to run). Flags can only be used for specific diagnosis, but generally no flags should ever be used.
+- **CRITICAL: Never continue-on-error when running ./run_comprehensive_tests.sh**
+
 ## Development Commands
 
 - **Run development mode**: `./start.sh` - Runs `cargo watch -x run` with debug flags enabled
-- **Run tests**: `./test.sh` or `cargo test` - Runs all tests with Rust warnings suppressed
 - **Build**: `cargo build` or `cargo build --release`
+- **Build compiler**: `cargo build --bin nailc` - Builds the Nail compiler binary
 
-## High-Level Architecture
+## Testing Commands
 
-Nail is a programming language that transpiles to async, parallel Rust code. The architecture follows a traditional compiler pipeline:
+### Running Tests
 
-### Core Components
+**Primary Test Runner** (use this for all testing):
+- **`./run_comprehensive_tests.sh`** - Complete validation of all Nail files and Rust tests
+  - Runs lexer → parser → type checker → transpiler → Rust compilation on all files
+  - Tests both `tests/` and `examples/` directories
+  - Automatically cleans up generated `.rs` files
+  - **IMPORTANT**: Takes 5-10 minutes to run full suite due to Rust compilation - use massive timeout (600000ms+)
+  - **Options:**
+    - `--tests-only` - Run only files in tests/ directory
+    - `--examples-only` - Run only files in examples/ directory  
+    - `--exclude-fails` - Skip fail_* test files
+    - `-v, --verbose` - Show detailed error output
+    - `--help` - Show full help
+  - **Examples:**
+    ```bash
+    ./run_comprehensive_tests.sh                    # Test everything
+    ./run_comprehensive_tests.sh --tests-only       # Only test files
+    ./run_comprehensive_tests.sh tests/specific.nail # Test one file
+    ./run_comprehensive_tests.sh -v                 # Verbose output
+    ```
 
-1. **Terminal IDE** (src/main.rs):
-   - Multi-threaded architecture with separate threads for UI, input, build, and syntax checking
-   - Uses `ratatui` for terminal UI
-   - Threads communicate via channels and shared state using `Arc<Mutex<>>` patterns
+**Rust Unit Tests** (for core compiler testing):
+- **`cargo test`** - Runs all Rust unit/integration tests
+  - Note: May have warnings/errors in examples that don't affect core functionality
+- **`cargo test test_name -- --nocapture`** - Run single test with output
+- **`cargo test --lib parser`** - Run tests for a specific module
 
-2. **Language Processing Pipeline**:
-   - **Lexer** (src/lexer.rs): Tokenizes source code into `Token` structs
-   - **Parser** (src/parser.rs): Builds AST from tokens using recursive descent parsing
-   - **Type Checker** (src/checker.rs): Performs semantic analysis with scope management
-   - **Transpiler** (src/transpilier.rs): Converts Nail AST to async Rust with Tokio runtime
-   - **Colorizer** (src/colorizer.rs): Provides syntax highlighting for the IDE
+### Test File Organization
 
-3. **Thread Communication**:
-   - `UIState` struct holds editor state, build results, and error messages
-   - Channels used for sending commands between threads (key events, resize events, etc.)
-   - Build thread runs transpilation pipeline and updates shared state
+- **Language tests**: All Nail language test files (`.nail` files) must be placed in the `tests/` directory, not as temporary files
+- **Naming conventions**: Use descriptive names like `test_single_letter_validation.nail` for language feature tests
+- **Never use temporary files**: Do not create test files in `/tmp/` or other temporary locations for language testing - they belong in `tests/`
+- **Examples vs Tests**: Use `examples/` for demonstration files, `tests/` for validation and regression testing
 
-### Key Design Patterns
+### Testing Individual Nail Files
 
-- **Error Handling**: Uses `Result<T, E>` pattern throughout with custom error types
-- **Code Spans**: `CodeSpan` struct tracks source locations for error reporting
-- **AST Nodes**: Comprehensive node types for all language constructs (expressions, statements, types)
-- **Standard Library**: Located in `src/parser/std_lib/` with modules like `http.rs`
+```bash
+# Check syntax and types only
+cargo run --bin nailc tests/example.nail --check-only
 
-### Language Features to Remember
+# Full transpilation
+cargo run --bin nailc tests/example.nail --transpile
 
-- **No traditional loops** - only functional iteration (map, filter, reduce)
-- **No if statements** - uses match-like `if { condition => { } }` syntax
-- **Immutability by default** - `c` for const, `v` for mutable variables
-- **Automatic async/parallel** - all code transpiles to concurrent Rust
-- **Error propagation** - errors bubble up with context automatically
-- **Linux-only** - explicitly designed for Linux environments only
+# Skip type checking (for debugging)
+cargo run --bin nailc tests/example.nail --skip-check
+```
 
-### Testing
+## Transpilation Guidelines
 
-Tests are located within source files using `#[cfg(test)]` modules:
-- Parser tests in `src/parser.rs`
-- Lexer tests in `src/lexer.rs`
-
-Run a single test with: `cargo test test_name`
-Run tests for a module: `cargo test --lib parser`
-
-### Important Notes
-
-- The IDE uses terminal escape codes and expects a Linux terminal environment
-- All mutable values are placed in DashMaps for concurrency
-- Rust blocks (`R{ }`) allow direct Rust code injection
-- Nail escapes (`^[ ]^`) allow Nail expressions within Rust blocks
-- The language spec is in `nail_language_spec.md` for detailed syntax reference
+- **Return Keyword**: Transpilations should always use the return keyword, even though it's optional in Rust, we always use it because it's easier

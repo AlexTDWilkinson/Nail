@@ -1,19 +1,90 @@
-@startuml Nail language flow
-title Nail language flow
+@startuml
+!theme plain
+title Nail Language Compilation Pipeline
 
 start
-:lexer.rs;
-note right: Lexer is the first step\nwhere the source code is tokenized.
 
-:parser.rs;
-note right: Parser is the second step\nwhere tokenized code is parsed\ninto an abstract syntax tree (AST).
+:Source Code (.nail)|
+note right
+  Nail source files with
+  .nail extension
+end note
 
-:checker.rs;
-note right: Checker verifies the abstract syntax tree for correctness.\nThis is type-checking and semantic analysis, which means things\n like making sure the variables exist in the right scopes.
+:lexer.rs|
+note right
+  **Lexer (Tokenization)**
+  • Converts source code into tokens
+  • Validates identifier names (no single letters)
+  • Handles keywords, operators, literals
+  • Generates LexerError tokens for invalid syntax
+end note
 
-:transpiler.rs;
-note right: Transpiler converts\nthe abstract syntax tree\ninto async/concurrent/parallel\nRust code, for final compilation.
+:parser.rs|
+note right
+  **Parser (AST Generation)**
+  • Builds Abstract Syntax Tree from tokens
+  • Uses recursive descent parsing
+  • Handles Nail's unique syntax (no loops, functional style)
+  • Tracks stdlib function usage
+end note
 
-stop
+:checker.rs|
+note right
+  **Type Checker (Semantic Analysis)**
+  • Performs type checking and validation
+  • Manages variable scopes and declarations
+  • Validates struct/enum definitions
+  • Ensures Result types are handled immediately
+  • Uses type inference rules from stdlib_registry
+end note
+
+:transpiler.rs|
+note right
+  **Transpiler (Code Generation)**
+  • Converts AST to async Rust code
+  • Generates tokio::main with async runtime
+  • Maps stdlib functions to std_lib:: calls
+  • Handles DashMap for concurrent data structures
+  • Creates proper Cargo.toml dependencies
+end note
+
+:Generated Rust Code|
+note right
+  **Output**
+  • Async Rust code with tokio runtime
+  • Imports: tokio, Nail::std_lib
+  • Ready for cargo compilation
+end note
+
+if (Compilation Test?) then (yes)
+  :Cargo Project Setup|
+  note right
+    **Test Runner**
+    • Creates temporary Cargo project in tests/
+    • Uses same dependencies as IDE
+    • Compiles with cargo build
+  end note
+
+  :Rust Compilation|
+  note right
+    **Final Validation**
+    • Verifies generated code compiles
+    • Links against Nail stdlib
+    • Cleans up on success
+  end note
+
+  if (Compilation Success?) then (yes)
+    :Clean up temp files;
+    :Test PASS;
+    stop
+  else (no)
+    :Leave debug files;
+    :Test FAIL;
+    stop
+  endif
+else (no)
+  :Transpilation Complete;
+  stop
+endif
 
 @enduml

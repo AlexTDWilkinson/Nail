@@ -1,5 +1,0 @@
-parallel {
-    print(`Fetching from API 1`);
-    print(`Fetching from API 2`);
-    print(`Fetching from API 3`);
-}

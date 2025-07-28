@@ -1,4 +1,12 @@
-first_value:i = 10;
-second_value:i = 20;
-print(string_from(first_value));
-print(string_from(second_value));
+// Parallel Block Tests
+
+p
+    print(`Fetching from API 1`);
+    print(`Fetching from API 2`);
+    print(`Fetching from API 3`);
+/p
+
+p
+    print(`Task A`);
+    print(`Task B`);
+/p

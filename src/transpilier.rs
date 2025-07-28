@@ -1,6 +1,7 @@
 use crate::lexer::{NailDataTypeDescriptor, Operation};
 use crate::parser::ASTNode;
-use crate::stdlib_registry;
+use crate::stdlib_registry::{self, CrateDependency};
+use std::collections::HashSet;
 use std::fmt::Write;
 
 pub struct Transpiler {
@@ -8,22 +9,192 @@ pub struct Transpiler {
     scope_level: usize,
     current_function_return_type: Option<NailDataTypeDescriptor>,
     current_function_name: Option<String>,
+    used_stdlib_functions: HashSet<String>,
+    in_collection_operation: bool,
 }
 
 impl Transpiler {
     pub fn new() -> Self {
-        Transpiler { 
-            indent_level: 0, 
-            scope_level: 0,
-            current_function_return_type: None,
-            current_function_name: None,
+        Transpiler { indent_level: 0, scope_level: 0, current_function_return_type: None, current_function_name: None, used_stdlib_functions: HashSet::new(), in_collection_operation: false }
+    }
+
+    fn has_return_statements(&self, node: &ASTNode) -> bool {
+        match node {
+            ASTNode::ReturnDeclaration { .. } => true,
+            ASTNode::YieldDeclaration { .. } => true,
+            ASTNode::Block { statements, .. } => {
+                statements.iter().any(|stmt| self.has_return_statements(stmt))
+            }
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+                condition_branches.iter().any(|(_, branch)| self.has_return_statements(branch)) ||
+                else_branch.as_ref().map_or(false, |branch| self.has_return_statements(branch))
+            }
+            _ => false,
+        }
+    }
+    
+
+    pub fn get_required_dependencies(&self) -> HashSet<CrateDependency> {
+        let mut required_crates = HashSet::new();
+
+        // Check stdlib functions for their dependencies
+        for func_name in &self.used_stdlib_functions {
+            if let Some(func) = stdlib_registry::get_stdlib_function(func_name) {
+                required_crates.extend(func.crate_deps.clone());
+            }
+        }
+
+        required_crates
+    }
+    
+    fn collect_used_functions(&mut self, node: &ASTNode) {
+        match node {
+            ASTNode::Program { statements, .. } => {
+                for stmt in statements {
+                    self.collect_used_functions(stmt);
+                }
+            }
+            ASTNode::Block { statements, .. } => {
+                for stmt in statements {
+                    self.collect_used_functions(stmt);
+                }
+            }
+            ASTNode::FunctionDeclaration { body, .. } => {
+                self.collect_used_functions(body);
+            }
+            ASTNode::FunctionCall { name, args, .. } => {
+                if stdlib_registry::get_stdlib_function(name).is_some() {
+                    self.used_stdlib_functions.insert(name.clone());
+                }
+                for arg in args {
+                    self.collect_used_functions(arg);
+                }
+            }
+            ASTNode::ConstDeclaration { value, .. } => {
+                self.collect_used_functions(value);
+            }
+            ASTNode::LambdaDeclaration { body, .. } => {
+                self.collect_used_functions(body);
+            }
+            ASTNode::StructInstantiation { fields, .. } => {
+                for field in fields {
+                    if let ASTNode::StructInstantiationField { value, .. } = field {
+                        self.collect_used_functions(value);
+                    }
+                }
+            }
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+                for (condition, branch) in condition_branches {
+                    self.collect_used_functions(condition);
+                    self.collect_used_functions(branch);
+                }
+                if let Some(else_b) = else_branch {
+                    self.collect_used_functions(else_b);
+                }
+            }
+            ASTNode::ForLoop { iterable, body, .. } => {
+                self.collect_used_functions(iterable);
+                self.collect_used_functions(body);
+            }
+            ASTNode::MapExpression { iterable, body, .. } => {
+                self.collect_used_functions(iterable);
+                self.collect_used_functions(body);
+            }
+            ASTNode::FilterExpression { iterable, body, .. } => {
+                self.collect_used_functions(iterable);
+                self.collect_used_functions(body);
+            }
+            ASTNode::ReduceExpression { iterable, initial_value, body, .. } => {
+                self.collect_used_functions(iterable);
+                self.collect_used_functions(initial_value);
+                self.collect_used_functions(body);
+            }
+            ASTNode::EachExpression { iterable, body, .. } => {
+                self.collect_used_functions(iterable);
+                self.collect_used_functions(body);
+            }
+            ASTNode::FindExpression { iterable, body, .. } => {
+                self.collect_used_functions(iterable);
+                self.collect_used_functions(body);
+            }
+            ASTNode::AllExpression { iterable, body, .. } => {
+                self.collect_used_functions(iterable);
+                self.collect_used_functions(body);
+            }
+            ASTNode::AnyExpression { iterable, body, .. } => {
+                self.collect_used_functions(iterable);
+                self.collect_used_functions(body);
+            }
+            ASTNode::WhileLoop { condition, max_iterations, body, .. } => {
+                self.collect_used_functions(condition);
+                if let Some(max) = max_iterations {
+                    self.collect_used_functions(max);
+                }
+                self.collect_used_functions(body);
+            }
+            ASTNode::BinaryOperation { left, right, .. } => {
+                self.collect_used_functions(left);
+                self.collect_used_functions(right);
+            }
+            ASTNode::ReturnDeclaration { statement, .. } => {
+                self.collect_used_functions(statement);
+            }
+            ASTNode::YieldDeclaration { statement, .. } => {
+                self.collect_used_functions(statement);
+            }
+            ASTNode::ArrayLiteral { elements, .. } => {
+                for elem in elements {
+                    self.collect_used_functions(elem);
+                }
+            }
+            ASTNode::StructFieldAccess { .. } => {
+                // No nested expressions in simple field access
+            }
+            ASTNode::NestedFieldAccess { object, .. } => {
+                self.collect_used_functions(object);
+            }
+            ASTNode::ParallelBlock { statements, .. } => {
+                for stmt in statements {
+                    self.collect_used_functions(stmt);
+                }
+            }
+            ASTNode::UnaryOperation { operand, .. } => {
+                self.collect_used_functions(operand);
+            }
+            // Terminal nodes (literals, identifiers, etc.) that don't contain function calls
+            ASTNode::StringLiteral { .. } | 
+            ASTNode::NumberLiteral { .. } | 
+            ASTNode::BooleanLiteral { .. } | 
+            ASTNode::Identifier { .. } |
+            ASTNode::BreakStatement { .. } |
+            ASTNode::ContinueStatement { .. } |
+            ASTNode::StructDeclaration { .. } |
+            ASTNode::EnumDeclaration { .. } |
+            ASTNode::StructDeclarationField { .. } |
+            ASTNode::EnumVariant { .. } => {
+                // These nodes don't contain function calls or other expressions
+            }
+            _ => {
+                panic!("collect_used_functions: unhandled node type");
+            }
         }
     }
 
     pub fn transpile(&mut self, node: &ASTNode) -> Result<String, std::fmt::Error> {
+        // First pass: collect all used functions by traversing the AST
+        self.collect_used_functions(node);
+        
         let mut output = String::new();
         writeln!(output, "use tokio;")?;
-        writeln!(output, "use Nail::std_lib;")?;
+        writeln!(output, "use nail::std_lib;")?;
+        writeln!(output, "use nail::print_macro;")?;
+        
+        // Generate imports for required crates
+        let required_deps = self.get_required_dependencies();
+        if required_deps.contains(&CrateDependency::DashMap) {
+            writeln!(output, "use dashmap::DashMap;")?;
+        }
+        
         writeln!(output)?;
         writeln!(output, "#[tokio::main]")?;
         writeln!(output, "async fn main() {{")?;
@@ -55,7 +226,7 @@ impl Transpiler {
                 }
             }
             ASTNode::FunctionDeclaration { name, params, data_type, body, .. } => {
-                write!(output, "{}fn {}(", self.indent(), name)?;
+                write!(output, "{}async fn {}(", self.indent(), name)?;
                 for (i, (param_name, param_type)) in params.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
@@ -63,18 +234,18 @@ impl Transpiler {
                     write!(output, "{}: {}", param_name, self.rust_type(param_type, name))?;
                 }
                 writeln!(output, ") -> {} {{", self.rust_type(data_type, name))?;
-                
+
                 // Store the current function's context
                 let prev_return_type = self.current_function_return_type.clone();
                 let prev_name = self.current_function_name.clone();
                 self.current_function_return_type = Some(data_type.clone());
                 self.current_function_name = Some(name.clone());
-                
+
                 self.indent_level += 1;
                 self.transpile_node_internal(body, output, add_semicolons)?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
-                
+
                 // Restore previous function context
                 self.current_function_return_type = prev_return_type;
                 self.current_function_name = prev_name;
@@ -87,31 +258,56 @@ impl Transpiler {
                 }
             }
             ASTNode::ConstDeclaration { name, data_type, value, .. } => {
-                write!(output, "{}let {}: {} = ", self.indent(), name, self.rust_type(data_type, name))?;
+                if add_semicolons {
+                    write!(output, "{}let {}: {} = ", self.indent(), name, self.rust_type(data_type, name))?;
+                } else {
+                    // Inside expression context (like lambdas), don't add indent
+                    write!(output, "let {}: {} = ", name, self.rust_type(data_type, name))?;
+                }
                 self.transpile_node_internal(value, output, false)?;
-                writeln!(output, ";")?;
+                if add_semicolons {
+                    writeln!(output, ";")?;
+                }
             }
             ASTNode::IfStatement { condition_branches, else_branch, .. } => {
                 // Check if this is being used as an expression or statement
                 // If add_semicolons is false, we're in expression context
                 if !add_semicolons {
                     // Expression context - generate Rust if expression
+                    let _num_conditions = condition_branches.len();
                     for (i, (condition, branch)) in condition_branches.iter().enumerate() {
                         if i == 0 {
                             write!(output, "if ")?;
                         } else {
                             write!(output, " else if ")?;
                         }
+                        
+                        // Always write the condition
                         self.transpile_node_internal(condition, output, false)?;
                         write!(output, " {{ ")?;
-                        // For expressions, we need to extract the return value from the block
+                        
+                        // For expressions, we need to output all statements and return the last value
                         if let ASTNode::Block { statements, .. } = branch.as_ref() {
-                            if let Some(last) = statements.last() {
-                                if let ASTNode::ReturnDeclaration { statement, .. } = last {
-                                    self.transpile_node_internal(statement, output, false)?;
+                            // Check if any statement in this branch is diverging
+                            let mut _found_diverging = false;
+                            for (idx, stmt) in statements.iter().enumerate() {
+                                if self.statement_contains_diverging_call(stmt) {
+                                    // This statement diverges - output it with semicolon and stop
+                                    self.transpile_node_internal(stmt, output, true)?;
+                                    write!(output, " ")?;
+                                    _found_diverging = true;
+                                    break;
+                                } else if idx < statements.len() - 1 {
+                                    // Not the last statement and not diverging - add semicolon
+                                    self.transpile_node_internal(stmt, output, true)?;
+                                    write!(output, " ")?;
                                 } else {
-                                    // If no explicit return, the last expression is the value
-                                    self.transpile_node_internal(last, output, false)?;
+                                    // Last statement and not diverging - it's the return value
+                                    if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
+                                        self.transpile_node_internal(statement, output, false)?;
+                                    } else {
+                                        self.transpile_node_internal(stmt, output, false)?;
+                                    }
                                 }
                             }
                         }
@@ -120,38 +316,62 @@ impl Transpiler {
                     if let Some(branch) = else_branch {
                         write!(output, " else {{ ")?;
                         if let ASTNode::Block { statements, .. } = branch.as_ref() {
-                            if let Some(last) = statements.last() {
-                                if let ASTNode::ReturnDeclaration { statement, .. } = last {
-                                    self.transpile_node_internal(statement, output, false)?;
+                            // Check if any statement in this branch is diverging
+                            let mut _found_diverging = false;
+                            for (idx, stmt) in statements.iter().enumerate() {
+                                if self.statement_contains_diverging_call(stmt) {
+                                    // This statement diverges - output it with semicolon and stop
+                                    self.transpile_node_internal(stmt, output, true)?;
+                                    write!(output, " ")?;
+                                    _found_diverging = true;
+                                    break;
+                                } else if idx < statements.len() - 1 {
+                                    // Not the last statement and not diverging - add semicolon
+                                    self.transpile_node_internal(stmt, output, true)?;
+                                    write!(output, " ")?;
                                 } else {
-                                    self.transpile_node_internal(last, output, false)?;
+                                    // Last statement and not diverging - it's the return value
+                                    if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
+                                        self.transpile_node_internal(statement, output, false)?;
+                                    } else {
+                                        self.transpile_node_internal(stmt, output, false)?;
+                                    }
                                 }
                             }
                         }
                         write!(output, " }}")?;
+                    } else {
+                        // No else branch - add unreachable for if expressions
+                        write!(output, " else {{ unreachable!(\"Non-exhaustive if expression reached else branch\") }}")?;
                     }
                 } else {
                     // Statement context - generate regular if statement
+                    let _num_conditions = condition_branches.len();
                     for (i, (condition, branch)) in condition_branches.iter().enumerate() {
                         if i == 0 {
                             write!(output, "{}if ", self.indent())?;
+                            self.transpile_node_internal(condition, output, false)?;
+                            writeln!(output, " {{")?;
                         } else {
-                            write!(output, "{}else if ", self.indent())?;
+                            write!(output, " else if ")?;
+                            self.transpile_node_internal(condition, output, false)?;
+                            writeln!(output, " {{")?;
                         }
-                        self.transpile_node_internal(condition, output, false)?;
-                        writeln!(output, " {{")?;
+                        
                         self.indent_level += 1;
                         self.transpile_node_internal(branch, output, add_semicolons)?;
                         self.indent_level -= 1;
-                        writeln!(output, "{}}}", self.indent())?;
+                        write!(output, "{}}}", self.indent())?;
                     }
                     if let Some(branch) = else_branch {
-                        writeln!(output, "{}else {{", self.indent())?;
+                        write!(output, " else {{")?;
+                        writeln!(output)?;
                         self.indent_level += 1;
                         self.transpile_node_internal(branch, output, add_semicolons)?;
                         self.indent_level -= 1;
-                        writeln!(output, "{}}}", self.indent())?;
+                        write!(output, "{}}}", self.indent())?;
                     }
+                    writeln!(output)?;
                 }
             }
             ASTNode::Block { statements, .. } => {
@@ -159,13 +379,489 @@ impl Transpiler {
                     self.transpile_node_internal(stmt, output, add_semicolons)?;
                 }
             }
+            ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, .. } => {
+                // Check if the loop body contains return statements (collecting values)
+                let has_returns = self.has_return_statements(body);
+                
+                if has_returns {
+                    // Generate an imperative collecting loop (since everything is async)
+                    if add_semicolons {
+                        write!(output, "{}", self.indent())?;
+                    }
+                    write!(output, "{{")?;
+                    writeln!(output)?;
+                    self.indent_level += 1;
+                    writeln!(output, "{}let mut __result = Vec::new();", self.indent())?;
+                    write!(output, "{}for {} in ", self.indent(), iterator)?;
+                    self.transpile_node_internal(iterable, output, false)?;
+                    writeln!(output, " {{")?;
+                    self.indent_level += 1;
+                    
+                    // Extract and transpile the yield expression
+                    if let ASTNode::Block { statements, .. } = body.as_ref() {
+                        for stmt in statements {
+                            if let ASTNode::YieldDeclaration { statement, .. } = stmt {
+                                write!(output, "{}__result.push(", self.indent())?;
+                                self.transpile_node_internal(statement, output, false)?;
+                                writeln!(output, ");")?;
+                                break;
+                            } else if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
+                                // Legacy return statement support
+                                write!(output, "{}__result.push(", self.indent())?;
+                                self.transpile_node_internal(statement, output, false)?;
+                                writeln!(output, ");")?;
+                                break;
+                            } else {
+                                // Regular statement before yield/return
+                                self.transpile_node_internal(stmt, output, true)?;
+                            }
+                        }
+                    }
+                    
+                    self.indent_level -= 1;
+                    writeln!(output, "{}}}", self.indent())?;
+                    writeln!(output, "{}__result", self.indent())?;
+                    self.indent_level -= 1;
+                    write!(output, "{}}}", self.indent())?;
+                } else {
+                    // Generate a simple for loop for side effects
+                    if !add_semicolons {
+                        // When used as an expression, wrap in braces to return ()
+                        write!(output, "{{")?;
+                    }
+                    
+                    if add_semicolons {
+                        write!(output, "{}for {} in ", self.indent(), iterator)?;
+                    } else {
+                        write!(output, " for {} in ", iterator)?;
+                    }
+                    self.transpile_node_internal(iterable, output, false)?;
+                    writeln!(output, " {{")?;
+                    self.indent_level += 1;
+                    self.transpile_node_internal(body, output, true)?;
+                    self.indent_level -= 1;
+                    if add_semicolons {
+                        writeln!(output, "{}}}", self.indent())?;
+                    } else {
+                        write!(output, "}}; () }}")?;
+                    }
+                }
+            }
+            ASTNode::MapExpression { iterator, index_iterator, iterable, body, .. } => {
+                // Map expressions always collect values
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "{{")?;
+                writeln!(output)?;
+                self.indent_level += 1;
+                writeln!(output, "{}let mut __result = Vec::new();", self.indent())?;
+                
+                // Always use enumerate()
+                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                self.transpile_node_internal(iterable, output, false)?;
+                writeln!(output, ".into_iter().enumerate() {{")?;
+                self.indent_level += 1;
+                
+                // Convert index to i64 if needed
+                if let Some(idx) = index_iterator {
+                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+                }
+                
+                // Transpile the body statements
+                if let ASTNode::Block { statements, .. } = body.as_ref() {
+                    let mut found_yield = false;
+                    for stmt in statements {
+                        if let ASTNode::YieldDeclaration { statement, .. } = stmt {
+                            // This is the yield statement - push to result
+                            write!(output, "{}__result.push(", self.indent())?;
+                            self.transpile_node_internal(statement, output, false)?;
+                            writeln!(output, ");")?;
+                            found_yield = true;
+                        } else if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
+                            // Support legacy return statement - push to result
+                            write!(output, "{}__result.push(", self.indent())?;
+                            self.transpile_node_internal(statement, output, false)?;
+                            writeln!(output, ");")?;
+                            found_yield = true;
+                        } else {
+                            // Regular statement in the map body
+                            self.transpile_node_internal(stmt, output, true)?;
+                        }
+                    }
+                    if !found_yield {
+                        // Should not happen if type checker did its job
+                        writeln!(output, "{}// ERROR: No yield statement in map body", self.indent())?;
+                    }
+                }
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                writeln!(output, "{}__result", self.indent())?;
+                self.indent_level -= 1;
+                write!(output, "{}}}", self.indent())?;
+            }
+            ASTNode::FilterExpression { iterator, index_iterator, iterable, body, .. } => {
+                // Filter expressions collect values that match a condition
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "{{")?;
+                writeln!(output)?;
+                self.indent_level += 1;
+                writeln!(output, "{}let mut __result = Vec::new();", self.indent())?;
+                
+                // Always use enumerate()
+                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                self.transpile_node_internal(iterable, output, false)?;
+                writeln!(output, ".into_iter().enumerate() {{")?;
+                self.indent_level += 1;
+                
+                // Convert index to i64 if needed
+                if let Some(idx) = index_iterator {
+                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+                }
+                
+                // Execute the body block and check the result
+                writeln!(output, "{}let condition_result = {{", self.indent())?;
+                self.indent_level += 1;
+                
+                // Set collection operation context
+                let prev_context = self.in_collection_operation;
+                self.in_collection_operation = true;
+                
+                // Transpile the body block
+                self.transpile_node_internal(body, output, false)?;
+                
+                // Restore previous context
+                self.in_collection_operation = prev_context;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}};", self.indent())?;
+                
+                // Use the result as condition
+                writeln!(output, "{}if condition_result {{", self.indent())?;
+                self.indent_level += 1;
+                writeln!(output, "{}__result.push({}.clone());", self.indent(), iterator)?;
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                writeln!(output, "{}__result", self.indent())?;
+                self.indent_level -= 1;
+                write!(output, "{}}}", self.indent())?;
+            }
+            ASTNode::ReduceExpression { iterator, index_iterator, iterable, initial_value, accumulator, body, .. } => {
+                // Reduce expressions fold values into a single result
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "{{")?;
+                writeln!(output)?;
+                self.indent_level += 1;
+                
+                // Initialize accumulator
+                write!(output, "{}let mut {} = ", self.indent(), accumulator)?;
+                self.transpile_node_internal(initial_value, output, false)?;
+                writeln!(output, ";")?;
+                
+                // Always use enumerate()
+                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                self.transpile_node_internal(iterable, output, false)?;
+                writeln!(output, ".into_iter().enumerate() {{")?;
+                self.indent_level += 1;
+                
+                // Convert index to i64 if needed
+                if let Some(idx) = index_iterator {
+                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+                }
+                
+                // Transpile the body statements
+                if let ASTNode::Block { statements, .. } = body.as_ref() {
+                    for stmt in statements {
+                        if let ASTNode::YieldDeclaration { statement, .. } = stmt {
+                            // This is the yield statement - assign to accumulator
+                            write!(output, "{}{} = ", self.indent(), accumulator)?;
+                            self.transpile_node_internal(statement, output, false)?;
+                            writeln!(output, ";")?;
+                        } else if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
+                            // Legacy return statement support - assign to accumulator
+                            write!(output, "{}{} = ", self.indent(), accumulator)?;
+                            self.transpile_node_internal(statement, output, false)?;
+                            writeln!(output, ";")?;
+                        } else {
+                            // Regular statement in the reduce body
+                            self.transpile_node_internal(stmt, output, true)?;
+                        }
+                    }
+                }
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                writeln!(output, "{}{}", self.indent(), accumulator)?;
+                self.indent_level -= 1;
+                write!(output, "{}}}", self.indent())?;
+            }
+            ASTNode::EachExpression { iterator, index_iterator, iterable, body, .. } => {
+                // Each expressions are for side effects only
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "{{")?;
+                writeln!(output)?;
+                self.indent_level += 1;
+                
+                // Always use enumerate()
+                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                self.transpile_node_internal(iterable, output, false)?;
+                writeln!(output, ".into_iter().enumerate() {{")?;
+                self.indent_level += 1;
+                
+                // Convert index to i64 if needed
+                if let Some(idx) = index_iterator {
+                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+                }
+                
+                // Transpile the body statements (no return collection)
+                self.transpile_node_internal(body, output, true)?;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                writeln!(output, "{}()", self.indent())?; // Each returns unit
+                self.indent_level -= 1;
+                write!(output, "{}}}", self.indent())?;
+            }
+            ASTNode::FindExpression { iterator, index_iterator, iterable, body, .. } => {
+                // Find expressions return Result<T>
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "{{")?;
+                writeln!(output)?;
+                self.indent_level += 1;
+                writeln!(output, "{}let mut __found = None;", self.indent())?;
+                
+                // Always use enumerate()
+                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                self.transpile_node_internal(iterable, output, false)?;
+                writeln!(output, ".into_iter().enumerate() {{")?;
+                self.indent_level += 1;
+                
+                // Convert index to i64 if needed
+                if let Some(idx) = index_iterator {
+                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+                }
+                
+                // Execute the body block and check the result
+                writeln!(output, "{}let condition_result = {{", self.indent())?;
+                self.indent_level += 1;
+                
+                // Set collection operation context
+                let prev_context = self.in_collection_operation;
+                self.in_collection_operation = true;
+                
+                // Transpile the body block
+                self.transpile_node_internal(body, output, false)?;
+                
+                // Restore previous context
+                self.in_collection_operation = prev_context;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}};", self.indent())?;
+                
+                // Use the result as condition
+                writeln!(output, "{}if condition_result {{", self.indent())?;
+                self.indent_level += 1;
+                writeln!(output, "{}__found = Some({}.clone());", self.indent(), iterator)?;
+                writeln!(output, "{}break;", self.indent())?;
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                writeln!(output, "{}__found.ok_or_else(|| \"Element not found\".to_string())", self.indent())?;
+                self.indent_level -= 1;
+                write!(output, "{}}}", self.indent())?;
+            }
+            ASTNode::AllExpression { iterator, index_iterator, iterable, body, .. } => {
+                // All expressions check if all elements match a condition
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "{{")?;
+                writeln!(output)?;
+                self.indent_level += 1;
+                writeln!(output, "{}let mut __all_match = true;", self.indent())?;
+                
+                // Always use enumerate()
+                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                self.transpile_node_internal(iterable, output, false)?;
+                writeln!(output, ".into_iter().enumerate() {{")?;
+                self.indent_level += 1;
+                
+                // Convert index to i64 if needed
+                if let Some(idx) = index_iterator {
+                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+                }
+                
+                // Execute the body block and check the result
+                writeln!(output, "{}let condition_result = {{", self.indent())?;
+                self.indent_level += 1;
+                
+                // Set collection operation context
+                let prev_context = self.in_collection_operation;
+                self.in_collection_operation = true;
+                
+                // Transpile the body block
+                self.transpile_node_internal(body, output, false)?;
+                
+                // Restore previous context
+                self.in_collection_operation = prev_context;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}};", self.indent())?;
+                
+                // Use the result as condition (negated for All)
+                writeln!(output, "{}if !condition_result {{", self.indent())?;
+                self.indent_level += 1;
+                writeln!(output, "{}__all_match = false;", self.indent())?;
+                writeln!(output, "{}break;", self.indent())?;
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                writeln!(output, "{}__all_match", self.indent())?;
+                self.indent_level -= 1;
+                write!(output, "{}}}", self.indent())?;
+            }
+            ASTNode::AnyExpression { iterator, index_iterator, iterable, body, .. } => {
+                // Any expressions check if any element matches a condition
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "{{")?;
+                writeln!(output)?;
+                self.indent_level += 1;
+                writeln!(output, "{}let mut __any_match = false;", self.indent())?;
+                
+                // Always use enumerate()
+                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                self.transpile_node_internal(iterable, output, false)?;
+                writeln!(output, ".into_iter().enumerate() {{")?;
+                self.indent_level += 1;
+                
+                // Convert index to i64 if needed
+                if let Some(idx) = index_iterator {
+                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+                }
+                
+                // Execute the body block and check the result
+                writeln!(output, "{}let condition_result = {{", self.indent())?;
+                self.indent_level += 1;
+                
+                // Set collection operation context
+                let prev_context = self.in_collection_operation;
+                self.in_collection_operation = true;
+                
+                // Transpile the body block
+                self.transpile_node_internal(body, output, false)?;
+                
+                // Restore collection operation context
+                self.in_collection_operation = prev_context;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}};", self.indent())?;
+                
+                // Use the result as condition
+                writeln!(output, "{}if condition_result {{", self.indent())?;
+                self.indent_level += 1;
+                writeln!(output, "{}__any_match = true;", self.indent())?;
+                writeln!(output, "{}break;", self.indent())?;
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                writeln!(output, "{}__any_match", self.indent())?;
+                self.indent_level -= 1;
+                write!(output, "{}}}", self.indent())?;
+            }
+            ASTNode::WhileLoop { condition, max_iterations, body, .. } => {
+                if let Some(max_iter) = max_iterations {
+                    // Generate a bounded while loop
+                    if add_semicolons {
+                        writeln!(output, "{}{{", self.indent())?;
+                        writeln!(output, "{}    let mut _iterations = 0;", self.indent())?;
+                        write!(output, "{}    let _max_iterations = ", self.indent())?;
+                        self.transpile_node_internal(max_iter, output, false)?;
+                        writeln!(output, ";")?;
+                        write!(output, "{}    while ", self.indent())?;
+                    } else {
+                        writeln!(output, "{{")?;
+                        writeln!(output, "    let mut _iterations = 0;")?;
+                        write!(output, "    let _max_iterations = ")?;
+                        self.transpile_node_internal(max_iter, output, false)?;
+                        writeln!(output, ";")?;
+                        write!(output, "    while ")?;
+                    }
+                    self.transpile_node_internal(condition, output, false)?;
+                    writeln!(output, " && _iterations < _max_iterations {{")?;
+                    self.indent_level += 2;
+                    self.transpile_node_internal(body, output, true)?;
+                    if add_semicolons {
+                        writeln!(output, "{}_iterations += 1;", self.indent())?;
+                    } else {
+                        writeln!(output, "        _iterations += 1;")?;
+                    }
+                    self.indent_level -= 2;
+                    if add_semicolons {
+                        writeln!(output, "{}    }}", self.indent())?;
+                        writeln!(output, "{}}}", self.indent())?;
+                    } else {
+                        writeln!(output, "    }}")?;
+                        write!(output, "}}")?;
+                    }
+                } else {
+                    // Regular unbounded while loop
+                    if add_semicolons {
+                        write!(output, "{}while ", self.indent())?;
+                    } else {
+                        write!(output, "while ")?;
+                    }
+                    self.transpile_node_internal(condition, output, false)?;
+                    writeln!(output, " {{")?;
+                    self.indent_level += 1;
+                    self.transpile_node_internal(body, output, true)?;
+                    self.indent_level -= 1;
+                    if add_semicolons {
+                        writeln!(output, "{}}}", self.indent())?;
+                    } else {
+                        write!(output, "}}")?;
+                    }
+                }
+            }
+            ASTNode::BreakStatement { .. } => {
+                if add_semicolons {
+                    writeln!(output, "{}break;", self.indent())?;
+                } else {
+                    write!(output, "break")?;
+                }
+            }
+            ASTNode::ContinueStatement { .. } => {
+                if add_semicolons {
+                    writeln!(output, "{}continue;", self.indent())?;
+                } else {
+                    write!(output, "continue")?;
+                }
+            }
             ASTNode::ParallelBlock { statements, .. } => {
                 self.transpile_parallel_block(statements, output)?;
             }
-            ASTNode::ParallelAssignment { assignments, .. } => {
-                self.transpile_parallel_assignment(assignments, output)?;
-            }
             ASTNode::BinaryOperation { left, operator, right, .. } => {
+                // Binary operations - no special string concatenation handling
+                // String concatenation in Nail should only be done via array_join()
                 self.transpile_node_internal(left, output, false)?;
                 write!(output, " {} ", self.rust_operator(operator))?;
                 self.transpile_node_internal(right, output, false)?;
@@ -175,7 +871,8 @@ impl Transpiler {
                 self.transpile_node_internal(operand, output, false)?;
             }
             ASTNode::Identifier { name, .. } => {
-                write!(output, "{}", name)?;
+                // Always clone identifiers to avoid ownership issues
+                write!(output, "{}.clone()", name)?;
             }
             ASTNode::NumberLiteral { value, .. } => {
                 write!(output, "{}", value)?;
@@ -183,35 +880,62 @@ impl Transpiler {
             ASTNode::StringLiteral { value, .. } => {
                 write!(output, "\"{}\".to_string()", value.replace("\"", "\\\""))?;
             }
+            ASTNode::BooleanLiteral { value, .. } => {
+                write!(output, "{}", value)?;
+            }
+            ASTNode::NestedFieldAccess { object, field_name, .. } => {
+                self.transpile_node_internal(object, output, false)?;
+                write!(output, ".{}", field_name)?;
+            }
 
             ASTNode::ReturnDeclaration { statement, .. } => {
-                write!(output, "{}return ", self.indent())?;
-                
-                // Check if we need to wrap in Ok() for result types
-                let needs_ok_wrap = if let Some(return_type) = &self.current_function_return_type {
-                    match return_type {
-                        NailDataTypeDescriptor::Any(types) => {
-                            types.len() == 2 && types[1] == NailDataTypeDescriptor::Error
-                        }
-                        NailDataTypeDescriptor::Result(_) => true,
-                        _ => false
+                // In collection operations, return statements should just be the expression value
+                if self.in_collection_operation {
+                    self.transpile_node_internal(statement, output, false)?;
+                } else {
+                    if add_semicolons {
+                        write!(output, "{}return ", self.indent())?;
+                    } else {
+                        write!(output, "return ")?;
                     }
-                } else {
-                    false
-                };
-                
-                // Check if the statement is already an error (e() call)
-                let is_error_call = match statement.as_ref() {
-                    ASTNode::FunctionCall { name, .. } => name == "e",
-                    _ => false
-                };
-                
-                if needs_ok_wrap && !is_error_call {
-                    write!(output, "Ok(")?;
+
+                    // Check if we need to wrap in Ok() for result types
+                    let needs_ok_wrap = if let Some(return_type) = &self.current_function_return_type {
+                        match return_type {
+                            NailDataTypeDescriptor::Any => false,
+                            NailDataTypeDescriptor::Result(_) => true,
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    };
+
+                    // Check if the statement is already an error (e() call)
+                    let is_error_call = match statement.as_ref() {
+                        ASTNode::FunctionCall { name, .. } => name == "e",
+                        _ => false,
+                    };
+
+                    if needs_ok_wrap && !is_error_call {
+                        write!(output, "Ok(")?;
+                        self.transpile_node_internal(statement, output, false)?;
+                        write!(output, ")")?;
+                    } else {
+                        self.transpile_node_internal(statement, output, false)?;
+                    }
+                    
+                    if add_semicolons {
+                        writeln!(output, ";")?;
+                    }
+                }
+            }
+            ASTNode::YieldDeclaration { statement, .. } => {
+                // Yield statements should only be used in collection operations
+                if self.in_collection_operation {
                     self.transpile_node_internal(statement, output, false)?;
-                    write!(output, ")")?;
                 } else {
-                    self.transpile_node_internal(statement, output, false)?;
+                    // This should be caught by the type checker, but just in case
+                    write!(output, "/* ERROR: yield outside collection operation */")?;
                 }
             }
             ASTNode::StructDeclaration { name, fields, .. } => {
@@ -230,7 +954,7 @@ impl Transpiler {
                 writeln!(output, "{}}}", self.indent())?;
             }
             ASTNode::EnumDeclaration { name, variants, .. } => {
-                writeln!(output, "{}#[derive(Debug, PartialEq)]", self.indent())?;
+                writeln!(output, "{}#[derive(Debug, Clone, PartialEq)]", self.indent())?;
                 writeln!(output, "{}enum {} {{", self.indent(), name)?;
                 self.indent_level += 1;
                 for variant in variants {
@@ -244,17 +968,17 @@ impl Transpiler {
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
             }
-            ASTNode::LambdaDeclaration { params, data_type, body, .. } => {
-                // Lambdas should be inline, not formatted with newlines
-                write!(output, "|")?;
+            ASTNode::LambdaDeclaration { params, body, .. } => {
+                // Generate a regular closure that returns an async block
+                write!(output, "move |")?;
                 for (i, (param_name, param_type)) in params.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
                     write!(output, "{}: {}", param_name, self.rust_type(param_type, ""))?;
                 }
-                write!(output, "| -> {} {{ ", self.rust_type(data_type, ""))?;
-                
+                write!(output, "| {{ async move {{ ")?;
+
                 // Transpile the body inline
                 if let ASTNode::Block { statements, .. } = body.as_ref() {
                     for (i, stmt) in statements.iter().enumerate() {
@@ -264,8 +988,8 @@ impl Transpiler {
                         self.transpile_node_internal(stmt, output, false)?;
                     }
                 }
-                
-                write!(output, " }}")?;
+
+                write!(output, " }} }}")?;
             }
             ASTNode::StructInstantiation { name, fields, .. } => {
                 write!(output, "{} {{", name)?;
@@ -295,13 +1019,7 @@ impl Transpiler {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
-                    // Clone identifiers in arrays to avoid ownership issues
-                    if let ASTNode::Identifier { .. } = value {
-                        self.transpile_node_internal(value, output, false)?;
-                        write!(output, ".clone()")?;
-                    } else {
-                        self.transpile_node_internal(value, output, false)?;
-                    }
+                    self.transpile_node_internal(value, output, false)?;
                 }
                 write!(output, "]")?;
             }
@@ -318,27 +1036,19 @@ impl Transpiler {
             NailDataTypeDescriptor::Struct(name) => name.to_string(),
             NailDataTypeDescriptor::Enum(name) => name.to_string(),
             NailDataTypeDescriptor::Void => "()".to_string(),
+            NailDataTypeDescriptor::Never => "!".to_string(),
             NailDataTypeDescriptor::Error => "String".to_string(),
-            NailDataTypeDescriptor::ArrayInt => "Vec<i64>".to_string(),
-            NailDataTypeDescriptor::ArrayFloat => "Vec<f64>".to_string(),
-            NailDataTypeDescriptor::ArrayString => "Vec<String>".to_string(),
-            NailDataTypeDescriptor::ArrayBoolean => "Vec<bool>".to_string(),
-            NailDataTypeDescriptor::ArrayStruct(name) => format!("Vec<{}>", name),
-            NailDataTypeDescriptor::ArrayEnum(name) => format!("Vec<{}>", name),
-            NailDataTypeDescriptor::Any(types) => {
-                // Handle result types (base_type|e)
-                if types.len() == 2 && types[1] == NailDataTypeDescriptor::Error {
-                    // It's a result type
-                    format!("Result<{}, String>", self.rust_type(&types[0], _name))
-                } else {
-                    panic!("Unsupported Any type combination during transpilation")
-                }
-            },
+            NailDataTypeDescriptor::Array(inner) => format!("Vec<{}>", self.rust_type(inner, _name)),
+            NailDataTypeDescriptor::Any => "Box<dyn std::any::Any>".to_string(),
             NailDataTypeDescriptor::Result(inner_type) => {
                 format!("Result<{}, String>", self.rust_type(inner_type, _name))
-            },
+            }
             NailDataTypeDescriptor::Fn(_, _) => panic!("NailDataTypeDescriptor::Fn data type found during transpilation. This should not happen."),
-            NailDataTypeDescriptor::Unknown => panic!("NailDataTypeDescriptor::Unknown data type found during transpilation. This should not happen."),
+            NailDataTypeDescriptor::OneOf(_) => panic!("NailDataTypeDescriptor::OneOf found during transpilation. This should not happen."),
+            NailDataTypeDescriptor::HashMap(key_type, value_type) => {
+                format!("DashMap<{}, {}>", self.rust_type(key_type, _name), self.rust_type(value_type, _name))
+            }
+            NailDataTypeDescriptor::FailedToResolve => panic!("NailDataTypeDescriptor::FailedToResolve found during transpilation. This should not happen."),
         }
     }
 
@@ -377,17 +1087,16 @@ impl Transpiler {
             if args.len() != 1 {
                 return Err(std::fmt::Error);
             }
-            
+
             if add_indent {
                 write!(output, "{}", self.indent())?;
             }
-            
+
             // Add function context to error messages
-            write!(output, "Err(format!(\"[{}] {{}}\", ", 
-                self.current_function_name.as_ref().unwrap_or(&"unknown".to_string()))?;
+            write!(output, "Err(format!(\"[{}] {{}}\", ", self.current_function_name.as_ref().unwrap_or(&"unknown".to_string()))?;
             self.transpile_node_internal(&args[0], output, false)?;
             write!(output, "))")?;
-            
+
             if add_indent {
                 writeln!(output, ";")?;
             }
@@ -397,64 +1106,78 @@ impl Transpiler {
             if args.len() != 2 {
                 return Err(std::fmt::Error);
             }
-            
+
             if add_indent {
                 write!(output, "{}", self.indent())?;
             }
-            
-            // Generate: match expression { Ok(v) => v, Err(e) => (handler)(e) }
+
+            // Generate: match expression { Ok(v) => v, Err(e) => (handler)(e).await }
             write!(output, "match ")?;
             self.transpile_node_internal(&args[0], output, false)?;
             write!(output, " {{ Ok(v) => v, Err(e) => (")?;
-            
+
             // The second argument should be a lambda
             self.transpile_node_internal(&args[1], output, false)?;
-            write!(output, ")(e) }}")?;
-            
+            write!(output, ")(e).await }}")?;
+
             if add_indent {
                 writeln!(output, ";")?;
             }
             return Ok(());
-        } else if name == "dangerous" {
-            // dangerous(expression) - unwrap with a custom panic message
+        } else if name == "danger" {
+            // danger(expression) - unwrap with a custom panic message
             if args.len() != 1 {
                 return Err(std::fmt::Error);
             }
-            
+
             if add_indent {
                 write!(output, "{}", self.indent())?;
             }
-            
-            // Generate: expression.unwrap_or_else(|e| panic!("Nail Error: {}", e))
-            self.transpile_node_internal(&args[0], output, false)?;
+
+            // Check if the argument is a function call that needs .await
+            if let ASTNode::FunctionCall { name: inner_name, args: inner_args, .. } = &args[0] {
+                // It's a function call - transpile it properly with .await if needed
+                self.transpile_function_call(inner_name, inner_args, output, false)?;
+            } else {
+                // Not a function call, transpile normally
+                self.transpile_node_internal(&args[0], output, false)?;
+            }
             write!(output, ".unwrap_or_else(|nail_error| panic!(\"🔨 Nail Error: {{}}\", nail_error))")?;
-            
+
             if add_indent {
                 writeln!(output, ";")?;
             }
             return Ok(());
         } else if name == "expect" {
-            // expect(expression) - semantically identical to dangerous but with different intent
+            // expect(expression) - semantically identical to danger but with different intent
             if args.len() != 1 {
                 return Err(std::fmt::Error);
             }
-            
+
             if add_indent {
                 write!(output, "{}", self.indent())?;
             }
-            
-            // Generate: expression.unwrap_or_else(|e| panic!("Nail Error: {}", e))
-            self.transpile_node_internal(&args[0], output, false)?;
+
+            // Check if the argument is a function call that needs .await
+            if let ASTNode::FunctionCall { name: inner_name, args: inner_args, .. } = &args[0] {
+                // It's a function call - transpile it properly with .await if needed
+                self.transpile_function_call(inner_name, inner_args, output, false)?;
+            } else {
+                // Not a function call, transpile normally
+                self.transpile_node_internal(&args[0], output, false)?;
+            }
             write!(output, ".unwrap_or_else(|nail_error| panic!(\"🔨 Nail Error: {{}}\", nail_error))")?;
-            
+
             if add_indent {
                 writeln!(output, ";")?;
             }
             return Ok(());
         }
-        
+
         // Check if it's a stdlib function
         if let Some(stdlib_fn) = stdlib_registry::get_stdlib_function(name) {
+            // Track that we're using this stdlib function
+            self.used_stdlib_functions.insert(name.to_string());
             // All stdlib functions are regular function calls now
             if add_indent {
                 write!(output, "{}{}", self.indent(), stdlib_fn.rust_path)?;
@@ -465,14 +1188,14 @@ impl Transpiler {
             // Special case for macros
             if stdlib_fn.rust_path.ends_with("!") {
                 write!(output, "(")?;
-                // For print, we need to handle format strings
+                // For print, we need to handle the macro call format
                 if name == "print" {
-                    if args.is_empty() {
-                        write!(output, "\"\"")?;
-                    } else {
-                        // Use pretty-print debug format for automatic printing of any type
-                        write!(output, "\"{{:#?}}\", ")?;
-                        self.transpile_node_internal(&args[0], output, false)?;
+                    // print_macro!(arg1, arg2, arg3)
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            write!(output, ", ")?;
+                        }
+                        self.transpile_node_internal(arg, output, false)?;
                     }
                 } else {
                     // Other macros
@@ -491,45 +1214,56 @@ impl Transpiler {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
-                    // Clone identifiers for stdlib functions since they take ownership
-                    if let ASTNode::Identifier { .. } = arg {
-                        self.transpile_node_internal(arg, output, false)?;
-                        write!(output, ".clone()")?;
+                    
+                    // Check if this parameter should be passed by reference
+                    let pass_by_ref = if i < stdlib_fn.parameters.len() {
+                        stdlib_fn.parameters[i].pass_by_reference
+                    } else {
+                        false
+                    };
+                    
+                    if pass_by_ref {
+                        // Pass by reference
+                        if let ASTNode::Identifier { name, .. } = arg {
+                            write!(output, "&{}", name)?;
+                        } else {
+                            write!(output, "&")?;
+                            self.transpile_node_internal(arg, output, false)?;
+                        }
                     } else {
                         self.transpile_node_internal(arg, output, false)?;
                     }
                 }
-                write!(output, ")")?;
 
-                if stdlib_fn.is_async {
+                write!(output, ")")?;
+                
+                // Add .await only for async functions
+                if stdlib_registry::get_stdlib_function(name).map(|f| f.rust_path.ends_with("!")).unwrap_or(false) {
+                    // It's a macro, no .await needed
+                } else {
                     write!(output, ".await")?;
                 }
 
-                // For now, unwrap all Results
-                // TODO: Proper error handling
-                if name.starts_with("http_") || name.starts_with("env_") || name.starts_with("process_run") || name == "to_int" || name == "to_float" {
-                    write!(output, ".unwrap()")?;
-                }
+                // Note: Result types should be handled by the type checker and
+                // explicit error handling functions like danger() or safe().
+                // The transpiler should not automatically unwrap Results.
             }
             if add_indent {
                 writeln!(output, ";")?;
             }
         } else {
-            // User-defined function
-            write!(output, "{}{}(", self.indent(), name)?;
+            // User-defined function - ALL Nail functions are async
+            if add_indent {
+                write!(output, "{}", self.indent())?;
+            }
+            write!(output, "{}(", name)?;
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     write!(output, ", ")?;
                 }
-                // Clone identifiers to avoid ownership issues
-                if let ASTNode::Identifier { .. } = arg {
-                    self.transpile_node_internal(arg, output, false)?;
-                    write!(output, ".clone()")?;
-                } else {
-                    self.transpile_node_internal(arg, output, false)?;
-                }
+                self.transpile_node_internal(arg, output, false)?;
             }
-            write!(output, ")")?;
+            write!(output, ").await")?;
             if add_indent {
                 writeln!(output, ";")?;
             }
@@ -546,7 +1280,7 @@ impl Transpiler {
         // Extract variable names from const declarations and generate expressions
         let mut var_names = Vec::new();
         let mut expressions = Vec::new();
-        
+
         for stmt in statements.iter() {
             match stmt {
                 ASTNode::ConstDeclaration { name, value, .. } => {
@@ -583,11 +1317,11 @@ impl Transpiler {
                 writeln!(output, ",")?;
             }
             write!(output, "{}async {{ ", self.indent())?;
-            
+
             // For const declarations, return just the value expression
             // For other expressions, return the expression itself
             self.transpile_node_internal(expr, output, false)?;
-            
+
             write!(output, " }}")?;
         }
         self.indent_level -= 1;
@@ -619,10 +1353,10 @@ impl Transpiler {
                 writeln!(output, ",")?;
             }
             write!(output, "{}async {{ ", self.indent())?;
-            
+
             // Return the value expression
             self.transpile_node_internal(value, output, false)?;
-            
+
             write!(output, " }}")?;
         }
         self.indent_level -= 1;
@@ -631,6 +1365,33 @@ impl Transpiler {
 
         Ok(())
     }
+
+    /// Check if a statement contains a diverging function call (like panic or todo)
+    fn statement_contains_diverging_call(&self, stmt: &ASTNode) -> bool {
+        match stmt {
+            ASTNode::FunctionCall { name, .. } => {
+                if let Some(stdlib_fn) = stdlib_registry::get_stdlib_function(name) {
+                    stdlib_fn.diverging
+                } else {
+                    false
+                }
+            }
+            ASTNode::ReturnDeclaration { statement, .. } => {
+                self.statement_contains_diverging_call(statement)
+            }
+            ASTNode::YieldDeclaration { statement, .. } => {
+                self.statement_contains_diverging_call(statement)
+            }
+            // Check inside blocks for the last statement
+            ASTNode::Block { statements, .. } => {
+                statements.last()
+                    .map(|s| self.statement_contains_diverging_call(s))
+                    .unwrap_or(false)
+            }
+            _ => false
+        }
+    }
+    
 }
 
 fn insert_semicolons(code: String) -> String {

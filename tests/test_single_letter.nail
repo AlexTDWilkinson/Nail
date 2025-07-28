@@ -1,5 +1,0 @@
-// Test single letter variable restriction
-
-x:f = 16.0;
-
-print(string_from(x));

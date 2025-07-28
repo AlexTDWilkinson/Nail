@@ -1,8 +1,0 @@
-// Test like simple_web
-
-x_value:f = 16.0;
-
-result:s =string_from(x_value);
-
-// Call function
-print(result);

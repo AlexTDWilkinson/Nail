@@ -1,5 +1,0 @@
-// Test various bad variable names
-
-i:i = 5;
-
-print(string_from(i));

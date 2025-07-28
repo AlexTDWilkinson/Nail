@@ -1,0 +1,42 @@
+// Test that print can handle any type through pretty-printing
+
+struct Point {
+    x_coord:i,
+    y_coord:i
+}
+
+// Print integers directly
+number:i = 42;
+print(number);
+print(123);
+
+// Print floats directly
+pi:f = 3.14159;
+print(pi);
+
+// Print strings
+print(`Hello, World!`);
+
+// Print arrays
+numbers:a:i = [1, 2, 3, 4, 5];
+print(numbers);
+
+// Transform the array instead of summing
+transformed:a:i = map num in numbers {
+    y num + 10;
+};
+print(transformed); // Should output array with each element +10
+
+// Print structs
+point:Point = Point { x_coord: 10, y_coord: 20 };
+print(point);
+
+// Print array of structs
+points:a:Point = [
+    Point { x_coord: 1, y_coord: 2 },
+    Point { x_coord: 3, y_coord: 4 }
+];
+print(points);
+
+// The beauty of print accepting any type!
+print(`All done!`);

@@ -1,9 +1,0 @@
-[package]
-name = "blog_example_test"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-tokio = { version = "1", features = ["full"] }
-Nail = { path = "../.." }
-rayon = "1.10.0"

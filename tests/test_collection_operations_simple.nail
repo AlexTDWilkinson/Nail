@@ -1,0 +1,113 @@
+// Simple test demonstrating all collection operation keywords
+//
+// SYNTAX PATTERNS DEMONSTRATED:
+// 1. Block statements (like 'each'): no assignment, no semicolon after }
+//    each num in array { ... }
+// 2. Expression statements (function calls): no assignment, semicolon required
+//    print(`hello`);
+// 3. Expression assignment: variable:type = expression;
+//    result:v = each num in array { ... };
+//    result:v = print(`hello`);
+// 
+// For void-returning operations, forms 1 and 2 are more natural than form 3.
+
+// Test data
+numbers:a:i = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+// MAP: Transform each element
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
+
+// MAP with index: Transform with position info
+indexed_sums:a:i = map num idx in numbers {
+    y num + idx;
+};
+
+// FILTER: Keep only even numbers
+evens:a:i = filter num in numbers {
+    y num % 2 == 0;
+};
+
+// FILTER with index: Keep elements greater than their index
+greater_than_index:a:i = filter num idx in numbers {
+    y num > idx;
+};
+
+// REDUCE: Sum all numbers
+total:i = reduce acc num in numbers from 0 {
+    y acc + num;
+};
+
+// REDUCE with index: Weighted sum
+weighted_sum:i = reduce acc num idx in numbers from 0 {
+    weight:i = idx + 1;
+    y acc + (num * weight);
+};
+
+// FIND: First number greater than 5
+first_big:i = danger(find num in numbers {
+    y num > 5;
+});
+
+// FIND with index: First number equal to its index
+equal_to_index:i = danger(find num idx in numbers {
+    y num == idx;
+});
+
+// ALL: Check if all numbers are positive
+all_positive:b = all num in numbers {
+    y num > 0;
+};
+
+// ALL with index: Check if all are greater than their index
+all_gt_index:b = all num idx in numbers {
+    y num > idx;
+};
+
+// ANY: Check if any number is greater than 8
+any_big:b = any num in numbers {
+    y num > 8;
+};
+
+// ANY with index: Check if any equal their index
+any_eq_index:b = any num idx in numbers {
+    y num == idx;
+};
+
+// EACH: Print each number (side effects) - Statement form (recommended)
+each num in numbers {
+    print(array_join([`Number: `, danger(string_from(num))], ``));
+}
+
+// EACH with index: Print with position - Expression assignment form
+each_result:v = each num idx in numbers {
+    print(array_join([`[`, danger(string_from(idx)), `] = `, danger(string_from(num))], ``));
+};
+
+// Demonstrate both syntaxes for other void-returning functions
+print(`--- Testing print function both ways ---`);
+
+// Statement form (recommended) - no assignment, but still needs semicolon for function calls
+print(`This is statement form`);
+
+// Expression assignment form - with assignment and semicolon
+print_result:v = print(`This is expression assignment form`);
+
+// Print results
+print(`=== Collection Operations Test Results ===`);
+print(array_join([`Original: `, danger(string_from_array_i64(numbers))], ``));
+print(array_join([`Doubled: `, danger(string_from_array_i64(doubled))], ``));
+print(array_join([`Indexed sums: `, danger(string_from_array_i64(indexed_sums))], ``));
+print(array_join([`Evens: `, danger(string_from_array_i64(evens))], ``));
+print(array_join([`Greater than index: `, danger(string_from_array_i64(greater_than_index))], ``));
+print(array_join([`Total: `, danger(string_from(total))], ``));
+print(array_join([`Weighted sum: `, danger(string_from(weighted_sum))], ``));
+print(array_join([`First big: `, danger(string_from(first_big))], ``));
+print(array_join([`Equal to index: `, danger(string_from(equal_to_index))], ``));
+print(array_join([`All positive: `, danger(string_from(all_positive))], ``));
+print(array_join([`All > index: `, danger(string_from(all_gt_index))], ``));
+print(array_join([`Any big: `, danger(string_from(any_big))], ``));
+print(array_join([`Any == index: `, danger(string_from(any_eq_index))], ``));
+
+print(`All collection operations completed successfully!`);

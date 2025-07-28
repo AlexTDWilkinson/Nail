@@ -1,0 +1,10 @@
+// Array Tests
+arr:a:i = [1, 2, 3];
+len:i = array_len(arr);
+print(len);
+
+number_list:a:i = [1, 2, 3, 4, 5]; 
+print(array_len(number_list));
+
+test_array:a:i = [10, 20, 30];
+print(array_len(test_array));

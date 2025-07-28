@@ -7,23 +7,23 @@ priority_medium:i = 2;
 priority_low:i = 1;
 
 // Function to format a task with priority
-f format_task(task_name:s, priority:i):s {
+f format_task(task_name:s, priority:i, priority_high:i, priority_medium:i, priority_low:i):s {
     priority_text:s = if {
         priority == priority_high => { r `[HIGH]`; },
         priority == priority_medium => { r `[MED] `; },
         priority == priority_low => { r `[LOW] `; },
         else => { r ``; }
     };
-    
-    formatted:s = string_concat([priority_text, ` `, task_name]);
+
+    formatted:s = array_join([priority_text, ` `, task_name], ``);
     r formatted;
 }
 
 // Function to calculate task statistics
 f calculate_stats(task_count:i, completed_count:i):f {
-   total_float:f = dangerous(float_from(string_from(task_count)));
-   completed_float:f = dangerous(float_from(string_from(completed_count)));
-   percentage:f = math_round(math_max(0.0, completed_float / total_float * 100.0));
+    total_float:f = danger(float_from(danger(string_from(task_count))));
+    completed_float:f = danger(float_from(danger(string_from(completed_count))));
+    percentage:f = math_round(math_max(0.0, completed_float / total_float * 100.0));
     r percentage;
 }
 
@@ -32,10 +32,10 @@ app_title:s = `=== Nail Todo List Manager ===`;
 separator:s = `==============================`;
 
 // Create some tasks
-task_one:s = format_task(`Write Nail documentation`, priority_high);
-task_two:s = format_task(`Test array functions`, priority_medium);
-task_three:s = format_task(`Fix parser bugs`, priority_high);
-task_four:s = format_task(`Add more examples`, priority_low);
+task_one:s = format_task(`Write Nail documentation`, priority_high, priority_high, priority_medium, priority_low);
+task_two:s = format_task(`Test array functions`, priority_medium, priority_high, priority_medium, priority_low);
+task_three:s = format_task(`Fix parser bugs`, priority_high, priority_high, priority_medium, priority_low);
+task_four:s = format_task(`Add more examples`, priority_low, priority_high, priority_medium, priority_low);
 
 // Store tasks in arrays
 all_tasks:a:s = [task_one, task_two, task_three, task_four];
@@ -45,14 +45,34 @@ total_tasks:i = array_len(all_tasks);
 completed_tasks:i = 2;
 completion_rate:f = calculate_stats(total_tasks, completed_tasks);
 
+// Filter high priority tasks
+high_priority_tasks:a:s = filter task in all_tasks {
+    y string_contains(task, `[HIGH]`);
+};
+
+// Check if any tasks are medium priority
+has_medium_tasks:b = any task in all_tasks {
+    y string_contains(task, `[MED]`);
+};
+
 // Build output
-header:s = string_concat([app_title, `\n`, separator]);
-stats_line:s = string_concat([`Total Tasks: `, string_from(total_tasks), ` | Completed: `, string_from(completed_tasks), ` (`, string_from(completion_rate), `%)`]);
-task_list:s = array_join(all_tasks, `\n`);
-timestamp:s = string_concat([`\nGenerated at: `, string_from(time_now()), ` seconds since epoch`]);
+header:s = array_join([app_title, `\n`, separator], ``);
+stats_line:s = array_join([`Total Tasks: `, danger(string_from(total_tasks)), ` | Completed: `, danger(string_from(completed_tasks)), ` (`, danger(string_from(completion_rate)), `%)`], ``);
+high_priority_line:s = array_join([`High Priority Tasks: `, danger(string_from(array_len(high_priority_tasks)))], ``);
+medium_priority_line:s = array_join([`Has Medium Priority: `, danger(string_from(has_medium_tasks))], ``);
+
+// Build task list using collection operations
+task_list:s = reduce acc task in all_tasks from `` {
+    y if {
+        acc == `` => { r task; },
+        else => { r array_join([acc, `\n`, task], ``); }
+    };
+};
+
+timestamp:s = array_join([`\nGenerated at: `, danger(string_from(time_now())), ` seconds since epoch`], ``);
 
 // Create final output
-output_parts:a:s = [header, `\n\n`, stats_line, `\n\n`, `Tasks:\n`, task_list, `\n`, separator, timestamp];
-final_output:s = string_concat(output_parts);
+output_parts:a:s = [header, `\n\n`, stats_line, `\n`, high_priority_line, `\n`, medium_priority_line, `\n\n`, `Tasks:\n`, task_list, `\n`, separator, timestamp];
+final_output:s = array_join(output_parts, ``);
 
 print(final_output);

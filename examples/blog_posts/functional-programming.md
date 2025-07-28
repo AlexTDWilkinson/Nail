@@ -23,7 +23,9 @@ Traditional loops are error-prone:
 
 // The Nail way - clear, concise, parallelizable
 prices:a:f = [99.99, 149.99, 299.99];
-increased_prices:a:f = map_float(prices, |price:f|:f { r price * 1.1; });
+increased_prices:a:f = map price in prices {
+    y price * 1.1;
+};
 ```
 
 ### Filter: Select What You Need
@@ -31,14 +33,14 @@ increased_prices:a:f = map_float(prices, |price:f|:f { r price * 1.1; });
 ```nail
 // Get all premium users
 users:a:User = fetch_all_users();
-premium_users:a:User = filter_struct(users, |user:User|:b { 
-    r user.subscription_level == `premium`; 
-});
+premium_users:a:User = filter user in users {
+    y user.subscription_level == `premium`;
+};
 
 // Chain operations by breaking them down
-active_premium_users:a:User = filter_struct(premium_users, |user:User|:b {
-    r user.last_login_days < 30;
-});
+active_premium_users:a:User = filter user in premium_users {
+    y user.last_login_days < 30;
+};
 ```
 
 ### Reduce: Combine Into One
@@ -46,18 +48,19 @@ active_premium_users:a:User = filter_struct(premium_users, |user:User|:b {
 ```nail
 // Calculate total revenue
 orders:a:Order = get_todays_orders();
-total_revenue:f = reduce_struct(orders, 0.0, |sum:f, order:Order|:f {
-    r sum + order.total;
-});
+total_revenue:f = reduce sum order in orders from 0.0 {
+    y sum + order.total;
+};
 
 // Find the oldest user
 users:a:User = get_all_users();
-oldest_user:User = reduce_struct(users, users[0], |oldest:User, current:User|:User {
+first_user:User = users[0];
+oldest_user:User = reduce oldest current in users from first_user {
     if {
-        current.age > oldest.age => { r current; },
-        else => { r oldest; }
+        current.age > oldest.age => { y current; },
+        else => { y oldest; }
     };
-});
+};
 ```
 
 ## Real-World Example: Analytics Pipeline
@@ -71,32 +74,32 @@ struct LogEntry {
 }
 
 // Process server logs functionally
-process_logs:s = dangerous(fs_read(`/var/log/app.log`));
+process_logs:s = danger(fs_read(`/var/log/app.log`));
 log_lines:a:s = string_split(process_logs, `\n`);
 
 // Parse each line into structured data
-log_entries:a:LogEntry = map_string(log_lines, |line:s|:LogEntry {
+log_entries:a:LogEntry = map line in log_lines {
     parts:a:s = string_split(line, `,`);
-    r LogEntry {
-        timestamp: dangerous(int_from(array_get(parts, 0))),
-        user_id: dangerous(array_get(parts, 1)),
-        action: dangerous(array_get(parts, 2)),
-        duration_ms: dangerous(int_from(array_get(parts, 3)))
+    y LogEntry {
+        timestamp: danger(int_from(array_get(parts, 0))),
+        user_id: danger(array_get(parts, 1)),
+        action: danger(array_get(parts, 2)),
+        duration_ms: danger(int_from(array_get(parts, 3)))
     };
-});
+};
 
 // Filter for slow requests
-slow_requests:a:LogEntry = filter_struct(log_entries, |entry:LogEntry|:b {
-    r entry.duration_ms > 1000;
-});
+slow_requests:a:LogEntry = filter entry in log_entries {
+    y entry.duration_ms > 1000;
+};
 
 // Calculate average duration of slow requests
-total_duration:i = reduce_struct(slow_requests, 0, |sum:i, entry:LogEntry|:i {
-    r sum + entry.duration_ms;
-});
+total_duration:i = reduce sum entry in slow_requests from 0 {
+    y sum + entry.duration_ms;
+};
 avg_duration:f = float_from(total_duration) / float_from(array_len(slow_requests));
 
-print(string_concat([`Average slow request duration: `, string_from(avg_duration), `ms`]));
+print(array_join([`Average slow request duration: `, string_from(avg_duration), `ms`]));
 ```
 
 ## Advanced Patterns
@@ -106,17 +109,17 @@ print(string_concat([`Average slow request duration: `, string_from(avg_duration
 ```nail
 // Process images in parallel
 image_paths:a:s = get_image_paths();
-processed_images:a:ProcessedImage = map_parallel_string(image_paths, |path:s|:ProcessedImage {
-    image_data:Bytes = dangerous(fs_read_bytes(path));
+processed_images:a:ProcessedImage = map path in image_paths {
+    image_data:Bytes = danger(fs_read_bytes(path));
     thumbnail:Bytes = generate_thumbnail(image_data);
     metadata:ImageMetadata = extract_metadata(image_data);
     
-    r ProcessedImage {
+    y ProcessedImage {
         original_path: path,
         thumbnail: thumbnail,
         metadata: metadata
     };
-});
+};
 ```
 
 ### Building Complex Aggregations
@@ -129,16 +132,39 @@ struct Sales {
     region:s
 }
 
-// Group sales by region using reduce
+// Helper function for safe float conversion
+f default_zero(err:s):f {
+    print(err);
+    r 0.0;
+}
+
+// Calculate total sales across all regions
 sales_data:a:Sales = get_quarterly_sales();
-regional_totals:HashMap = reduce_struct(sales_data, hashmap_new(), 
-    |totals:HashMap, sale:Sales|:HashMap {
-        current_total:f = safe(hashmap_get(totals, sale.region), |e|:f { r 0.0; });
-        sale_value:f = float_from(sale.quantity) * sale.price;
-        new_total:f = current_total + sale_value;
-        r hashmap_insert(totals, sale.region, new_total);
-    }
-);
+total_sales:f = reduce sum sale in sales_data from 0.0 {
+    quantity:f = safe(float_from(sale.quantity), default_zero);
+    sale_value:f = quantity * sale.price;
+    y sum + sale_value;
+};
+
+// Helper function for when array is empty
+f default_sale(err:s):Sales {
+    print(err);
+    // Return a dummy sale
+    r Sales { quantity: 0, price: 0.0, region: `Unknown` };
+}
+
+// Or find the highest value sale
+first_sale:Sales = safe(array_get(sales_data, 0), default_sale);
+highest_sale:Sales = reduce best sale in sales_data from first_sale {
+    current_quantity:f = safe(float_from(sale.quantity), default_zero);
+    current_value:f = current_quantity * sale.price;
+    best_quantity:f = safe(float_from(best.quantity), default_zero);
+    best_value:f = best_quantity * best.price;
+    if {
+        current_value > best_value => { y sale; },
+        else => { y best; }
+    };
+};
 ```
 
 ## Why This Matters

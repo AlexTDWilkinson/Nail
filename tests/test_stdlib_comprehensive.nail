@@ -20,13 +20,13 @@ list_length:i = array_len(number_list);
 
 // Type conversions
 number_string:s = `42`;
-parsed_number:i = int_from(number_string);
+parsed_number:i = danger(int_from(number_string));
 
 // Time
 current_timestamp:i = time_now();
 
 // Create output
-math_output:s =string_from(absolute_value);
-final_output:s = string_concat([`Result: `, math_output, `, Text: `, uppercase_greeting]);
+math_output:s = danger(string_from(absolute_value));
+final_output:s = array_join([`Result: `, math_output, `, Text: `, uppercase_greeting], ``);
 
 print(final_output);

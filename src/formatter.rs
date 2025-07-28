@@ -2,27 +2,23 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
     let mut formatted_lines = Vec::new();
     let mut indent_level: usize = 0;
     let mut last_line_had_closing_brace = false;
-    
+
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        
+
         // Skip empty lines
         if trimmed.is_empty() {
             formatted_lines.push(String::new());
             last_line_had_closing_brace = false;
             continue;
         }
-        
+
         // Check if this line starts a new block (function, struct, enum, etc.)
-        let starts_new_top_level_block = trimmed.starts_with("f ") || 
-                                         trimmed.starts_with("struct ") || 
-                                         trimmed.starts_with("enum ") ||
-                                         trimmed.starts_with("parallel ");
-        
+        let starts_new_top_level_block = trimmed.starts_with("f ") || trimmed.starts_with("struct ") || trimmed.starts_with("enum ") || trimmed.starts_with("parallel ");
+
         // Only consider 'if' as starting a new block if it's at the top level
-        let starts_new_block = starts_new_top_level_block || 
-                              (trimmed.starts_with("if ") && indent_level == 0);
-        
+        let starts_new_block = starts_new_top_level_block || (trimmed.starts_with("if ") && indent_level == 0);
+
         // Add blank line before new blocks (except at the beginning or after comments)
         if starts_new_block && i > 0 && !formatted_lines.is_empty() {
             let last_non_empty_idx = formatted_lines.iter().rposition(|l| !l.trim().is_empty());
@@ -32,9 +28,7 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
                 // - Previous line ends with } or ; (end of block/statement)
                 // - Previous line is a single-line function
                 // - Not after a comment section
-                if (last_line.ends_with('}') || last_line.ends_with(';') || 
-                    (last_line.starts_with("f ") && last_line.contains('{'))) && 
-                   !last_line.starts_with("//") {
+                if (last_line.ends_with('}') || last_line.ends_with(';') || (last_line.starts_with("f ") && last_line.contains('{'))) && !last_line.starts_with("//") {
                     // Check if there's already a blank line
                     if formatted_lines.last().map_or(true, |l| !l.trim().is_empty()) {
                         formatted_lines.push(String::new());
@@ -42,7 +36,7 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
                 }
             }
         }
-        
+
         // Add blank line after closing brace at top level
         if last_line_had_closing_brace && !trimmed.is_empty() && !trimmed.starts_with("//") {
             // Don't add blank line if the previous line already added one
@@ -50,29 +44,28 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
                 formatted_lines.push(String::new());
             }
         }
-        
+
         // Decrease indent for closing braces
         if trimmed.starts_with('}') || trimmed.starts_with(']') {
             indent_level = indent_level.saturating_sub(1);
         }
-        
+
         // Format the line content
         let formatted_content = format_nail_line(trimmed);
-        
+
         // Apply indentation
         let indented = format!("{}{}", "    ".repeat(indent_level), formatted_content);
-        
+
         formatted_lines.push(indented);
-        
+
         // Track if this line ends with a closing brace at indent level 0
-        last_line_had_closing_brace = (trimmed.ends_with('}') || formatted_content.ends_with('}')) 
-                                     && indent_level == 0;
-        
+        last_line_had_closing_brace = (trimmed.ends_with('}') || formatted_content.ends_with('}')) && indent_level == 0;
+
         // Increase indent after opening braces
         if trimmed.ends_with('{') || formatted_content.ends_with('{') {
             indent_level += 1;
         }
-        
+
         // Handle special cases like "else" on same line as "}"
         if trimmed.contains("} else {") || formatted_content.contains("} else {") {
             // Don't change indent
@@ -80,7 +73,7 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
             // For lines like "}, " in enums/structs
         }
     }
-    
+
     formatted_lines
 }
 
@@ -89,17 +82,17 @@ pub fn format_nail_line(line: &str) -> String {
     if line.trim().is_empty() {
         return String::new();
     }
-    
+
     // Skip comment lines (don't format them)
     if line.trim().starts_with("//") {
         return line.to_string();
     }
-    
+
     let mut formatted = String::new();
     let mut chars = line.chars().peekable();
     let mut in_string = false;
     let mut in_comment = false;
-    
+
     while let Some(ch) = chars.next() {
         // Check for string start/end
         if ch == '`' && !in_comment {
@@ -107,7 +100,7 @@ pub fn format_nail_line(line: &str) -> String {
             formatted.push(ch);
             continue;
         }
-        
+
         // Check for comment start
         if ch == '/' && chars.peek() == Some(&'/') && !in_string {
             in_comment = true;
@@ -123,13 +116,13 @@ pub fn format_nail_line(line: &str) -> String {
             }
             continue;
         }
-        
+
         // If in string or comment, don't format
         if in_string || in_comment {
             formatted.push(ch);
             continue;
         }
-        
+
         // Format operators
         match ch {
             '=' => {
@@ -137,7 +130,7 @@ pub fn format_nail_line(line: &str) -> String {
                 while formatted.ends_with(' ') {
                     formatted.pop();
                 }
-                
+
                 if chars.peek() == Some(&'=') {
                     // ==
                     formatted.push_str(" == ");
@@ -161,10 +154,10 @@ pub fn format_nail_line(line: &str) -> String {
                     // Look back to see if we just had a type character
                     let last_char = formatted.chars().last();
                     let is_type_char = last_char.map_or(false, |c| matches!(c, 'i' | 'f' | 's' | 'b' | 'a'));
-                    
+
                     // Look ahead to see if next char is 'e' (error)
                     let next_is_e = chars.peek() == Some(&'e');
-                    
+
                     if is_type_char && next_is_e {
                         // This is an error type like i!e, don't add spaces
                         formatted.push(ch);
@@ -251,12 +244,12 @@ pub fn format_nail_line(line: &str) -> String {
             _ => formatted.push(ch),
         }
     }
-    
+
     // Clean up multiple spaces
     while formatted.contains("  ") {
         formatted = formatted.replace("  ", " ");
     }
-    
+
     formatted.trim().to_string()
 }
 
@@ -346,14 +339,10 @@ mod tests {
         assert_eq!(format_nail_line("numbers:a:i = [1,2,3]"), "numbers:a:i = [1, 2, 3]");
         assert_eq!(format_nail_line("result:i = calc()"), "result:i = calc()");
     }
-    
 
     #[test]
     fn test_complex_expression() {
-        assert_eq!(
-            format_nail_line("sum_squares:i = reduce_int(map_int(nums, square_func),0,add_func)"),
-            "sum_squares:i = reduce_int(map_int(nums, square_func), 0, add_func)"
-        );
+        assert_eq!(format_nail_line("sum_squares:i = reduce(map(nums, square_func),0,add_func)"), "sum_squares:i = reduce(map(nums, square_func), 0, add_func)");
     }
 
     #[test]
@@ -362,26 +351,16 @@ mod tests {
         assert_eq!(format_nail_line("   "), "");
         assert_eq!(format_nail_line("\t"), "");
     }
-    
+
     #[test]
     fn test_code_indentation() {
-        let input = vec![
-            "f greet(name:s):s {".to_string(),
-            "parts:a:s = [`Hello, `, name, `!`];".to_string(),
-            "r string_concat(parts);".to_string(),
-            "}".to_string(),
-        ];
-        
-        let expected = vec![
-            "f greet(name:s):s {".to_string(),
-            "    parts:a:s = [`Hello, `, name, `!`];".to_string(),
-            "    r string_concat(parts);".to_string(),
-            "}".to_string(),
-        ];
-        
+        let input = vec!["f greet(name:s):s {".to_string(), "parts:a:s = [`Hello, `, name, `!`];".to_string(), "r array_join(parts);".to_string(), "}".to_string()];
+
+        let expected = vec!["f greet(name:s):s {".to_string(), "    parts:a:s = [`Hello, `, name, `!`];".to_string(), "    r array_join(parts);".to_string(), "}".to_string()];
+
         assert_eq!(format_nail_code(&input), expected);
     }
-    
+
     #[test]
     fn test_nested_indentation() {
         let input = vec![
@@ -394,7 +373,7 @@ mod tests {
             "}".to_string(),
             "}".to_string(),
         ];
-        
+
         let expected = vec![
             "if {".to_string(),
             "    x > 0 => {".to_string(),
@@ -405,22 +384,22 @@ mod tests {
             "    }".to_string(),
             "}".to_string(),
         ];
-        
+
         assert_eq!(format_nail_code(&input), expected);
     }
-    
+
     #[test]
     fn test_function_spacing() {
         let input = vec![
-            "f double_func(n:i):i { r n * 2; }".to_string(),
+            "f double_func(num:i):i { r num * 2; }".to_string(),
             "f is_even_func(n:i):b {".to_string(),
             "r n % 2 == 0;".to_string(),
             "}".to_string(),
             "f add_func(acc:i, n:i):i { r acc + n; }".to_string(),
         ];
-        
+
         let expected = vec![
-            "f double_func(n:i):i { r n * 2; }".to_string(),
+            "f double_func(num:i):i { r num * 2; }".to_string(),
             "".to_string(),
             "f is_even_func(n:i):b {".to_string(),
             "    r n % 2 == 0;".to_string(),
@@ -428,7 +407,7 @@ mod tests {
             "".to_string(),
             "f add_func(acc:i, n:i):i { r acc + n; }".to_string(),
         ];
-        
+
         assert_eq!(format_nail_code(&input), expected);
     }
 

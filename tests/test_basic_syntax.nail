@@ -1,0 +1,13 @@
+// Basic Syntax Tests
+damage:i = 42;
+healing:f = 10.0;
+upper_name:s = string_to_uppercase(`test`);
+print(upper_name);
+
+identifier:s = `hello`;
+number:i = 123;
+no_args_result:i = 42;
+stmt_test:i = 1;
+string_val:s = `test`;
+struct Player { name:s, level:i }
+print(`done`);

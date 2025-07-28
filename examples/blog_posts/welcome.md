@@ -15,8 +15,13 @@ Here's a simple example that demonstrates Nail's syntax:
 
 ```nail
 numbers:a:i = [1, 2, 3, 4, 5];
-doubled:a:i = map_int(numbers, |n:i|:i { r n * 2; });
-sum:i = reduce_int(doubled, 0, |acc:i, n:i|:i { r acc + n; });
+// Using Nail's collection operations
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
+sum:i = reduce acc num in doubled from 0 {
+    y acc + num;
+};
 print(sum); // Output: 30
 ```
 

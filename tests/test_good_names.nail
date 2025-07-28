@@ -1,5 +1,0 @@
-// Test with good descriptive names
-
-input_number:f = 16.0;
-
-print(string_from(math_sqrt(input_number)));

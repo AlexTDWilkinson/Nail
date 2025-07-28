@@ -1,2 +1,0 @@
-// Test with explicit spacing
-value:i = safe(42, |err|:i { r -1; });

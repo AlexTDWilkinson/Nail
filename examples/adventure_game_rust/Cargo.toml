@@ -1,8 +1,0 @@
-[package]
-name = "adventure_game"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-Nail = { path = "../.." }
-tokio = { version = "1", features = ["full"] }

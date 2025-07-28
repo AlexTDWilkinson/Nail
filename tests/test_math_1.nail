@@ -1,7 +1,0 @@
-// Test math functions part 1
-
-print(string_concat([
-    `abs(-5.7) = `,from(math_abs(-5.7)),
-    `, sqrt(16) = `,from(math_sqrt(16.0)),
-    `, pow(2,3) = `,from(math_pow(2.0, 3.0))
-]));

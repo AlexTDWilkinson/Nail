@@ -1,10 +1,7 @@
 use axum::{Router, response::Html, routing::get};
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
-// Simple HTTP route handler type - returns HTML string
-type RouteHandler = Arc<dyn Fn() -> String + Send + Sync>;
 
 // Nail callable function: http_server_start
 // This function is called from transpiled Nail code which is already async
@@ -30,17 +27,21 @@ pub async fn http_server_start(port: i64, html: String) -> Result<(), String> {
     Ok(())
 }
 
-// For more complex routing, we could have:
-pub async fn http_server_route(port: i64, routes: HashMap<String, String>) -> Result<(), String> {
+// For more complex routing with DashMap
+pub async fn http_server_route(port: i64, routes: &DashMap<String, String>) -> Result<(), String> {
     let mut app = Router::new();
     
     let route_count = routes.len();
     
     // Add each route
-    for (path, html) in routes {
-        let html_clone = html.clone();
-        app = app.route(&path, get(move || async move {
-            Html(html_clone.clone())
+    for entry in routes.iter() {
+        let path = entry.key().clone();
+        let html = entry.value().clone();
+        app = app.route(&path, get(move || {
+            let html_clone = html.clone();
+            async move {
+                Html(html_clone)
+            }
         }));
     }
     

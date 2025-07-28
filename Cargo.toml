@@ -1,11 +1,11 @@
 [package]
-name = "Nail"
+name = "nail"
 version = "0.0.1"
 edition = "2021"
-default-run = "Nail"
+default-run = "nail"
 
 [[bin]]
-name = "Nail"
+name = "nail"
 path = "src/main.rs"
 
 [[bin]]
@@ -13,7 +13,7 @@ name = "nailc"
 path = "src/bin/nailc.rs"
 
 [lib]
-name = "Nail"
+name = "nail"
 path = "src/lib.rs"
 
 

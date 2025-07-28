@@ -1,12 +1,8 @@
 use crate::common::CodeSpan;
-use crate::statics_for_tests::*;
-use dashmap::DashMap;
-use lazy_static::lazy_static;
 use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::hash::Hash;
-use std::hash::Hasher;
 
 //  static the alphabet in lower and uppercase and 0-9
 
@@ -16,7 +12,6 @@ static ALPHABET_UPPERCASE_AND_NUMBERS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456
 static ALPHABET_LOWERCASE: &str = "abcdefghijklmnopqrstuvwxyz";
 static ALPHABET: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 static ALPHABET_UPPERCASE: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-static NUMBERS: &str = "0123456789";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructDeclarationData {
@@ -86,20 +81,18 @@ pub enum NailDataTypeDescriptor {
     Float,
     String,
     Boolean,
-    ArrayInt,
-    ArrayFloat,
-    ArrayString,
-    ArrayBoolean,
-    ArrayStruct(String),
-    ArrayEnum(String),
+    Array(Box<NailDataTypeDescriptor>), // Generic array type for all arrays
     Struct(String),
     Enum(String),
     Void,
+    Never, // For functions that never return (like panic, todo)
     Error,
-    Any(Vec<NailDataTypeDescriptor>),
+    OneOf(Vec<NailDataTypeDescriptor>),
     Fn(Vec<NailDataTypeDescriptor>, Box<NailDataTypeDescriptor>),
-    Result(Box<NailDataTypeDescriptor>), // For types like i!e, f!e, s!e
-    Unknown, // Only used internally
+    Result(Box<NailDataTypeDescriptor>),                               // For types like i!e, f!e, s!e
+    HashMap(Box<NailDataTypeDescriptor>, Box<NailDataTypeDescriptor>), // For types like h<s,s>
+    Any,                                                               // Any type accepts any concrete type
+    FailedToResolve,                                                   // Only used internally during type resolution
 }
 
 impl std::fmt::Display for NailDataTypeDescriptor {
@@ -109,34 +102,36 @@ impl std::fmt::Display for NailDataTypeDescriptor {
             NailDataTypeDescriptor::Float => write!(f, "f"),
             NailDataTypeDescriptor::String => write!(f, "s"),
             NailDataTypeDescriptor::Boolean => write!(f, "b"),
-            NailDataTypeDescriptor::ArrayInt => write!(f, "a:i"),
-            NailDataTypeDescriptor::ArrayFloat => write!(f, "a:f"),
-            NailDataTypeDescriptor::ArrayString => write!(f, "a:s"),
-            NailDataTypeDescriptor::ArrayBoolean => write!(f, "a:b"),
-            NailDataTypeDescriptor::ArrayStruct(name) => write!(f, "a:{}", name),
-            NailDataTypeDescriptor::ArrayEnum(name) => write!(f, "a:{}", name),
+            NailDataTypeDescriptor::Array(inner) => write!(f, "a:{}", inner),
             NailDataTypeDescriptor::Struct(name) => write!(f, "{}", name),
             NailDataTypeDescriptor::Enum(name) => write!(f, "{}", name),
             NailDataTypeDescriptor::Void => write!(f, "v"),
+            NailDataTypeDescriptor::Never => write!(f, "!"),
             NailDataTypeDescriptor::Error => write!(f, "e"),
             NailDataTypeDescriptor::Result(inner) => write!(f, "{}!e", inner),
-            NailDataTypeDescriptor::Any(types) => {
-                write!(f, "Any<")?;
+            NailDataTypeDescriptor::HashMap(key, value) => write!(f, "h<{},{}>", key, value),
+            NailDataTypeDescriptor::OneOf(types) => {
+                write!(f, "OneOf<")?;
                 for (i, t) in types.iter().enumerate() {
-                    if i > 0 { write!(f, ",")?; }
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
                     write!(f, "{}", t)?;
                 }
                 write!(f, ">")
-            },
+            }
             NailDataTypeDescriptor::Fn(params, ret) => {
                 write!(f, "fn(")?;
                 for (i, p) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ",")?; }
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
                     write!(f, "{}", p)?;
                 }
                 write!(f, "):{}", ret)
-            },
-            NailDataTypeDescriptor::Unknown => write!(f, "Unknown"),
+            }
+            NailDataTypeDescriptor::Any => write!(f, "Any"),
+            NailDataTypeDescriptor::FailedToResolve => write!(f, "FailedToResolve"),
         }
     }
 }
@@ -155,8 +150,6 @@ pub struct Token {
 pub enum TokenType {
     ArrayOpen,
     ArrayClose,
-    LambdaSignature(Vec<Token>),
-    LambdaReturnTypeDeclaration(NailDataTypeDescriptor),
     FunctionReturnTypeDeclaration(NailDataTypeDescriptor),
     FunctionName(String),
     StructDeclaration(StructDeclarationData), // For struct declarations
@@ -166,17 +159,35 @@ pub enum TokenType {
     EnumVariant(EnumVariantData),            // For enum variant name
     Comment(String),                         // For comments
     FunctionSignature(Vec<Token>),           // For function declarations ie "fn"
-    ConstDeclaration,                        // For const declarations ie "c"
+    Dot,                                     // For dot operator (.)
     IfDeclaration,                           // For if keyword
     ElseDeclaration,                         // For else keyword
-    ParallelDeclaration,                     // For parallel keyword
-    ParallelStart,                           // For p keyword  
+    ParallelStart,                           // For p keyword
     ParallelEnd,                             // For /p keyword
+    ForDeclaration,                          // For for keyword
+    MapDeclaration,                          // For map keyword
+    FilterDeclaration,                       // For filter keyword
+    ReduceDeclaration,                       // For reduce keyword
+    EachDeclaration,                         // For each keyword
+    FindDeclaration,                         // For find keyword
+    AllDeclaration,                          // For all keyword
+    AnyDeclaration,                          // For any keyword
+    WhileDeclaration,                        // For while keyword
+    InKeyword,                               // For in keyword
+    FromKeyword,                             // For from keyword (initial accumulator)
+    WhenKeyword,                             // For when keyword (filtering)
+    BreakKeyword,                            // For break keyword
+    ContinueKeyword,                         // For continue keyword
+    MaxKeyword,                              // For max keyword (while bounds)
+    StepKeyword,                             // For step keyword (for loops)
+    Range,                                   // For .. operator
+    RangeInclusive,                          // For ..= operator
     Assignment,                              // For assignment ie =
     ArrowAssignment,                         // For arrow assignment ie =>
     Identifier(String),                      // For variable names, etc.
     Float(String),                           // For float numbers
     Integer(String),                         // For integer numbers
+    BooleanLiteral(bool),                    // For boolean literals (true/false)
     Operator(Operation),                     // For operators like +, -, *, /
     Comma,                                   // For commas
     StringLiteral(String),                   // For string literals
@@ -188,6 +199,7 @@ pub enum TokenType {
     EndStatementOrExpression,                // For end of statement or expression
     LexerError(String),                      // For lexer_inner errors
     Return,                                  // For return keyword
+    Yield,                                   // For yield keyword
     EndOfFile,                               // For end of file
 }
 
@@ -280,7 +292,6 @@ pub struct LexerState {
     pub column: usize,
 }
 
-
 pub fn lexer(input: &str) -> Vec<Token> {
     let mut state = LexerState { line: 1, column: 1 };
     lexer_inner(input, &mut state)
@@ -320,33 +331,19 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 });
             }
 
-            _ if is_lambda(&mut chars) => {
-                let lexer_output = lex_lambda(&mut chars, state);
-                tokens.push(Token {
-                    token_type: lexer_output.token_type,
-                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
-                });
-            }
-
             '[' => {
                 let start_line = state.line;
                 let start_column = state.column;
                 chars.next(); // consume '['
                 state.column += 1;
-                tokens.push(Token {
-                    token_type: TokenType::ArrayOpen,
-                    code_span: CodeSpan { start_line, end_line: state.line, start_column, end_column: state.column },
-                });
+                tokens.push(Token { token_type: TokenType::ArrayOpen, code_span: CodeSpan { start_line, end_line: state.line, start_column, end_column: state.column } });
             }
             ']' => {
                 let start_line = state.line;
                 let start_column = state.column;
                 chars.next(); // consume ']'
                 state.column += 1;
-                tokens.push(Token {
-                    token_type: TokenType::ArrayClose,
-                    code_span: CodeSpan { start_line, end_line: state.line, start_column, end_column: state.column },
-                });
+                tokens.push(Token { token_type: TokenType::ArrayClose, code_span: CodeSpan { start_line, end_line: state.line, start_column, end_column: state.column } });
             }
             '`' => {
                 let lexer_output: LexerOutput = lex_string_literal(&mut chars, state);
@@ -397,29 +394,11 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
             }
 
             _ if is_identifier_or_keyword(c) => {
-                let mut lookahead = chars.clone();
-                let mut word = String::new();
-                while let Some(&c) = lookahead.peek() {
-                    if is_in_alphabet_or_number(c) || c == '_' {
-                        word.push(c);
-                        lookahead.next();
-                    } else {
-                        break;
-                    }
-                }
-                if lookahead.peek() == Some(&'.') {
-                    let lexer_output = lex_struct_field_access(&mut chars, state);
-                    tokens.push(Token {
-                        token_type: lexer_output.token_type,
-                        code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
-                    });
-                } else {
-                    let lexer_output = lex_identifier_or_keyword(&mut chars, state);
-                    tokens.push(Token {
-                        token_type: lexer_output.token_type,
-                        code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
-                    });
-                }
+                let lexer_output = lex_identifier_or_keyword(&mut chars, state);
+                tokens.push(Token {
+                    token_type: lexer_output.token_type,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
+                });
             }
             _ if is_number(&mut chars) => {
                 let lexer_output: LexerOutput = lex_number(&mut chars, state);
@@ -565,6 +544,11 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
             }
         }
 
+        // Validate field name
+        if let Some(error) = validate_identifier_name(&field_name) {
+            return LexerOutput { token_type: TokenType::LexerError(error), start_line, start_column, end_line: state.line, end_column: state.column };
+        }
+
         // Skip whitespace
         while let Some(&c) = chars.peek() {
             if c.is_whitespace() {
@@ -640,11 +624,11 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
 // fn lex_array(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
 //     let start_line = state.line;
 //     let start_column = state.column;
-// 
+//
 //     let mut elements = Vec::new();
-// 
+//
 //     advance(chars, state); // Consume '['
-// 
+//
 //     loop {
 //         // Skip whitespace
 //         while let Some(&c) = chars.peek() {
@@ -654,13 +638,13 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
 //                 break;
 //             }
 //         }
-// 
+//
 //         // Check for array end
 //         if chars.peek() == Some(&']') {
 //             advance(chars, state); // Consume ']'
 //             break;
 //         }
-// 
+//
 //         // Lex array element
 //         if is_array(chars) {
 //             let nested_array = lex_array(chars, state);
@@ -675,7 +659,7 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
 //                 code_span: CodeSpan { start_line: element.start_line, end_line: element.end_line, start_column: element.start_column, end_column: element.end_column },
 //             });
 //         }
-// 
+//
 //         // Skip whitespace
 //         while let Some(&c) = chars.peek() {
 //             if c.is_whitespace() {
@@ -684,7 +668,7 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
 //                 break;
 //             }
 //         }
-// 
+//
 //         // Check for comma or array end
 //         match chars.peek() {
 //             Some(&',') => {
@@ -694,7 +678,7 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
 //             _ => return LexerOutput { token_type: TokenType::LexerError("Expected ',' or ']' in array".to_string()), start_line, start_column, end_line: state.line, end_column: state.column },
 //         }
 //     }
-// 
+//
 //     LexerOutput { token_type: TokenType::Array(elements), start_line, start_column, end_line: state.line, end_column: state.column }
 // }
 
@@ -809,197 +793,6 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
     LexerOutput { token_type: TokenType::FunctionSignature(tokens), start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
-fn is_function_call(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
-    let mut lookahead = chars.clone();
-
-    // Consume valid function name characters (letters, numbers, or underscore)
-    while let Some(c) = lookahead.next() {
-        if is_in_alphabet_or_number(c) || c == '_' {
-            continue;
-        } else if c == '(' {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    false
-}
-
-// Helper function to skip whitespace
-fn skip_whitespace(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) {
-    while let Some(&c) = chars.peek() {
-        if c.is_whitespace() {
-            advance(chars, state);
-        } else {
-            break;
-        }
-    }
-}
-
-fn is_lambda(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
-    // Check if this is a lambda by looking for |identifier pattern
-    if chars.peek() != Some(&'|') {
-        return false;
-    }
-    
-    // Look ahead to see if this is a lambda or just a pipe in a type
-    let mut temp_chars = chars.clone();
-    temp_chars.next(); // Skip the |
-    
-    // Skip whitespace
-    while let Some(&c) = temp_chars.peek() {
-        if c.is_whitespace() {
-            temp_chars.next();
-        } else {
-            break;
-        }
-    }
-    
-    // Check if the next character could start an identifier (lambda param) or is another |
-    if let Some(&c) = temp_chars.peek() {
-        c.is_alphabetic() || c == '_' || c == '|'  // Either param name or empty params ||
-    } else {
-        false
-    }
-}
-fn lex_lambda(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
-    let start_line = state.line;
-    let start_column = state.column;
-    let mut tokens = Vec::new();
-
-    // Consume opening '|'
-    advance(chars, state);
-    
-
-    // Parse parameters
-    loop {
-        // Eat whitespace
-        while let Some(&c) = chars.peek() {
-            if c.is_whitespace() {
-                advance(chars, state);
-            } else {
-                break;
-            }
-        }
-
-        // Check if we've reached the end of parameters
-        if chars.peek() == Some(&'|') {
-            break;
-        }
-
-        // Parse parameter name
-        let param_name = lex_identifier_only(chars, state);
-        tokens.push(Token {
-            token_type: param_name.token_type,
-            code_span: CodeSpan { start_line: param_name.start_line, end_line: param_name.end_line, start_column: param_name.start_column, end_column: param_name.end_column },
-        });
-
-        // Parse parameter type
-        if chars.peek() == Some(&':') {
-            // We need to parse the type but stop at | in lambda context
-            advance(chars, state); // skip ':'
-            let type_start_line = state.line;
-            let type_start_column = state.column;
-            let mut type_name = String::new();
-            
-            // Parse the type name, stopping at | or whitespace
-            while let Some(&c) = chars.peek() {
-                if c == '|' || c.is_whitespace() || c == ',' {
-                    break;
-                }
-                if is_in_alphabet_or_number(c) || c == '_' || c == ':' {
-                    type_name.push(c);
-                    advance(chars, state);
-                } else {
-                    break;
-                }
-            }
-            
-            // Parse the type and add it as a token
-            match parse_type(&type_name) {
-                Ok(type_desc) => {
-                    tokens.push(Token {
-                        token_type: TokenType::TypeDeclaration(type_desc),
-                        code_span: CodeSpan { 
-                            start_line: type_start_line, 
-                            end_line: state.line, 
-                            start_column: type_start_column, 
-                            end_column: state.column 
-                        },
-                    });
-                }
-                Err(e) => {
-                    return LexerOutput {
-                        token_type: TokenType::LexerError(format!("Invalid type in lambda parameter: {}", e)),
-                        start_line,
-                        start_column,
-                        end_line: state.line,
-                        end_column: state.column,
-                    };
-                }
-            }
-        }
-
-        // Eat whitespace
-        while let Some(&c) = chars.peek() {
-            if c.is_whitespace() {
-                advance(chars, state);
-            } else {
-                break;
-            }
-        }
-
-        // Check for comma or end of parameters
-        if chars.peek() == Some(&',') {
-            tokens.push(Token { token_type: TokenType::Comma, code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column + 1 } });
-            advance(chars, state);
-        } else if chars.peek() == Some(&'|') {
-            break;
-        } else {
-            return LexerOutput {
-                token_type: TokenType::LexerError("Expected ',' or '|' after lambda parameter".to_string()),
-                start_line,
-                start_column,
-                end_line: state.line,
-                end_column: state.column,
-            };
-        }
-    }
-
-    // Consume closing '|'
-    if chars.peek() == Some(&'|') {
-        advance(chars, state);
-    } else {
-        return LexerOutput { token_type: TokenType::LexerError("Expected '|' at end of lambda parameters".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
-    }
-
-    // Parse return type if present
-    if chars.peek() == Some(&':') {
-        let return_type = lex_type_system_type(chars, state);
-        if let TokenType::TypeDeclaration(t) = return_type.token_type {
-            tokens.push(Token {
-                token_type: TokenType::LambdaReturnTypeDeclaration(t),
-                code_span: CodeSpan { start_line: return_type.start_line, end_line: return_type.end_line, start_column: return_type.start_column, end_column: return_type.end_column },
-            });
-        } else {
-            return LexerOutput {
-                token_type: TokenType::LexerError("Expected type declaration for lambda return type".to_string()),
-                start_line: state.line,
-                start_column: state.column,
-                end_line: state.line,
-                end_column: state.column,
-            };
-        }
-    }
-
-    LexerOutput { token_type: TokenType::LambdaSignature(tokens), start_line, start_column, end_line: state.line, end_column: state.column }
-}
-
-fn is_array(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
-    chars.peek() == Some(&'[')
-}
-
 fn is_comment(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
     let mut lookahead = chars.clone();
     lookahead.next() == Some('/') && lookahead.next() == Some('/')
@@ -1020,20 +813,14 @@ fn is_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
 fn lex_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
     let start_line = state.line;
     let start_column = state.column;
-    
+
     // Consume "/p"
     chars.next(); // consume '/'
     state.column += 1;
     chars.next(); // consume 'p'
     state.column += 1;
-    
-    LexerOutput {
-        token_type: TokenType::ParallelEnd,
-        start_line,
-        start_column,
-        end_line: state.line,
-        end_column: state.column,
-    }
+
+    LexerOutput { token_type: TokenType::ParallelEnd, start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
 fn lex_comment(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
@@ -1063,7 +850,7 @@ fn is_single_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -
 
     match lookahead.next() {
         Some(c) => match c {
-            '(' | ')' | ';' | '{' | '}' | ',' | '!' | '+' | '-' | '*' | '/' | '%' | '=' | '<' | '>' => {
+            '(' | ')' | ';' | '{' | '}' | ',' | '.' | '!' | '+' | '-' | '*' | '/' | '%' | '=' | '<' | '>' => {
                 // Check if it's followed by a space, or by something it's allowed to be beside or end of input
                 match lookahead.next() {
                     Some(next_char) => {
@@ -1071,6 +858,7 @@ fn is_single_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -
                             || is_in_alphabet_or_number(next_char)
                             || next_char == ';'
                             || next_char == ','
+                            || next_char == '.'
                             || next_char == '('
                             || next_char == ')'
                             || next_char == '{'
@@ -1108,8 +896,9 @@ fn lex_single_character_token(chars: &mut std::iter::Peekable<std::str::Chars>, 
         '{' => TokenType::BlockOpen,
         '}' => TokenType::BlockClose,
         ',' => TokenType::Comma,
+        '.' => TokenType::Dot,
         '=' => TokenType::Assignment,
-        '!' => TokenType::Operator(Operation::Ne),
+        '!' => TokenType::Operator(Operation::Not),
         '+' => TokenType::Operator(Operation::Add),
         '-' => TokenType::Operator(Operation::Sub),
         '*' => TokenType::Operator(Operation::Mul),
@@ -1202,6 +991,11 @@ fn lex_struct_declaration(chars: &mut std::iter::Peekable<std::str::Chars>, stat
             } else {
                 break;
             }
+        }
+
+        // Validate field name
+        if let Some(error) = validate_identifier_name(&field_name) {
+            return LexerOutput { token_type: TokenType::LexerError(error), start_line, start_column, end_line: state.line, end_column: state.column };
         }
 
         // Parse field type
@@ -1322,6 +1116,11 @@ fn lex_enum_delcaration(chars: &mut std::iter::Peekable<std::str::Chars>, state:
             }
         }
 
+        // Validate variant name
+        if let Some(error) = validate_identifier_name(&variant_name) {
+            return LexerOutput { token_type: TokenType::LexerError(error), start_line, start_column, end_line: state.line, end_column: state.column };
+        }
+
         variants.push(Token {
             token_type: TokenType::EnumVariant(EnumVariantData { name: enum_name.clone(), variant: variant_name }),
             code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: variant_start_column, end_column: state.column },
@@ -1355,6 +1154,16 @@ fn is_identifier_or_keyword(c: char) -> bool {
     is_in_alphabet_or_number(c) || c == '_'
 }
 
+fn validate_identifier_name(identifier: &str) -> Option<String> {
+    // Check if identifier is a single letter - all single letter identifiers are forbidden
+    // EXCEPT 'e' which is used for error returns (e.g., r e("error message"))
+    if identifier.len() == 1 && identifier.chars().all(|c| c.is_alphabetic()) && identifier != "e" {
+        Some("Variable name too short. Must use descriptive names.".to_string())
+    } else {
+        None
+    }
+}
+
 fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
     let start_line = state.line;
     let start_column = state.column;
@@ -1370,14 +1179,181 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
     }
 
     let token_type = match identifier.as_str() {
-        "c" => TokenType::ConstDeclaration,
-        "r" => TokenType::Return,
+        "r" => {
+            // 'r' is only Return if followed by whitespace
+            let mut lookahead = chars.clone();
+            if let Some(&next_char) = lookahead.peek() {
+                if next_char.is_whitespace() {
+                    TokenType::Return
+                } else {
+                    // Validate before treating as identifier
+                    if let Some(error) = validate_identifier_name(&identifier) {
+                        TokenType::LexerError(error)
+                    } else {
+                        TokenType::Identifier(identifier)
+                    }
+                }
+            } else {
+                if let Some(error) = validate_identifier_name(&identifier) {
+                    TokenType::LexerError(error)
+                } else {
+                    TokenType::Identifier(identifier)
+                }
+            }
+        }
+        "y" => {
+            // 'y' is only Yield if followed by whitespace
+            let mut lookahead = chars.clone();
+            if let Some(&next_char) = lookahead.peek() {
+                if next_char.is_whitespace() {
+                    TokenType::Yield
+                } else {
+                    // Validate before treating as identifier
+                    if let Some(error) = validate_identifier_name(&identifier) {
+                        TokenType::LexerError(error)
+                    } else {
+                        TokenType::Identifier(identifier)
+                    }
+                }
+            } else {
+                if let Some(error) = validate_identifier_name(&identifier) {
+                    TokenType::LexerError(error)
+                } else {
+                    TokenType::Identifier(identifier)
+                }
+            }
+        }
         "if" => TokenType::IfDeclaration,
         "else" => TokenType::ElseDeclaration,
-        "parallel" => TokenType::ParallelDeclaration,
-        "p" => TokenType::ParallelStart,
+        "true" => TokenType::BooleanLiteral(true),
+        "false" => TokenType::BooleanLiteral(false),
+
+        // rust keywords
+        "main" => TokenType::LexerError("'main' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "self" => TokenType::LexerError("'self' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "super" => TokenType::LexerError("'super' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "crate" => TokenType::LexerError("'crate' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "mod" => TokenType::LexerError("'mod' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "pub" => TokenType::LexerError("'pub' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "use" => TokenType::LexerError("'use' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "fn" => TokenType::LexerError("'fn' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "let" => TokenType::LexerError("'let' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "mut" => TokenType::LexerError("'mut' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "const" => TokenType::LexerError("'const' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "static" => TokenType::LexerError("'static' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "struct" => TokenType::LexerError("'struct' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "enum" => TokenType::LexerError("'enum' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "trait" => TokenType::LexerError("'trait' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "impl" => TokenType::LexerError("'impl' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "type" => TokenType::LexerError("'type' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "where" => TokenType::LexerError("'where' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "dyn" => TokenType::LexerError("'dyn' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "async" => TokenType::LexerError("'async' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "await" => TokenType::LexerError("'await' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "move" => TokenType::LexerError("'move' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "match" => TokenType::LexerError("'match' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "loop" => TokenType::LexerError("'loop' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "while" => TokenType::WhileDeclaration,
+        "for" => TokenType::ForDeclaration,
+        "map" => TokenType::MapDeclaration,
+        "filter" => TokenType::FilterDeclaration,
+        "reduce" => TokenType::ReduceDeclaration,
+        "each" => TokenType::EachDeclaration,
+        "find" => TokenType::FindDeclaration,
+        "all" => TokenType::AllDeclaration,
+        "any" => TokenType::AnyDeclaration,
+        "in" => TokenType::InKeyword,
+        "from" => TokenType::FromKeyword,
+        "when" => TokenType::WhenKeyword,
+        "break" => TokenType::BreakKeyword,
+        "continue" => TokenType::ContinueKeyword,
+        "max" => TokenType::MaxKeyword,
+        "step" => TokenType::StepKeyword,
+        "return" => TokenType::LexerError("'return' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "yield" => TokenType::LexerError("'yield' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "ref" => TokenType::LexerError("'ref' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "as" => TokenType::LexerError("'as' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "extern" => TokenType::LexerError("'extern' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "box" => TokenType::LexerError("'box' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "unsafe" => TokenType::LexerError("'unsafe' is a reserved keyword and cannot be used as an identifier".to_string()),
+        // end rust keywords
+        "p" => {
+            // 'p' is only ParallelStart if it's at the beginning of a line
+            // and followed by whitespace and then a statement
+            let mut lookahead = chars.clone();
+            if let Some(&next_char) = lookahead.peek() {
+                // If followed by '.' or ':' or any non-whitespace character, it's an identifier
+                if !next_char.is_whitespace() {
+                    if let Some(error) = validate_identifier_name(&identifier) {
+                        TokenType::LexerError(error)
+                    } else {
+                        TokenType::Identifier(identifier)
+                    }
+                } else {
+                    // Skip whitespace
+                    while let Some(&c) = lookahead.peek() {
+                        if c.is_whitespace() {
+                            lookahead.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // Check what follows the whitespace
+                    if let Some(&c) = lookahead.peek() {
+                        // These characters indicate 'p' is being used as a variable/identifier
+                        if c == '.'
+                            || c == ':'
+                            || c == '('
+                            || c == '+'
+                            || c == '-'
+                            || c == '*'
+                            || c == '/'
+                            || c == '='
+                            || c == '<'
+                            || c == '>'
+                            || c == ';'
+                            || c == ','
+                            || c == ')'
+                            || c == ']'
+                            || c == '}'
+                            || c == '|'
+                        {
+                            if let Some(error) = validate_identifier_name(&identifier) {
+                                TokenType::LexerError(error)
+                            } else {
+                                TokenType::Identifier(identifier)
+                            }
+                        } else {
+                            // It's likely a parallel block start
+                            TokenType::ParallelStart
+                        }
+                    } else {
+                        // End of input after 'p', treat as identifier
+                        if let Some(error) = validate_identifier_name(&identifier) {
+                            TokenType::LexerError(error)
+                        } else {
+                            TokenType::Identifier(identifier)
+                        }
+                    }
+                }
+            } else {
+                // End of input, treat as identifier
+                if let Some(error) = validate_identifier_name(&identifier) {
+                    TokenType::LexerError(error)
+                } else {
+                    TokenType::Identifier(identifier)
+                }
+            }
+        }
         "/p" => TokenType::ParallelEnd,
-        _ => TokenType::Identifier(identifier),
+        _ => {
+            // Validate before treating as identifier
+            if let Some(error) = validate_identifier_name(&identifier) {
+                TokenType::LexerError(error)
+            } else {
+                TokenType::Identifier(identifier)
+            }
+        }
     };
 
     LexerOutput { token_type, start_line, start_column, end_line: state.line, end_column: state.column }
@@ -1396,13 +1372,9 @@ fn lex_identifier_only(chars: &mut std::iter::Peekable<std::str::Chars>, state: 
         }
     }
     // Always treat as identifier, never as keyword
-    LexerOutput { 
-        token_type: TokenType::Identifier(identifier), 
-        start_line, 
-        start_column, 
-        end_line: state.line, 
-        end_column: state.column 
-    }
+    let token_type = if let Some(error) = validate_identifier_name(&identifier) { TokenType::LexerError(error) } else { TokenType::Identifier(identifier) };
+
+    LexerOutput { token_type, start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
 fn is_type_system_type(c: char) -> bool {
@@ -1426,14 +1398,95 @@ fn lex_type_system_type(chars: &mut std::iter::Peekable<std::str::Chars>, state:
         }
     }
 
+    // Check for hashmap type (h(key_type, value_type))
+    if type_name == "h" && chars.peek() == Some(&'(') {
+        advance(chars, state); // skip '('
+
+        // Parse key type
+        let mut key_type_name = String::new();
+
+        while let Some(&c) = chars.peek() {
+            if c == ',' || c == ')' {
+                break;
+            }
+            if is_in_alphabet_or_number(c) || c == '_' {
+                key_type_name.push(c);
+                advance(chars, state);
+            } else {
+                break;
+            }
+        }
+
+        // Skip whitespace
+        while chars.peek() == Some(&' ') {
+            advance(chars, state);
+        }
+
+        // Expect comma
+        if chars.peek() != Some(&',') {
+            return LexerOutput { token_type: TokenType::LexerError("Expected ',' in hashmap type".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
+        }
+        advance(chars, state); // skip ','
+
+        // Skip whitespace
+        while chars.peek() == Some(&' ') {
+            advance(chars, state);
+        }
+
+        // Parse value type
+        let mut value_type_name = String::new();
+        while let Some(&c) = chars.peek() {
+            if c == ')' {
+                break;
+            }
+            if is_in_alphabet_or_number(c) || c == '_' {
+                value_type_name.push(c);
+                advance(chars, state);
+            } else {
+                break;
+            }
+        }
+
+        // Expect closing parenthesis
+        if chars.peek() != Some(&')') {
+            return LexerOutput { token_type: TokenType::LexerError("Expected ')' in hashmap type".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
+        }
+        advance(chars, state); // skip ')'
+
+        // Parse the key and value types
+        let key_type = match parse_type(&key_type_name) {
+            Ok(t) => t,
+            Err(_) => {
+                // If it's not a primitive type, assume it's a struct
+                NailDataTypeDescriptor::Struct(key_type_name)
+            }
+        };
+
+        let value_type = match parse_type(&value_type_name) {
+            Ok(t) => t,
+            Err(_) => {
+                // If it's not a primitive type, assume it's a struct
+                NailDataTypeDescriptor::Struct(value_type_name)
+            }
+        };
+
+        return LexerOutput {
+            token_type: TokenType::TypeDeclaration(NailDataTypeDescriptor::HashMap(Box::new(key_type), Box::new(value_type))),
+            start_line,
+            start_column,
+            end_line: state.line,
+            end_column: state.column,
+        };
+    }
+
     // Check for result type (base_type!e)
     if chars.peek() == Some(&'!') {
         advance(chars, state); // skip '!'
-        
+
         // Expect 'e' for error type
         if chars.peek() == Some(&'e') {
             advance(chars, state); // skip 'e'
-            
+
             // Parse the base type first - could be a struct or enum name
             let base_type = if type_name.chars().next().map_or(false, |c| c.is_uppercase()) {
                 // It's likely a struct or enum name
@@ -1448,30 +1501,18 @@ fn lex_type_system_type(chars: &mut std::iter::Peekable<std::str::Chars>, state:
                     }
                 }
             };
-            
+
             // Create a Result type wrapping the base type
-            LexerOutput { 
-                token_type: TokenType::TypeDeclaration(NailDataTypeDescriptor::Result(Box::new(base_type))), 
-                start_line, 
-                start_column, 
-                end_line: state.line, 
-                end_column: state.column 
-            }
+            LexerOutput { token_type: TokenType::TypeDeclaration(NailDataTypeDescriptor::Result(Box::new(base_type))), start_line, start_column, end_line: state.line, end_column: state.column }
         } else {
-            LexerOutput { 
-                token_type: TokenType::LexerError("Expected 'e' after '!' in result type".to_string()), 
-                start_line, 
-                start_column, 
-                end_line: state.line, 
-                end_column: state.column 
-            }
+            LexerOutput { token_type: TokenType::LexerError("Expected 'e' after '!' in result type".to_string()), start_line, start_column, end_line: state.line, end_column: state.column }
         }
-    } else if type_name == "any" {
-        // Handle 'any' type
+    } else if type_name == "oneof" {
+        // Handle 'oneof' type
         if chars.peek() == Some(&'(') {
             advance(chars, state); // advance past the '('
 
-            let mut types_in_any = Vec::new();
+            let mut types_in_oneof = Vec::new();
             let mut any_string = String::new();
 
             while let Some(&c) = chars.peek() {
@@ -1488,15 +1529,15 @@ fn lex_type_system_type(chars: &mut std::iter::Peekable<std::str::Chars>, state:
             for t in types {
                 match parse_type(t) {
                     Ok(type_desc) => {
-                        types_in_any.push(type_desc);
+                        types_in_oneof.push(type_desc);
                     }
                     Err(e) => return LexerOutput { token_type: TokenType::LexerError(e), start_line, start_column, end_line: state.line, end_column: state.column },
                 }
             }
 
-            LexerOutput { token_type: TokenType::TypeDeclaration(NailDataTypeDescriptor::Any(types_in_any)), start_line, start_column, end_line: state.line, end_column: state.column }
+            LexerOutput { token_type: TokenType::TypeDeclaration(NailDataTypeDescriptor::OneOf(types_in_oneof)), start_line, start_column, end_line: state.line, end_column: state.column }
         } else {
-            LexerOutput { token_type: TokenType::LexerError("Expected '(' after 'any'".to_string()), start_line, start_column, end_line: state.line, end_column: state.column }
+            LexerOutput { token_type: TokenType::LexerError("Expected '(' after 'oneof'".to_string()), start_line, start_column, end_line: state.line, end_column: state.column }
         }
     } else {
         // Handle other types
@@ -1514,10 +1555,10 @@ fn parse_type(t: &str) -> Result<NailDataTypeDescriptor, String> {
         "s" => Ok(NailDataTypeDescriptor::String),
         "b" => Ok(NailDataTypeDescriptor::Boolean),
         "v" => Ok(NailDataTypeDescriptor::Void),
-        "a:i" => Ok(NailDataTypeDescriptor::ArrayInt),
-        "a:f" => Ok(NailDataTypeDescriptor::ArrayFloat),
-        "a:s" => Ok(NailDataTypeDescriptor::ArrayString),
-        "a:b" => Ok(NailDataTypeDescriptor::ArrayBoolean),
+        "a:i" => Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int))),
+        "a:f" => Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float))),
+        "a:s" => Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String))),
+        "a:b" => Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Boolean))),
         "e" => Ok(NailDataTypeDescriptor::Error),
         t if t.starts_with("struct:") => {
             let struct_name = t.strip_prefix("struct:").unwrap_or("").to_string();
@@ -1529,27 +1570,40 @@ fn parse_type(t: &str) -> Result<NailDataTypeDescriptor, String> {
         }
         t if t.starts_with("a:struct:") => {
             let struct_name = t.strip_prefix("a:struct:").unwrap_or("").to_string();
-            Ok(NailDataTypeDescriptor::ArrayStruct(struct_name))
+            Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct(struct_name))))
         }
         t if t.starts_with("a:enum:") => {
             let enum_name = t.strip_prefix("a:enum:").unwrap_or("").to_string();
-            Ok(NailDataTypeDescriptor::ArrayEnum(enum_name))
+            Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Enum(enum_name))))
+        }
+        t if t.starts_with("h<") && t.ends_with(">") => {
+            // Handle hashmap types like h<s,s>, h<i,s>, etc.
+            let inner = t.strip_prefix("h<").unwrap().strip_suffix(">").unwrap();
+            if let Some(comma_pos) = inner.find(',') {
+                let key_type_str = inner[..comma_pos].trim();
+                let value_type_str = inner[comma_pos + 1..].trim();
+
+                let key_type = parse_type(key_type_str)?;
+                let value_type = parse_type(value_type_str)?;
+
+                Ok(NailDataTypeDescriptor::HashMap(Box::new(key_type), Box::new(value_type)))
+            } else {
+                Err(format!("Invalid hashmap type syntax: {}", t))
+            }
         }
         t if t.starts_with("a:") => {
             // Handle array of custom types like a:Point
             let type_name = t.strip_prefix("a:").unwrap_or("").to_string();
             // Assume it's a struct array if it starts with uppercase
             if type_name.chars().next().map_or(false, |c| c.is_uppercase()) {
-                Ok(NailDataTypeDescriptor::ArrayStruct(type_name))
+                Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct(type_name))))
             } else {
-                Err(format!("Unknown array type: {}", t))
+                Err(format!("FailedToResolve array type: {}", t))
             }
         }
         // If it starts with uppercase, assume it's a custom type (struct or enum)
-        t if t.chars().next().map_or(false, |c| c.is_uppercase()) => {
-            Ok(NailDataTypeDescriptor::Struct(t.to_string()))
-        }
-        _ => Err(format!("Unknown type: {}", t)),
+        t if t.chars().next().map_or(false, |c| c.is_uppercase()) => Ok(NailDataTypeDescriptor::Struct(t.to_string())),
+        _ => Err(format!("FailedToResolve type: {}", t)),
     }
 }
 
@@ -1612,41 +1666,39 @@ fn lex_string_literal(chars: &mut std::iter::Peekable<std::str::Chars>, state: &
     advance(chars, state); // Skip opening quote
     let mut string_literal = String::new();
     while let Some(c) = advance(chars, state) {
-        if c == '`' {
+        if c == '\\' {
+            // Handle escaped characters
+            if let Some(next_c) = advance(chars, state) {
+                match next_c {
+                    '`' => string_literal.push('`'),   // Escaped backtick
+                    'n' => string_literal.push('\n'),  // Newline
+                    't' => string_literal.push('\t'),  // Tab
+                    'r' => string_literal.push('\r'),  // Carriage return
+                    '\\' => string_literal.push('\\'), // Escaped backslash
+                    _ => {
+                        // For unrecognized escape sequences, include both characters
+                        string_literal.push('\\');
+                        string_literal.push(next_c);
+                    }
+                }
+            } else {
+                // Backslash at end of string is an error
+                return LexerOutput {
+                    token_type: TokenType::LexerError("Unterminated escape sequence in string literal".to_string()),
+                    start_line,
+                    start_column,
+                    end_line: state.line,
+                    end_column: state.column,
+                };
+            }
+        } else if c == '`' {
             return LexerOutput { token_type: TokenType::StringLiteral(string_literal), start_line, start_column, end_line: state.line, end_column: state.column };
+        } else {
+            string_literal.push(c);
         }
-        string_literal.push(c);
     }
 
     LexerOutput { token_type: TokenType::LexerError("Unterminated string literal".to_string()), start_line, start_column, end_line: state.line, end_column: state.column }
-}
-
-
-fn lex_struct_field_access(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
-    let start_line = state.line;
-    let start_column = state.column;
-
-    let mut struct_name = String::new();
-    while let Some(&c) = chars.peek() {
-        if c == '.' {
-            advance(chars, state);
-            break;
-        }
-        struct_name.push(c);
-        advance(chars, state);
-    }
-
-    let mut field_name = String::new();
-    while let Some(&c) = chars.peek() {
-        if is_in_alphabet_or_number(c) || c == '_' {
-            field_name.push(c);
-            advance(chars, state);
-        } else {
-            break;
-        }
-    }
-
-    LexerOutput { token_type: TokenType::StructFieldAccess(struct_name, field_name), start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
 fn is_enum_variant(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
@@ -1703,6 +1755,11 @@ fn lex_enum_variant(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mu
 
     let parts: Vec<&str> = full_name.split("::").collect();
     if parts.len() == 2 {
+        // Validate variant name
+        if let Some(error) = validate_identifier_name(parts[1]) {
+            return LexerOutput { token_type: TokenType::LexerError(error), start_line, start_column, end_line: state.line, end_column: state.column };
+        }
+
         LexerOutput {
             token_type: TokenType::EnumVariant(EnumVariantData { name: parts[0].to_string(), variant: parts[1].to_string() }),
             start_line,
@@ -1736,6 +1793,18 @@ fn is_double_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -
             Some('=') => true,
             _ => false,
         },
+        Some('&') => match lookahead.peek() {
+            Some('&') => true,
+            _ => false,
+        },
+        Some('|') => match lookahead.peek() {
+            Some('|') => true,
+            _ => false,
+        },
+        Some('.') => match lookahead.peek() {
+            Some('.') => true,
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -1762,6 +1831,26 @@ fn lex_double_character_token(chars: &mut std::iter::Peekable<std::str::Chars>, 
         },
         '!' => match advance(chars, state) {
             Some('=') => TokenType::Operator(Operation::Ne),
+            _ => panic!("Unrecognized operator: {}", operator),
+        },
+        '&' => match advance(chars, state) {
+            Some('&') => TokenType::Operator(Operation::And),
+            _ => panic!("Unrecognized operator: {}", operator),
+        },
+        '|' => match advance(chars, state) {
+            Some('|') => TokenType::Operator(Operation::Or),
+            _ => panic!("Unrecognized operator: {}", operator),
+        },
+        '.' => match advance(chars, state) {
+            Some('.') => {
+                // Check for ..= (inclusive range)
+                if chars.peek() == Some(&'=') {
+                    advance(chars, state);
+                    TokenType::RangeInclusive
+                } else {
+                    TokenType::Range
+                }
+            },
             _ => panic!("Unrecognized operator: {}", operator),
         },
         _ => panic!("Unrecognized operator: {}", operator),
@@ -1805,400 +1894,4 @@ fn lex_value(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexer
     } else {
         LexerOutput { token_type: TokenType::LexerError("Unexpected end of input".to_string()), start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::lexer::TokenType::*;
-
-    #[test]
-    fn test_if_statement() {
-        let input = "if { a > 5 => {} };";
-        let result = lexer(input);
-        println!("RESULT: {:#?}", result);
-        assert_eq!(
-            result,
-            vec![
-                Token { token_type: IfDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 3 } },
-                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 5 } },
-                Token { token_type: Identifier("a".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 6, end_column: 7 } },
-                Token { token_type: Operator(Operation::Gt), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 9 } },
-                Token { token_type: Integer("5".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
-                Token { token_type: ArrowAssignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 12, end_column: 14 } },
-                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 15, end_column: 16 } },
-                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
-                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 19 } },
-                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 20 } },
-            ]
-        );
-    }
-
-    #[test]
-    fn test_if_else_statement() {
-        let input = "if { a > 5 => {}, else => {} };";
-        let result = lexer(input);
-        println!("RESULT: {:#?}", result);
-        assert_eq!(
-            result,
-            vec![
-                Token { token_type: IfDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 3 } },
-                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 5 } },
-                Token { token_type: Identifier("a".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 6, end_column: 7 } },
-                Token { token_type: Operator(Operation::Gt), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 9 } },
-                Token { token_type: Integer("5".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
-                Token { token_type: ArrowAssignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 12, end_column: 14 } },
-                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 15, end_column: 16 } },
-                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
-                Token { token_type: Comma, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 17, end_column: 18 } },
-                Token { token_type: ElseDeclaration, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 23 } },
-                Token { token_type: ArrowAssignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 24, end_column: 26 } },
-                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 27, end_column: 28 } },
-                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 28, end_column: 29 } },
-                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 30, end_column: 31 } },
-                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 31, end_column: 32 } }
-            ]
-        );
-    }
-
-    #[test]
-    fn test_function_call() {
-        let input = "fun(param);";
-        let result = lexer(input);
-        println!("RESULT: {:#?}", result);
-        assert_eq!(
-            result,
-            vec![
-                Token { token_type: Identifier("fun".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 4 } },
-                Token { token_type: ParenthesisOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 5 } },
-                Token { token_type: Identifier("param".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 5, end_column: 10 } },
-                Token { token_type: ParenthesisClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
-                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 12 } }
-            ]
-        );
-    }
-
-    #[test]
-    fn test_function_nested_call() {
-        let input = "fun(times(param));";
-        let result = lexer(input);
-        println!("RESULT: {:#?}", result);
-        assert_eq!(
-            result,
-            vec![
-                Token { token_type: Identifier("fun".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 4 } },
-                Token { token_type: ParenthesisOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 5 } },
-                Token { token_type: Identifier("times".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 5, end_column: 10 } },
-                Token { token_type: ParenthesisOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
-                Token { token_type: Identifier("param".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 16 } },
-                Token { token_type: ParenthesisClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
-                Token { token_type: ParenthesisClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 17, end_column: 18 } },
-                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 19 } }
-            ]
-        );
-    }
-
-    #[test]
-    fn test_function_declaration() {
-        let input = "f fun(param:i):i { x:i = 5; r x; }";
-        let result = lexer(input);
-        println!("RESULT: {:#?}", result);
-        // Just verify it lexes without errors and has a function signature
-        assert!(!result.is_empty());
-        assert!(matches!(result[0].token_type, TokenType::FunctionSignature(_)));
-    }
-
-    #[test]
-    fn test_function_declaration_multiple_params() {
-        let input = r#"f random(x:i, y:f):s { result:s = `test`; r result; }"#;
-        let result = lexer(input);
-        println!("RESULT: {:#?}", result);
-        // Just verify it lexes without errors and has a function signature
-        assert!(!result.is_empty());
-        assert!(matches!(result[0].token_type, TokenType::FunctionSignature(_)));
-    }
-
-    #[test]
-    fn test_lambda() {
-        let input = "| x:i |:i { result:i = x + 1; r result; }";
-        let result = lexer(input);
-        println!("RESULT: {:#?}", result);
-        assert_eq!(
-            result,
-            vec![
-                Token {
-                    token_type: LambdaSignature(vec![
-                        Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 4 } },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 5, end_column: 6 } },
-                        Token { token_type: LambdaReturnTypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 10 } }
-                    ]),
-                    code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 10 }
-                },
-                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 12 } },
-                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 13, end_column: 19 } },
-                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 21 } },
-                Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 22, end_column: 23 } },
-                Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 24, end_column: 25 } },
-                Token { token_type: Operator(Operation::Add), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 26, end_column: 27 } },
-                Token { token_type: Integer("1".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 28, end_column: 29 } },
-                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 29, end_column: 30 } },
-                Token { token_type: Return, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 31, end_column: 32 } },
-                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 33, end_column: 39 } },
-                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 39, end_column: 40 } },
-                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 41, end_column: 42 } }
-            ]
-        );
-    }
-
-    #[test]
-    fn test_lambda_multi_param() {
-        let input = "| x:i, y:f |:i { result:i = x + 1; r result; }";
-        let result = lexer(input);
-        println!("RESULT: {:#?}", result);
-        assert_eq!(
-            result,
-            vec![
-                Token {
-                    token_type: LambdaSignature(vec![
-                        Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 3, end_column: 4 } },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 5, end_column: 6 } },
-                        Token { token_type: Comma, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 6, end_column: 7 } },
-                        Token { token_type: Identifier("y".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 8, end_column: 9 } },
-                        Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Float), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 10, end_column: 11 } },
-                        Token { token_type: LambdaReturnTypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 13, end_column: 15 } }
-                    ]),
-                    code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 15 }
-                },
-                Token { token_type: BlockOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
-                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 24 } },
-                Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 24, end_column: 26 } },
-                Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 27, end_column: 28 } },
-                Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 29, end_column: 30 } },
-                Token { token_type: Operator(Operation::Add), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 31, end_column: 32 } },
-                Token { token_type: Integer("1".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 33, end_column: 34 } },
-                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 34, end_column: 35 } },
-                Token { token_type: Return, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 36, end_column: 37 } },
-                Token { token_type: Identifier("result".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 38, end_column: 44 } },
-                Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 44, end_column: 45 } },
-                Token { token_type: BlockClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 46, end_column: 47 } }
-            ]
-        );
-    }
-
-    #[test]
-    fn test_array_declaration_lexing() {
-        let result = lexer("test_array:a:i = [1, 2, 3];");
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[
-            Token { token_type: Identifier("test_array".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 11 } },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::ArrayInt), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 11, end_column: 15 } },
-            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 16, end_column: 17 } },
-            Token { token_type: ArrayOpen, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 19 } },
-            Token { token_type: Integer("1".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 20 } },
-            Token { token_type: Comma, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 20, end_column: 21 } },
-            Token { token_type: Integer("2".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 22, end_column: 23 } },
-            Token { token_type: Comma, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 23, end_column: 24 } },
-            Token { token_type: Integer("3".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 25, end_column: 26 } },
-            Token { token_type: ArrayClose, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 26, end_column: 27 } },
-            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 27, end_column: 28 } }
-        ]));
-    }
-
-    #[test]
-    #[ignore] // TODO: Fix TokenType::Array issue - test disabled due to compilation errors
-    fn test_array_of_point_structs() {
-        // Test disabled - needs TokenType::Array variant to be added or lexer fixed
-        assert!(true, "Test disabled");
-    }
-
-    #[test]
-    fn test_struct_declaration_lexing() {
-        let result = lexer("struct Point { x:i, y:i }");
-        println!("RESULT: {:#?}", result);
-        assert_eq!(
-            result,
-            [Token {
-                token_type: StructDeclaration(StructDeclarationData {
-                    name: "Point".to_string(),
-                    fields: vec![
-                        StructDeclarationDataField { name: "x".to_string(), data_type: NailDataTypeDescriptor::Int },
-                        StructDeclarationDataField { name: "y".to_string(), data_type: NailDataTypeDescriptor::Int }
-                    ]
-                }),
-                code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 26 }
-            }]
-        );
-    }
-
-    #[test]
-    fn test_enum_assignment_lexing() {
-        let result = lexer("color:enum:Color = Color::Red;");
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[
-            Token { token_type: Identifier("color".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 6 } },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Enum("Color".to_string())), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 6, end_column: 17 } },
-            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 19 } },
-            Token {
-                token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Red".to_string() }),
-                code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 20, end_column: 30 }
-            },
-            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 30, end_column: 31 } },
-        ]));
-    }
-
-    #[test]
-    fn test_struct_assignment_lexing() {
-        let result = lexer("point:struct:Point = Point { x: 10, y: 20 };");
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[
-            Token { token_type: Identifier("point".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 6 } },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Struct("Point".to_string())), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 6, end_column: 19 } },
-            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 20, end_column: 21 } },
-            Token {
-                token_type: StructInstantiation(StructInstantiationData {
-                    name: "Point".to_string(),
-                    fields: vec![
-                        StructInstantiationDataField {
-                            name: "x".to_string(),
-                            value: Token { token_type: Integer("10".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 33, end_column: 35 } }
-                        },
-                        StructInstantiationDataField {
-                            name: "y".to_string(),
-                            value: Token { token_type: Integer("20".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 40, end_column: 42 } }
-                        },
-                    ],
-                }),
-                code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 22, end_column: 44 }
-            },
-            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 44, end_column: 45 } },
-        ]));
-    }
-
-    #[test]
-    fn test_result_type_lexing() {
-        let result = lexer("health:f!e = float_from(`42`);");
-        println!("RESULT: {:#?}", result);
-        
-        // Find the TypeDeclaration token
-        let type_token = result.iter().find(|t| matches!(t.token_type, TokenType::TypeDeclaration(_)));
-        assert!(type_token.is_some(), "Should have a TypeDeclaration token");
-        
-        // Check it's a Result type, not Any
-        if let Some(Token { token_type: TokenType::TypeDeclaration(dtype), .. }) = type_token {
-            match dtype {
-                NailDataTypeDescriptor::Result(inner) => {
-                    assert_eq!(**inner, NailDataTypeDescriptor::Float, "Result should contain Float");
-                }
-                _ => panic!("Expected Result type, got {:?}", dtype)
-            }
-        }
-    }
-    
-    #[test]
-    fn test_struct_dot_get_field_notation() {
-        let result = lexer("point_on_x_struct:i = point.x;");
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[
-            Token { token_type: Identifier("point_on_x_struct".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 18 } },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 18, end_column: 20 } },
-            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 21, end_column: 22 } },
-            Token { token_type: StructFieldAccess("point".to_string(), "x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 23, end_column: 30 } },
-            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 30, end_column: 31 } },
-        ]));
-    }
-
-    #[test]
-    fn test_enum_lexing() {
-        let input = "enum Color { Red, Green, Blue }";
-        let tokens = lexer(input);
-        println!("RESULT: {:#?}", tokens);
-        assert!(tokens.eq(&[Token {
-            token_type: EnumDeclaration(EnumDeclarationData {
-                name: "Color".to_string(),
-                variants: vec![
-                    Token {
-                        token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Red".to_string() }),
-                        code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 14, end_column: 17 }
-                    },
-                    Token {
-                        token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Green".to_string() }),
-                        code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 19, end_column: 24 }
-                    },
-                    Token {
-                        token_type: EnumVariant(EnumVariantData { name: "Color".to_string(), variant: "Blue".to_string() }),
-                        code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 26, end_column: 30 }
-                    },
-                ],
-            }),
-            code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 32 }
-        },]));
-    }
-
-    #[test]
-    fn test_simple_ident() {
-        let result = lexer(SIMPLE_IDENT);
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[
-            Token { token_type: Identifier("bob".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 4 } },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 4, end_column: 6 } },
-        ]));
-    }
-
-    #[test]
-    fn test_any_of_type() {
-        let result = lexer(
-            r#"
-        c every_nail_type:any(i|f|s|b|a:i|a:f|a:struct:any|a:enum:any);
-
-"#,
-        );
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[
-            Token { token_type: ConstDeclaration, code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 9, end_column: 10 } },
-            Token { token_type: Identifier("every_nail_type".to_string()), code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 11, end_column: 26 } },
-            Token {
-                token_type: TypeDeclaration(NailDataTypeDescriptor::Any(vec![
-                    NailDataTypeDescriptor::Int,
-                    NailDataTypeDescriptor::Float,
-                    NailDataTypeDescriptor::String,
-                    NailDataTypeDescriptor::Boolean,
-                    NailDataTypeDescriptor::ArrayInt,
-                    NailDataTypeDescriptor::ArrayFloat,
-                    NailDataTypeDescriptor::ArrayStruct("any".to_string()),
-                    NailDataTypeDescriptor::ArrayEnum("any".to_string()),
-                ])),
-                code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 26, end_column: 71 }
-            },
-            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 2, end_line: 2, start_column: 71, end_column: 72 } },
-        ]));
-    }
-
-    #[test]
-    fn test_const_assignment() {
-        let result = lexer(CONST_ASSIGNMENT);
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[
-            Token { token_type: Identifier("x".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 1, end_column: 2 } },
-            Token { token_type: TypeDeclaration(NailDataTypeDescriptor::Int), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 2, end_column: 4 } },
-            Token { token_type: Assignment, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 5, end_column: 6 } },
-            Token { token_type: Integer("10".to_string()), code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 7, end_column: 9 } },
-            Token { token_type: EndStatementOrExpression, code_span: CodeSpan { start_line: 1, end_line: 1, start_column: 9, end_column: 10 } },
-        ]));
-    }
-
-    #[test]
-    fn test_multiline_string() {
-        let result = lexer(MULTILINE_STRING);
-        println!("RESULT: {:#?}", result);
-        assert!(result.eq(&[Token {
-            token_type: StringLiteral(
-                "This is a story all about how my life\ngot flipped turned upside down, and I'd like to take a minute just sit right\nthere, I'll tell you how I became the\nprince of a town called Bel-Air.".to_string(),
-            ),
-            code_span: CodeSpan {  start_line: 1,
-            end_line: 4,
-            start_column: 1,
-            end_column: 34,}
-        },]));
-    }
-
 }

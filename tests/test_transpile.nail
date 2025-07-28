@@ -1,8 +1,0 @@
-// Test that the transpiler works correctly
-
-greeting:s = `Hello from Nail!`;
-number:i = 42;
-pi:f = 3.14;
-
-// This would normally start a server, but we'll comment it out for testing
-// http_server_start(8080, greeting);

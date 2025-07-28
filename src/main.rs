@@ -6,15 +6,15 @@ mod lexer;
 mod parser;
 mod statics_for_tests;
 mod stdlib_registry;
-mod stdlib_types;
+// mod stdlib_types; // Merged into stdlib_registry
 mod transpilier;
 mod utils;
 use crate::colorizer::ColorScheme;
+use crate::colorizer::LIGHT_THEME;
 use crate::utils::create_welcome_message;
 use crate::utils::lex_and_parse_thread_logic;
 use std::backtrace::Backtrace;
 use std::panic;
-use crate::colorizer::LIGHT_THEME;
 
 use crate::utils::build_thread_logic;
 
@@ -57,7 +57,6 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs},
     Frame, Terminal,
 };
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodeError {
@@ -198,13 +197,50 @@ impl Editor {
     }
 
     fn scroll_up(&mut self) {
-        self.scroll_position = self.scroll_position.saturating_sub(1);
+        // Move up by visible lines (approximate page size)
+        let page_size = 20; // Approximate visible lines
+        let old_scroll = self.scroll_position;
+        self.scroll_position = self.scroll_position.saturating_sub(page_size);
         self.scroll_state = self.scroll_state.position(self.scroll_position as usize);
+        
+        // Move cursor up by the same amount
+        let scroll_diff = old_scroll - self.scroll_position;
+        for _ in 0..scroll_diff {
+            if self.cursor_y > 0 {
+                self.cursor_y -= 1;
+            } else {
+                break;
+            }
+        }
+        // Ensure cursor_x is within bounds of the new line
+        if self.cursor_y < self.content.len() {
+            let line_len = self.content[self.cursor_y].len();
+            self.cursor_x = self.cursor_x.min(line_len);
+        }
     }
 
     fn scroll_down(&mut self) {
-        self.scroll_position = self.scroll_position.saturating_add(1);
+        // Move down by visible lines (approximate page size)
+        let page_size = 20; // Approximate visible lines
+        let old_scroll = self.scroll_position;
+        let max_scroll = self.content.len().saturating_sub(1) as u16;
+        self.scroll_position = (self.scroll_position + page_size).min(max_scroll);
         self.scroll_state = self.scroll_state.position(self.scroll_position as usize);
+        
+        // Move cursor down by the same amount
+        let scroll_diff = self.scroll_position - old_scroll;
+        for _ in 0..scroll_diff {
+            if self.cursor_y < self.content.len() - 1 {
+                self.cursor_y += 1;
+            } else {
+                break;
+            }
+        }
+        // Ensure cursor_x is within bounds of the new line
+        if self.cursor_y < self.content.len() {
+            let line_len = self.content[self.cursor_y].len();
+            self.cursor_x = self.cursor_x.min(line_len);
+        }
     }
 
     fn next_tab(&mut self) {
@@ -214,12 +250,12 @@ impl Editor {
     fn previous_tab(&mut self) {
         self.tab_index = (self.tab_index + 3) % 4; // Assuming 4 tabs
     }
-    
+
     fn save_file(&mut self) -> io::Result<()> {
         // Format the code before saving
         log::info!("Formatting code before save...");
         self.format_code();
-        
+
         if let Some(filename) = self.current_file.clone() {
             // Write to file
             let content = self.content.join("\n");
@@ -228,7 +264,7 @@ impl Editor {
             log::info!("Saved file: {}", filename);
         } else {
             // For now, save as example.nail if no filename
-            let filename = "example.nail";
+            let filename = "welcome.nail";
             let content = self.content.join("\n");
             fs::write(filename, content)?;
             self.current_file = Some(filename.to_string());
@@ -237,43 +273,43 @@ impl Editor {
         }
         Ok(())
     }
-    
+
     fn load_file(&mut self, filename: &str) -> io::Result<()> {
         // Read the file
         let content = fs::read_to_string(filename)?;
-        
+
         // Split into lines
         self.content = content.lines().map(|s| s.to_string()).collect();
-        
+
         // If content is empty, add an empty line
         if self.content.is_empty() {
             self.content.push(String::new());
         }
-        
+
         // Reset cursor and scroll position
         self.cursor_x = 0;
         self.cursor_y = 0;
         self.scroll_position = 0;
-        
+
         // Update current file and reset modified flag
         self.current_file = Some(filename.to_string());
         self.modified = false;
-        
+
         // Clear any errors
         self.code_error = None;
         self.build_status = BuildStatus::Idle;
-        
+
         log::info!("Loaded file: {}", filename);
         Ok(())
     }
-    
+
     fn format_code(&mut self) {
         use crate::formatter::format_nail_code;
-        
+
         // Format all lines with proper indentation
         let original_content = self.content.clone();
         self.content = format_nail_code(&original_content);
-        
+
         // Log changes
         for (i, (orig, formatted)) in original_content.iter().zip(&self.content).enumerate() {
             if orig != formatted {
@@ -340,13 +376,13 @@ fn main() -> Result<(), io::Error> {
     let (tx_code_error, rx_code_error) = channel::<EditorMessage>();
 
     log::info!("Initializing terminal...");
-    
+
     if let Err(e) = enable_raw_mode() {
         eprintln!("Failed to enable raw mode: {}", e);
         return Err(e.into());
     }
     log::info!("Raw mode enabled successfully");
-    
+
     let mut stdout = io::stdout();
     if let Err(e) = execute!(stdout, EnterAlternateScreen) {
         eprintln!("Failed to setup terminal screen: {}", e);
@@ -354,7 +390,7 @@ fn main() -> Result<(), io::Error> {
         return Err(e.into());
     }
     log::info!("Terminal screen setup successfully");
-    
+
     let backend = CrosstermBackend::new(stdout);
     let terminal = match Terminal::new(backend) {
         Ok(t) => {
@@ -362,13 +398,13 @@ fn main() -> Result<(), io::Error> {
             match t.size() {
                 Ok(size) => {
                     log::info!("Initial terminal size: {:?}", size);
-                },
+                }
                 Err(e) => {
                     log::error!("Failed to get terminal size: {}", e);
                 }
             }
             t
-        },
+        }
         Err(e) => {
             eprintln!("Failed to create terminal: {}", e);
             let _ = disable_raw_mode();
@@ -383,7 +419,7 @@ fn main() -> Result<(), io::Error> {
 
     let editor_arc = Arc::new(Mutex::new(editor));
     let terminal_arc = Arc::new(Mutex::new(terminal));
-    
+
     log::info!("Starting UI threads...");
 
     // Resize thread - listens for resize events and resizes the terminal
@@ -398,10 +434,10 @@ fn main() -> Result<(), io::Error> {
     let draw_handle = thread::spawn(move || {
         draw_thread_logic(draw_terminal_arc, draw_editor_arc, rx_draw);
     });
-    
+
     // Give threads a moment to start
     std::thread::sleep(std::time::Duration::from_millis(100));
-    
+
     // Clear terminal after threads are running
     lock(&terminal_arc).clear()?;
 
@@ -462,4 +498,3 @@ fn main() -> Result<(), io::Error> {
 
     Ok(())
 }
-

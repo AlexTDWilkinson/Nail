@@ -15,7 +15,7 @@ initial_gold:i = 10;
 // Get player name
 print(`Welcome to the Adventure Game!`);
 print(`================================\n`);
-player_name:s = dangerous(io_read_line_prompt(`Enter your character name: `));
+player_name:s = danger(io_read_line_prompt(`Enter your character name: `));
 
 // Initialize player with struct instantiation
 player:Player = Player {
@@ -25,15 +25,15 @@ player:Player = Player {
 };
 
 // Display initial stats using field access
-print(string_concat([`\nWelcome, `, player.name, `!`]));
-print(string_concat([`Starting Health: `, string_from(player.health)]));
-print(string_concat([`Starting Gold: `, string_from(player.gold)]));
+print(array_join([`\nWelcome, `, player.name, `!`], ``));
+print(array_join([`Starting Health: `, danger(string_from(player.health))], ``));
+print(array_join([`Starting Gold: `, danger(string_from(player.gold))], ``));
 print(`\nYour adventure begins...\n`);
 
 // Turn 1
 print(`=== Turn 1 ===`);
 print(`You encounter a goblin!`);
-choice1:s = dangerous(io_read_line_prompt(`Fight (f) or run (r)? `));
+choice1:s = danger(io_read_line_prompt(`Fight (f) or run (r)? `));
 
 health_after_fight:i = if {
     string_contains(choice1, `f`) => {
@@ -60,7 +60,7 @@ player_turn1:Player = Player {
     gold: gold_after_fight
 };
 
-print(string_concat([`Health: `, string_from(player_turn1.health), ` Gold: `, string_from(player_turn1.gold)]));
+print(array_join([`Health: `, danger(string_from(player_turn1.health)), ` Gold: `, danger(string_from(player_turn1.gold))], ``));
 
 // Turn 2
 print(`\n=== Turn 2 ===`);
@@ -74,12 +74,12 @@ player_turn2:Player = Player {
     health: health_turn2,
     gold: gold_turn2
 };
-print(string_concat([`You now have `, string_from(player_turn2.gold), ` gold!`]));
+print(array_join([`You now have `, danger(string_from(player_turn2.gold)), ` gold!`], ``));
 
 // Turn 3
 print(`\n=== Turn 3 ===`);
 print(`A merchant offers to heal you for 20 gold.`);
-choice3:s = dangerous(io_read_line_prompt(`Accept (y) or decline (n)? `));
+choice3:s = danger(io_read_line_prompt(`Accept (y) or decline (n)? `));
 
 can_afford:b = player_turn2.gold >= 20;
 
@@ -120,13 +120,13 @@ player_final:Player = Player {
     gold: final_gold
 };
 
-print(string_concat([`Health: `, string_from(player_final.health), ` Gold: `, string_from(player_final.gold)]));
+print(array_join([`Health: `, danger(string_from(player_final.health)), ` Gold: `, danger(string_from(player_final.gold))], ``));
 
 // Game Over
 print(`\n=== Game Over ===`);
-print(string_concat([`Thanks for playing, `, player_final.name, `!`]));
+print(array_join([`Thanks for playing, `, player_final.name, `!`], ``));
 print(`Final stats:`);
 print(`- Survived 3 turns`);
-print(string_concat([`- Final health: `, string_from(player_final.health), `/`, string_from(max_health)]));
-print(string_concat([`- Final gold: `, string_from(player_final.gold), ` coins`]));
+print(array_join([`- Final health: `, danger(string_from(player_final.health)), `/`, danger(string_from(max_health))], ``));
+print(array_join([`- Final gold: `, danger(string_from(player_final.gold)), ` coins`], ``));
 print(`\nRun the game again for a different adventure!`);

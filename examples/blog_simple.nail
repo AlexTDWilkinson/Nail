@@ -18,12 +18,14 @@ Nail is a programming language that removes unnecessary complexity while maintai
 
 Here's a simple example that demonstrates Nail's syntax:
 
-\`\`\`nail
-numbers:[i] = [1, 2, 3, 4, 5];
-doubled:[i] = map_int(numbers, |n:i|:i { n * 2 });
-sum:i = reduce_int(doubled, 0, |acc:i, n:i|:i { acc + n });
-print(sum); // Output: 30
-\`\`\`
+    numbers:a:i = [1, 2, 3, 4, 5];
+    doubled:a:i = map num in numbers {
+        y num * 2;
+    };
+    sum:i = reduce acc num in doubled from 0 {
+        y acc + num;
+    };
+    print(sum); // Output: 30
 
 ## Why Nail?
 
@@ -96,7 +98,7 @@ post1_html:s = markdown_to_html(post1_content);
 post2_html:s = markdown_to_html(post2_content);
 
 // Create the blog HTML
-blog_html:s = string_concat([`
+blog_html:s = array_join([`
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -189,8 +191,8 @@ blog_html:s = string_concat([`
         </div>
     </div>
 </body>
-</html>`]);
+</html>`], ``);
 
 // Start the server
-print(string_concat(["Starting blog server on port ", string_from(port), "..."]));
+print(array_join([`Starting blog server on port `, danger(string_from(port)), `...`], ``));
 http_server_start(port, blog_html);

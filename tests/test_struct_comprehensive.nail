@@ -1,0 +1,115 @@
+// Comprehensive struct tests for Nail language
+// Tests struct instantiation, field access, arrays of structs, and using map on structs
+
+// Basic struct declaration
+struct Point {
+    x_coord:i,
+    y_coord:i
+}
+
+// More complex struct
+struct Person {
+    name:s,
+    age:i,
+    height:f,
+    is_active:b
+}
+
+// Nested struct
+struct Rectangle {
+    top_left_point:Point,
+    bottom_right_point:Point
+}
+
+// Test basic struct instantiation
+p1:Point = Point { x_coord: 10, y_coord: 20 };
+p2:Point = Point { x_coord: -5, y_coord: 15 };
+
+// Test field access
+x_val:i = p1.x_coord;
+y_val:i = p1.y_coord;
+print(array_join([`Point 1: x=`, danger(string_from(x_val)), `, y=`, danger(string_from(y_val))], ``));
+
+// Test complex struct instantiation
+person1:Person = Person { 
+    name: `Alice`, 
+    age: 30, 
+    height: 5.6, 
+    is_active: true 
+};
+
+person2:Person = Person { 
+    name: `Bob`, 
+    age: 25, 
+    height: 6.0, 
+    is_active: false 
+};
+
+// Test field access on complex struct
+print(array_join([`Person: `, person1.name, `, age: `, danger(string_from(person1.age))], ``));
+
+// Test array of structs
+points:a:Point = [
+    Point { x_coord: 1, y_coord: 1 },
+    Point { x_coord: 2, y_coord: 4 },
+    Point { x_coord: 3, y_coord: 9 },
+    Point { x_coord: 4, y_coord: 16 }
+];
+
+// Test array access
+first_point:Point = danger(array_get(points, 0));
+print(array_join([`First point: x=`, danger(string_from(first_point.x_coord)), `, y=`, danger(string_from(first_point.y_coord))], ``));
+
+// Test map on array of structs - double coordinates
+doubled_points:a:Point = map point in points {
+    new_x:i = point.x_coord * 2;
+    new_y:i = point.y_coord * 2;
+    doubled:Point = Point { x_coord: new_x, y_coord: new_y };
+    y doubled;
+};
+
+// Print doubled points
+doubled_first:Point = danger(array_get(doubled_points, 0));
+print(array_join([`Doubled first point: x=`, danger(string_from(doubled_first.x_coord)), `, y=`, danger(string_from(doubled_first.y_coord))], ``));
+
+// Test filter on array of structs
+people:a:Person = [
+    Person { name: `Alice`, age: 30, height: 5.6, is_active: true },
+    Person { name: `Bob`, age: 25, height: 6.0, is_active: false },
+    Person { name: `Charlie`, age: 35, height: 5.8, is_active: true },
+    Person { name: `Diana`, age: 28, height: 5.5, is_active: true }
+];
+
+// Filter active people using filter
+active_people:a:Person = filter person in people {
+    y person.is_active;
+};
+
+// Test manual sum on array of structs (reduce equivalent)
+total_age:i = danger(array_get(people, 0)).age + 
+              danger(array_get(people, 1)).age + 
+              danger(array_get(people, 2)).age + 
+              danger(array_get(people, 3)).age;
+print(array_join([`Total age of all people: `, danger(string_from(total_age))], ``));
+
+// Test nested struct instantiation
+rect:Rectangle = Rectangle {
+    top_left_point: Point { x_coord: 0, y_coord: 10 },
+    bottom_right_point: Point { x_coord: 20, y_coord: 0 }
+};
+
+// Test nested field access
+top_x:i = rect.top_left_point.x_coord;
+bottom_y:i = rect.bottom_right_point.y_coord;
+print(array_join([`Rectangle top-left x: `, danger(string_from(top_x)), `, bottom-right y: `, danger(string_from(bottom_y))], ``));
+
+// Test struct assignment
+p3:Point = p1;
+print(array_join([`Copied point: x=`, danger(string_from(p3.x_coord)), `, y=`, danger(string_from(p3.y_coord))], ``));
+
+// Test struct in variable declaration with immediate use
+p4:Point = Point { x_coord: 100, y_coord: 200 };
+sum:i = p4.x_coord + p4.y_coord;
+print(array_join([`Sum of p4 coordinates: `, danger(string_from(sum))], ``));
+
+print(`All struct tests completed successfully!`);

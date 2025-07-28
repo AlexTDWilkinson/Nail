@@ -1,0 +1,36 @@
+// Hello World - Your first Nail program
+
+greeting:s = `Hello, World!`;
+print(greeting);
+
+// Demonstrate collection operations with greetings
+greetings:a:s = [`Hello`, `Hola`, `Bonjour`, `Guten Tag`, `Ciao`];
+languages:a:s = [`English`, `Spanish`, `French`, `German`, `Italian`];
+
+// Create formatted greetings using map
+formatted_greetings:a:s = map greeting idx in greetings {
+    language:s = danger(array_get(languages, idx));
+    y array_join([greeting, ` (`, language, `)`], ``);
+};
+
+// Print each greeting
+print(`\n=== International Greetings ===`);
+each formatted_greeting in formatted_greetings {
+    print(formatted_greeting);
+}
+
+// Find greetings with specific letters
+greetings_with_o:a:s = filter greeting in greetings {
+    y string_contains(greeting, `o`);
+};
+has_long_greeting:b = any greeting in greetings {
+    y string_len(greeting) > 6;
+};
+all_start_capital:b = all greeting in greetings {
+    y string_len(greeting) > 0;
+};
+
+print(`\n=== Greeting Analysis ===`);
+print(array_join([`Greetings with 'o': `, danger(string_from_array_string(greetings_with_o))], ``));
+print(array_join([`Has long greeting (>6 chars): `, danger(string_from(has_long_greeting))], ``));
+print(array_join([`All start with capital: `, danger(string_from(all_start_capital))], ``));

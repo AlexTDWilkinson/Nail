@@ -18,8 +18,84 @@ pub enum ASTNode {
     FunctionCall { name: String, args: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     ConstDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     IfStatement { condition_branches: Vec<(Box<ASTNode>, Box<ASTNode>)>, else_branch: Option<Box<ASTNode>>, code_span: CodeSpan, scope: usize },
+    ForLoop { 
+        iterator: String, 
+        iterable: Box<ASTNode>, 
+        initial_value: Option<Box<ASTNode>>, // For 'from' clause
+        filter: Option<Box<ASTNode>>,         // For 'when' clause
+        body: Box<ASTNode>, 
+        code_span: CodeSpan, 
+        scope: usize 
+    },
+    MapExpression {
+        iterator: String,
+        index_iterator: Option<String>, // For optional index parameter
+        iterable: Box<ASTNode>,
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
+    FilterExpression {
+        iterator: String,
+        index_iterator: Option<String>,
+        iterable: Box<ASTNode>,
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
+    ReduceExpression {
+        accumulator: String,
+        iterator: String,
+        index_iterator: Option<String>,
+        iterable: Box<ASTNode>,
+        initial_value: Box<ASTNode>,
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
+    EachExpression {
+        iterator: String,
+        index_iterator: Option<String>,
+        iterable: Box<ASTNode>,
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
+    FindExpression {
+        iterator: String,
+        index_iterator: Option<String>,
+        iterable: Box<ASTNode>,
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
+    AllExpression {
+        iterator: String,
+        index_iterator: Option<String>,
+        iterable: Box<ASTNode>,
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
+    AnyExpression {
+        iterator: String,
+        index_iterator: Option<String>,
+        iterable: Box<ASTNode>,
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
+    WhileLoop { 
+        condition: Box<ASTNode>, 
+        initial_value: Option<Box<ASTNode>>, // For 'from' clause
+        max_iterations: Option<Box<ASTNode>>, 
+        body: Box<ASTNode>, 
+        code_span: CodeSpan, 
+        scope: usize 
+    },
+    BreakStatement { code_span: CodeSpan, scope: usize },
+    ContinueStatement { code_span: CodeSpan, scope: usize },
     ParallelBlock { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
-    ParallelAssignment { assignments: Vec<(String, NailDataTypeDescriptor, Box<ASTNode>)>, code_span: CodeSpan, scope: usize },
     Block { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     BinaryOperation { left: Box<ASTNode>, operator: Operation, right: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     UnaryOperation { operator: Operation, operand: Box<ASTNode>, code_span: CodeSpan, scope: usize },
@@ -28,18 +104,64 @@ pub enum ASTNode {
     StructInstantiation { name: String, fields: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     StructInstantiationField { name: String, value: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     StructFieldAccess { struct_name: String, field_name: String, code_span: CodeSpan, scope: usize },
+    NestedFieldAccess { object: Box<ASTNode>, field_name: String, code_span: CodeSpan, scope: usize },
     EnumDeclaration { name: String, variants: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     EnumVariant { name: String, variant: String, code_span: CodeSpan, scope: usize },
     ArrayLiteral { elements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     Identifier { name: String, code_span: CodeSpan, scope: usize },
     NumberLiteral { value: String, data_type: NailDataTypeDescriptor, code_span: CodeSpan, scope: usize },
     StringLiteral { value: String, code_span: CodeSpan, scope: usize },
+    BooleanLiteral { value: bool, code_span: CodeSpan, scope: usize },
     ReturnDeclaration { statement: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    YieldDeclaration { statement: Box<ASTNode>, code_span: CodeSpan, scope: usize },
 }
 
 impl Default for ASTNode {
     fn default() -> Self {
         ASTNode::Program { statements: Vec::new(), code_span: CodeSpan::default(), scope: 0, used_stdlib_functions: HashSet::new() }
+    }
+}
+
+impl ASTNode {
+    pub fn code_span(&self) -> CodeSpan {
+        match self {
+            ASTNode::Program { code_span, .. } => code_span.clone(),
+            ASTNode::FunctionDeclaration { code_span, .. } => code_span.clone(),
+            ASTNode::LambdaDeclaration { code_span, .. } => code_span.clone(),
+            ASTNode::FunctionCall { code_span, .. } => code_span.clone(),
+            ASTNode::ConstDeclaration { code_span, .. } => code_span.clone(),
+            ASTNode::IfStatement { code_span, .. } => code_span.clone(),
+            ASTNode::ForLoop { code_span, .. } => code_span.clone(),
+            ASTNode::MapExpression { code_span, .. } => code_span.clone(),
+            ASTNode::FilterExpression { code_span, .. } => code_span.clone(),
+            ASTNode::ReduceExpression { code_span, .. } => code_span.clone(),
+            ASTNode::EachExpression { code_span, .. } => code_span.clone(),
+            ASTNode::FindExpression { code_span, .. } => code_span.clone(),
+            ASTNode::AllExpression { code_span, .. } => code_span.clone(),
+            ASTNode::AnyExpression { code_span, .. } => code_span.clone(),
+            ASTNode::WhileLoop { code_span, .. } => code_span.clone(),
+            ASTNode::BreakStatement { code_span, .. } => code_span.clone(),
+            ASTNode::ContinueStatement { code_span, .. } => code_span.clone(),
+            ASTNode::ParallelBlock { code_span, .. } => code_span.clone(),
+            ASTNode::Block { code_span, .. } => code_span.clone(),
+            ASTNode::BinaryOperation { code_span, .. } => code_span.clone(),
+            ASTNode::UnaryOperation { code_span, .. } => code_span.clone(),
+            ASTNode::StructDeclaration { code_span, .. } => code_span.clone(),
+            ASTNode::StructDeclarationField { .. } => CodeSpan::default(), // No code_span for this variant
+            ASTNode::StructInstantiation { code_span, .. } => code_span.clone(),
+            ASTNode::StructInstantiationField { code_span, .. } => code_span.clone(),
+            ASTNode::StructFieldAccess { code_span, .. } => code_span.clone(),
+            ASTNode::NestedFieldAccess { code_span, .. } => code_span.clone(),
+            ASTNode::EnumDeclaration { code_span, .. } => code_span.clone(),
+            ASTNode::EnumVariant { code_span, .. } => code_span.clone(),
+            ASTNode::ArrayLiteral { code_span, .. } => code_span.clone(),
+            ASTNode::Identifier { code_span, .. } => code_span.clone(),
+            ASTNode::NumberLiteral { code_span, .. } => code_span.clone(),
+            ASTNode::StringLiteral { code_span, .. } => code_span.clone(),
+            ASTNode::BooleanLiteral { code_span, .. } => code_span.clone(),
+            ASTNode::ReturnDeclaration { code_span, .. } => code_span.clone(),
+            ASTNode::YieldDeclaration { code_span, .. } => code_span.clone(),
+        }
     }
 }
 
@@ -51,12 +173,7 @@ pub struct ParserState {
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<(ASTNode, HashSet<String>), CodeError> {
-    let mut state = ParserState { 
-        tokens: tokens.into_iter().peekable(), 
-        current_token: None, 
-        previous_token: None,
-        used_stdlib_functions: HashSet::new(),
-    };
+    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None, used_stdlib_functions: HashSet::new() };
     let ast = parse_inner(&mut state)?;
     Ok((ast, state.used_stdlib_functions))
 }
@@ -66,12 +183,7 @@ fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     while state.tokens.peek().is_some() {
         program.push(parse_statement(state)?);
     }
-    Ok(ASTNode::Program { 
-        statements: program, 
-        code_span: CodeSpan::default(), 
-        scope: GLOBAL_SCOPE,
-        used_stdlib_functions: state.used_stdlib_functions.clone()
-    })
+    Ok(ASTNode::Program { statements: program, code_span: CodeSpan::default(), scope: GLOBAL_SCOPE, used_stdlib_functions: state.used_stdlib_functions.clone() })
 }
 
 fn advance(state: &mut ParserState) -> Option<Token> {
@@ -83,33 +195,25 @@ fn advance(state: &mut ParserState) -> Option<Token> {
 fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     if let Some(token) = state.tokens.peek().cloned() {
         match token.token_type {
+            TokenType::Operator(op) if op.is_unary() => {
+                // Handle unary operators like ! and -
+                advance(state);
+                let operand = Box::new(parse_primary(state)?);
+                Ok(ASTNode::UnaryOperation { operator: op, operand, code_span: token.code_span, scope: GLOBAL_SCOPE })
+            }
             TokenType::StructInstantiation(_) => {
                 advance(state);
                 parse_struct_instantiation_token(&token)
             }
-            TokenType::StructFieldAccess(struct_name, field_name) => {
-                advance(state);
-                Ok(ASTNode::StructFieldAccess { 
-                    struct_name, 
-                    field_name, 
-                    code_span: token.code_span, 
-                    scope: GLOBAL_SCOPE 
-                })
-            }
             TokenType::Identifier(name) => {
                 advance(state);
                 if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::ParenthesisOpen)) {
-                    parse_function_call(state, name)
-                } else {
-                    Ok(ASTNode::Identifier { name, code_span: token.code_span, scope: GLOBAL_SCOPE })
-                }
-            }
-            TokenType::ConstDeclaration => {
-                // In expression context, treat 'c' as an identifier
-                advance(state);
-                let name = "c".to_string();
-                if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::ParenthesisOpen)) {
-                    parse_function_call(state, name)
+                    // Check if this is an inline function declaration (f (...))
+                    if name == "f" {
+                        parse_inline_function_declaration(state)
+                    } else {
+                        parse_function_call(state, name)
+                    }
                 } else {
                     Ok(ASTNode::Identifier { name, code_span: token.code_span, scope: GLOBAL_SCOPE })
                 }
@@ -126,6 +230,10 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                 advance(state);
                 Ok(ASTNode::StringLiteral { value, code_span: token.code_span, scope: GLOBAL_SCOPE })
             }
+            TokenType::BooleanLiteral(value) => {
+                advance(state);
+                Ok(ASTNode::BooleanLiteral { value, code_span: token.code_span, scope: GLOBAL_SCOPE })
+            }
             TokenType::ParenthesisOpen => {
                 advance(state);
                 let expr = parse_expression(state, 0)?;
@@ -139,7 +247,16 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             }
             TokenType::ArrayOpen => parse_array_literal(state),
             TokenType::IfDeclaration => parse_if_statement_expr(state, true),
-            TokenType::LambdaSignature(_) => parse_lambda_declaration(state),
+            TokenType::ForDeclaration => parse_for_loop(state),
+            TokenType::MapDeclaration => parse_map_expression(state),
+            TokenType::FilterDeclaration => parse_filter_expression(state),
+            TokenType::ReduceDeclaration => parse_reduce_expression(state),
+            TokenType::EachDeclaration => parse_each_expression(state),
+            TokenType::FindDeclaration => parse_find_expression(state),
+            TokenType::AllDeclaration => parse_all_expression(state),
+            TokenType::AnyDeclaration => parse_any_expression(state),
+            TokenType::WhileDeclaration => parse_while_loop(state),
+            TokenType::FunctionSignature(_) => parse_inline_function_from_signature(state),
             _ => {
                 let code_span = token.code_span;
                 Err(CodeError { message: format!("Unexpected token {:?}", token.token_type), code_span: code_span.clone() })
@@ -156,12 +273,21 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::StructDeclaration(_) => parse_struct_declaration(state),
             TokenType::EnumDeclaration(_) => parse_enum_declaration(state),
             TokenType::FunctionSignature(_) => parse_function_declaration(state),
-            TokenType::ConstDeclaration => parse_const_declaration(state),
             TokenType::IfDeclaration => parse_if_statement_expr(state, false),
-            TokenType::ParallelDeclaration => parse_parallel_block(state),
-            TokenType::ParallelStart => parse_parallel_block_new(state),
+            TokenType::ForDeclaration => parse_for_loop(state),
+            TokenType::MapDeclaration => parse_map_expression(state),
+            TokenType::FilterDeclaration => parse_filter_expression(state),
+            TokenType::ReduceDeclaration => parse_reduce_expression(state),
+            TokenType::EachDeclaration => parse_each_expression(state),
+            TokenType::FindDeclaration => parse_find_expression(state),
+            TokenType::AllDeclaration => parse_all_expression(state),
+            TokenType::AnyDeclaration => parse_any_expression(state),
+            TokenType::WhileDeclaration => parse_while_loop(state),
+            TokenType::BreakKeyword => parse_break_statement(state),
+            TokenType::ContinueKeyword => parse_continue_statement(state),
+            TokenType::ParallelStart => parse_parallel_block_start(state),
             TokenType::Return => parse_return_statement(state),
-            TokenType::LambdaSignature(_) => parse_lambda_declaration(state),
+            TokenType::Yield => parse_yield_statement(state),
             TokenType::BlockOpen => parse_block(state),
             _ => {
                 // Check if this is a const declaration without 'c' prefix
@@ -177,11 +303,11 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                         }
                     }
                 }
-                
+
                 let expr = parse_expression(state, 0)?;
                 let _ = expect_token(state, TokenType::EndStatementOrExpression)?;
                 Ok(expr)
-            },
+            }
         },
         None => Err(CodeError { message: "No token was found to match with a statement.".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) }),
     }
@@ -190,19 +316,43 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
 fn parse_expression(state: &mut ParserState, min_precedence: u8) -> Result<ASTNode, CodeError> {
     let mut left = parse_primary(state)?;
 
-    while let Some(Token { token_type: TokenType::Operator(op), .. }) = state.tokens.peek().cloned() {
-        if op.precedence() < min_precedence {
-            break;
-        }
+    loop {
+        match state.tokens.peek().cloned() {
+            Some(Token { token_type: TokenType::Operator(op), .. }) => {
+                if op.precedence() < min_precedence {
+                    break;
+                }
 
-        advance(state); // Consume the operator
-        let code_span = state.current_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
+                advance(state); // Consume the operator
+                let code_span = state.current_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
 
-        if op.is_unary() {
-            left = ASTNode::UnaryOperation { operator: op, operand: Box::new(left), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
-        } else {
-            let right = parse_expression(state, op.precedence() + 1)?;
-            left = ASTNode::BinaryOperation { left: Box::new(left), operator: op, right: Box::new(right), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
+                // Unary operators should have been handled in parse_primary
+                if op.is_unary() {
+                    return Err(CodeError { message: format!("Unexpected unary operator {:?} in infix position", op), code_span });
+                } else {
+                    let right = parse_expression(state, op.precedence() + 1)?;
+                    left = ASTNode::BinaryOperation { left: Box::new(left), operator: op, right: Box::new(right), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
+                }
+            }
+            Some(Token { token_type: TokenType::Dot, .. }) => {
+                advance(state); // Consume the dot
+                let field_name = expect_identifier(state)?;
+                let code_span = state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone());
+
+                // For nested field access, we need to handle it differently
+                // Convert left to appropriate form
+                match left {
+                    ASTNode::Identifier { name, .. } => {
+                        // Simple case: identifier.field
+                        left = ASTNode::StructFieldAccess { struct_name: name, field_name, code_span: code_span.clone(), scope: GLOBAL_SCOPE };
+                    }
+                    _ => {
+                        // For any other expression (including StructFieldAccess), create a nested access
+                        left = ASTNode::NestedFieldAccess { object: Box::new(left), field_name, code_span: code_span.clone(), scope: GLOBAL_SCOPE };
+                    }
+                }
+            }
+            _ => break,
         }
     }
 
@@ -226,15 +376,22 @@ fn expect_token(state: &mut ParserState, expected: TokenType) -> Result<CodeSpan
 
 fn expect_identifier(state: &mut ParserState) -> Result<String, CodeError> {
     if let Some(Token { token_type: TokenType::Identifier(name), code_span, .. }) = advance(state) {
-        // Grug need descriptive names! Check for single-letter variables
         if name.len() < 2 {
             let error = CodeError {
-                message: format!("Variable name too short. Grug need descriptive names!\n  Found: '{}'\n  Suggestion: Use descriptive name like '{}_value' or '{}_{}'", 
-                    name, name, name, 
-                    if name == "x" || name == "y" || name == "z" { "coordinate" } 
-                    else if name == "i" || name == "j" || name == "k" { "index" }
-                    else if name == "n" { "number" }
-                    else { "variable" }
+                message: format!(
+                    "Variable name too short. Use descriptive names.\n  Found: '{}'\n  Suggestion: Use descriptive name like '{}_value' or '{}_{}'",
+                    name,
+                    name,
+                    name,
+                    if name == "x" || name == "y" || name == "z" {
+                        "coordinate"
+                    } else if name == "i" || name == "j" || name == "k" {
+                        "index"
+                    } else if name == "n" {
+                        "number"
+                    } else {
+                        "variable"
+                    }
                 ),
                 code_span,
             };
@@ -270,99 +427,8 @@ fn parse_function_call(state: &mut ParserState, name: String) -> Result<ASTNode,
     if stdlib_registry::is_stdlib_function(&name) {
         state.used_stdlib_functions.insert(name.clone());
     }
-    
+
     Ok(ASTNode::FunctionCall { name, args, code_span, scope: GLOBAL_SCOPE })
-}
-
-fn parse_lambda_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    if let Some(Token { token_type: TokenType::LambdaSignature(tokens), .. }) = advance(state) {
-        let code_span = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
-        let mut lambda_tokens = tokens.into_iter();
-        let mut params = Vec::new();
-        #[allow(unused_assignments)]
-        let mut data_type = NailDataTypeDescriptor::Void;
-
-        // Parse parameters
-        loop {
-            match lambda_tokens.next() {
-                Some(Token { token_type: TokenType::Identifier(param_name), .. }) => {
-                    // Check what comes next
-                    let next_token = lambda_tokens.next();
-                    match next_token {
-                        Some(Token { token_type: TokenType::TypeDeclaration(type_desc), .. }) => {
-                            // Parameter has explicit type
-                            params.push((param_name.clone(), type_desc.clone()));
-
-                            // Check for comma or end of parameters
-                            match lambda_tokens.next() {
-                                Some(Token { token_type: TokenType::Comma, .. }) => continue,
-                                Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
-                                    data_type = rt;
-                                    break;
-                                }
-                                Some(other) => return Err(CodeError { message: format!("Expected comma or return type declaration, found {:?}", other.token_type), code_span: other.code_span.clone() }),
-                                None => {
-                                    return Err(CodeError {
-                                        message: "Unexpected end of lambda declaration".to_string(),
-                                        code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
-                                    })
-                                }
-                            }
-                        }
-                        Some(Token { token_type: TokenType::Comma, .. }) => {
-                            // Parameter without type followed by comma - infer error type if param name is 'e'
-                            if param_name == "e" {
-                                params.push((param_name.clone(), NailDataTypeDescriptor::Error));
-                                continue;
-                            } else {
-                                return Err(CodeError {
-                                    message: format!("Parameter '{}' requires a type declaration", param_name),
-                                    code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
-                                });
-                            }
-                        }
-                        Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
-                            // Parameter without type followed by return type - infer error type if param name is 'e'
-                            if param_name == "e" {
-                                params.push((param_name.clone(), NailDataTypeDescriptor::Error));
-                                data_type = rt;
-                                break;
-                            } else {
-                                return Err(CodeError {
-                                    message: format!("Parameter '{}' requires a type declaration", param_name),
-                                    code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
-                                });
-                            }
-                        }
-                        _ => {
-                            return Err(CodeError {
-                                message: "Expected type declaration for lambda parameter".to_string(),
-                                code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
-                            });
-                        }
-                    }
-                }
-                Some(Token { token_type: TokenType::LambdaReturnTypeDeclaration(rt), .. }) => {
-                    data_type = rt;
-                    break;
-                }
-                Some(other) => return Err(CodeError { message: format!("Unexpected token in lambda declaration: {:?}", other.token_type), code_span: other.code_span.clone() }),
-                None => {
-                    return Err(CodeError {
-                        message: "Unexpected end of lambda declaration".to_string(),
-                        code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
-                    })
-                }
-            }
-        }
-
-        // Parse the lambda body
-        let body = Box::new(parse_block(state)?);
-
-        Ok(ASTNode::LambdaDeclaration { params, data_type, body, code_span, scope: GLOBAL_SCOPE })
-    } else {
-        Err(CodeError { message: "Expected lambda declaration".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
-    }
 }
 
 fn parse_struct_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
@@ -397,6 +463,11 @@ fn parse_struct_instantiation_token(token: &Token) -> Result<ASTNode, CodeError>
                     TokenType::Integer(value) => ASTNode::NumberLiteral { value: value.clone(), data_type: NailDataTypeDescriptor::Int, code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
                     TokenType::Float(value) => ASTNode::NumberLiteral { value: value.clone(), data_type: NailDataTypeDescriptor::Float, code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
                     TokenType::StringLiteral(value) => ASTNode::StringLiteral { value: value.clone(), code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
+                    TokenType::BooleanLiteral(value) => ASTNode::BooleanLiteral { value: value.clone(), code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
+                    TokenType::StructInstantiation(_) => {
+                        // Recursively parse nested struct instantiation
+                        parse_struct_instantiation_token(&field.value)?
+                    }
                     _ => {
                         return Err(CodeError { message: format!("Unexpected token in struct field: {:?}", field.value.token_type), code_span: field.value.code_span.clone() });
                     }
@@ -425,14 +496,14 @@ fn parse_array_literal(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     // Expect and consume '['
     let start_span = state.current_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
     let _ = expect_token(state, TokenType::ArrayOpen)?;
-    
+
     let mut elements = Vec::new();
-    
+
     // Parse elements until we hit ']'
     while state.tokens.peek().map(|t| &t.token_type) != Some(&TokenType::ArrayClose) {
         // Parse any expression as an array element
         elements.push(parse_expression(state, 0)?);
-        
+
         // Check for comma or closing bracket
         if state.tokens.peek().map(|t| &t.token_type) == Some(&TokenType::Comma) {
             advance(state); // consume comma
@@ -440,21 +511,14 @@ fn parse_array_literal(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             // We'll consume the closing bracket below
             break;
         } else {
-            return Err(CodeError {
-                message: "Expected ',' or ']' in array literal".to_string(),
-                code_span: state.current_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone())
-            });
+            return Err(CodeError { message: "Expected ',' or ']' in array literal".to_string(), code_span: state.current_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) });
         }
     }
-    
+
     // Expect and consume ']'
     let _ = expect_token(state, TokenType::ArrayClose)?;
-    
-    Ok(ASTNode::ArrayLiteral { 
-        elements, 
-        code_span: start_span,
-        scope: GLOBAL_SCOPE 
-    })
+
+    Ok(ASTNode::ArrayLiteral { elements, code_span: start_span, scope: GLOBAL_SCOPE })
 }
 
 fn parse_enum_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
@@ -553,16 +617,76 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
     }
 }
 
-fn parse_const_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    let _ = expect_token(state, TokenType::ConstDeclaration)?;
-    let _ = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
-    let name = expect_identifier(state)?;
-    let data_type = parse_type_declaration(state)?;
-    let _ = expect_token(state, TokenType::Assignment)?;
-    let value = Box::new(parse_expression(state, 0)?);
-    let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
+fn parse_inline_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    // For now, just return an error to see if this path is being hit
+    Err(CodeError {
+        message: "Inline function parsing not yet implemented. Use lambda syntax |param:type):return_type { } for now.".to_string(),
+        code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
+    })
+}
 
-    Ok(ASTNode::ConstDeclaration { name, data_type, value, code_span, scope: GLOBAL_SCOPE })
+fn parse_inline_function_from_signature(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    if let Some(Token { token_type: TokenType::FunctionSignature(tokens), .. }) = advance(state) {
+        let code_span = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
+        let mut func_tokens = tokens.into_iter();
+        let mut params = Vec::new();
+        let mut data_type = NailDataTypeDescriptor::Void;
+
+        // Skip the function name token (which should be empty for inline functions)
+        if let Some(Token { token_type: TokenType::FunctionName(name), .. }) = func_tokens.next() {
+            if !name.is_empty() {
+                return Err(CodeError { message: "Inline functions cannot have names".to_string(), code_span });
+            }
+        }
+
+        // Parse parameters from the tokens
+        while let Some(token) = func_tokens.next() {
+            match token.token_type {
+                TokenType::Identifier(param_name) => {
+                    // Look for type after parameter
+                    match func_tokens.next() {
+                        Some(Token { token_type: TokenType::TypeDeclaration(param_type), .. }) => {
+                            params.push((param_name, param_type));
+                            // Check for comma
+                            match func_tokens.next() {
+                                Some(Token { token_type: TokenType::Comma, .. }) => continue,
+                                Some(Token { token_type: TokenType::FunctionReturnTypeDeclaration(rt), .. }) => {
+                                    data_type = rt;
+                                    break;
+                                }
+                                _ => break,
+                            }
+                        }
+                        Some(Token { token_type: TokenType::FunctionReturnTypeDeclaration(rt), .. }) => {
+                            // Parameter without type - use Any
+                            params.push((param_name, NailDataTypeDescriptor::Any));
+                            data_type = rt;
+                            break;
+                        }
+                        _ => {
+                            params.push((param_name, NailDataTypeDescriptor::Any));
+                        }
+                    }
+                }
+                TokenType::FunctionReturnTypeDeclaration(rt) => {
+                    data_type = rt;
+                    break;
+                }
+                TokenType::LexerError(msg) => {
+                    return Err(CodeError { message: msg, code_span: token.code_span });
+                }
+                _ => break,
+            }
+        }
+
+        // Parse function body
+        let body = Box::new(parse_block(state)?);
+
+        // Return as LambdaDeclaration for compatibility
+        Ok(ASTNode::LambdaDeclaration { params, data_type, body, code_span, scope: GLOBAL_SCOPE })
+    } else {
+        Err(CodeError { message: "Expected function signature".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
+    }
 }
 
 fn parse_const_declaration_no_prefix(state: &mut ParserState) -> Result<ASTNode, CodeError> {
@@ -574,11 +698,6 @@ fn parse_const_declaration_no_prefix(state: &mut ParserState) -> Result<ASTNode,
     let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
 
     Ok(ASTNode::ConstDeclaration { name, data_type, value, code_span, scope: GLOBAL_SCOPE })
-}
-
-
-fn parse_if_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    parse_if_statement_expr(state, false)
 }
 
 fn parse_if_statement_expr(state: &mut ParserState, is_expression: bool) -> Result<ASTNode, CodeError> {
@@ -642,7 +761,7 @@ fn parse_if_statement_expr(state: &mut ParserState, is_expression: bool) -> Resu
     }
 
     let _ = expect_token(state, TokenType::BlockClose)?;
-    
+
     // Check if we need a semicolon (statement context) or not (expression context)
     let code_span = if !is_expression && state.tokens.peek().map_or(false, |t| t.token_type == TokenType::EndStatementOrExpression) {
         expect_token(state, TokenType::EndStatementOrExpression)?
@@ -664,49 +783,16 @@ fn parse_block(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     Ok(ASTNode::Block { statements, code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()), scope: GLOBAL_SCOPE })
 }
 
-fn parse_parallel_block(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    let _ = expect_token(state, TokenType::ParallelDeclaration)?;
-    let _ = expect_token(state, TokenType::BlockOpen)?;
+fn parse_parallel_block_start(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let _start_span = expect_token(state, TokenType::ParallelStart)?;
     let mut statements = vec![];
-    while state.tokens.peek().map_or(false, |t| t.token_type != TokenType::BlockClose) {
+
+    while state.tokens.peek().map_or(false, |t| t.token_type != TokenType::ParallelEnd) {
         statements.push(parse_statement(state)?);
     }
-    let _ = expect_token(state, TokenType::BlockClose)?;
-    Ok(ASTNode::ParallelBlock { statements, code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()), scope: GLOBAL_SCOPE })
-}
 
-fn parse_parallel_block_new(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    let start_span = expect_token(state, TokenType::ParallelStart)?;
-    let mut assignments = vec![];
-    
-    while state.tokens.peek().map_or(false, |t| t.token_type != TokenType::ParallelEnd) {
-        let stmt = parse_statement(state)?;
-        
-        // Only const declarations are allowed in parallel assignments
-        match stmt {
-            ASTNode::ConstDeclaration { name, data_type, value, .. } => {
-                assignments.push((name, data_type, value));
-            }
-            _ => {
-                return Err(CodeError {
-                    message: "Only const declarations are allowed in parallel assignments. Use 'name:type = expression;' syntax.".to_string(),
-                    code_span: start_span.clone(),
-                });
-            }
-        }
-    }
-    
-    let end_span = expect_token(state, TokenType::ParallelEnd)?;
-    Ok(ASTNode::ParallelAssignment { 
-        assignments, 
-        code_span: CodeSpan {
-            start_line: start_span.start_line,
-            start_column: start_span.start_column,
-            end_line: end_span.end_line,
-            end_column: end_span.end_column,
-        }, 
-        scope: GLOBAL_SCOPE 
-    })
+    let _ = expect_token(state, TokenType::ParallelEnd)?;
+    Ok(ASTNode::ParallelBlock { statements, code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()), scope: GLOBAL_SCOPE })
 }
 
 fn parse_return_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
@@ -714,6 +800,414 @@ fn parse_return_statement(state: &mut ParserState) -> Result<ASTNode, CodeError>
     let statement = parse_expression(state, 0)?;
     let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
     Ok(ASTNode::ReturnDeclaration { statement: Box::new(statement), code_span: code_span.clone(), scope: GLOBAL_SCOPE })
+}
+
+fn parse_yield_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let _ = expect_token(state, TokenType::Yield)?;
+    let statement = parse_expression(state, 0)?;
+    let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
+    Ok(ASTNode::YieldDeclaration { statement: Box::new(statement), code_span: code_span.clone(), scope: GLOBAL_SCOPE })
+}
+
+fn parse_for_loop(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::ForDeclaration)?;
+    let iterator = expect_identifier(state)?;
+    let _ = expect_token(state, TokenType::InKeyword)?;
+    
+    // Parse the iterable expression (could be array, range, etc.)
+    let iterable = parse_expression(state, 0)?;
+    
+    // Check for optional 'from' clause
+    let initial_value = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::FromKeyword)) {
+        advance(state); // consume 'from'
+        Some(Box::new(parse_expression(state, 0)?))
+    } else {
+        None
+    };
+    
+    // Check for optional 'when' clause
+    let filter = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::WhenKeyword)) {
+        advance(state); // consume 'when'
+        Some(Box::new(parse_expression(state, 0)?))
+    } else {
+        None
+    };
+    
+    let body = parse_block(state)?;
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: body.code_span().end_line,
+        end_column: body.code_span().end_column,
+    };
+    
+    Ok(ASTNode::ForLoop {
+        iterator,
+        iterable: Box::new(iterable),
+        initial_value,
+        filter,
+        body: Box::new(body),
+        code_span,
+        scope: GLOBAL_SCOPE,
+    })
+}
+
+fn parse_map_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::MapDeclaration)?;
+    
+    // Parse iterator name
+    let iterator = expect_identifier(state)?;
+    
+    // Check for optional index iterator (just another identifier, no comma)
+    let index_iterator = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Identifier(_))) {
+        // Peek ahead to see if the next-next token is 'in'
+        let mut peek_iter = state.tokens.clone();
+        peek_iter.next(); // Skip the potential index identifier
+        if matches!(peek_iter.peek().map(|t| &t.token_type), Some(TokenType::InKeyword)) {
+            // This is the index iterator
+            Some(expect_identifier(state)?)
+        } else {
+            // This is not an index iterator, it's the 'in' keyword
+            None
+        }
+    } else {
+        None
+    };
+    
+    let _ = expect_token(state, TokenType::InKeyword)?;
+    
+    // Parse the iterable expression
+    let iterable = parse_expression(state, 0)?;
+    
+    // Parse the body block
+    let body = parse_block(state)?;
+    
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: body.code_span().end_line,
+        end_column: body.code_span().end_column,
+    };
+
+    Ok(ASTNode::MapExpression { 
+        iterator, 
+        index_iterator,
+        iterable: Box::new(iterable), 
+        body: Box::new(body), 
+        code_span,
+        scope: GLOBAL_SCOPE 
+    })
+}
+
+fn parse_filter_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::FilterDeclaration)?;
+    
+    // Parse iterator name
+    let iterator = expect_identifier(state)?;
+    
+    // Check for optional index iterator
+    let index_iterator = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Identifier(_))) {
+        let mut peek_iter = state.tokens.clone();
+        peek_iter.next();
+        if matches!(peek_iter.peek().map(|t| &t.token_type), Some(TokenType::InKeyword)) {
+            Some(expect_identifier(state)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    let _ = expect_token(state, TokenType::InKeyword)?;
+    let iterable = parse_expression(state, 0)?;
+    
+    // Parse the condition block
+    let condition = parse_block(state)?;
+    
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: condition.code_span().end_line,
+        end_column: condition.code_span().end_column,
+    };
+
+    Ok(ASTNode::FilterExpression { 
+        iterator, 
+        index_iterator,
+        iterable: Box::new(iterable), 
+        body: Box::new(condition), 
+        code_span,
+        scope: GLOBAL_SCOPE 
+    })
+}
+
+fn parse_reduce_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::ReduceDeclaration)?;
+    
+    // Parse accumulator name
+    let accumulator = expect_identifier(state)?;
+    
+    // Parse iterator name
+    let iterator = expect_identifier(state)?;
+    
+    // Check for optional index iterator
+    let index_iterator = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Identifier(_))) {
+        let mut peek_iter = state.tokens.clone();
+        peek_iter.next();
+        if matches!(peek_iter.peek().map(|t| &t.token_type), Some(TokenType::InKeyword)) {
+            Some(expect_identifier(state)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    let _ = expect_token(state, TokenType::InKeyword)?;
+    let iterable = parse_expression(state, 0)?;
+    
+    // Parse 'from' keyword for initial value
+    let _ = expect_token(state, TokenType::FromKeyword)?;
+    let initial_value = parse_expression(state, 0)?;
+    
+    // Parse the body block
+    let body = parse_block(state)?;
+    
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: body.code_span().end_line,
+        end_column: body.code_span().end_column,
+    };
+
+    Ok(ASTNode::ReduceExpression { 
+        accumulator,
+        iterator, 
+        index_iterator,
+        iterable: Box::new(iterable),
+        initial_value: Box::new(initial_value),
+        body: Box::new(body), 
+        code_span,
+        scope: GLOBAL_SCOPE 
+    })
+}
+
+fn parse_each_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::EachDeclaration)?;
+    
+    // Parse iterator name
+    let iterator = expect_identifier(state)?;
+    
+    // Check for optional index iterator
+    let index_iterator = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Identifier(_))) {
+        let mut peek_iter = state.tokens.clone();
+        peek_iter.next();
+        if matches!(peek_iter.peek().map(|t| &t.token_type), Some(TokenType::InKeyword)) {
+            Some(expect_identifier(state)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    let _ = expect_token(state, TokenType::InKeyword)?;
+    let iterable = parse_expression(state, 0)?;
+    
+    // Parse the body block
+    let body = parse_block(state)?;
+    
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: body.code_span().end_line,
+        end_column: body.code_span().end_column,
+    };
+
+    Ok(ASTNode::EachExpression { 
+        iterator, 
+        index_iterator,
+        iterable: Box::new(iterable), 
+        body: Box::new(body), 
+        code_span,
+        scope: GLOBAL_SCOPE 
+    })
+}
+
+fn parse_find_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::FindDeclaration)?;
+    
+    // Parse iterator name
+    let iterator = expect_identifier(state)?;
+    
+    // Check for optional index iterator
+    let index_iterator = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Identifier(_))) {
+        let mut peek_iter = state.tokens.clone();
+        peek_iter.next();
+        if matches!(peek_iter.peek().map(|t| &t.token_type), Some(TokenType::InKeyword)) {
+            Some(expect_identifier(state)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    let _ = expect_token(state, TokenType::InKeyword)?;
+    let iterable = parse_expression(state, 0)?;
+    
+    // Parse the condition block
+    let condition = parse_block(state)?;
+    
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: condition.code_span().end_line,
+        end_column: condition.code_span().end_column,
+    };
+
+    Ok(ASTNode::FindExpression { 
+        iterator, 
+        index_iterator,
+        iterable: Box::new(iterable), 
+        body: Box::new(condition), 
+        code_span,
+        scope: GLOBAL_SCOPE 
+    })
+}
+
+fn parse_all_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::AllDeclaration)?;
+    
+    // Parse iterator name
+    let iterator = expect_identifier(state)?;
+    
+    // Check for optional index iterator
+    let index_iterator = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Identifier(_))) {
+        let mut peek_iter = state.tokens.clone();
+        peek_iter.next();
+        if matches!(peek_iter.peek().map(|t| &t.token_type), Some(TokenType::InKeyword)) {
+            Some(expect_identifier(state)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    let _ = expect_token(state, TokenType::InKeyword)?;
+    let iterable = parse_expression(state, 0)?;
+    
+    // Parse the condition block
+    let condition = parse_block(state)?;
+    
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: condition.code_span().end_line,
+        end_column: condition.code_span().end_column,
+    };
+
+    Ok(ASTNode::AllExpression { 
+        iterator, 
+        index_iterator,
+        iterable: Box::new(iterable), 
+        body: Box::new(condition), 
+        code_span,
+        scope: GLOBAL_SCOPE 
+    })
+}
+
+fn parse_any_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::AnyDeclaration)?;
+    
+    // Parse iterator name
+    let iterator = expect_identifier(state)?;
+    
+    // Check for optional index iterator
+    let index_iterator = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Identifier(_))) {
+        let mut peek_iter = state.tokens.clone();
+        peek_iter.next();
+        if matches!(peek_iter.peek().map(|t| &t.token_type), Some(TokenType::InKeyword)) {
+            Some(expect_identifier(state)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    let _ = expect_token(state, TokenType::InKeyword)?;
+    let iterable = parse_expression(state, 0)?;
+    
+    // Parse the condition block
+    let condition = parse_block(state)?;
+    
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: condition.code_span().end_line,
+        end_column: condition.code_span().end_column,
+    };
+
+    Ok(ASTNode::AnyExpression { 
+        iterator, 
+        index_iterator,
+        iterable: Box::new(iterable), 
+        body: Box::new(condition), 
+        code_span,
+        scope: GLOBAL_SCOPE 
+    })
+}
+
+fn parse_while_loop(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::WhileDeclaration)?;
+    let condition = parse_expression(state, 0)?;
+    
+    // Check for optional 'from' clause
+    let initial_value = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::FromKeyword)) {
+        advance(state); // consume 'from'
+        Some(Box::new(parse_expression(state, 0)?))
+    } else {
+        None
+    };
+    
+    // Check for max iterations
+    let max_iterations = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::MaxKeyword)) {
+        advance(state); // consume max
+        Some(Box::new(parse_expression(state, 0)?))
+    } else {
+        None
+    };
+    
+    let body = parse_block(state)?;
+    let code_span = CodeSpan { 
+        start_line: start_span.start_line, 
+        start_column: start_span.start_column,
+        end_line: body.code_span().end_line,
+        end_column: body.code_span().end_column,
+    };
+    
+    Ok(ASTNode::WhileLoop {
+        condition: Box::new(condition),
+        initial_value,
+        max_iterations,
+        body: Box::new(body),
+        code_span,
+        scope: GLOBAL_SCOPE,
+    })
+}
+
+fn parse_break_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let code_span = expect_token(state, TokenType::BreakKeyword)?;
+    let _ = expect_token(state, TokenType::EndStatementOrExpression)?;
+    Ok(ASTNode::BreakStatement { code_span, scope: GLOBAL_SCOPE })
+}
+
+fn parse_continue_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let code_span = expect_token(state, TokenType::ContinueKeyword)?;
+    let _ = expect_token(state, TokenType::EndStatementOrExpression)?;
+    Ok(ASTNode::ContinueStatement { code_span, scope: GLOBAL_SCOPE })
 }
 
 fn parse_type_declaration(state: &mut ParserState) -> Result<NailDataTypeDescriptor, CodeError> {
@@ -805,7 +1299,7 @@ mod tests {
 
     #[test]
     fn test_lambda() {
-        let input = "| x:i |:i { result:i = x + 1; r result; }";
+        let input = "| x:i ):i { result:i = x + 1; r result; }";
         let (result, _) = parse(lexer(input)).unwrap();
         let expected = r#"
         Program(
@@ -949,7 +1443,7 @@ mod tests {
 
         let (result, _) = parse(lexer).unwrap();
         let expected = r#"
-     Program([ConstDeclaration{name:"test_array",data_type:ArrayInt,value:ArrayLiteral([NumberLiteral("1",),NumberLiteral("2",),NumberLiteral("3",),],),},],)
+     Program([ConstDeclaration{name:"test_array",data_type:Array(Int),value:ArrayLiteral([NumberLiteral("1",),NumberLiteral("2",),NumberLiteral("3",),],),},],)
         "#;
         // Just verify it parses successfully
         assert!(matches!(result, ASTNode::Program { .. }));
@@ -963,7 +1457,7 @@ mod tests {
 
         let (result, _) = parse(lexer).unwrap();
         let expected = r#"
-     Program([ConstDeclaration{name:"test_array",data_type:ArrayInt,value:NumberLiteral("1",),},],)
+     Program([ConstDeclaration{name:"test_array",data_type:Array(Int),value:NumberLiteral("1",),},],)
         "#;
         // Just verify it parses successfully
         assert!(matches!(result, ASTNode::Program { .. }));
@@ -980,7 +1474,7 @@ mod tests {
             [
                 ConstDeclaration {
                     name: "test_array",
-                    data_type: ArrayInt,
+                    data_type: Array(Box::new(NailDataTypeDescriptor::Int)),
                     value: ArrayLiteral(
                         [
                             NumberLiteral(
@@ -1082,8 +1576,8 @@ mod tests {
     // Variable declarations no longer supported - using constants only
 
     #[test]
-    fn test_any_type_declaration() {
-        let input = "c every_nail_type:any(i|f|s|b|a:i|a:f|a:struct:any|a:enum:any) = 13;";
+    fn test_oneof_type_declaration() {
+        let input = "c every_nail_type:oneof(i|f|s|b|a:i|a:f|a:struct:oneof|a:enum:oneof) = 13;";
         let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         // Just verify it parses successfully and has const declaration
@@ -1097,7 +1591,7 @@ mod tests {
     // FAILING
     #[test]
     fn test_lambda_multi_param() {
-        let input = "| x:i, y:f |:i { result:i = x + 1; r result; }";
+        let input = "| x:i, y:f ):i { result:i = x + 1; r result; }";
         let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         // Just verify it parses successfully and has lambda declaration
@@ -1110,24 +1604,24 @@ mod tests {
 
     #[test]
     fn test_lambda_with_error_parameter() {
-        // Test that |e|:i syntax works for error parameters
-        let input = r#"|e|:i { r 0; }"#;
-        
+        // Test that |e):i syntax works for error parameters
+        let input = r#"|e):i { r 0; }"#;
+
         let result = parse(lexer(input));
         assert!(result.is_ok(), "Failed to parse lambda with error parameter: {:?}", result.err());
-        
+
         let (ast, _) = result.unwrap();
-        
+
         // The lambda should be at the top level
         if let ASTNode::Program { statements, .. } = ast {
             assert!(!statements.is_empty(), "Program should have statements");
-            
+
             if let Some(ASTNode::LambdaDeclaration { params, data_type, .. }) = statements.first() {
                 // Check that there's one parameter named 'e' with Error type
                 assert_eq!(params.len(), 1, "Lambda should have exactly one parameter");
                 assert_eq!(params[0].0, "e", "Parameter should be named 'e'");
                 assert_eq!(params[0].1, NailDataTypeDescriptor::Error, "Parameter 'e' should have Error type");
-                
+
                 // Check return type is Int
                 assert_eq!(*data_type, NailDataTypeDescriptor::Int, "Lambda should return Int");
             } else {
@@ -1137,7 +1631,7 @@ mod tests {
             panic!("Expected Program node");
         }
     }
-    
+
     fn find_lambda_in_ast(node: &ASTNode) -> Option<&ASTNode> {
         match node {
             ASTNode::LambdaDeclaration { .. } => Some(node),
@@ -1183,9 +1677,9 @@ mod tests {
     [
         ConstDeclaration {
             name: "points",
-            data_type: ArrayStruct(
-                "Point",
-            ),
+            data_type: Array(Box::new(NailDataTypeDescriptor::Struct(
+                "Point".to_string(),
+            ))),
             value: ArrayLiteral(
                 [
                     StructInstantiation {

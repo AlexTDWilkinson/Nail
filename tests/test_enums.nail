@@ -1,0 +1,33 @@
+// Enum Declaration Tests
+
+enum GameState {
+    MainMenu,
+    Playing,
+    Paused,
+    GameOver
+}
+
+enum Direction {
+    North,
+    South,
+    East,
+    West
+}
+
+enum ItemType {
+    Weapon,
+    Armor,
+    Consumable,
+    QuestItem
+}
+
+enum PlayerAction {
+    Move,
+    Attack,
+    Defend,
+    UseItem,
+    Talk,
+    Rest
+}
+
+print(`Enum declarations test completed`);

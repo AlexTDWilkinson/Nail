@@ -1,0 +1,20 @@
+// Operator Precedence and Comparison Tests
+
+// PEMDAS/BEDMAS precedence
+result1:i = 2 + 3 * 4;  // Should be 14
+result2:i = 20 - 10 / 2;  // Should be 15
+result3:i = 100 / 10 * 2;  // Should be 20
+result4:i = 10 - 5 + 3;  // Should be 8
+result5:i = (2 + 3) * 4;  // Should be 20
+
+print(array_join([`2 + 3 * 4 = `, danger(string_from(result1))], ``));
+print(array_join([`(2 + 3) * 4 = `, danger(string_from(result5))], ``));
+
+// Comparison operators
+not_equal:b = 5 != 3;
+equal:b = 5 == 5;
+greater:b = 5 > 3;
+less:b = 3 < 5;
+
+print(danger(string_from(not_equal)));
+print(danger(string_from(equal)));

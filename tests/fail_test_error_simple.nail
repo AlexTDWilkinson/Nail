@@ -1,0 +1,16 @@
+// Test error handling with properly typed lambda
+
+f divide(first:i, second:i):i!e {
+    if {
+        second == 0 => { r e(`Division by zero`); },
+        else => { r first / second; }
+    }
+}
+
+// Test safe with typed lambda parameter
+result:i = safe(divide(10, 0), f (error:s):i { 
+    print(array_join([`Error occurred: `, error], ``));
+    r -1; 
+});
+
+print(array_join([`Result: `, danger(string_from(result))], ``));

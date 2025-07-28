@@ -1,5 +1,0 @@
-// Final array test - checking type system fix
-
-test_array:a:i = [10, 20, 30];
-
-print(string_from(array_len(test_array)));

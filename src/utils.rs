@@ -160,15 +160,13 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             let visible_lines = if chunks[1].height > 2 { chunks[1].height as usize - 2 } else { 0 };
 
-            let visible_content: Vec<Line> = editor
-                .content
-                .iter()
-                .skip(editor.scroll_position as usize)
-                .take(visible_lines)
-                .map(|line| Line::from(vec![Span::styled(line.clone(), Style::default().fg(editor.theme.default).bg(editor.theme.background))]))
-                .collect();
+            // First colorize the entire content to properly handle multi-line constructs
+            let all_content_lines: Vec<Line> =
+                editor.content.iter().map(|line| Line::from(vec![Span::styled(line.clone(), Style::default().fg(editor.theme.default).bg(editor.theme.background))])).collect();
+            let all_colorized = colorize_code(all_content_lines, &editor.theme);
 
-            let visible_content: Vec<Line> = colorize_code(visible_content, &editor.theme);
+            // Then extract the visible portion
+            let visible_content: Vec<Line> = all_colorized.into_iter().skip(editor.scroll_position as usize).take(visible_lines).collect();
 
             let editor_title = if let Some(ref filename) = editor.current_file { format!("NAIL - {}", filename) } else { "NAIL".to_string() };
             let paragraph =
@@ -323,27 +321,24 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                 log::info!("F5 pressed - cycling through example files");
 
                                 // List of example files to cycle through
-                                let example_files = vec![
-                                    "examples/hello.nail",
-                                    "examples/simple.nail",
-                                    "examples/adventure_game.nail",
-                                    "examples/todo_app.nail",
-                                    "examples/web_server.nail",
-                                    "examples/functional_demo.nail",
-                                    "examples/game_stats.nail",
-                                    "examples/iteration_demo.nail",
-                                    "examples/welcome_comprehensive.nail",
-                                ];
+                                // get all nail files from examples folder
+
+                                let example_files = fs::read_dir("examples")
+                                    .unwrap_or_else(|_| panic!("Failed to read examples directory"))
+                                    .filter_map(Result::ok)
+                                    .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "nail"))
+                                    .map(|entry| entry.path().to_string_lossy().to_string())
+                                    .collect::<Vec<String>>();
 
                                 // Find current file index
-                                let current_index = if let Some(ref current) = editor.current_file { example_files.iter().position(|&f| f == current).unwrap_or(0) } else { 0 };
+                                let current_index = if let Some(ref current) = editor.current_file { example_files.iter().position(|f| f == current).unwrap_or(0) } else { 0 };
 
                                 // Try to load files until we find one that exists
                                 let mut attempts = 0;
                                 let mut loaded = false;
                                 while attempts < example_files.len() && !loaded {
                                     let next_index = (current_index + 1 + attempts) % example_files.len();
-                                    let next_file = example_files[next_index];
+                                    let next_file = &example_files[next_index];
 
                                     match editor.load_file(next_file) {
                                         Ok(_) => {
@@ -520,7 +515,7 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             editor.build_status = BuildStatus::Compiling;
             drop(editor); // Release the lock
             let output = Command::new("cargo")
-                .arg("run")
+                .arg("build")
                 .arg("--release")
                 // run rustfmt or something
                 .current_dir(transpilation_dir)
@@ -653,7 +648,7 @@ pub fn create_transpilation_cargo_toml() -> String {
 
     [dependencies]
     tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-    Nail = { path = ".." }
+    nail = { path = ".." }
 
     # Binary target for the project
     [[bin]]
@@ -663,143 +658,7 @@ pub fn create_transpilation_cargo_toml() -> String {
     .to_string()
 }
 
-static WELCOME_MESSAGE: &str = r#"// Welcome to NAIL - Simple, Safe, Parallel Programming!
-// Press F7 to compile & run, F6 to toggle theme, F5 to load examples, Ctrl+C to exit
-// Use backticks for strings: `like this`
-
-// === STRUCTS - Custom Data Types ===
-struct Player {
-    player_name:s,
-    health:i,
-    level:i
-}
-
-player:Player = Player {
-    player_name: `Hero`,
-    health: 100,
-    level: 1
-};
-
-// === ENUMS - Choice Types ===
-enum Status {
-    Active,
-    Paused,
-    Stopped
-}
-
-current:Status = Status::Active;
-
-// === ERROR HANDLING - Safe by Default ===
-f divide(num:i, den:i):i!e {
-    if {
-        den == 0 => { r e(`Cannot divide by zero!`); },
-        else => { r num / den; }
-    }
-}
-
-// Handle errors gracefully with safe()
-// safe() is a built-in standard library function that works with any T!e type
-result:i = safe(divide(10, 2), |e|:i {
-    print(e); // Print the error message
-    r 0;      // Return default value
-});
-result_msg:a:s = [`10 / 2 = `, string_from(result)];
-print(string_concat(result_msg));
-
-// Use dangerous() when you're certain the operation won't fail (temporary code to be replaced with safe() later)
-safe_result:i = dangerous(divide(10, 2)); // Safe because we know 2 != 0
-
-// Use expect() when failure would make the program useless (critical operations)
-critical_result:i = expect(divide(100, 10)); // Program can't continue if this fails
-
-// === BASIC TYPES ===
-name:s = `Alice`;
-age:i = 25;
-score:f = 95.7;
-
-// === FUNCTIONS ===
-f greet(person:s):s {
-    parts:a:s = [`Hello, `, person, `!`];
-    r string_concat(parts);
-}
-
-print(greet(name));
-
-// === PARALLEL PROCESSING - Nail's Superpower! ===
-p
-    task1:s = string_from(42);
-    task2:i = time_now();
-    fast_calc:i = 100 * 50;
-/p
-print(string_concat([`Task 1 result: `, task1]));
-print(string_concat([`Fast calculation: `, string_from(fast_calc)]));
-
-// === ARRAYS ===
-numbers:a:i = [10, 20, 30, 40, 50];
-names:a:s = [`Alice`, `Bob`, `Charlie`];
-
-// === FUNCTIONAL OPERATIONS (No loops in Nail!) ===
-// Generate a range
-nums:a:i = range(1, 5);  // [1, 2, 3, 4, 5]
-
-// Helper functions for functional operations
-f double_func(n:i):i { r n * 2; }
-f is_even_func(n:i):b { 
-    r n % 2 == 0; 
-}
-f add_func(acc:i, n:i):i { r acc + n; }
-f square_func(n:i):i { r n * n; }
-
-// Map - transform each element
-doubled:a:i = map_int(nums, double_func);
-
-// Filter - keep only matching elements  
-evens:a:i = filter_int(nums, is_even_func);
-
-// Reduce - combine all elements
-sum:i = reduce_int(nums, 0, add_func);
-sum_msg:a:s = [`Sum 1-5: `, string_from(sum)];
-print(string_concat(sum_msg));
-
-// Chain operations - sum of squares
-sum_squares:i = reduce_int(
-    map_int(nums, square_func),
-    0,
-    add_func
-);
-squares_msg:a:s = [`Sum of squares: `, string_from(sum_squares)];
-print(string_concat(squares_msg));
-
-// === CONTROL FLOW ===
-if {
-    current == Status::Active => {
-        print(`System is active`);
-    },
-    else => {
-        print(`System inactive`);
-    }
-}
-
-// More Functions
-current_time:i = time_now();
-square_root:f = math_sqrt(16.0);
-
-// Print results
-print(`Welcome to Nail programming!`);
-array_length:i = array_len(numbers);
-print(string_from(array_length));
-print(string_from(square_root));
-
-// Comments work everywhere!
-final_message:s = `Nail makes parallel programming easy!`; // Inline comment
-
-// Ready to code? Clear this and write your own Nail program!
-// Try experimenting with structs, enums, and parallel blocks!"#;
-
-// static WELCOME_MESSAGE: &str = r#"
-// f print(message:s):s {
-//     R{ println!("{}", message); }
-// }"#;
+static WELCOME_MESSAGE: &str = include_str!("../examples/hello_world.nail");
 
 pub fn create_welcome_message() -> Vec<String> {
     WELCOME_MESSAGE.lines().map(String::from).collect()

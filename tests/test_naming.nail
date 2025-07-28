@@ -1,0 +1,16 @@
+// Naming Tests - Valid and Invalid Names
+
+// Valid names
+value:i = 5;
+coordinate:f = 3.14;
+numbers:a:i = [1, 2, 3];
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
+
+struct Point { x_coord:i, y_coord:i }
+COLOR_RED:s = `Red`;
+COLOR_GREEN:s = `Green`;
+
+point:Point = Point { x_coord: 10, y_coord: 20 };
+print(danger(string_from(value)));

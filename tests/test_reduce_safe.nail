@@ -1,0 +1,52 @@
+// Test reduce with safe error handling
+
+struct Sale {
+    quantity:i,
+    price:f,
+    region:s
+}
+
+// Helper function for safe float conversion
+f default_zero(err:s):f {
+    print(err);
+    r 0.0;
+}
+
+// Helper function for when array is empty
+f default_sale(err:s):Sale {
+    print(err);
+    // Return a dummy sale
+    r Sale { quantity: 0, price: 0.0, region: `Unknown` };
+}
+
+// Test data
+sales:a:Sale = [
+    Sale { quantity: 10, price: 99.99, region: `North` },
+    Sale { quantity: 5, price: 149.99, region: `South` },
+    Sale { quantity: 3, price: 299.99, region: `East` }
+];
+
+// Calculate total sales  
+total_sales:f = reduce sum sale in sales from 0.0 {
+    quantity:f = safe(float_from(sale.quantity), default_zero);
+    sale_value:f = quantity * sale.price;
+    y sum + sale_value;
+};
+
+print(array_join([`Total sales: $`, danger(string_from(total_sales))], ``));
+
+// Find the highest value sale
+first_sale:Sale = safe(array_get(sales, 0), default_sale);
+highest_sale:Sale = reduce best sale in sales from first_sale {
+    current_quantity:f = safe(float_from(sale.quantity), default_zero);
+    current_value:f = current_quantity * sale.price;
+    best_quantity:f = safe(float_from(best.quantity), default_zero);
+    best_value:f = best_quantity * best.price;
+    result:Sale = if {
+        current_value > best_value => { r sale; },
+        else => { r best; }
+    };
+    y result;
+};
+
+print(array_join([`Highest sale: `, danger(string_from(highest_sale.quantity)), ` units at $`, danger(string_from(highest_sale.price)), ` in `, highest_sale.region], ``));

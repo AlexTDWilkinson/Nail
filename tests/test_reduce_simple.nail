@@ -1,0 +1,15 @@
+// Demonstrating loops since reduce is removed
+numbers:a:i = [1, 2, 3, 4, 5];
+
+// We can't do accumulation without mutable variables
+// So we'll demonstrate a different operation - doubling
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
+
+// Convert to strings and print
+doubled_strings:a:s = map num in doubled {
+    y danger(string_from(num));
+};
+
+print(array_join([`Doubled: `, array_join(doubled_strings, `, `)], ``));

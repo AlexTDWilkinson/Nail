@@ -2,10 +2,10 @@ use std::env;
 use std::fs;
 use std::process;
 
-use Nail::lexer::lexer;
-use Nail::parser::parse;
-use Nail::checker::checker;
-use Nail::transpilier::Transpiler;
+use nail::lexer::lexer;
+use nail::parser::parse;
+use nail::checker::checker;
+use nail::transpilier::Transpiler;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -18,11 +18,18 @@ fn main() {
         eprintln!("  --check-only   Run lexer, parser, and type checker");
         eprintln!("  --transpile    Run full pipeline and output Rust code");
         eprintln!("  --skip-check   Skip type checking and transpile directly");
+        eprintln!("  --deps-only    Only output required Cargo dependencies");
         process::exit(1);
     }
     
     let filename = &args[1];
-    let mode = args.get(2).map(|s| s.as_str()).unwrap_or("--transpile");
+    let mut mode = args.get(2).map(|s| s.as_str()).unwrap_or("--transpile");
+    let skip_check = args.iter().any(|arg| arg == "--skip-check");
+    
+    // If --skip-check is present with --transpile, handle it specially
+    if skip_check && mode == "--transpile" {
+        mode = "--transpile-skip-check";
+    }
     
     // Read the input file
     let input = match fs::read_to_string(filename) {
@@ -47,7 +54,7 @@ fn main() {
     
     // Run parser
     println!("\n=== Parsing ===");
-    let (ast, used_stdlib_functions) = match parse(tokens) {
+    let (ast, _used_stdlib_functions) = match parse(tokens) {
         Ok((ast, used_functions)) => {
             println!("Parse successful!");
             println!("Used stdlib functions: {:?}", used_functions);
@@ -66,7 +73,7 @@ fn main() {
     }
     
     // Skip type checking if requested
-    let checked_ast = if mode == "--skip-check" {
+    let checked_ast = if skip_check || mode == "--transpile-skip-check" {
         println!("\n=== Skipping Type Check ===");
         ast
     } else {
@@ -107,6 +114,15 @@ fn main() {
             process::exit(1);
         }
     };
+    
+    if mode == "--deps-only" {
+        // Output dependencies in a machine-readable format
+        let dependencies = transpiler.get_required_dependencies();
+        for dep in dependencies {
+            println!("{}", dep.to_cargo_dep());
+        }
+        return;
+    }
     
     println!("\nGenerated Rust code:");
     println!("{}", rust_code);

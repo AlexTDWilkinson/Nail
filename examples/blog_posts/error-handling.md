@@ -25,16 +25,16 @@ user_input:s!e = io_read_line_prompt(`Enter your name: `);
 
 ## Three Ways to Handle Errors
 
-### 1. The `dangerous` Approach: Living on the Edge
+### 1. The `danger` Approach: Living on the Edge
 
-When you're confident a function won't fail, use `dangerous`:
+When you're confident a function won't fail, use `danger`:
 
 ```nail
 // Reading a config file that MUST exist
-config:s = dangerous(fs_read(`config.nail`));
+config:s = danger(fs_read(`config.nail`));
 
 // Converting a number we KNOW is valid
-port:i = dangerous(int_from(`3000`));
+port:i = danger(from(`3000`));
 ```
 
 If the operation fails, the error propagates up automatically with context.
@@ -47,7 +47,7 @@ When you want to handle errors gracefully, use `safe`:
 // Provide a default value if parsing fails
 user_age:i = safe(
     int_from(age_input),
-    |error:s|:i { 
+    (error:s):i { 
         print(`Invalid age provided, using default`);
         r 0; 
     }
@@ -56,11 +56,11 @@ user_age:i = safe(
 // Try multiple servers until one works
 response:s = safe(
     http_get(`https://primary.api.com/data`),
-    |e:s|:s {
+    (e:s):s {
         // Primary failed, try backup
         r safe(
             http_get(`https://backup.api.com/data`),
-            |e2:s|:s { r `{"error": "All servers down"}`; }
+            (e2:s):s { r `{"error": "All servers down"}`; }
         );
     }
 );
@@ -68,7 +68,7 @@ response:s = safe(
 
 ### 3. The `expect` Approach: Assert with Message
 
-Similar to `dangerous` but with a custom panic message:
+Similar to `danger` but with a custom panic message:
 
 ```nail
 // This SHOULD work, but if not, we want a clear error
@@ -105,8 +105,8 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
     // Parse age - this could fail
     age:i = safe(
         int_from(age_input),
-        |parse_error:s|:i!e { 
-            r e(string_concat([`Invalid age: `, parse_error])); 
+        (parse_error:s):i!e { 
+            r e(array_join([`Invalid age: `, parse_error])); 
         }
     );
     
@@ -120,7 +120,7 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
     existing_user:User!e = db_find_user(username_input);
     existing_check:b = safe(
         existing_user,
-        |db_error:s|:b { r false; } // No user found is good!
+        (db_error:s):b { r false; } // No user found is good!
     );
     
     if {
@@ -135,7 +135,7 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
     };
     
     // Save to database
-    saved_user:User = dangerous(db_save_user(new_user));
+    saved_user:User = danger(db_save_user(new_user));
     
     r saved_user;
 }
@@ -144,8 +144,8 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
 user_result:User!e = register_user(`alice`, `alice@example.com`, `25`);
 user:User = safe(
     user_result,
-    |error:s|:User {
-        print(string_concat([`Registration failed: `, error]));
+    (error:s):User {
+        print(array_join([`Registration failed: `, error]));
         r User { 
             username: `guest`, 
             email: `guest@example.com`, 
@@ -161,13 +161,13 @@ Nail automatically adds context as errors propagate:
 
 ```nail
 f process_order(order_id:s):Receipt!e {
-    order:Order = dangerous(fetch_order(order_id));
+    order:Order = danger(fetch_order(order_id));
     // If fetch_order fails, error includes: "[process_order] Failed to fetch order"
     
-    payment:Payment = dangerous(process_payment(order));
+    payment:Payment = danger(process_payment(order));
     // If process_payment fails: "[process_order] Payment processing failed"
     
-    receipt:Receipt = dangerous(generate_receipt(payment));
+    receipt:Receipt = danger(generate_receipt(payment));
     // If generate_receipt fails: "[process_order] Receipt generation failed"
     
     r receipt;
@@ -179,23 +179,23 @@ f process_order(order_id:s):Receipt!e {
 Even in parallel blocks, errors are handled properly:
 
 ```nail
-parallel {
-    user_data:User = dangerous(fetch_user(user_id));
+p
+    user_data:User = danger(fetch_user(user_id));
     preferences:Preferences = safe(
         fetch_preferences(user_id),
-        |e:s|:Preferences { r default_preferences(); }
+        (e:s):Preferences { r default_preferences(); }
     );
-    notifications:a:Notification = dangerous(fetch_notifications(user_id));
+    notifications:a:Notification = danger(fetch_notifications(user_id));
 }
 // All three operations run in parallel
-// If any dangerous() calls fail, the error is caught here
+// If any danger() calls fail, the error is caught here
 ```
 
 ## Best Practices
 
 ### 1. Use the Right Tool
 
-- **`dangerous`**: When failure means a bug in your code
+- **`danger`**: When failure means a bug in your code
 - **`safe`**: When failure is expected and you can recover
 - **`expect`**: When failure is unlikely but you want a clear message
 
@@ -205,9 +205,9 @@ parallel {
 // During development
 debug_mode:b = true;
 config:Config = if {
-    debug_mode => { dangerous(load_config()); },
+    debug_mode => { danger(load_config()); },
     else => { 
-        safe(load_config(), |e:s|:Config { r default_config(); })
+        safe(load_config(), (e:s):Config { r default_config(); })
     }
 };
 ```
@@ -218,7 +218,7 @@ config:Config = if {
 f validate_price(price:f):f!e {
     if {
         price < 0.0 => { 
-            r e(string_concat([
+            r e(array_join([
                 `Invalid price: `, 
                 string_from(price), 
                 `. Price must be non-negative`

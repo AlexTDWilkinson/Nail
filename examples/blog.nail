@@ -11,14 +11,14 @@ struct BlogPost {
 }
 
 // Create blog posts with markdown content
-post1:BlogPost = BlogPost { title: "Welcome to Nail: A Language Without Complexity", slug: "welcome-to-nail", date: "2024-01-15", content: `# Welcome to Nail: A Language Without Complexity
+post1_content:s = `# Welcome to Nail: A Language Without Complexity
 
 Nail is a programming language that removes unnecessary complexity while maintaining power and expressiveness. Here's what makes Nail special:
 
 ## Key Features
 
 - **No variables** - Everything is immutable by default
-- **No loops** - Use functional programming with map, filter, and reduce
+- **Collection operations** - Built-in map, filter, reduce, each, find, all, and any keywords
 - **Automatic parallelism** - Code runs concurrently without explicit threading
 - **Built-in async** - All I/O operations are async by default
 
@@ -26,12 +26,15 @@ Nail is a programming language that removes unnecessary complexity while maintai
 
 Here's a simple example that demonstrates Nail's syntax:
 
-\`\`\`nail
-numbers:[i] = [1, 2, 3, 4, 5];
-doubled:[i] = map_int(numbers, |n:i|:i { n * 2 });
-sum:i = reduce_int(doubled, 0, |acc:i, n:i|:i { acc + n });
+numbers:a:i = [1, 2, 3, 4, 5];
+// Using Nail's collection operations
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
+sum:i = reduce acc num in doubled from 0 {
+    y acc + num;
+};
 print(sum); // Output: 30
-\`\`\`
 
 ## Why Nail?
 
@@ -40,9 +43,16 @@ print(sum); // Output: 30
 3. **Safety** - Immutability prevents many common bugs
 4. **Modern** - Designed for today's multi-core processors
 
-Start your journey with Nail today and experience programming without the complexity!` };
+Start your journey with Nail today and experience programming without the complexity!`;
 
-post2:BlogPost = BlogPost { title: "Building a Web Server in 10 Lines of Nail", slug: "web-server-tutorial", date: "2024-01-20", content: `# Building a Web Server in 10 Lines of Nail
+post1:BlogPost = BlogPost { 
+    title: `Welcome to Nail: A Language Without Complexity`, 
+    slug: `welcome-to-nail`, 
+    date: `2024-01-15`, 
+    content: post1_content 
+};
+
+post2:BlogPost = BlogPost { title:`Building a Web Server in 10 Lines of Nail`, slug:`web-server-tutorial`, date:`2024-01-20`, content:`# Building a Web Server in 10 Lines of Nail
 
 One of Nail's strengths is how easy it makes common tasks. Let's build a web server!
 
@@ -99,11 +109,11 @@ Try adding:
 Happy coding with Nail! 🔨` };
 
 // Store posts in array
-posts:[BlogPost] = [post1, post2];
+posts:a:BlogPost = [post1, post2];
 
 // Create HTML page layout
-create_page:fn(title:s, content:s):s = {
-    html:s = string_concat([`
+f create_page(title:s, content:s):s {
+    html:s = array_join([`
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -188,49 +198,50 @@ create_page:fn(title:s, content:s):s = {
         `, content, `
     </div>
 </body>
-</html>`]);
-    return html;
-};
+</html>`], ``);
+    r html;
+}
 
 // Create index page with list of posts
-create_index:fn(posts:[BlogPost]):s = {
-    post_items:[s] = map_string(posts, |post:BlogPost|:s {
-        item:s = string_concat([`
+f create_index(posts:a:BlogPost):s {
+    // Generate HTML for each post using map
+    post_items:a:s = map post in posts {
+        y array_join([`
         <li>
             <h2><a href="/posts/`, post.slug, `">`, post.title, `</a></h2>
             <div class="post-meta">`, post.date, `</div>
-        </li>`]);
-        return item;
-    });
+        </li>`], ``);
+    };
     
-    posts_html:s = array_join(post_items, "");
+    posts_html:s = reduce acc item in post_items from `` {
+        y array_join([acc, item], ``);
+    };
     
-    content:s = string_concat([`
+    content:s = array_join([`
         <h1>🔨 The Nail Programming Blog</h1>
         <p>Welcome to the official Nail programming language blog. Learn about Nail's unique approach to simplicity and performance.</p>
-        <ul class="post-list">`, posts_html, `</ul>
-    `]);
+        <ul class="post-list">`, posts_html, `</ul>`], ``);
     
-    page:s = create_page("Nail Blog", content);
-    return page;
-};
+    page:s = create_page(`Nail Blog`, content);
+    r page;
+}
 
 // Create individual post page
-create_post_page:fn(post:BlogPost):s = {
+f create_post_page(post:BlogPost):s {
     // Convert markdown to HTML
     content_html:s = markdown_to_html(post.content);
     
-    content:s = string_concat([`
+    content:s = array_join([`
         <h1>`, post.title, `</h1>
         <div class="post-meta">Published: `, post.date, `</div>
         `, content_html, `
         <hr>
         <p><a href="/">← Back to all posts</a></p>
-    `]);
+    `], ``);
     
     page:s = create_page(post.title, content);
-    return page;
-};
+    r page;
+}
 
 // Create about page
 about_content:s = `
@@ -240,13 +251,13 @@ about_content:s = `
     <ul>
         <li><strong>HTTP Server</strong> - Built-in web server support</li>
         <li><strong>Markdown Processing</strong> - Convert markdown to HTML</li>
-        <li><strong>Functional Programming</strong> - Map/filter/reduce for data processing</li>
+        <li><strong>Collection Operations</strong> - Map, filter, reduce for data processing</li>
         <li><strong>String Manipulation</strong> - Template-like string concatenation</li>
     </ul>
     <p>View the source code to see how simple it is to build a blog in Nail!</p>
 `;
 
-about_page:s = create_page("About", about_content);
+about_page:s = create_page(`About`, about_content);
 
 // Generate all pages
 index_page:s = create_index(posts);
@@ -254,7 +265,7 @@ post1_page:s = create_post_page(post1);
 post2_page:s = create_post_page(post2);
 
 // Create router HTML with all pages embedded
-router_html:s = string_concat([`
+router_html:s = array_join([`
 <!DOCTYPE html>
 <html>
 <head>
@@ -262,10 +273,10 @@ router_html:s = string_concat([`
     <script>
         // Simple client-side router
         const pages = {
-            '/': `, "`", index_page, "`", `,
-            '/posts/welcome-to-nail': `, "`", post1_page, "`", `,
-            '/posts/web-server-tutorial': `, "`", post2_page, "`", `,
-            '/about': `, "`", about_page, "`", `
+                        '/': index_page,
+                        '/posts/welcome-to-nail': post1_page,
+                        '/posts/web-server-tutorial': post2_page,
+                        '/about': about_page
         };
         
         function navigate(path) {
@@ -298,8 +309,8 @@ router_html:s = string_concat([`
 <body>
     Loading...
 </body>
-</html>`]);
+</html>`], ``);
 
 // Start the server
-print(string_concat(["Starting blog server on port ", string_from(port), "..."]));
+print(array_join([`Starting blog server on port `, danger(string_from(port)), `...`], ``));
 http_server_start(port, router_html);

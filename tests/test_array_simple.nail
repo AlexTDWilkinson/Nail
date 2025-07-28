@@ -1,0 +1,15 @@
+// Simple test of array functions
+
+numbers:a:i = [10, 20, 30, 40, 50];
+
+print(`Testing array functions...`);
+print(array_join([`Array length: `, danger(string_from(array_len(numbers)))], ``));
+
+// Test array_take and array_skip
+taken:a:i = array_take(numbers, 3);
+print(array_join([`Took 3 elements, new length: `, danger(string_from(array_len(taken)))], ``));
+
+skipped:a:i = array_skip(numbers, 2);
+print(array_join([`Skipped 2 elements, new length: `, danger(string_from(array_len(skipped)))], ``));
+
+print(`Done!`);

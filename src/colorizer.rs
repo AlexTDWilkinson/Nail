@@ -1,20 +1,10 @@
 use lazy_static::lazy_static;
-use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
 use ratatui::text::Span;
 use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::Line,
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs},
-    Frame, Terminal,
 };
 use rayon::prelude::*;
-use regex::Regex;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorScheme {
@@ -128,8 +118,6 @@ lazy_static! {
 
 
 }
-
-use std::sync::Mutex;
 
 pub fn colorize_code(content: Vec<Line>, theme: &ColorScheme) -> Vec<Line<'static>> {
     // First pass: detect multi-line strings
@@ -457,7 +445,9 @@ fn colorize_non_string_content(content: &str, colored_spans: &mut Vec<Span<'stat
         }
 
         // Add space between tokens when needed
-        if need_space && !matches!(token.as_str(), "," | ";" | ")" | "]" | "}") {
+        // Special case: don't add space before ':' if previous token was '|' (lambda return type)
+        let prev_token = if i > 0 { Some(tokens[i - 1].as_str()) } else { None };
+        if need_space && !matches!(token.as_str(), "," | ";" | ")" | "]" | "}") && !(token == ":" && prev_token == Some("|")) {
             colored_spans.push(Span::raw(" "));
         }
         need_space = false;
@@ -489,7 +479,6 @@ fn colorize_non_string_content(content: &str, colored_spans: &mut Vec<Span<'stat
             // Process the '(' immediately to avoid adding space
             colored_spans.push(Span::styled("(".to_string(), Style::default().fg(theme.parenthesis)));
             i += 2;
-            need_space = false;
             continue;
         }
         // Regular token
@@ -507,7 +496,7 @@ fn colorize_non_string_content(content: &str, colored_spans: &mut Vec<Span<'stat
 fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
     match word {
         // Keywords
-        "parallel" => Span::styled(word.to_string(), Style::default().fg(theme.parallel_keyword)),
+        "p" => Span::styled(word.to_string(), Style::default().fg(theme.parallel_keyword)),
         "if" | "else" => Span::styled(word.to_string(), Style::default().fg(theme.keyword)),
         "f" => Span::styled(word.to_string(), Style::default().fg(theme.function)),
         "struct" => Span::styled(word.to_string(), Style::default().fg(theme.struct_keyword)),
@@ -547,7 +536,7 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
         _ if word.starts_with('`') || word.ends_with('`') => Span::styled(word.to_string(), Style::default().fg(theme.string_literal)),
 
         // Known stdlib functions
-        "print" | "string_concat" | "string_from" | "time_now" | "math_sqrt" | "array_len" | "map_int" | "filter_int" | "reduce_int" | "range" | "safe" | "divide" => {
+        "print" | "from" | "time_now" | "math_sqrt" | "array_len" | "map" | "filter_int" | "reduce" | "range" | "safe" | "divide" => {
             Span::styled(word.to_string(), Style::default().fg(theme.function))
         }
 
@@ -618,7 +607,7 @@ mod tests {
     #[test]
     fn test_colorize_function_calls() {
         let theme = test_theme();
-        let content = vec![Line::from(vec![Span::raw("print(`hello`);")]), Line::from(vec![Span::raw("string_from(42);")]), Line::from(vec![Span::raw("time_now();")])];
+        let content = vec![Line::from(vec![Span::raw("print(`hello`);")]), Line::from(vec![Span::raw("from(42);")]), Line::from(vec![Span::raw("time_now();")])];
 
         let result = colorize_code(content, &theme);
 
@@ -628,7 +617,7 @@ mod tests {
         for line in &result {
             let has_function_color = line.spans.iter().any(|span| {
                 // Function names are colored separately from parentheses
-                (span.content == "print" || span.content == "string_from" || span.content == "time_now") && span.style.fg == Some(theme.function)
+                (span.content == "print" || span.content == "from" || span.content == "time_now") && span.style.fg == Some(theme.function)
             });
             assert!(has_function_color, "Function call should be colored as function");
         }
@@ -716,18 +705,14 @@ mod tests {
     #[test]
     fn test_colorize_parallel_blocks() {
         let theme = test_theme();
-        let content = vec![
-            Line::from(vec![Span::raw("parallel {")]),
-            Line::from(vec![Span::raw("    print(\"task 1\");")]),
-            Line::from(vec![Span::raw("    print(\"task 2\");")]),
-            Line::from(vec![Span::raw("}")]),
-        ];
+        let content =
+            vec![Line::from(vec![Span::raw("p")]), Line::from(vec![Span::raw("    print(\"task 1\");")]), Line::from(vec![Span::raw("    print(\"task 2\");")]), Line::from(vec![Span::raw("/p")])];
 
         let result = colorize_code(content, &theme);
 
         // Check that 'parallel' keyword is colored correctly
         let first_line = &result[0];
-        let has_parallel = first_line.spans.iter().any(|span| span.content == "parallel" && span.style.fg == Some(theme.parallel_keyword));
+        let has_parallel = first_line.spans.iter().any(|span| span.content == "p" && span.style.fg == Some(theme.parallel_keyword));
         assert!(has_parallel, "Parallel keyword should be colored correctly");
     }
 
@@ -763,7 +748,7 @@ mod tests {
             Line::from(vec![Span::raw("    print(`Minor`);")]),
             Line::from(vec![Span::raw("}")]),
             Line::from(vec![Span::raw("")]),
-            Line::from(vec![Span::raw("parallel {")]),
+            Line::from(vec![Span::raw("p")]),
             Line::from(vec![Span::raw("    result1:s = string_from(age);")]),
             Line::from(vec![Span::raw("    result2:i = time_now();")]),
             Line::from(vec![Span::raw("}")]),
@@ -781,10 +766,10 @@ mod tests {
         assert!(result.iter().any(|line| line.spans.iter().any(|span| span.style.fg == Some(theme.var_decl))));
 
         // Verify we have the parallel keyword
-        assert!(result.iter().any(|line| line.spans.iter().any(|span| span.content == "parallel" && span.style.fg == Some(theme.parallel_keyword))));
+        assert!(result.iter().any(|line| line.spans.iter().any(|span| span.content == "p" && span.style.fg == Some(theme.parallel_keyword))));
 
         // Verify we have function calls
-        assert!(result.iter().any(|line| line.spans.iter().any(|span| (span.content == "print" || span.content == "string_from") && span.style.fg == Some(theme.function))));
+        assert!(result.iter().any(|line| line.spans.iter().any(|span| (span.content == "print" || span.content == "from") && span.style.fg == Some(theme.function))));
     }
 
     #[test]

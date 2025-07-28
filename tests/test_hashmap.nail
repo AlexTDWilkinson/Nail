@@ -1,0 +1,63 @@
+// Test hashmap functionality
+
+// Basic hashmap creation and operations
+map1:h(s,s) = hashmap_new();
+
+// Test insert  
+hashmap_insert(map1, `key1`, `value1`);
+hashmap_insert(map1, `key2`, `value2`);
+hashmap_insert(map1, `key3`, `value3`);
+
+// Test get
+value1:s = danger(hashmap_get(map1, `key1`));
+print(array_join([`Got value1: `, value1], ``));
+
+// Test contains_key
+has_key1:b = hashmap_contains_key(map1, `key1`);
+has_key4:b = hashmap_contains_key(map1, `key4`);
+print(array_join([`Has key1: `, danger(string_from(has_key1))], ``));
+print(array_join([`Has key4: `, danger(string_from(has_key4))], ``));
+
+// Test len
+len1:i = hashmap_len(map1);
+print(array_join([`Map length: `, danger(string_from(len1))], ``));
+
+// Test remove
+removed_val:s = danger(hashmap_remove(map1, `key2`));
+print(array_join([`Removed value: `, removed_val], ``));
+
+// Test len after remove
+len2:i = hashmap_len(map1);
+print(array_join([`Map length after remove: `, danger(string_from(len2))], ``));
+
+// Test keys
+keys:a:s = hashmap_keys(map1);
+print(`Keys in map:`);
+for key in keys {
+    print(array_join([`  - `, key], ``));
+}
+
+// Test values
+values:a:s = hashmap_values(map1);
+print(`Values in map:`);
+for value in values {
+    print(array_join([`  - `, value], ``));
+}
+
+// Test with another string map
+map2:h(s,s) = hashmap_new();
+hashmap_insert(map2, `one`, `100`);
+hashmap_insert(map2, `two`, `200`);
+hashmap_insert(map2, `three`, `300`);
+
+val100:s = danger(hashmap_get(map2, `one`));
+print(array_join([`Second map value: `, val100], ``));
+
+// Test clear
+hashmap_clear(map1);
+len3:i = hashmap_len(map1);
+is_empty:b = hashmap_is_empty(map1);
+print(array_join([`Map length after clear: `, danger(string_from(len3))], ``));
+print(array_join([`Is empty: `, danger(string_from(is_empty))], ``));
+
+print(`All hashmap tests completed!`);

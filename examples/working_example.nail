@@ -1,5 +1,0 @@
-damage:i = 42;
-healing:f = 10.0;
-upper_name:s = (string_to_uppercase(`test`));
-
-print(upper_name);

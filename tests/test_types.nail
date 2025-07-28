@@ -1,0 +1,21 @@
+// Type System Tests
+
+// Boolean types
+is_valid:b = true;
+is_false:b = false;
+print(danger(string_from(is_valid)));
+
+// Type conversions
+int_val:i = 42;
+float_val:f = 3.14;
+string_val:s = `hello`;
+
+int_str:s = danger(string_from(int_val));
+float_str:s = danger(string_from(float_val));
+print(int_str);
+
+// Operators
+result:i = 5 + 3;
+not_equal:b = 5 != 3;
+comparison:b = 5 > 3;
+print(danger(string_from(result)));

@@ -1,3 +1,0 @@
-// Just test a simple typed lambda
-x:i = 5;
-result:i = |y:i|:i { r y + 1; }(x);

@@ -1,7 +1,6 @@
-use std::process::{Command, ExitCode};
 use tokio::process::Command as TokioCommand;
 
-pub fn exit(code: i64) -> ! {
+pub async fn exit(code: i64) -> ! {
     std::process::exit(code as i32)
 }
 
