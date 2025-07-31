@@ -878,7 +878,18 @@ impl Transpiler {
                 write!(output, "{}", value)?;
             }
             ASTNode::StringLiteral { value, .. } => {
-                write!(output, "\"{}\".to_string()", value.replace("\"", "\\\""))?;
+                // Check if the string contains problematic characters that would benefit from raw strings
+                if value.contains('\n') || value.contains('\t') || value.contains('\\') || value.contains('"') {
+                    // Use raw string literal with enough # symbols to avoid conflicts
+                    let mut delimiter = String::from("#");
+                    while value.contains(&format!("\"{}", delimiter)) {
+                        delimiter.push('#');
+                    }
+                    write!(output, "r{0}\"{1}\"{0}.to_string()", delimiter, value)?;
+                } else {
+                    // Use regular string literal for simple strings
+                    write!(output, "\"{}\".to_string()", value)?;
+                }
             }
             ASTNode::BooleanLiteral { value, .. } => {
                 write!(output, "{}", value)?;

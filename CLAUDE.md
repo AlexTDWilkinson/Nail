@@ -49,6 +49,10 @@ This ensures the language remains consistent and bugs are actually fixed, not hi
 3. Either implement it properly or don't implement it all
 4. If something needs future work, track it properly in documentation or issues, not in code comments
 
+## File Management Guidelines
+
+- **DO NOT MAKE MULTIPLE VERSIONS OF .NAIL FILES, LIKE NAIL_WEBSITE.nail and NAIL_WEBSITE_V2.NAIL**
+
 ## Testing Guidelines
 
 **ABSOLUTELY MOST IMPORTANT THING Testing Principle**:

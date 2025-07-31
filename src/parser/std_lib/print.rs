@@ -11,7 +11,15 @@ macro_rules! print_macro {
                 if !_first {
                     print!(" ");
                 }
-                print!("{:?}", $arg);
+                let formatted = format!("{:?}", $arg);
+                // For strings, remove surrounding quotes and replace \n with actual newlines
+                let output = if formatted.starts_with('"') && formatted.ends_with('"') && formatted.len() > 1 {
+                    let without_quotes = &formatted[1..formatted.len()-1];
+                    without_quotes.replace("\\n", "\n")
+                } else {
+                    formatted.replace("\\n", "\n")
+                };
+                print!("{}", output);
                 _first = false;
             )*
             println!();
@@ -24,7 +32,15 @@ pub async fn print<T>(value: T)
 where
     T: Debug
 {
-    println!("{:?}", value);
+    let formatted = format!("{:?}", value);
+    // For strings, remove surrounding quotes and replace \n with actual newlines
+    let output = if formatted.starts_with('"') && formatted.ends_with('"') && formatted.len() > 1 {
+        let without_quotes = &formatted[1..formatted.len()-1];
+        without_quotes.replace("\\n", "\n")
+    } else {
+        formatted.replace("\\n", "\n")
+    };
+    println!("{}", output);
 }
 
 /// Print without newline

@@ -1,0 +1,51 @@
+// Test print function with newlines and various data types
+
+// Test 1: Simple string with newline
+print(`Hello\nWorld`);
+
+// Test 2: String with multiple newlines
+print(`Line 1\nLine 2\nLine 3`);
+
+// Test 3: String with tab and newline
+print(`Name:\tJohn\nAge:\t30`);
+
+// Test 4: Empty string
+print(``);
+
+// Test 5: String without newlines
+print(`This is a regular string`);
+
+// Test 6: Numbers (should work as before)
+print(42);
+print(3.14);
+
+// Test 7: Booleans
+print(true);
+print(false);
+
+// Test 8: Arrays (should show debug format)
+numbers:a:i = [1, 2, 3, 4, 5];
+print(numbers);
+
+// Test 9: Struct (should show debug format)
+struct Point {
+    x_coord:i,
+    y_coord:i
+}
+point:Point = Point { x_coord: 10, y_coord: 20 };
+print(point);
+
+// Test 10: String with tab character
+print(`Name:\tValue`);
+
+// Test 11: String concatenation with newlines
+message:s = array_join([`First part\n`, `Second part\n`, `Third part`], ``);
+print(message);
+
+// Test 12: Multiple prints to show line breaks work
+print(`=== Test Section ===\n`);
+print(`Item 1`);
+print(`Item 2`);
+print(`\n=== End Section ===`);
+
+print(`\nAll tests completed!`);

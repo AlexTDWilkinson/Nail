@@ -654,9 +654,12 @@ lazy_static! {
             crate_deps: vec![],
             struct_derives: vec![],
             module: StdlibModule::Array,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
+            parameters: vec![
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "item".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
         });
@@ -726,6 +729,22 @@ lazy_static! {
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+
+            diverging: false,
+        });
+
+        m.insert("array_concat", StdlibFunction {
+            rust_path: "std_lib::array::concat".to_string(),
+
+            crate_deps: vec![],
+            struct_derives: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "first".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "second".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
             ],
             return_type: NailDataTypeDescriptor::Any,
             type_inference: Some(TypeInferenceRule::ParameterType(0)),
@@ -818,7 +837,7 @@ lazy_static! {
             struct_derives: vec![],
             module: StdlibModule::Array,
             parameters: vec![
-                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)), pass_by_reference: true }
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)), pass_by_reference: false }
             ],
             return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Any)),
             type_inference: Some(TypeInferenceRule::ArrayElementType(0)),

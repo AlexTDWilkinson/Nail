@@ -1,0 +1,9 @@
+// Process data in parallel
+data:a:i = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+processed:a:i = map num in data {
+    // Heavy computation runs in parallel
+    y num * num * num;
+};
+sum:i = reduce acc num in processed from 0 {
+    y acc + num;
+};

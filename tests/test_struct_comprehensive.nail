@@ -112,4 +112,33 @@ p4:Point = Point { x_coord: 100, y_coord: 200 };
 sum:i = p4.x_coord + p4.y_coord;
 print(array_join([`Sum of p4 coordinates: `, danger(string_from(sum))], ``));
 
+// Test struct field expressions (from test_struct_expression_fields.nail)
+base_x:i = 10;
+base_y:i = 20;
+p5:Point = Point { x_coord: base_x * 2 + 5, y_coord: base_y - 10 };
+print(array_join([`Point with expressions: x=`, danger(string_from(p5.x_coord)), `, y=`, danger(string_from(p5.y_coord))], ``));
+
+// Test struct with function calls in field values
+p6:Point = Point { 
+    x_coord: math_max(10.0, 20.0) |> float_to_int |> danger,
+    y_coord: math_min(50.0, 30.0) |> float_to_int |> danger
+};
+print(array_join([`Point with function calls: x=`, danger(string_from(p6.x_coord)), `, y=`, danger(string_from(p6.y_coord))], ``));
+
+// Test reduce with structs (from test_struct_in_reduce.nail)
+total_x:i = reduce p in points, 0 { y accumulator + p.x_coord; };
+total_y:i = reduce p in points, 0 { y accumulator + p.y_coord; };
+print(array_join([`Total x: `, danger(string_from(total_x)), `, Total y: `, danger(string_from(total_y))], ``));
+
+// Test field access with operators
+player:Person = Person { name: `Test`, age: 25, height: 5.5, is_active: false };
+is_inactive:b = !player.is_active;
+print(array_join([`Player is inactive: `, danger(string_from(is_inactive))], ``));
+
+// Test nested field access with operators
+width:i = rect.bottom_right_point.x_coord - rect.top_left_point.x_coord;
+height:i = rect.top_left_point.y_coord - rect.bottom_right_point.y_coord;
+area:i = width * height;
+print(array_join([`Rectangle area: `, danger(string_from(area))], ``));
+
 print(`All struct tests completed successfully!`);

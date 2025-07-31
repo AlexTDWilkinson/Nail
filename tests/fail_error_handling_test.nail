@@ -1,7 +1,7 @@
 // Test error handling in Nail
 
 // Function that can return an error
-function divide(a:i, b:i):i!e {
+f divide(a:i, b:i):i!e {
     if {
         b == 0 => { r e(`Division by zero`); }
         else => { r a / b; }
@@ -9,24 +9,24 @@ function divide(a:i, b:i):i!e {
 }
 
 // Test danger() - should propagate error up
-function test_dangerous():i {
+f test_dangerous():i {
     result:i = danger(divide(10, 0));
     r result;
 }
 
 // Test safe() - should handle error gracefully
-function handle_error(err:s):i {
+f handle_error(err:s):i {
     print(`Error occurred: ` + err);
     r -1;
 }
 
-function test_safe():i {
+f test_safe():i {
     result:i = safe(divide(10, 0), handle_error);
     r result;
 }
 
 // Main test
-function main():v {
+f main():v {
     // This should panic
     dangerous_result:i = test_dangerous();
     

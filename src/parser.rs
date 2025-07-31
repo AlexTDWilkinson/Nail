@@ -192,76 +192,98 @@ fn advance(state: &mut ParserState) -> Option<Token> {
     state.current_token.clone()
 }
 
+fn parse_field_access_chain(state: &mut ParserState, mut node: ASTNode) -> Result<ASTNode, CodeError> {
+    while matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Dot)) {
+        advance(state); // Consume the dot
+        let field_name = expect_identifier(state)?;
+        let code_span = state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone());
+        
+        node = match node {
+            ASTNode::Identifier { name, .. } => {
+                ASTNode::StructFieldAccess { struct_name: name, field_name, code_span, scope: GLOBAL_SCOPE }
+            }
+            _ => {
+                ASTNode::NestedFieldAccess { object: Box::new(node), field_name, code_span, scope: GLOBAL_SCOPE }
+            }
+        };
+    }
+    Ok(node)
+}
+
 fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     if let Some(token) = state.tokens.peek().cloned() {
-        match token.token_type {
+        let node = match token.token_type {
             TokenType::Operator(op) if op.is_unary() => {
                 // Handle unary operators like ! and -
                 advance(state);
                 let operand = Box::new(parse_primary(state)?);
-                Ok(ASTNode::UnaryOperation { operator: op, operand, code_span: token.code_span, scope: GLOBAL_SCOPE })
+                // Unary operators don't participate in field access
+                return Ok(ASTNode::UnaryOperation { operator: op, operand, code_span: token.code_span, scope: GLOBAL_SCOPE });
             }
-            TokenType::StructInstantiation(_) => {
-                advance(state);
-                parse_struct_instantiation_token(&token)
-            }
+            // Struct instantiation is now detected in the Identifier case
             TokenType::Identifier(name) => {
                 advance(state);
                 if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::ParenthesisOpen)) {
                     // Check if this is an inline function declaration (f (...))
                     if name == "f" {
-                        parse_inline_function_declaration(state)
+                        parse_inline_function_declaration(state)?
                     } else {
-                        parse_function_call(state, name)
+                        parse_function_call(state, name)?
                     }
+                } else if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::BlockOpen)) && name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                    // This is a struct instantiation
+                    parse_struct_instantiation(state, name, token.code_span)?
                 } else {
-                    Ok(ASTNode::Identifier { name, code_span: token.code_span, scope: GLOBAL_SCOPE })
+                    ASTNode::Identifier { name, code_span: token.code_span, scope: GLOBAL_SCOPE }
                 }
             }
             TokenType::Float(value) => {
                 advance(state);
-                Ok(ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Float, code_span: token.code_span, scope: GLOBAL_SCOPE })
+                ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Float, code_span: token.code_span, scope: GLOBAL_SCOPE }
             }
             TokenType::Integer(value) => {
                 advance(state);
-                Ok(ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Int, code_span: token.code_span, scope: GLOBAL_SCOPE })
+                ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Int, code_span: token.code_span, scope: GLOBAL_SCOPE }
             }
             TokenType::StringLiteral(value) => {
                 advance(state);
-                Ok(ASTNode::StringLiteral { value, code_span: token.code_span, scope: GLOBAL_SCOPE })
+                ASTNode::StringLiteral { value, code_span: token.code_span, scope: GLOBAL_SCOPE }
             }
             TokenType::BooleanLiteral(value) => {
                 advance(state);
-                Ok(ASTNode::BooleanLiteral { value, code_span: token.code_span, scope: GLOBAL_SCOPE })
+                ASTNode::BooleanLiteral { value, code_span: token.code_span, scope: GLOBAL_SCOPE }
             }
             TokenType::ParenthesisOpen => {
                 advance(state);
                 let expr = parse_expression(state, 0)?;
                 let _ = expect_token(state, TokenType::ParenthesisClose)?;
-                Ok(expr)
+                expr
             }
             TokenType::EnumVariant(variant) => {
                 let code_span = token.code_span;
                 advance(state);
-                Ok(ASTNode::EnumVariant { name: variant.name, variant: variant.variant, code_span, scope: GLOBAL_SCOPE })
+                ASTNode::EnumVariant { name: variant.name, variant: variant.variant, code_span, scope: GLOBAL_SCOPE }
             }
-            TokenType::ArrayOpen => parse_array_literal(state),
-            TokenType::IfDeclaration => parse_if_statement_expr(state, true),
-            TokenType::ForDeclaration => parse_for_loop(state),
-            TokenType::MapDeclaration => parse_map_expression(state),
-            TokenType::FilterDeclaration => parse_filter_expression(state),
-            TokenType::ReduceDeclaration => parse_reduce_expression(state),
-            TokenType::EachDeclaration => parse_each_expression(state),
-            TokenType::FindDeclaration => parse_find_expression(state),
-            TokenType::AllDeclaration => parse_all_expression(state),
-            TokenType::AnyDeclaration => parse_any_expression(state),
-            TokenType::WhileDeclaration => parse_while_loop(state),
-            TokenType::FunctionSignature(_) => parse_inline_function_from_signature(state),
+            TokenType::ArrayOpen => parse_array_literal(state)?,
+            TokenType::IfDeclaration => parse_if_statement_expr(state, true)?,
+            TokenType::ForDeclaration => parse_for_loop(state)?,
+            TokenType::MapDeclaration => parse_map_expression(state)?,
+            TokenType::FilterDeclaration => parse_filter_expression(state)?,
+            TokenType::ReduceDeclaration => parse_reduce_expression(state)?,
+            TokenType::EachDeclaration => parse_each_expression(state)?,
+            TokenType::FindDeclaration => parse_find_expression(state)?,
+            TokenType::AllDeclaration => parse_all_expression(state)?,
+            TokenType::AnyDeclaration => parse_any_expression(state)?,
+            TokenType::WhileDeclaration => parse_while_loop(state)?,
+            TokenType::FunctionSignature(_) => parse_inline_function_from_signature(state)?,
             _ => {
                 let code_span = token.code_span;
-                Err(CodeError { message: format!("Unexpected token {:?}", token.token_type), code_span: code_span.clone() })
+                return Err(CodeError { message: format!("Unexpected token {:?}", token.token_type), code_span: code_span.clone() });
             }
-        }
+        };
+        
+        // Apply field access to all primary expressions except unary operations
+        parse_field_access_chain(state, node)
     } else {
         Err(CodeError { message: "Unexpected end of file".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
@@ -297,9 +319,9 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                     let mut peek_iter = state.tokens.clone();
                     peek_iter.next(); // Skip identifier
                     if let Some(token) = peek_iter.peek() {
-                        if matches!(token.token_type, TokenType::TypeDeclaration(_)) {
-                            // This is a const declaration without 'c'
-                            return parse_const_declaration_no_prefix(state);
+                        if matches!(token.token_type, TokenType::Colon) {
+                            // This is a const declaration: identifier : type = expression
+                            return parse_const_declaration(state);
                         }
                     }
                 }
@@ -332,24 +354,6 @@ fn parse_expression(state: &mut ParserState, min_precedence: u8) -> Result<ASTNo
                 } else {
                     let right = parse_expression(state, op.precedence() + 1)?;
                     left = ASTNode::BinaryOperation { left: Box::new(left), operator: op, right: Box::new(right), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
-                }
-            }
-            Some(Token { token_type: TokenType::Dot, .. }) => {
-                advance(state); // Consume the dot
-                let field_name = expect_identifier(state)?;
-                let code_span = state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone());
-
-                // For nested field access, we need to handle it differently
-                // Convert left to appropriate form
-                match left {
-                    ASTNode::Identifier { name, .. } => {
-                        // Simple case: identifier.field
-                        left = ASTNode::StructFieldAccess { struct_name: name, field_name, code_span: code_span.clone(), scope: GLOBAL_SCOPE };
-                    }
-                    _ => {
-                        // For any other expression (including StructFieldAccess), create a nested access
-                        left = ASTNode::NestedFieldAccess { object: Box::new(left), field_name, code_span: code_span.clone(), scope: GLOBAL_SCOPE };
-                    }
                 }
             }
             _ => break,
@@ -449,48 +453,73 @@ fn parse_struct_declaration(state: &mut ParserState) -> Result<ASTNode, CodeErro
     }
 }
 
-// Handle struct instantiation data directly for inside arrays, etc
-fn parse_struct_instantiation_token(token: &Token) -> Result<ASTNode, CodeError> {
-    if let TokenType::StructInstantiation(struct_instantiation_data) = &token.token_type {
-        let struct_name = struct_instantiation_data.name.clone();
-        let mut fields: Vec<ASTNode> = Vec::new();
 
-        for field in &struct_instantiation_data.fields {
-            fields.push(ASTNode::StructInstantiationField {
-                name: field.name.clone(),
-                value: Box::new(match &field.value.token_type {
-                    TokenType::Identifier(name) => ASTNode::Identifier { name: name.clone(), code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
-                    TokenType::Integer(value) => ASTNode::NumberLiteral { value: value.clone(), data_type: NailDataTypeDescriptor::Int, code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
-                    TokenType::Float(value) => ASTNode::NumberLiteral { value: value.clone(), data_type: NailDataTypeDescriptor::Float, code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
-                    TokenType::StringLiteral(value) => ASTNode::StringLiteral { value: value.clone(), code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
-                    TokenType::BooleanLiteral(value) => ASTNode::BooleanLiteral { value: value.clone(), code_span: field.value.code_span.clone(), scope: GLOBAL_SCOPE },
-                    TokenType::StructInstantiation(_) => {
-                        // Recursively parse nested struct instantiation
-                        parse_struct_instantiation_token(&field.value)?
-                    }
-                    _ => {
-                        return Err(CodeError { message: format!("Unexpected token in struct field: {:?}", field.value.token_type), code_span: field.value.code_span.clone() });
-                    }
-                }),
-                code_span: field.value.code_span.clone(),
-                scope: GLOBAL_SCOPE,
+// Parse struct instantiation: StructName { field1: expr1, field2: expr2, ... }
+fn parse_struct_instantiation(state: &mut ParserState, struct_name: String, start_span: CodeSpan) -> Result<ASTNode, CodeError> {
+    // Consume the opening brace
+    let _ = expect_token(state, TokenType::BlockOpen)?;
+    
+    let mut fields = Vec::new();
+    
+    loop {
+        // Check for closing brace
+        if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::BlockClose)) {
+            advance(state);
+            break;
+        }
+        
+        // Parse field name
+        let field_name = if let Some(token) = state.tokens.peek() {
+            match &token.token_type {
+                TokenType::Identifier(name) => {
+                    let name = name.clone();
+                    advance(state);
+                    name
+                }
+                _ => return Err(CodeError { 
+                    message: "Expected field name in struct instantiation".to_string(), 
+                    code_span: token.code_span.clone() 
+                })
+            }
+        } else {
+            return Err(CodeError { 
+                message: "Unexpected end of input in struct instantiation".to_string(), 
+                code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) 
+            });
+        };
+        
+        // Expect colon
+        let _ = expect_token(state, TokenType::Colon)?;
+        
+        // Parse field value expression
+        let field_value = parse_expression(state, 0)?;
+        let field_span = field_value.code_span().clone();
+        
+        fields.push(ASTNode::StructInstantiationField {
+            name: field_name,
+            value: Box::new(field_value),
+            code_span: field_span,
+            scope: GLOBAL_SCOPE,
+        });
+        
+        // Check for comma or closing brace
+        if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Comma)) {
+            advance(state);
+        } else if !matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::BlockClose)) {
+            return Err(CodeError { 
+                message: "Expected ',' or '}' in struct instantiation".to_string(), 
+                code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) 
             });
         }
-        Ok(ASTNode::StructInstantiation { name: struct_name, fields, code_span: token.code_span.clone(), scope: GLOBAL_SCOPE })
-    } else {
-        Err(CodeError { message: format!("Expected struct instantiation, found {:?}", token.token_type), code_span: token.code_span.clone() })
     }
+    
+    Ok(ASTNode::StructInstantiation {
+        name: struct_name,
+        fields,
+        code_span: start_span,
+        scope: GLOBAL_SCOPE,
+    })
 }
-
-// For standalone struct instantiations outside of arrays
-// fn parse_struct_instantiation(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-//     if let Some(token @ Token { token_type: TokenType::StructInstantiation(_), .. }) = state.tokens.peek().cloned() {
-//         advance(state); // Consume the StructInstantiation token
-//         parse_struct_instantiation_token(&token)
-//     } else {
-//         Err(CodeError { message: "Expected struct instantiation".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
-//     }
-// }
 
 fn parse_array_literal(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     // Expect and consume '['
@@ -689,15 +718,94 @@ fn parse_inline_function_from_signature(state: &mut ParserState) -> Result<ASTNo
     }
 }
 
-fn parse_const_declaration_no_prefix(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    // Same as parse_const_declaration but without expecting 'c' token
+fn parse_const_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    // Parse const declaration: identifier : type = expression ;
     let name = expect_identifier(state)?;
-    let data_type = parse_type_declaration(state)?;
+    
+    // Expect colon for type annotation
+    let _ = expect_token(state, TokenType::Colon)?;
+    
+    // Parse the type annotation
+    let data_type = parse_type_annotation(state)?;
+    
     let _ = expect_token(state, TokenType::Assignment)?;
     let value = Box::new(parse_expression(state, 0)?);
     let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
 
     Ok(ASTNode::ConstDeclaration { name, data_type, value, code_span, scope: GLOBAL_SCOPE })
+}
+
+fn parse_type_annotation(state: &mut ParserState) -> Result<NailDataTypeDescriptor, CodeError> {
+    // Parse a type annotation that appears after a colon
+    // This handles: i, f, s, b, a:i, a:s, StructName, EnumName, etc.
+    
+    if let Some(token) = state.tokens.peek().cloned() {
+        match &token.token_type {
+            TokenType::Identifier(type_name) => {
+                let type_name = type_name.clone();
+                let token_span = token.code_span.clone();
+                advance(state);
+                
+                // Check for array type (a:type)
+                if type_name == "a" && matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Colon)) {
+                    advance(state); // consume the colon
+                    let element_type = Box::new(parse_type_annotation(state)?);
+                    Ok(NailDataTypeDescriptor::Array(element_type))
+                } 
+                // Check for hashmap type (h<key_type,value_type>)
+                else if type_name == "h" && matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::Operator(Operation::Lt))) {
+                    advance(state); // consume the '<'
+                    
+                    let key_type = Box::new(parse_type_annotation(state)?);
+                    
+                    // Expect comma
+                    let _ = expect_token(state, TokenType::Comma)?;
+                    
+                    let value_type = Box::new(parse_type_annotation(state)?);
+                    
+                    // Expect '>'
+                    if let Some(Token { token_type: TokenType::Operator(Operation::Gt), .. }) = advance(state) {
+                        Ok(NailDataTypeDescriptor::HashMap(key_type, value_type))
+                    } else {
+                        Err(CodeError {
+                            message: "Expected '>' to close hashmap type".to_string(),
+                            code_span: state.tokens.peek().map_or(CodeSpan::default(), |t| t.code_span.clone()),
+                        })
+                    }
+                } else {
+                    // Parse the type name
+                    match type_name.as_str() {
+                        "i" => Ok(NailDataTypeDescriptor::Int),
+                        "f" => Ok(NailDataTypeDescriptor::Float),
+                        "s" => Ok(NailDataTypeDescriptor::String),
+                        "b" => Ok(NailDataTypeDescriptor::Boolean),
+                        "v" => Ok(NailDataTypeDescriptor::Void),
+                        "e" => Ok(NailDataTypeDescriptor::Error),
+                        _ => {
+                            // Assume it's a struct or enum name (should start with uppercase)
+                            if type_name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                                Ok(NailDataTypeDescriptor::Struct(type_name))
+                            } else {
+                                Err(CodeError {
+                                    message: format!("Unknown type: {}", type_name),
+                                    code_span: token_span,
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+            _ => Err(CodeError {
+                message: format!("Expected type annotation, found {:?}", token.token_type),
+                code_span: token.code_span.clone(),
+            })
+        }
+    } else {
+        Err(CodeError {
+            message: "Expected type annotation".to_string(),
+            code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()),
+        })
+    }
 }
 
 fn parse_if_statement_expr(state: &mut ParserState, is_expression: bool) -> Result<ASTNode, CodeError> {

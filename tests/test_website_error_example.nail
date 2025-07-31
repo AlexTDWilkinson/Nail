@@ -1,0 +1,22 @@
+// Error handling example from the website
+
+// Function that can return an error
+f divide(dividend:i, divisor:i):i!e {
+    if divisor == 0 {
+        r e(`Division by zero`);
+    };
+    r dividend / divisor;
+}
+
+// Handle the result
+result:i = danger(divide(10, 2));
+print(`Result: ` + string_from(result));
+
+// Test division by zero with safe handling
+f handle_error(error_msg:s):i {
+    print(`Error occurred: ` + error_msg);
+    r 0;
+}
+
+safe_result:i = safe(divide(10, 0), handle_error);
+print(`Safe result: ` + string_from(safe_result));

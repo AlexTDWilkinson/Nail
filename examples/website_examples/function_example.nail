@@ -1,0 +1,3 @@
+f greet(name:s):s {
+    r `Hello, ` + name + `!`;
+}

@@ -1,4 +1,4 @@
-// Simple test demonstrating all collection operation keywords
+// Comprehensive test demonstrating all collection operation keywords
 //
 // SYNTAX PATTERNS DEMONSTRATED:
 // 1. Block statements (like 'each'): no assignment, no semicolon after }
@@ -109,5 +109,42 @@ print(array_join([`All positive: `, danger(string_from(all_positive))], ``));
 print(array_join([`All > index: `, danger(string_from(all_gt_index))], ``));
 print(array_join([`Any big: `, danger(string_from(any_big))], ``));
 print(array_join([`Any == index: `, danger(string_from(any_eq_index))], ``));
+
+// Test collection operations with structs
+print(`\n=== Testing Collection Operations with Structs ===`);
+
+struct Item {
+    name:s,
+    value:i,
+    is_rare:b
+}
+
+items:a:Item = [
+    Item { name: `Sword`, value: 100, is_rare: false },
+    Item { name: `Shield`, value: 75, is_rare: false },
+    Item { name: `Magic Ring`, value: 500, is_rare: true },
+    Item { name: `Potion`, value: 25, is_rare: false }
+];
+
+// Map with struct field access
+item_values:a:i = map item in items { y item.value; };
+print(array_join([`Item values: `, danger(string_from_array_i64(item_values))], ``));
+
+// Filter with struct field
+rare_items:a:Item = filter item in items { y item.is_rare; };
+print(array_join([`Number of rare items: `, danger(string_from(array_len(rare_items)))], ``));
+
+// Reduce with struct field
+total_value:i = reduce acc item in items from 0 { y acc + item.value; };
+print(array_join([`Total inventory value: `, danger(string_from(total_value))], ``));
+
+// Find with struct field
+magic_item:Item = danger(find item in items { y string_contains(item.name, `Magic`); });
+print(array_join([`Found magic item: `, magic_item.name], ``));
+
+// All/Any with struct fields
+all_cheap:b = all item in items { y item.value < 1000; };
+any_rare:b = any item in items { y item.is_rare; };
+print(array_join([`All items cheap: `, danger(string_from(all_cheap)), `, Any rare: `, danger(string_from(any_rare))], ``));
 
 print(`All collection operations completed successfully!`);

@@ -19,3 +19,42 @@ result:i = 5 + 3;
 not_equal:b = 5 != 3;
 comparison:b = 5 > 3;
 print(danger(string_from(result)));
+
+// Type annotation edge cases
+print(`\n=== Testing Type Annotation Edge Cases ===`);
+
+// Nested arrays
+matrix:a:a:i = [[1, 2, 3], [4, 5, 6]];
+first_row:a:i = danger(array_get(matrix, 0));
+print(array_join([`First row: `, danger(string_from_array_i64(first_row))], ``));
+
+// Hashmaps with different types
+string_map:h<s,s> = hashmap_new();
+string_map:h<s,s> = hashmap_set(string_map, `hello`, `world`);
+string_map:h<s,s> = hashmap_set(string_map, `foo`, `bar`);
+print(array_join([`Map size: `, danger(string_from(hashmap_len(string_map)))], ``));
+
+// Hashmap with array values
+scores_map:h<s,a:i> = hashmap_new();
+alice_scores:a:i = [100, 95, 98];
+scores_map:h<s,a:i> = hashmap_set(scores_map, `alice`, alice_scores);
+retrieved_scores:a:i = danger(hashmap_get(scores_map, `alice`));
+print(array_join([`Alice's first score: `, danger(string_from(danger(array_get(retrieved_scores, 0))))], ``));
+
+// Array of hashmaps
+map1:h<s,i> = hashmap_new();
+map1:h<s,i> = hashmap_set(map1, `score`, 100);
+map2:h<s,i> = hashmap_new();
+map2:h<s,i> = hashmap_set(map2, `score`, 150);
+map_array:a:h<s,i> = [map1, map2];
+first_map:h<s,i> = danger(array_get(map_array, 0));
+first_score:i = danger(hashmap_get(first_map, `score`));
+print(array_join([`First map score: `, danger(string_from(first_score))], ``));
+
+// Empty arrays with type annotations
+empty_ints:a:i = [];
+empty_strings:a:s = [];
+empty_ints:a:i = array_concat(empty_ints, [1, 2, 3]);
+print(array_join([`After concat: `, danger(string_from_array_i64(empty_ints))], ``));
+
+print(`All type tests completed!`);

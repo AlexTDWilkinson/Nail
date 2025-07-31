@@ -1,7 +1,7 @@
 // Test hashmap functionality
 
 // Basic hashmap creation and operations
-map1:h(s,s) = hashmap_new();
+map1:h<s,s> = hashmap_new();
 
 // Test insert  
 hashmap_insert(map1, `key1`, `value1`);
@@ -45,7 +45,7 @@ for value in values {
 }
 
 // Test with another string map
-map2:h(s,s) = hashmap_new();
+map2:h<s,s> = hashmap_new();
 hashmap_insert(map2, `one`, `100`);
 hashmap_insert(map2, `two`, `200`);
 hashmap_insert(map2, `three`, `300`);

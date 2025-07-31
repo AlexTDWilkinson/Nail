@@ -20,18 +20,6 @@ pub struct StructDeclarationData {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StructInstantiationData {
-    pub name: String,
-    pub fields: Vec<StructInstantiationDataField>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StructInstantiationDataField {
-    pub name: String,
-    pub value: Token,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructDeclarationDataField {
     pub name: String,
     pub data_type: NailDataTypeDescriptor,
@@ -153,7 +141,6 @@ pub enum TokenType {
     FunctionReturnTypeDeclaration(NailDataTypeDescriptor),
     FunctionName(String),
     StructDeclaration(StructDeclarationData), // For struct declarations
-    StructInstantiation(StructInstantiationData),
     EnumDeclaration(EnumDeclarationData), // For enum data
     StructFieldAccess(String, String),
     EnumVariant(EnumVariantData),            // For enum variant name
@@ -190,6 +177,7 @@ pub enum TokenType {
     BooleanLiteral(bool),                    // For boolean literals (true/false)
     Operator(Operation),                     // For operators like +, -, *, /
     Comma,                                   // For commas
+    Colon,                                   // For colons
     StringLiteral(String),                   // For string literals
     TypeDeclaration(NailDataTypeDescriptor), // For explicit type declarations
     ParenthesisOpen,                         // For parenthesis open
@@ -353,13 +341,6 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 });
             }
 
-            _ if is_type_system_type(c) => {
-                let lexer_output: LexerOutput = lex_type_system_type(&mut chars, state);
-                tokens.push(Token {
-                    token_type: lexer_output.token_type,
-                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
-                });
-            }
 
             _ if is_enum_declaration(&mut chars) => {
                 let lexer_output: LexerOutput = lex_enum_delcaration(&mut chars, state);
@@ -377,13 +358,7 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
                 });
             }
 
-            _ if is_struct_instantiation(&mut chars) => {
-                let lexer_output: LexerOutput = lex_struct_instantiation(&mut chars, state);
-                tokens.push(Token {
-                    token_type: lexer_output.token_type,
-                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
-                });
-            }
+            // Struct instantiation now handled by parser - struct names are just identifiers
 
             _ if is_enum_variant(&mut chars) => {
                 let lexer_output = lex_enum_variant(&mut chars, state);
@@ -458,168 +433,6 @@ pub fn is_alphabet_uppercase(c: char) -> bool {
     ALPHABET_UPPERCASE.contains(c)
 }
 
-fn is_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
-    let mut lookahead = chars.clone();
-
-    // Check if it starts with a capital letter
-    if let Some(c) = lookahead.next() {
-        if c.is_ascii_uppercase() {
-            // Consume the rest of the identifier
-            while let Some(c) = lookahead.next() {
-                if !is_in_alphabet_or_number(c) && c != '_' {
-                    break;
-                }
-            }
-
-            // Look for opening brace, ignoring whitespace
-            while let Some(c) = lookahead.next() {
-                if c.is_whitespace() {
-                    continue;
-                } else if c == '{' {
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-        }
-    }
-
-    false
-}
-
-fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
-    let start_line = state.line;
-    let start_column = state.column;
-
-    // Parse struct name
-    let mut struct_name = String::new();
-    while let Some(&c) = chars.peek() {
-        if is_in_alphabet_or_number(c) || c == '_' {
-            struct_name.push(c);
-            advance(chars, state);
-        } else {
-            break;
-        }
-    }
-
-    // Skip whitespace
-    while let Some(&c) = chars.peek() {
-        if c.is_whitespace() {
-            advance(chars, state);
-        } else {
-            break;
-        }
-    }
-
-    // Expect opening brace
-    if chars.peek() != Some(&'{') {
-        return LexerOutput { token_type: TokenType::LexerError("Expected '{' in struct instantiation".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
-    }
-    advance(chars, state);
-
-    let mut fields: Vec<StructInstantiationDataField> = Vec::new();
-    loop {
-        // Skip whitespace
-        while let Some(&c) = chars.peek() {
-            if c.is_whitespace() {
-                advance(chars, state);
-            } else {
-                break;
-            }
-        }
-
-        // Check for closing brace
-        if chars.peek() == Some(&'}') {
-            advance(chars, state);
-            break;
-        }
-
-        let mut field_name = String::new();
-        while let Some(&c) = chars.peek() {
-            if is_in_alphabet_or_number(c) || c == '_' {
-                field_name.push(c);
-                advance(chars, state);
-            } else {
-                break;
-            }
-        }
-
-        // Validate field name
-        if let Some(error) = validate_identifier_name(&field_name) {
-            return LexerOutput { token_type: TokenType::LexerError(error), start_line, start_column, end_line: state.line, end_column: state.column };
-        }
-
-        // Skip whitespace
-        while let Some(&c) = chars.peek() {
-            if c.is_whitespace() {
-                advance(chars, state);
-            } else {
-                break;
-            }
-        }
-
-        // Expect colon
-        if chars.peek() != Some(&':') {
-            return LexerOutput {
-                token_type: TokenType::LexerError("Expected ':' after field name in struct instantiation".to_string()),
-                start_line,
-                start_column,
-                end_line: state.line,
-                end_column: state.column,
-            };
-        }
-        advance(chars, state);
-
-        // Skip whitespace
-        while let Some(&c) = chars.peek() {
-            if c.is_whitespace() {
-                advance(chars, state);
-            } else {
-                break;
-            }
-        }
-
-        // Parse field value
-        let value = lex_value(chars, state);
-        fields.push(StructInstantiationDataField {
-            name: field_name,
-            value: Token {
-                token_type: value.token_type,
-                code_span: CodeSpan { start_line: value.start_line, end_line: value.end_line, start_column: value.start_column, end_column: value.end_column },
-            },
-        });
-
-        // Skip whitespace
-        while let Some(&c) = chars.peek() {
-            if c.is_whitespace() {
-                advance(chars, state);
-            } else {
-                break;
-            }
-        }
-
-        // Expect comma or closing brace
-        match chars.peek() {
-            Some(&',') => {
-                advance(chars, state);
-            }
-            Some(&'}') => {
-                // We'll handle this at the start of the loop
-            }
-            _ => {
-                return LexerOutput {
-                    token_type: TokenType::LexerError("Expected ',' or '}' after field value in struct instantiation".to_string()),
-                    start_line,
-                    start_column,
-                    end_line: state.line,
-                    end_column: state.column,
-                };
-            }
-        }
-    }
-
-    LexerOutput { token_type: TokenType::StructInstantiation(StructInstantiationData { name: struct_name, fields }), start_line, start_column, end_line: state.line, end_column: state.column }
-}
 
 // fn lex_array(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
 //     let start_line = state.line;
@@ -684,7 +497,21 @@ fn lex_struct_instantiation(chars: &mut std::iter::Peekable<std::str::Chars>, st
 
 fn is_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
     let mut lookahead = chars.clone();
-    lookahead.next() == Some('f') && !matches!(lookahead.peek(), Some(&c) if is_in_alphabet_or_number(c))
+    // Check if 'f' followed by whitespace and then an identifier (function name)
+    if lookahead.next() == Some('f') {
+        // Must have at least one whitespace
+        if !matches!(lookahead.peek(), Some(&c) if c.is_whitespace()) {
+            return false;
+        }
+        // Skip whitespace
+        while matches!(lookahead.peek(), Some(&c) if c.is_whitespace()) {
+            lookahead.next();
+        }
+        // Check if followed by an identifier (letter or underscore)
+        matches!(lookahead.peek(), Some(&c) if c.is_alphabetic() || c == '_')
+    } else {
+        false
+    }
 }
 
 fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
@@ -850,7 +677,7 @@ fn is_single_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -
 
     match lookahead.next() {
         Some(c) => match c {
-            '(' | ')' | ';' | '{' | '}' | ',' | '.' | '!' | '+' | '-' | '*' | '/' | '%' | '=' | '<' | '>' => {
+            '(' | ')' | ';' | '{' | '}' | ',' | '.' | ':' | '!' | '+' | '-' | '*' | '/' | '%' | '=' | '<' | '>' => {
                 // Check if it's followed by a space, or by something it's allowed to be beside or end of input
                 match lookahead.next() {
                     Some(next_char) => {
@@ -897,6 +724,7 @@ fn lex_single_character_token(chars: &mut std::iter::Peekable<std::str::Chars>, 
         '}' => TokenType::BlockClose,
         ',' => TokenType::Comma,
         '.' => TokenType::Dot,
+        ':' => TokenType::Colon,
         '=' => TokenType::Assignment,
         '!' => TokenType::Operator(Operation::Not),
         '+' => TokenType::Operator(Operation::Add),
@@ -1157,7 +985,10 @@ fn is_identifier_or_keyword(c: char) -> bool {
 fn validate_identifier_name(identifier: &str) -> Option<String> {
     // Check if identifier is a single letter - all single letter identifiers are forbidden
     // EXCEPT 'e' which is used for error returns (e.g., r e("error message"))
-    if identifier.len() == 1 && identifier.chars().all(|c| c.is_alphabetic()) && identifier != "e" {
+    // AND type annotations: i, f, s, b, v, a, h
+    // AND common struct field names: x, y, z, w (for coordinates/vectors)
+    let valid_single_letters = ["e", "i", "f", "s", "b", "v", "a", "h", "x", "y", "z", "w"];
+    if identifier.len() == 1 && identifier.chars().all(|c| c.is_alphabetic()) && !valid_single_letters.contains(&identifier) {
         Some("Variable name too short. Must use descriptive names.".to_string())
     } else {
         None
@@ -1541,6 +1372,10 @@ fn lex_type_system_type(chars: &mut std::iter::Peekable<std::str::Chars>, state:
         }
     } else {
         // Handle other types
+        // Special case: empty type name should not be an error, just skip
+        if type_name.is_empty() {
+            return LexerOutput { token_type: TokenType::LexerError("Empty type name".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
+        }
         match parse_type(&type_name) {
             Ok(type_desc) => LexerOutput { token_type: TokenType::TypeDeclaration(type_desc), start_line, start_column, end_line: state.line, end_column: state.column },
             Err(e) => LexerOutput { token_type: TokenType::LexerError(e), start_line, start_column, end_line: state.line, end_column: state.column },
@@ -1879,7 +1714,7 @@ fn lex_value(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexer
             // Arrays are now handled by the parser, not the lexer
             '`' => lex_string_literal(chars, state),
             _ if is_number(chars) => lex_number(chars, state),
-            _ if is_struct_instantiation(chars) => lex_struct_instantiation(chars, state),
+            // Struct instantiation now handled by parser
             _ if is_enum_variant(chars) => lex_enum_variant(chars, state),
             _ if is_identifier_or_keyword(c) => lex_identifier_or_keyword(chars, state),
             _ => LexerOutput {
@@ -1895,3 +1730,4 @@ fn lex_value(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexer
         LexerOutput { token_type: TokenType::LexerError("Unexpected end of input".to_string()), start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column }
     }
 }
+

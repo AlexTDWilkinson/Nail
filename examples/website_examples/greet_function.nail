@@ -1,0 +1,4 @@
+f greet(name:s):s {
+    r `Hello, ` + name + `!`;
+}
+message:s = greet(`World`);

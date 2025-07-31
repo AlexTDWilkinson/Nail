@@ -4,12 +4,10 @@ port:i = 8081;
 
 // Load blog posts from markdown files
 post1_path:s = `blog_posts/welcome.md`;
-post1_result:s!e = fs_read(post1_path);
-post1_md:s = danger(post1_result);
+post1_md:s = danger(fs_read(post1_path));
 
 post2_path:s = `blog_posts/web-server-tutorial.md`;
-post2_result:s!e = fs_read(post2_path);
-post2_md:s = danger(post2_result);
+post2_md:s = danger(fs_read(post2_path));
 
 // Convert markdown to HTML
 post1_html:s = markdown_to_html(post1_md);
@@ -108,12 +106,12 @@ blog_html:s = array_join([`
         </div>
         
         <div class="post" id="post1">
-            <div class="post-meta">Published: January 15, 2024</div>
+            <div class="post-meta">Published: January 15, 2025</div>
             `, post1_html, `
         </div>
         
         <div class="post" id="post2">
-            <div class="post-meta">Published: January 20, 2024</div>
+            <div class="post-meta">Published: January 20, 2025</div>
             `, post2_html, `
         </div>
         

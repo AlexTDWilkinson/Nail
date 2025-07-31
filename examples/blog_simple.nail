@@ -177,12 +177,12 @@ blog_html:s = array_join([`
         </div>
         
         <div class="post">
-            <div class="post-meta">Published: January 15, 2024</div>
+            <div class="post-meta">Published: January 15, 2025</div>
             `, post1_html, `
         </div>
         
         <div class="post">
-            <div class="post-meta">Published: January 20, 2024</div>
+            <div class="post-meta">Published: January 20, 2025</div>
             `, post2_html, `
         </div>
         

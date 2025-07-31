@@ -1,0 +1,83 @@
+// Test hashmap with struct values and various key types
+
+struct User {
+    name:s,
+    age:i,
+    active:b
+}
+
+struct Point {
+    x_coord:f,
+    y_coord:f
+}
+
+// Test hashmap with string keys and struct values
+user_map:h<s,User> = hashmap_new();
+
+// Create some users
+alice:User = User { name: `Alice`, age: 30, active: true };
+bob:User = User { name: `Bob`, age: 25, active: false };
+charlie:User = User { name: `Charlie`, age: 35, active: true };
+
+// Insert users into map
+hashmap_insert(user_map, `alice_id`, alice);
+hashmap_insert(user_map, `bob_id`, bob);
+hashmap_insert(user_map, `charlie_id`, charlie);
+
+// Retrieve and use struct from hashmap
+alice_from_map:User = danger(hashmap_get(user_map, `alice_id`));
+print(array_join([`Retrieved user: `, alice_from_map.name, ` age: `, danger(string_from(alice_from_map.age))], ``));
+
+// Test hashmap with integer keys and struct values
+point_map:h<i,Point> = hashmap_new();
+
+// Add points with expressions in struct fields
+origin:Point = Point { x_coord: 0.0, y_coord: 0.0 };
+point1:Point = Point { x_coord: 1.5 * 2.0, y_coord: 4.0 - 1.0 };
+point2:Point = Point { x_coord: origin.x_coord + 5.0, y_coord: origin.y_coord + 10.0 };
+
+hashmap_insert(point_map, 0, origin);
+hashmap_insert(point_map, 1, point1);
+hashmap_insert(point_map, 2, point2);
+
+// Iterate over keys and calculate distances
+keys:a:i = hashmap_keys(point_map);
+
+// Calculate total distance using reduce
+total_distance:f = reduce sum key in keys from 0.0 {
+    point:Point = danger(hashmap_get(point_map, key));
+    distance:f = math_sqrt(point.x_coord * point.x_coord + point.y_coord * point.y_coord);
+    print(array_join([`Point `, danger(string_from(key)), ` distance from origin: `, danger(string_from(distance))], ``));
+    y sum + distance;
+};
+
+print(array_join([`Total distance: `, danger(string_from(total_distance))], ``));
+
+// Test nested access with struct fields
+user_ages:h<s,i> = hashmap_new();
+user_list:a:User = [alice, bob, charlie];
+
+// Use reduce to populate hashmap from array
+dummy:i = reduce sum user in user_list from 0 {
+    hashmap_insert(user_ages, user.name, user.age);
+    y sum; // Just return unchanged sum
+};
+
+// Verify the ages were inserted correctly
+alice_age:i = danger(hashmap_get(user_ages, `Alice`));
+print(array_join([`Alice's age from derived map: `, danger(string_from(alice_age))], ``));
+
+// Test with expressions in hashmap operations
+computed_key:s = array_join([`user_`, `alice`], ``);
+computed_user:User = danger(hashmap_get(user_map, `alice_id`));
+new_user:User = User { 
+    name: computed_user.name, 
+    age: computed_user.age + 1, 
+    active: !computed_user.active 
+};
+
+hashmap_insert(user_map, computed_key, new_user);
+updated_user:User = danger(hashmap_get(user_map, computed_key));
+print(array_join([`Updated user age: `, danger(string_from(updated_user.age)), `, active: `, danger(string_from(updated_user.active))], ``));
+
+print(`All hashmap struct tests completed!`);

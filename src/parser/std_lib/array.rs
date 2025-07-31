@@ -33,6 +33,12 @@ pub async fn reverse<T: Clone>(mut arr: Vec<T>) -> Vec<T> {
     arr
 }
 
+// Concatenate two arrays
+pub async fn concat<T: Clone>(mut first: Vec<T>, second: Vec<T>) -> Vec<T> {
+    first.extend(second);
+    first
+}
+
 // Safe array indexing - returns Result
 pub async fn get<T: Clone>(arr: Vec<T>, index: i64) -> Result<T, String> {
     if index < 0 {

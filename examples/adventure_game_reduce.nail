@@ -13,21 +13,17 @@ initial_gold:i = 10;
 
 // Get player name
 print(`Welcome to the Adventure Game!`);
-print(`================================`);
-print(``);
+print(`================================\n`);
 player_name:s = danger(io_read_line_prompt(`Enter your character name: `));
 
 // Initialize player
 initial_player:Player = Player { name: player_name, health: max_health, gold: initial_gold };
 
 // Display initial stats
-print(``);
-print(array_join([`Welcome, `, initial_player.name, `!`], ``));
+print(array_join([`\nWelcome, `, initial_player.name, `!`], ``));
 print(array_join([`Starting Health: `, danger(string_from(initial_player.health))], ``));
 print(array_join([`Starting Gold: `, danger(string_from(initial_player.gold))], ``));
-print(``);
-print(`Your adventure begins...`);
-print(``);
+print(`\nYour adventure begins...\n`);
 
 // Process 3 turns using reduce
 turns:a:i = [1, 2, 3];
@@ -58,7 +54,7 @@ final_player:Player = reduce player turn idx in turns from initial_player {
             new_health:i = if { fought => { current_health - 10; }, else => { current_health; } };
             new_gold:i = if { fought => { current_gold + 20; }, else => { current_gold; } };
             
-            Player { name: current_name, health: new_health, gold: new_gold };
+            Player { name: current_name, health: new_health - 1, gold: new_gold + 1 };
         },
         turn == 2 => {
             print(``);
@@ -75,7 +71,8 @@ final_player:Player = reduce player turn idx in turns from initial_player {
             Player { name: current_name, health: current_health, gold: new_gold };
         },
         turn == 3 => {
-            print(`\n=== Turn 3 ===`);
+            print(``);
+            print(`=== Turn 3 ===`);
             print(`A merchant offers to heal you for 20 gold.`);
             choice:s = danger(io_read_line_prompt(`Accept (y) or decline (n)? `));
             
@@ -103,7 +100,7 @@ final_player:Player = reduce player turn idx in turns from initial_player {
             new_health:i = if { healed => { max_health; }, else => { current_health; } };
             new_gold:i = if { healed => { current_gold - 20; }, else => { current_gold; } };
             
-            Player { name: current_name, health: new_health, gold: new_gold };
+            Player { name: current_name, health: new_health - 1, gold: new_gold + 1 };
         },
         else => { player; }
     };
@@ -122,10 +119,12 @@ final_player:Player = reduce player turn idx in turns from initial_player {
 };
 
 // Game Over
-print(`\n=== Game Over ===`);
+print(``);
+print(`=== Game Over ===`);
 print(array_join([`Thanks for playing, `, final_player.name, `!`], ``));
 print(`Final stats:`);
 print(`- Survived 3 turns`);
 print(array_join([`- Final health: `, danger(string_from(final_player.health)), `/`, danger(string_from(max_health))], ``));
 print(array_join([`- Final gold: `, danger(string_from(final_player.gold)), ` coins`], ``));
-print(`\nRun the game again for a different adventure!`);
+print(``);
+print(`Run the game again for a different adventure!`);

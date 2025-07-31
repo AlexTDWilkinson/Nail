@@ -1,0 +1,30 @@
+// QuickSort implementation example from the website
+
+f quicksort(arr:a:i):a:i {
+    if array_len(arr) <= 1 {
+        r arr;
+    };
+    
+    pivot:i = arr[0];
+    rest:a:i = array_slice(arr, 1, array_len(arr));
+    
+    less:a:i = filter num in rest {
+        y num < pivot;
+    };
+    
+    greater:a:i = filter num in rest {
+        y num >= pivot;
+    };
+    
+    r array_concat(
+        array_concat(quicksort(less), [pivot]),
+        quicksort(greater)
+    );
+}
+
+// Test the quicksort
+unsorted:a:i = [3, 1, 4, 1, 5, 9, 2, 6, 5];
+sorted:a:i = quicksort(unsorted);
+
+print(`Original: ` + string_from_array_i64(unsorted));
+print(`Sorted: ` + string_from_array_i64(sorted));

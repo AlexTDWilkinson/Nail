@@ -1,0 +1,13 @@
+// Calculate factorial
+f factorial(number:i):i {
+    if number <= 1 {
+        r 1;
+    } else {
+        r number * factorial(number - 1);
+    }
+}
+
+// Process in parallel
+numbers:a:i = [1, 2, 3, 4, 5];
+results:a:i = map num in numbers { y factorial(num); };
+print(results); // [1, 2, 6, 24, 120]

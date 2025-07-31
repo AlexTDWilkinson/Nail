@@ -1162,15 +1162,15 @@ fn visit_enum_declaration(name: &str, variants: &[ASTNode], state: &mut Analyzer
 }
 
 fn visit_array_literal(elements: &[ASTNode], state: &mut AnalyzerState, code_span: &mut CodeSpan) {
-    if elements.is_empty() {
-        add_error(state, "Empty array literals are not allowed".to_string(), code_span);
-        return;
-    }
-
     // First, visit all elements to ensure they're properly typed
     for element in elements.iter() {
         let mut element_clone = element.clone();
         visit_node(&mut element_clone, state);
+    }
+
+    // Empty arrays are allowed now - no type checking needed
+    if elements.is_empty() {
+        return;
     }
 
     // Now check that all elements have the same type

@@ -143,11 +143,36 @@ Custom data types with named fields:
 
 ```js
 struct Point {
-    x:i,
-    y:i
+    x_pos:i,
+    y_pos:i
 }
+```
 
-origin:Point = Point { x: 0, y: 0 };
+#### 5.4.3 HashMaps
+
+Key-value collections with type-safe keys and values:
+
+```js
+// Create a new hashmap with string keys and string values
+user_scores:h<s,s> = hashmap_new();
+
+// Hashmaps with different type combinations
+int_map:h<s,i> = hashmap_new();      // String keys, integer values
+struct_map:h<s,Point> = hashmap_new(); // String keys, struct values
+bool_map:h<i,b> = hashmap_new();     // Integer keys, boolean values
+
+// Hashmap operations
+hashmap_insert(user_scores, `alice`, `100`);
+hashmap_insert(user_scores, `bob`, `85`);
+
+score:s = danger(hashmap_get(user_scores, `alice`));
+has_charlie:b = hashmap_contains_key(user_scores, `charlie`);
+map_size:i = hashmap_len(user_scores);
+
+// Safe access with error handling
+alice_score:s = safe(hashmap_get(user_scores, `alice`), f(err:s):s { r `0`; });
+
+origin:Point = Point { x_pos: 0, y_pos: 0 };
 ```
 
 #### 5.4.3 Enums
@@ -945,6 +970,43 @@ Example:
 f add(num_a:i, num_b:i):i {
    r num_a + num_b;
 }
+```
+
+### Function Return Types and Void Functions
+
+Functions in Nail can return values of any type, or they can be void functions that return nothing:
+
+```js
+// Function with return type
+f calculate(x:i, y:i):i {
+    r x + y;
+}
+
+// Void function (no return type specified)
+f print_message(msg:s) {
+    print(msg);
+}
+
+// Result type for error handling
+f divide(a:i, b:i):i!e {
+    if b == 0 {
+        r err(`Division by zero`);
+    };
+    r ok(a / b);
+}
+```
+
+**Important Rule**: Void functions cannot be assigned to variables. Since they don't return a value, attempting to capture their "result" is a type error:
+
+```js
+// This is INVALID - compile error
+result:s = print(`Hello`);  // ERROR: Cannot assign void to variable
+
+// This is valid - just call the function
+print(`Hello`);  // OK
+
+// Functions that return values can be assigned
+sum:i = calculate(5, 3);  // OK - returns an integer
 ```
 
 ### Function Parameters

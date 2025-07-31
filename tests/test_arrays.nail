@@ -1,10 +1,43 @@
-// Array Tests
+// Array Tests - Comprehensive
+
+// Test array length
 arr:a:i = [1, 2, 3];
 len:i = array_len(arr);
-print(len);
+print(array_join([`Array length: `, danger(string_from(len))], ``));
 
-number_list:a:i = [1, 2, 3, 4, 5]; 
-print(array_len(number_list));
+// Test array_concat with integers
+arr1:a:i = [1, 2, 3];
+arr2:a:i = [4, 5, 6];
+combined:a:i = array_concat(arr1, arr2);
+print(array_join([`Concatenated: `, danger(string_from_array_i64(combined))], ``));
 
-test_array:a:i = [10, 20, 30];
-print(array_len(test_array));
+// Test array_concat with empty arrays
+empty:a:i = [];
+numbers:a:i = [7, 8, 9];
+result1:a:i = array_concat(empty, numbers);
+result2:a:i = array_concat(numbers, empty);
+print(array_join([`Empty + numbers: `, danger(string_from_array_i64(result1))], ``));
+print(array_join([`Numbers + empty: `, danger(string_from_array_i64(result2))], ``));
+
+// Test array operations
+sorted:a:i = array_sort([3, 1, 4, 1, 5]);
+reversed:a:i = array_reverse([1, 2, 3, 4, 5]);
+print(array_join([`Sorted: `, danger(string_from_array_i64(sorted))], ``));
+print(array_join([`Reversed: `, danger(string_from_array_i64(reversed))], ``));
+
+// Test array_push
+list:a:i = [1, 2, 3];
+list:a:i = array_push(list, 4);
+list:a:i = array_push(list, 5);
+print(array_join([`After push: `, danger(string_from_array_i64(list))], ``));
+
+// Test array_get
+value:i = danger(array_get(list, 2));
+print(array_join([`Element at index 2: `, danger(string_from(value))], ``));
+
+// Test array_first and array_last
+first:i = danger(array_first(list));
+last:i = danger(array_last(list));
+print(array_join([`First: `, danger(string_from(first)), `, Last: `, danger(string_from(last))], ``));
+
+print(`Array tests completed!`);

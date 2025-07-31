@@ -1,0 +1,8 @@
+// Test the greet function example from the website
+
+f greet(name:s):s {
+    r `Hello, ` + name + `!`;
+}
+
+message:s = greet(`World`);
+print(message);

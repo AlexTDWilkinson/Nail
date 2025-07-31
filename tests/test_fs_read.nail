@@ -1,0 +1,11 @@
+// Test fs_read function
+
+// Test with expect() function  
+content_expect:s = expect(fs_read(`tests/test_data.txt`));
+print(`Content with expect:`);
+print(content_expect);
+
+// Test with danger() function
+content_danger:s = danger(fs_read(`tests/test_data.txt`));
+print(`Content with danger:`);
+print(content_danger);

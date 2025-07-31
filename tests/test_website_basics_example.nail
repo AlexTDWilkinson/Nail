@@ -1,0 +1,28 @@
+// Basic binding examples from the website
+// These demonstrate Nail's fundamental syntax
+
+// 1. Binding Values
+name:s = `Alice`;
+age:i = 30;
+scores:a:i = [95, 87, 92];
+
+// 2. Functions
+f greet(name:s):s {
+    r `Hello, ` + name + `!`;
+}
+
+// 3. Collection Operations
+numbers:a:i = [1, 2, 3, 4, 5];
+doubled:a:i = map num in numbers { y num * 2; };
+sum:i = reduce acc num in numbers from 0 { y acc + num; };
+
+// Test the examples
+print(`Name: ` + name);
+print(`Age: ` + string_from(age));
+print(`Scores: ` + string_from_array_i64(scores));
+
+greeting:s = greet(`World`);
+print(greeting);
+
+print(`Doubled: ` + string_from_array_i64(doubled));
+print(`Sum: ` + string_from(sum));
