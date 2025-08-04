@@ -3,15 +3,11 @@ set -e
 
 echo "=== Building Nail Website for Render ==="
 
-# Render already has Rust installed, just ensure nightly is available
+# Render already has Rust installed and rust-toolchain.toml ensures nightly is used
 echo "Checking Rust installation..."
 rustc --version
 
-# Install nightly toolchain if not already installed
-echo "Installing Rust nightly toolchain..."
-rustup install nightly
-
-# The rust-toolchain.toml file will ensure nightly is used
+# Skip rustup operations - Render's environment handles this via rust-toolchain.toml
 
 # Step 1: Build the Nail compiler
 echo "Building Nail compiler..."
