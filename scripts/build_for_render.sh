@@ -3,28 +3,19 @@ set -e
 
 echo "=== Building Nail Website for Render ==="
 
-# Setup Rust in user directory for Render
-export RUSTUP_HOME=$HOME/.rustup
-export CARGO_HOME=$HOME/.cargo
-export PATH=$CARGO_HOME/bin:$PATH
+# Render already has Rust installed, just ensure nightly is available
+echo "Checking Rust installation..."
+rustc --version
 
-# Install Rust if needed
-if ! command -v rustup &> /dev/null; then
-    echo "Installing Rust in user directory..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
-fi
+# Install nightly toolchain if not already installed
+echo "Installing Rust nightly toolchain..."
+rustup install nightly
 
-# Source cargo env
-source $CARGO_HOME/env
-
-# Update to latest nightly Rust (needed for async_closure feature)
-echo "Installing Rust nightly..."
-$CARGO_HOME/bin/rustup install nightly
-$CARGO_HOME/bin/rustup default nightly
+# The rust-toolchain.toml file will ensure nightly is used
 
 # Step 1: Build the Nail compiler
 echo "Building Nail compiler..."
-cargo +nightly build --release --bin nailc
+cargo build --release --bin nailc
 
 # Step 2: Transpile the website from Nail to Rust
 echo "Transpiling nail_website.nail to Rust..."
@@ -75,7 +66,7 @@ cp ../examples/nail_website.rs src/main.rs
 
 # Step 4: Build the website binary
 echo "Building website binary..."
-cargo +nightly build --release
+cargo build --release
 
 # Step 5: Copy the binary to the root directory for Render
 echo "Copying binary to root..."
