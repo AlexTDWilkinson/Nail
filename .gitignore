@@ -23,3 +23,10 @@ nail.log
 
 .claude/
 test_results.txt
+
+# Build artifacts
+nail-website
+nail_website_build/
+examples/*.rs
+tests/*.rs
+*_transpilation/
