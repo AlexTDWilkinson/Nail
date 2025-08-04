@@ -13,7 +13,7 @@ pub async fn http_server_start(port: i64, html: String) -> Result<(), String> {
             Html(html_clone.clone())
         }));
     
-    let addr = SocketAddr::from(([127, 0, 0, 1], port as u16));
+    let addr = SocketAddr::from(([0, 0, 0, 0], port as u16));
     println!("🔨 Nail HTTP server listening on http://{}", addr);
     
     let listener = tokio::net::TcpListener::bind(addr)
@@ -45,7 +45,7 @@ pub async fn http_server_route(port: i64, routes: &DashMap<String, String>) -> R
         }));
     }
     
-    let addr = SocketAddr::from(([127, 0, 0, 1], port as u16));
+    let addr = SocketAddr::from(([0, 0, 0, 0], port as u16));
     println!("🔨 Nail HTTP server with {} routes listening on http://{}", route_count, addr);
     
     let listener = tokio::net::TcpListener::bind(addr)
