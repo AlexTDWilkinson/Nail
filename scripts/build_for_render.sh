@@ -3,17 +3,24 @@ set -e
 
 echo "=== Building Nail Website for Render ==="
 
-# Install latest stable Rust if needed
+# Setup Rust in user directory for Render
+export RUSTUP_HOME=$HOME/.rustup
+export CARGO_HOME=$HOME/.cargo
+export PATH=$CARGO_HOME/bin:$PATH
+
+# Install Rust if needed
 if ! command -v rustup &> /dev/null; then
-    echo "Installing Rust..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source $HOME/.cargo/env
+    echo "Installing Rust in user directory..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
 fi
+
+# Source cargo env
+source $CARGO_HOME/env
 
 # Update to latest nightly Rust (needed for async_closure feature)
 echo "Installing Rust nightly..."
-rustup install nightly
-rustup default nightly
+$CARGO_HOME/bin/rustup install nightly
+$CARGO_HOME/bin/rustup default nightly
 
 # Step 1: Build the Nail compiler
 echo "Building Nail compiler..."
