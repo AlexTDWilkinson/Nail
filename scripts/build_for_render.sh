@@ -3,9 +3,21 @@ set -e
 
 echo "=== Building Nail Website for Render ==="
 
+# Install latest stable Rust if needed
+if ! command -v rustup &> /dev/null; then
+    echo "Installing Rust..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    source $HOME/.cargo/env
+fi
+
+# Update to latest nightly Rust (needed for async_closure feature)
+echo "Installing Rust nightly..."
+rustup install nightly
+rustup default nightly
+
 # Step 1: Build the Nail compiler
 echo "Building Nail compiler..."
-cargo build --release --bin nailc
+cargo +nightly build --release --bin nailc
 
 # Step 2: Transpile the website from Nail to Rust
 echo "Transpiling nail_website.nail to Rust..."
@@ -56,7 +68,7 @@ cp ../examples/nail_website.rs src/main.rs
 
 # Step 4: Build the website binary
 echo "Building website binary..."
-cargo build --release
+cargo +nightly build --release
 
 # Step 5: Copy the binary to the root directory for Render
 echo "Copying binary to root..."
