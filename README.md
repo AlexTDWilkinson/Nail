@@ -2,6 +2,8 @@
 
 Welcome to Nail - the programming language so simple, it's genius. Inspired by the wisdom of [grugbrain.dev](https://www.grugbrain.dev).
 
+🌐 **[Visit the Nail Website](https://nail-idtq.onrender.com/)** - Interactive examples, documentation, and philosophy (hosted on Render free tier - expect 30s cold start delay)
+
 More detailed info in the [Nail Language Spec](nail_language_spec.md).
 
 ## 🚀 Why Nail? Because Complexity Bad. Very Bad.
@@ -111,8 +113,8 @@ print(content);
 
 1. **Clone the repo:**
    ```bash
-   git clone https://github.com/yourusername/nail.git
-   cd nail
+   git clone https://github.com/AlexTDWilkinson/Nail.git
+   cd Nail
    ```
 
 2. **Run the IDE:**
@@ -161,6 +163,8 @@ nail/
 ## 🤝 Contributing
 
 Nail welcomes grug contributions! Whether you're fixing bugs, adding features, or improving docs, we appreciate simple, clear code.
+
+**Note:** The website at https://nail-idtq.onrender.com/ automatically updates when changes are pushed to the main branch. Your contributions will be live within minutes!
 
 See [CLAUDE.md](CLAUDE.md) for AI-assisted development guidelines.
 
