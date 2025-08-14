@@ -1,0 +1,21 @@
+// Parallel execution is built into Nail - no complex threading!
+
+// These all run at the same time
+p
+    print(`Task 1: Starting download...`);
+    print(`Task 2: Processing data...`);
+    print(`Task 3: Sending email...`);
+/p
+
+print(`All parallel tasks started!`);
+
+// Spawn background tasks that don't block
+spawn {
+    print(`Background: Cleaning up old files...`);
+}
+
+spawn {
+    print(`Background: Updating cache...`);
+}
+
+print(`Main program continues immediately!`);

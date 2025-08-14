@@ -1,0 +1,30 @@
+// Nail forces explicit error handling - no silent failures!
+// Functions that can fail return type!e (result types)
+
+f parse_age(input:s):i!e {
+    // Can't use safe() inside a function that returns !e
+    // Must handle the error type directly
+    if {
+        input == `not_a_number` => { r e(`Invalid input`); },
+        else => { 
+            // For demo, just parse the length as age
+            r string_len(input);
+        }
+    }
+}
+
+// Handle errors explicitly - no null/undefined!
+user_input:s = `25`;
+age:i = danger(parse_age(user_input));  // Confident it will work
+print(`Valid age: `);
+print(age);
+
+// Safe handling with fallback
+bad_input:s = `not_a_number`;
+safe_age:i = safe(parse_age(bad_input), f(err:s):i {
+    print(`Error: `);
+    print(err);
+    r 0;  // Default value
+});
+print(`Safe age with fallback: `);
+print(safe_age);

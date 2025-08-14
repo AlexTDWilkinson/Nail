@@ -1,0 +1,46 @@
+// Nail is 100% immutable - no mutations, no bugs!
+// All "updates" create new values
+
+struct User {
+    name:s,
+    score:i,
+    active:b
+}
+
+// Original data
+users:a:User = [
+    User { name: `Alice`, score: 100, active: true },
+    User { name: `Bob`, score: 85, active: false },
+    User { name: `Charlie`, score: 92, active: true }
+];
+
+// "Update" by creating new data - original unchanged!
+active_users:a:User = filter user in users {
+    y user.active;
+};
+
+// Transform data functionally
+high_scorers:a:s = map user in active_users {
+    result:s = if {
+        user.score > 90 => { r array_join([user.name, ` (Elite!)`], ``); },
+        else => { r user.name; }
+    };
+    y result;
+};
+
+// Calculate statistics - no loop counters to mess up!
+total_score:i = reduce sum user in users from 0 {
+    y sum + user.score;
+};
+
+print(`Active users with titles:`);
+each name in high_scorers {
+    print(name);
+}
+
+print(`Total score: `);
+print(total_score);
+
+// Original data is still pristine - impossible to corrupt!
+print(`Original user count: `);
+print(array_len(users));

@@ -1,0 +1,41 @@
+// Nail makes parallelism trivial with p...p/ blocks
+// Everything inside runs concurrently!
+
+// Simulate API calls with sleep
+f fetch_user_data():s {
+    time_sleep(0.1);
+    r `{name: "Alice", id: 42}`;
+}
+
+f fetch_posts():i {
+    time_sleep(0.1);
+    r 15;
+}
+
+f calculate_stats():i {
+    time_sleep(0.1);
+    r 1337;
+}
+
+start_time:i = time_now();
+
+// Run all three operations in parallel!
+// In most languages this would require complex threading code
+p
+    user_data:s = fetch_user_data();
+    post_count:i = fetch_posts();
+    total_views:i = calculate_stats();
+/p
+
+end_time:i = time_now();
+
+print(`Fetched in parallel:`);
+print(user_data);
+print(`Posts: `);
+print(post_count);
+print(`Views: `);
+print(total_views);
+
+// Would take 300ms sequentially, but only ~100ms in parallel!
+print(`Time taken (ms): `);
+print(end_time - start_time);

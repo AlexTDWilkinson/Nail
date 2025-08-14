@@ -1,0 +1,24 @@
+// Nail forces you to handle errors - no silent failures!
+
+f divide(numerator:i, denominator:i):i!e {
+    if {
+        denominator == 0 => { r e(`Cannot divide by zero!`); },
+        else => { r numerator / denominator; }
+    }
+}
+
+// Must explicitly handle the error case
+result:i = danger(divide(10, 2));
+print(`10 / 2 = `);
+print(result);
+
+// Safe handling with fallback function
+f handle_div_error(err:s):i {
+    print(`Error occurred: `);
+    print(err);
+    r 0;  // Return default value
+}
+
+safe_result:i = safe(divide(10, 0), handle_div_error);
+print(`Result with error handling: `);
+print(safe_result);
