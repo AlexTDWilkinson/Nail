@@ -12,6 +12,10 @@ path = "src/main.rs"
 name = "nailc"
 path = "src/bin/nailc.rs"
 
+[[bin]]
+name = "nail-website"
+path = "src/bin/nail-website.rs"
+
 [lib]
 name = "nail"
 path = "src/lib.rs"
