@@ -1,0 +1,38 @@
+// Test both concurrent (c) and parallel (p) blocks
+// Shows the difference between async I/O and true threading
+
+// Test concurrent blocks (for I/O operations)
+print(`Testing concurrent blocks (async I/O)...`);
+c
+    print(`Concurrent API fetch 1`);
+    print(`Concurrent API fetch 2`);
+    print(`Concurrent API fetch 3`);
+/c
+
+// Test parallel blocks (for CPU work)
+print(`Testing parallel blocks (OS threads)...`);
+p
+    print(`Thread 1 computing`);
+    print(`Thread 2 computing`);
+    print(`Thread 3 computing`);
+/p
+
+// Mixed usage example
+print(`Mixed concurrent and parallel execution...`);
+
+// First do some concurrent I/O
+c
+    data1: s = `Data from source 1`;
+    data2: s = `Data from source 2`;
+/c
+
+// Then process the data in parallel
+p
+    processed1: s = string_to_uppercase(data1);
+    processed2: s = string_to_uppercase(data2);
+/p
+
+print(`Processed data 1: ${processed1}`);
+print(`Processed data 2: ${processed2}`);
+
+print(`All block tests completed!`);

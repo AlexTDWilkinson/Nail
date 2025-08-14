@@ -1,0 +1,16 @@
+// Concurrent I/O operations with c.../c blocks
+// These run concurrently using async/await (tokio::join!)
+
+// Multiple I/O operations run concurrently
+c
+    api_data:s = danger(fs_read(`data.json`));      // File I/O
+    user_info:s = `User data from API`;             // Simulated API call
+    config:s = `Configuration loaded`;              // Another I/O operation
+/c
+
+// All operations complete before we continue
+print(`API Data:`, api_data);
+print(`User Info:`, user_info);
+print(`Config:`, config);
+
+print(`All concurrent I/O operations completed!`);

@@ -107,6 +107,7 @@ pub enum ASTNode {
     BreakStatement { code_span: CodeSpan, scope: usize },
     ContinueStatement { code_span: CodeSpan, scope: usize },
     ParallelBlock { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
+    ConcurrentBlock { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     Block { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     BinaryOperation { left: Box<ASTNode>, operator: Operation, right: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     UnaryOperation { operator: Operation, operand: Box<ASTNode>, code_span: CodeSpan, scope: usize },
@@ -157,6 +158,7 @@ impl ASTNode {
             ASTNode::BreakStatement { code_span, .. } => code_span.clone(),
             ASTNode::ContinueStatement { code_span, .. } => code_span.clone(),
             ASTNode::ParallelBlock { code_span, .. } => code_span.clone(),
+            ASTNode::ConcurrentBlock { code_span, .. } => code_span.clone(),
             ASTNode::Block { code_span, .. } => code_span.clone(),
             ASTNode::BinaryOperation { code_span, .. } => code_span.clone(),
             ASTNode::UnaryOperation { code_span, .. } => code_span.clone(),
@@ -326,6 +328,7 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::BreakKeyword => parse_break_statement(state),
             TokenType::ContinueKeyword => parse_continue_statement(state),
             TokenType::ParallelStart => parse_parallel_block_start(state),
+            TokenType::ConcurrentStart => parse_concurrent_block_start(state),
             TokenType::Return => parse_return_statement(state),
             TokenType::Yield => parse_yield_statement(state),
             TokenType::BlockOpen => parse_block(state),
@@ -932,6 +935,18 @@ fn parse_parallel_block_start(state: &mut ParserState) -> Result<ASTNode, CodeEr
 
     let _ = expect_token(state, TokenType::ParallelEnd)?;
     Ok(ASTNode::ParallelBlock { statements, code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()), scope: GLOBAL_SCOPE })
+}
+
+fn parse_concurrent_block_start(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let _start_span = expect_token(state, TokenType::ConcurrentStart)?;
+    let mut statements = vec![];
+
+    while state.tokens.peek().map_or(false, |t| t.token_type != TokenType::ConcurrentEnd) {
+        statements.push(parse_statement(state)?);
+    }
+
+    let _ = expect_token(state, TokenType::ConcurrentEnd)?;
+    Ok(ASTNode::ConcurrentBlock { statements, code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()), scope: GLOBAL_SCOPE })
 }
 
 fn parse_return_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {

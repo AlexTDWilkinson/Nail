@@ -1467,6 +1467,32 @@ lazy_static! {
             diverging: false,
         });
 
+        m.insert("http_server_with_query", StdlibFunction {
+            rust_path: "std_lib::http::http_server_with_query".to_string(),
+            crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
+            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            custom_type_imports: vec![],
+            module: StdlibModule::Http,
+            parameters: vec![
+                StdlibParameter {
+                    name: "port".to_string(),
+                    param_type: NailDataTypeDescriptor::Int,
+                    pass_by_reference: false,
+                },
+                StdlibParameter {
+                    name: "routes".to_string(),
+                    param_type: NailDataTypeDescriptor::HashMap(
+                        Box::new(NailDataTypeDescriptor::String),
+                        Box::new(NailDataTypeDescriptor::String)
+                    ),
+                    pass_by_reference: true,
+                }
+            ],
+            return_type: NailDataTypeDescriptor::Void,
+            type_inference: None,
+            diverging: false,
+        });
+
         // HTTP client functions
         m.insert("http_request_get", StdlibFunction {
             rust_path: "std_lib::http::request_get".to_string(),

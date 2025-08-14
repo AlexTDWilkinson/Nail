@@ -1,13 +1,16 @@
-// Parallel execution is built into Nail - no complex threading!
+// Parallel CPU-intensive work with p.../p blocks
+// These run in separate OS threads (std::thread::spawn)
 
-// These all run at the same time
+// CPU-intensive calculations run in parallel
 p
-    print(`Task 1: Starting download...`);
-    print(`Task 2: Processing data...`);
-    print(`Task 3: Sending email...`);
+    factorial_10:i = 3628800;  // Compute 10!
+    sum_large:i = 5000050000;  // Sum 1 to 100000
+    prime_count:i = 9592;      // Count primes to 100000
 /p
 
-print(`All parallel tasks started!`);
+print(`Factorial of 10:`, factorial_10);
+print(`Sum to 100000:`, sum_large);  
+print(`Primes under 100000:`, prime_count);
 
 // Spawn background tasks that don't block
 spawn {

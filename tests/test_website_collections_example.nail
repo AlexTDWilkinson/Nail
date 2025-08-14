@@ -6,6 +6,6 @@ doubled:a:i = map num in numbers { y num * 2; };
 evens:a:i = filter num in numbers { y num % 2 == 0; };
 sum:i = reduce acc num in numbers from 0 { y acc + num; };
 
-print(array_join(doubled, `, `));
-print(array_join(evens, `, `));  
-print(array_join([sum], ``));
+print(doubled);
+print(evens);  
+print(sum);

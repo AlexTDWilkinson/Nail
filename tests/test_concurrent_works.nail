@@ -1,0 +1,25 @@
+// Test concurrent blocks work
+
+print(`Starting test`);
+
+// This should use tokio::join!
+c
+    value1:i = 10;
+    value2:i = 20;
+/c
+
+print(`After concurrent block`);
+print(value1);
+print(value2);
+
+// This should use std::thread::spawn
+p
+    value3:i = 30;
+    value4:i = 40;
+/p
+
+print(`After parallel block`);
+print(value3);
+print(value4);
+
+print(`Test complete`);

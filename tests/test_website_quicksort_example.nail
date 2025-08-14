@@ -29,5 +29,5 @@ f quicksort(arr:a:i):a:i {
 unsorted:a:i = [3, 1, 4, 1, 5, 9, 2, 6, 5];
 sorted:a:i = quicksort(unsorted);
 
-print(array_join([`Original: `, string_from_array_i64(unsorted)], ``));
-print(array_join([`Sorted: `, string_from_array_i64(sorted)], ``));
+print(`Original: `, unsorted);
+print(`Sorted: `, sorted);

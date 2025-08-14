@@ -151,6 +151,8 @@ pub enum TokenType {
     ElseDeclaration,                         // For else keyword
     ParallelStart,                           // For p keyword
     ParallelEnd,                             // For /p keyword
+    ConcurrentStart,                         // For c keyword
+    ConcurrentEnd,                           // For /c keyword
     ForDeclaration,                          // For for keyword
     MapDeclaration,                          // For map keyword
     FilterDeclaration,                       // For filter keyword
@@ -304,6 +306,13 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
             }
             _ if is_parallel_end(&mut chars) => {
                 let lexer_output = lex_parallel_end(&mut chars, state);
+                tokens.push(Token {
+                    token_type: lexer_output.token_type,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
+                });
+            }
+            _ if is_concurrent_end(&mut chars) => {
+                let lexer_output = lex_concurrent_end(&mut chars, state);
                 tokens.push(Token {
                     token_type: lexer_output.token_type,
                     code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
@@ -639,6 +648,18 @@ fn is_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
     false
 }
 
+fn is_concurrent_end(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
+    let mut lookahead = chars.clone();
+    if let Some(first) = lookahead.next() {
+        if first == '/' {
+            if let Some(second) = lookahead.next() {
+                return second == 'c';
+            }
+        }
+    }
+    false
+}
+
 fn lex_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
     let start_line = state.line;
     let start_column = state.column;
@@ -650,6 +671,19 @@ fn lex_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mu
     state.column += 1;
 
     LexerOutput { token_type: TokenType::ParallelEnd, start_line, start_column, end_line: state.line, end_column: state.column }
+}
+
+fn lex_concurrent_end(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
+    let start_line = state.line;
+    let start_column = state.column;
+
+    // Consume "/c"
+    chars.next(); // consume '/'
+    state.column += 1;
+    chars.next(); // consume 'c'
+    state.column += 1;
+
+    LexerOutput { token_type: TokenType::ConcurrentEnd, start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
 fn lex_comment(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
@@ -1115,71 +1149,122 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
             // 'p' is only ParallelStart if it's at the beginning of a line
             // and followed by whitespace and then a statement
             let mut lookahead = chars.clone();
-            if let Some(&next_char) = lookahead.peek() {
-                // If followed by '.' or ':' or any non-whitespace character, it's an identifier
-                if !next_char.is_whitespace() {
-                    if let Some(error) = validate_identifier_name(&identifier) {
-                        TokenType::LexerError(error)
-                    } else {
-                        TokenType::Identifier(identifier)
-                    }
-                } else {
-                    // Skip whitespace
-                    while let Some(&c) = lookahead.peek() {
-                        if c.is_whitespace() {
-                            lookahead.next();
-                        } else {
-                            break;
-                        }
-                    }
-                    // Check what follows the whitespace
-                    if let Some(&c) = lookahead.peek() {
-                        // These characters indicate 'p' is being used as a variable/identifier
-                        if c == '.'
-                            || c == ':'
-                            || c == '('
-                            || c == '+'
-                            || c == '-'
-                            || c == '*'
-                            || c == '/'
-                            || c == '='
-                            || c == '<'
-                            || c == '>'
-                            || c == ';'
-                            || c == ','
-                            || c == ')'
-                            || c == ']'
-                            || c == '}'
-                            || c == '|'
-                        {
-                            if let Some(error) = validate_identifier_name(&identifier) {
-                                TokenType::LexerError(error)
-                            } else {
-                                TokenType::Identifier(identifier)
-                            }
-                        } else {
-                            // It's likely a parallel block start
-                            TokenType::ParallelStart
-                        }
-                    } else {
-                        // End of input after 'p', treat as identifier
-                        if let Some(error) = validate_identifier_name(&identifier) {
-                            TokenType::LexerError(error)
-                        } else {
-                            TokenType::Identifier(identifier)
-                        }
+            
+            // Guard: No next character means end of input - treat as identifier
+            let Some(&next_char) = lookahead.peek() else {
+                let token_type = match validate_identifier_name(&identifier) {
+                    Some(error) => TokenType::LexerError(error),
+                    None => TokenType::Identifier(identifier),
+                };
+                return LexerOutput { token_type, start_line, start_column, end_line: state.line, end_column: state.column };
+            };
+            
+            // Guard: If not followed by whitespace, it's an identifier
+            if !next_char.is_whitespace() {
+                let token_type = match validate_identifier_name(&identifier) {
+                    Some(error) => TokenType::LexerError(error),
+                    None => TokenType::Identifier(identifier),
+                };
+                return LexerOutput { token_type, start_line, start_column, end_line: state.line, end_column: state.column };
+            }
+            
+            // Skip whitespace
+            while let Some(&c) = lookahead.peek() {
+                if !c.is_whitespace() {
+                    break;
+                }
+                lookahead.next();
+            }
+            
+            // Check what follows the whitespace
+            match lookahead.peek() {
+                None => {
+                    // End of input after whitespace - treat as identifier
+                    match validate_identifier_name(&identifier) {
+                        Some(error) => TokenType::LexerError(error),
+                        None => TokenType::Identifier(identifier),
                     }
                 }
-            } else {
-                // End of input, treat as identifier
-                if let Some(error) = validate_identifier_name(&identifier) {
-                    TokenType::LexerError(error)
-                } else {
-                    TokenType::Identifier(identifier)
+                Some(&c) => {
+                    // These characters indicate 'p' is being used as a variable/identifier
+                    let is_identifier_context = matches!(c, 
+                        '.' | ':' | '(' | '+' | '-' | '*' | '/' | '=' | 
+                        '<' | '>' | ';' | ',' | ')' | ']' | '}' | '|'
+                    );
+                    
+                    if is_identifier_context {
+                        match validate_identifier_name(&identifier) {
+                            Some(error) => TokenType::LexerError(error),
+                            None => TokenType::Identifier(identifier),
+                        }
+                    } else {
+                        // It's a parallel block start
+                        TokenType::ParallelStart
+                    }
+                }
+            }
+        }
+        "c" => {
+            // 'c' is only ConcurrentStart if it's at the beginning of a line
+            // and followed by whitespace and then a statement
+            let mut lookahead = chars.clone();
+            
+            // Guard: No next character means end of input - treat as identifier
+            let Some(&next_char) = lookahead.peek() else {
+                let token_type = match validate_identifier_name(&identifier) {
+                    Some(error) => TokenType::LexerError(error),
+                    None => TokenType::Identifier(identifier),
+                };
+                return LexerOutput { token_type, start_line, start_column, end_line: state.line, end_column: state.column };
+            };
+            
+            // Guard: If not followed by whitespace, it's an identifier
+            if !next_char.is_whitespace() {
+                let token_type = match validate_identifier_name(&identifier) {
+                    Some(error) => TokenType::LexerError(error),
+                    None => TokenType::Identifier(identifier),
+                };
+                return LexerOutput { token_type, start_line, start_column, end_line: state.line, end_column: state.column };
+            }
+            
+            // Skip whitespace
+            while let Some(&c) = lookahead.peek() {
+                if !c.is_whitespace() {
+                    break;
+                }
+                lookahead.next();
+            }
+            
+            // Check what follows the whitespace
+            match lookahead.peek() {
+                None => {
+                    // End of input after whitespace - treat as identifier
+                    match validate_identifier_name(&identifier) {
+                        Some(error) => TokenType::LexerError(error),
+                        None => TokenType::Identifier(identifier),
+                    }
+                }
+                Some(&c) => {
+                    // These characters indicate 'c' is being used as a variable/identifier
+                    let is_identifier_context = matches!(c, 
+                        '.' | ':' | '(' | '+' | '-' | '*' | '/' | '=' | 
+                        '<' | '>' | ';' | ',' | ')' | ']' | '}' | '|'
+                    );
+                    
+                    if is_identifier_context {
+                        match validate_identifier_name(&identifier) {
+                            Some(error) => TokenType::LexerError(error),
+                            None => TokenType::Identifier(identifier),
+                        }
+                    } else {
+                        // It's a concurrent block start
+                        TokenType::ConcurrentStart
+                    }
                 }
             }
         }
         "/p" => TokenType::ParallelEnd,
+        "/c" => TokenType::ConcurrentEnd,
         _ => {
             // Validate before treating as identifier
             if let Some(error) = validate_identifier_name(&identifier) {

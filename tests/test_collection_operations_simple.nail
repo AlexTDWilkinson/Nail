@@ -77,12 +77,12 @@ any_eq_index:b = any num idx in numbers {
 
 // EACH: Print each number (side effects) - Statement form (recommended)
 each num in numbers {
-    print(array_join([`Number: `, string_from(num)], ``));
+    print(`Number: `, num);
 }
 
 // EACH with index: Print with position - Expression assignment form
 each_result:v = each num idx in numbers {
-    print(array_join([`[`, string_from(idx), `] = `, string_from(num)], ``));
+    print(`[`, idx, `] = `, num);
 };
 
 // Demonstrate both syntaxes for other void-returning functions
@@ -96,19 +96,19 @@ print_result:v = print(`This is expression assignment form`);
 
 // Print results
 print(`=== Collection Operations Test Results ===`);
-print(array_join([`Original: `, string_from_array_i64(numbers)], ``));
-print(array_join([`Doubled: `, string_from_array_i64(doubled)], ``));
-print(array_join([`Indexed sums: `, string_from_array_i64(indexed_sums)], ``));
-print(array_join([`Evens: `, string_from_array_i64(evens)], ``));
-print(array_join([`Greater than index: `, string_from_array_i64(greater_than_index)], ``));
-print(array_join([`Total: `, string_from(total)], ``));
-print(array_join([`Weighted sum: `, string_from(weighted_sum)], ``));
-print(array_join([`First big: `, string_from(first_big)], ``));
-print(array_join([`Equal to index: `, string_from(equal_to_index)], ``));
-print(array_join([`All positive: `, string_from(all_positive)], ``));
-print(array_join([`All > index: `, string_from(all_gt_index)], ``));
-print(array_join([`Any big: `, string_from(any_big)], ``));
-print(array_join([`Any == index: `, string_from(any_eq_index)], ``));
+print(`Original: `, numbers);
+print(`Doubled: `, doubled);
+print(`Indexed sums: `, indexed_sums);
+print(`Evens: `, evens);
+print(`Greater than index: `, greater_than_index);
+print(`Total: `, total);
+print(`Weighted sum: `, weighted_sum);
+print(`First big: `, first_big);
+print(`Equal to index: `, equal_to_index);
+print(`All positive: `, all_positive);
+print(`All > index: `, all_gt_index);
+print(`Any big: `, any_big);
+print(`Any == index: `, any_eq_index);
 
 // Test collection operations with structs
 print(`\n=== Testing Collection Operations with Structs ===`);
@@ -128,23 +128,23 @@ items:a:Item = [
 
 // Map with struct field access
 item_values:a:i = map item in items { y item.value; };
-print(array_join([`Item values: `, string_from_array_i64(item_values)], ``));
+print(`Item values: `, item_values);
 
 // Filter with struct field
 rare_items:a:Item = filter item in items { y item.is_rare; };
-print(array_join([`Number of rare items: `, string_from(array_len(rare_items))], ``));
+print(`Number of rare items: `, array_len(rare_items));
 
 // Reduce with struct field
 total_value:i = reduce acc item in items from 0 { y acc + item.value; };
-print(array_join([`Total inventory value: `, string_from(total_value)], ``));
+print(`Total inventory value: `, total_value);
 
 // Find with struct field
 magic_item:Item = danger(find item in items { y string_contains(item.name, `Magic`); });
-print(array_join([`Found magic item: `, magic_item.name], ``));
+print(`Found magic item: `, magic_item.name);
 
 // All/Any with struct fields
 all_cheap:b = all item in items { y item.value < 1000; };
 any_rare:b = any item in items { y item.is_rare; };
-print(array_join([`All items cheap: `, string_from(all_cheap), `, Any rare: `, string_from(any_rare)], ``));
+print(`All items cheap: `, all_cheap, `, Any rare: `, any_rare);
 
 print(`All collection operations completed successfully!`);

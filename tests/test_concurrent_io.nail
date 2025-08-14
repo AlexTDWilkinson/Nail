@@ -1,0 +1,48 @@
+// Test concurrent blocks for I/O operations
+// These use async/await under the hood (tokio::join!)
+
+// Simulate concurrent I/O operations
+f simulate_api_call():s {
+    time_sleep(0.1);  // Simulate network delay
+    r `API response`;
+}
+
+f simulate_file_read():s {
+    time_sleep(0.05);   // Simulate file I/O delay
+    r `File contents`;
+}
+
+// Test basic concurrent block
+print(`Testing concurrent I/O operations...`);
+
+start_time:i = time_now();
+
+// Run multiple I/O operations concurrently
+c
+    api1:s = simulate_api_call();
+    api2:s = simulate_api_call();
+    api3:s = simulate_api_call();
+    file1:s = simulate_file_read();
+    file2:s = simulate_file_read();
+/c
+
+end_time:i = time_now();
+duration:i = end_time - start_time;
+
+print(`Concurrent results:`);
+print(api1);
+print(api2);
+print(api3);
+print(file1);
+print(file2);
+print(`Time taken (should be ~100ms, not 400ms)`);
+
+// Test concurrent block with just function calls (no assignments)
+print(`Testing concurrent function calls without assignments...`);
+c
+    print(`Concurrent task 1`);
+    print(`Concurrent task 2`);
+    print(`Concurrent task 3`);
+/c
+
+print(`Concurrent I/O tests completed!`);

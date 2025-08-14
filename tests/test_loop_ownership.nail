@@ -11,6 +11,6 @@ loop {
 items:a:s = [`a`, `b`, `c`];
 loop {
     // Can we access items in loop?
-    print(array_join(items, `,`));
+    print(items);  // Direct array print is fine
     break; // Exit after one iteration
 }

@@ -1,0 +1,67 @@
+// Test parallel blocks for CPU-intensive operations
+// These use OS threads under the hood (std::thread::spawn)
+
+// CPU-intensive computation function
+f compute_factorial(num:i):i {
+    if {
+        num <= 1 => { r 1; },
+        else => { 
+            result:i = num * compute_factorial(num - 1);
+            r result;
+        }
+    }
+}
+
+// Another CPU-intensive function
+f compute_sum_to_n(limit:i):i {
+    sum:i = 0;
+    for idx in range(1, limit + 1) {
+        sum = sum + idx;
+    }
+    r sum;
+}
+
+// Test basic parallel block with CPU-intensive work
+print(`Testing parallel CPU-intensive operations...`);
+
+start_time:i = time_now();
+
+// Run multiple CPU-intensive operations in parallel threads
+p
+    fact10:i = compute_factorial(10);
+    fact12:i = compute_factorial(12);
+    sum1000:i = compute_sum_to_n(1000);
+    sum2000:i = compute_sum_to_n(2000);
+/p
+
+end_time:i = time_now();
+duration:i = end_time - start_time;
+
+print(`Parallel computation results:`);
+print(`10! = ${fact10}`);
+print(`12! = ${fact12}`);
+print(`Sum to 1000 = ${sum1000}`);
+print(`Sum to 2000 = ${sum2000}`);
+print(`Time taken: ${duration}ms`);
+
+// Test parallel block with just function calls (no assignments)
+print(`Testing parallel function calls without assignments...`);
+p
+    print(`Thread 1 executing`);
+    print(`Thread 2 executing`);
+    print(`Thread 3 executing`);
+/p
+
+// Test parallel blocks with math operations
+p
+    calc1:i = 5 * 5 + 10;
+    calc2:f = math_sqrt(16.0);
+    calc3:f = math_abs(-42.0);
+/p
+
+print(`Parallel math results:`);
+print(`5 * 5 + 10 = ${calc1}`);
+print(`sqrt(16) = ${calc2}`);
+print(`abs(-42.0) = ${calc3}`);
+
+print(`Parallel CPU tests completed!`);

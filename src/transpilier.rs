@@ -164,6 +164,11 @@ impl Transpiler {
                     self.collect_used_functions(stmt);
                 }
             }
+            ASTNode::ConcurrentBlock { statements, .. } => {
+                for stmt in statements {
+                    self.collect_used_functions(stmt);
+                }
+            }
             ASTNode::UnaryOperation { operand, .. } => {
                 self.collect_used_functions(operand);
             }
@@ -976,6 +981,9 @@ impl Transpiler {
             ASTNode::ParallelBlock { statements, .. } => {
                 self.transpile_parallel_block(statements, output)?;
             }
+            ASTNode::ConcurrentBlock { statements, .. } => {
+                self.transpile_concurrent_block(statements, output)?;
+            }
             ASTNode::BinaryOperation { left, operator, right, .. } => {
                 // No string concatenation with + allowed in Nail - use array_join instead
                 self.transpile_node_internal(left, output, false)?;
@@ -1428,7 +1436,7 @@ impl Transpiler {
         Ok(())
     }
 
-    fn transpile_parallel_block(&mut self, statements: &[ASTNode], output: &mut String) -> Result<(), std::fmt::Error> {
+    fn transpile_concurrent_block(&mut self, statements: &[ASTNode], output: &mut String) -> Result<(), std::fmt::Error> {
         if statements.is_empty() {
             return Ok(());
         }
@@ -1483,6 +1491,69 @@ impl Transpiler {
         self.indent_level -= 1;
         writeln!(output)?;
         writeln!(output, "{});", self.indent())?;
+
+        Ok(())
+    }
+
+    fn transpile_parallel_block(&mut self, statements: &[ASTNode], output: &mut String) -> Result<(), std::fmt::Error> {
+        if statements.is_empty() {
+            return Ok(());
+        }
+
+        // Extract variable names from const declarations and generate expressions
+        let mut var_names = Vec::new();
+        let mut expressions = Vec::new();
+
+        for stmt in statements.iter() {
+            match stmt {
+                ASTNode::ConstDeclaration { name, value, .. } => {
+                    var_names.push(name.clone());
+                    expressions.push(value.as_ref());
+                }
+                ASTNode::FunctionCall { .. } => {
+                    // Function calls that don't assign to variables get a placeholder name
+                    var_names.push("_".to_string());
+                    expressions.push(stmt);
+                }
+                _ => {
+                    // Other statements get placeholder names
+                    var_names.push("_".to_string());
+                    expressions.push(stmt);
+                }
+            }
+        }
+
+        // Generate thread spawning and joining
+        write!(output, "{}let (", self.indent())?;
+        for (i, var_name) in var_names.iter().enumerate() {
+            if i > 0 {
+                write!(output, ", ")?;
+            }
+            write!(output, "{}", var_name)?;
+        }
+        writeln!(output, ") = {{")?;
+
+        self.indent_level += 1;
+        
+        // Spawn threads for each expression
+        for (i, expr) in expressions.iter().enumerate() {
+            write!(output, "{}let handle{} = std::thread::spawn(move || {{ ", self.indent(), i)?;
+            self.transpile_node_internal(expr, output, false)?;
+            writeln!(output, " }});")?;
+        }
+        
+        // Join all threads and collect results
+        write!(output, "{}(", self.indent())?;
+        for (i, _) in expressions.iter().enumerate() {
+            if i > 0 {
+                write!(output, ", ")?;
+            }
+            write!(output, "handle{}.join().unwrap()", i)?;
+        }
+        writeln!(output, ")")?;
+        
+        self.indent_level -= 1;
+        writeln!(output, "{}}};", self.indent())?;
 
         Ok(())
     }

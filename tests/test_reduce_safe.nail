@@ -34,7 +34,7 @@ total_sales:f = reduce sum sale in sales from 0.0 {
 };
 
 print(`Total sales: $`);
-print(array_join([total_sales], ``));
+print(total_sales);
 
 // Find the highest value sale
 first_sale:Sale = safe(array_get(sales, 0), default_sale);
@@ -51,8 +51,8 @@ highest_sale:Sale = reduce best sale in sales from first_sale {
 };
 
 print(`Highest sale: `);
-print(array_join([highest_sale.quantity], ``));
+print(highest_sale.quantity);
 print(` units at $`);
-print(array_join([highest_sale.price], ``));
+print(highest_sale.price);
 print(` in `);
 print(highest_sale.region);

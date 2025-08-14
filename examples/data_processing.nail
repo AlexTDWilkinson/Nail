@@ -5,7 +5,7 @@
 scores:a:i = [85, 92, 78, 96, 88, 73, 91, 87, 95, 82];
 
 print(`=== Test Score Analysis ===`);
-print(array_join([`Total students: `, string_from(array_len(scores))], ``));
+print(`Total students: `, array_len(scores));
 
 // Calculate statistics using collection operations
 total:i = reduce acc score in scores from 0 {
@@ -13,14 +13,14 @@ total:i = reduce acc score in scores from 0 {
 };
 average:f = danger(float_from(string_from(total))) / danger(float_from(string_from(array_len(scores))));
 
-print(array_join([`Total points: `, string_from(total)], ``));
-print(array_join([`Average score: `, string_from(math_round(average))], ``));
+print(`Total points: `, total);
+print(`Average score: `, math_round(average));
 
 // Filter high performers (90+)
 high_scores:a:i = filter score in scores {
     y score >= 90;
 };
-print(array_join([`Students with 90+: `, string_from(array_len(high_scores))], ``));
+print(`Students with 90+: `, array_len(high_scores));
 
 // Grade distribution
 grade_a:a:i = filter score in scores {
@@ -34,9 +34,9 @@ grade_c:a:i = filter score in scores {
 };
 
 print(`\n=== Grade Distribution ===`);
-print(array_join([`A grades (90-100): `, string_from(array_len(grade_a))], ``));
-print(array_join([`B grades (80-89): `, string_from(array_len(grade_b))], ``));
-print(array_join([`C grades (70-79): `, string_from(array_len(grade_c))], ``));
+print(`A grades (90-100): `, array_len(grade_a));
+print(`B grades (80-89): `, array_len(grade_b));
+print(`C grades (70-79): `, array_len(grade_c));
 
 // Apply curve (add 5 points to each score)
 curved_scores:a:i = map score in scores {
@@ -68,16 +68,16 @@ each name in formal_names {
 all_passed:b = all score in scores {
     y score >= 70;
 };
-print(array_join([`\nAll students passed: `, string_from(all_passed)], ``));
+print(`\nAll students passed: `, all_passed);
 
 // Find the first perfect score
 first_perfect:i = danger(find score in scores {
     y score == 100;
 });
-print(array_join([`First perfect score: `, string_from(first_perfect)], ``));
+print(`First perfect score: `, first_perfect);
 
 // Check if any student got below 75
 any_struggling:b = any score in scores {
     y score < 75;
 };
-print(array_join([`Any students below 75: `, string_from(any_struggling)], ``));
+print(`Any students below 75: `, any_struggling);

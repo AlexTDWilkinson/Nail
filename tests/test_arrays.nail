@@ -4,14 +4,14 @@
 arr:a:i = [1, 2, 3];
 len:i = array_len(arr);
 print(`Array length:`);
-print(array_join([len], ``));
+print(len);
 
 // Test array_concat with integers
 arr1:a:i = [1, 2, 3];
 arr2:a:i = [4, 5, 6];
 combined:a:i = array_concat(arr1, arr2);
 print(`Concatenated:`);
-print(array_join(combined, `, `));
+print(combined);
 
 // Test array_concat with empty arrays
 empty:a:i = [];
@@ -19,40 +19,40 @@ numbers:a:i = [7, 8, 9];
 result1:a:i = array_concat(empty, numbers);
 result2:a:i = array_concat(numbers, empty);
 print(`Empty + numbers:`);
-print(array_join(result1, `, `));
+print(result1);
 print(`Numbers + empty:`);
-print(array_join(result2, `, `));
+print(result2);
 
 // Test array operations
 sorted:a:i = array_sort([3, 1, 4, 1, 5]);
 reversed:a:i = array_reverse([1, 2, 3, 4, 5]);
 print(`Sorted:`);
-print(array_join(sorted, `, `));
+print(sorted);
 print(`Reversed:`);
-print(array_join(reversed, `, `));
+print(reversed);
 
 // Test array_push
 list:a:i = [1, 2, 3];
 list_with_4:a:i = array_push(list, 4);
 print(`After push:`);
-print(array_join(list_with_4, `, `));
+print(list_with_4);
 
 // Test array slicing
 big_array:a:i = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 slice1:a:i = danger(array_slice(big_array, 2, 5));
 slice2:a:i = danger(array_slice(big_array, 5, 10));
 print(`Slice [2:5]:`);
-print(array_join(slice1, `, `));
+print(slice1);
 print(`Slice [5:10]:`);
-print(array_join(slice2, `, `));
+print(slice2);
 
 // Test array_contains
 has_three:b = array_contains([1, 2, 3, 4, 5], 3);
 has_ten:b = array_contains([1, 2, 3, 4, 5], 10);
 print(`Contains 3:`);
-print(array_join([has_three], ``));
+print(has_three);
 print(`Contains 10:`);
-print(array_join([has_ten], ``));
+print(has_ten);
 
 // Test with strings
 strings:a:s = [`hello`, `world`, `test`];

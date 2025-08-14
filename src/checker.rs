@@ -165,6 +165,7 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::YieldDeclaration { scope, .. }
         | ASTNode::Block { scope, .. }
         | ASTNode::ParallelBlock { scope, .. }
+        | ASTNode::ConcurrentBlock { scope, .. }
         | ASTNode::LambdaDeclaration { scope, .. }
         | ASTNode::FunctionDeclaration { scope, .. }
         | ASTNode::StructInstantiation { scope, .. }
@@ -184,7 +185,7 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
                 update_node_scope(stmt, new_scope);
             }
         }
-        ASTNode::Block { statements, .. } | ASTNode::ParallelBlock { statements, .. } => {
+        ASTNode::Block { statements, .. } | ASTNode::ParallelBlock { statements, .. } | ASTNode::ConcurrentBlock { statements, .. } => {
             for stmt in statements {
                 update_node_scope(stmt, new_scope);
             }
@@ -293,8 +294,13 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         ASTNode::ConstDeclaration { value, .. } => {
             update_node_scope(value, new_scope);
         }
+        ASTNode::Assignment { left, right, .. } => {
+            update_node_scope(left, new_scope);
+            update_node_scope(right, new_scope);
+        }
         _ => {
             // All cases should be handled explicitly
+            eprintln!("Unhandled node type in update_node_scope: {:?}", node);
             panic!("update_node_scope: unhandled node type");
         }
     }
@@ -337,6 +343,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         | ASTNode::YieldDeclaration { scope, .. }
         | ASTNode::Block { scope, .. }
         | ASTNode::ParallelBlock { scope, .. }
+        | ASTNode::ConcurrentBlock { scope, .. }
         | ASTNode::LambdaDeclaration { scope, .. }
         | ASTNode::FunctionDeclaration { scope, .. }
         | ASTNode::StructInstantiation { scope, .. }
@@ -403,6 +410,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         ASTNode::ReturnDeclaration { statement, code_span, .. } => visit_return_declaration(statement, state, code_span),
         ASTNode::YieldDeclaration { statement, code_span, .. } => visit_yield_declaration(statement, state, code_span),
         ASTNode::ParallelBlock { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
+        ASTNode::ConcurrentBlock { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
         ASTNode::Block { statements, scope, .. } => {
             // If scope is already set (e.g., for function bodies), use it
             // Otherwise create a new scope for blocks
@@ -1897,6 +1905,7 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
         ASTNode::ConstDeclaration { data_type, .. } => data_type.clone(),
         ASTNode::StructDeclarationField { data_type, .. } => data_type.clone(),
         ASTNode::ParallelBlock { statements, .. } => statements.last().map_or(NailDataTypeDescriptor::OneOf(vec![]), |stmt| check_type(stmt, state)),
+        ASTNode::ConcurrentBlock { statements, .. } => statements.last().map_or(NailDataTypeDescriptor::OneOf(vec![]), |stmt| check_type(stmt, state)),
         ASTNode::StructDeclaration { name, .. } => NailDataTypeDescriptor::Struct(name.to_string()),
         ASTNode::StructInstantiation { name, .. } => NailDataTypeDescriptor::Struct(name.to_string()),
         ASTNode::StructInstantiationField { value, .. } => check_type(value, state),
