@@ -1459,7 +1459,7 @@ lazy_static! {
         m.insert("http_request", StdlibFunction {
             rust_path: "std_lib::http::http_request".to_string(),
 
-            crate_deps: vec![CrateDependency::Tokio, CrateDependency::Reqwest],
+            crate_deps: vec![CrateDependency::Tokio, CrateDependency::Reqwest, CrateDependency::DashMap],
             struct_derives: vec![],
             custom_type_imports: vec![("HTTP_Response", "nail::std_lib::http")],
             module: StdlibModule::Http,

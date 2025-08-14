@@ -110,7 +110,7 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
     Ok(())
 }
 
-pub async fn http_request(method: String, url: String, headers: HashMap<String, String>, body: String) -> Result<HTTP_Response, String> {
+pub async fn http_request(method: String, url: String, headers: DashMap<String, String>, body: String) -> Result<HTTP_Response, String> {
     let client = reqwest::Client::new();
 
     let mut request = match method.to_uppercase().as_str() {
@@ -123,8 +123,10 @@ pub async fn http_request(method: String, url: String, headers: HashMap<String, 
     };
 
     // Add headers
-    for (key, value) in headers {
-        request = request.header(&key, &value);
+    for entry in headers.iter() {
+        let key = entry.key();
+        let value = entry.value();
+        request = request.header(key, value);
     }
 
     // Add body if not empty

@@ -313,4 +313,4 @@ router_html:s = array_join([`
 
 // Start the server
 print(`Starting blog server on port `, port, `...`);
-http_server_start(port, router_html);
+http_server(port, router_html);

@@ -73,4 +73,4 @@ each option in port_options {
 }
 
 // Start the HTTP server
-http_server_start(port, html_content);
+http_server(port, html_content);

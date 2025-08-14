@@ -126,4 +126,4 @@ blog_html:s = array_join([`
 // Start the server
 print(`Starting blog server on port `, port, `...`);
 print(`Loading posts from examples/blog_posts/*.md`);
-http_server_start(port, blog_html);
+http_server(port, blog_html);

@@ -55,7 +55,7 @@ html:s = \`
 </body>
 </html>
 \`;
-http_server_start(port, html);
+http_server(port, html);
 \`\`\`
 
 That's it! Let's break it down:
@@ -195,4 +195,4 @@ blog_html:s = array_join([`
 
 // Start the server
 print(`Starting blog server on port `, port, `...`);
-http_server_start(port, blog_html);
+http_server(port, blog_html);
