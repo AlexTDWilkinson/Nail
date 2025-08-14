@@ -17,9 +17,9 @@ cp examples/nail_website.rs src/bin/nail-website.rs
 echo "Step 3: Building nail-website binary..."
 cargo build --release --bin nail-website
 
-# Step 4: Copy binary to root for Render
-echo "Step 4: Copying binary to root directory..."
-cp ./target/release/nail-website ./nail-website
+# Step 4: Move binary to root for Render
+echo "Step 4: Moving binary to root directory..."
+mv ./target/release/nail-website ./nail-website
 chmod +x ./nail-website
 
 echo "Build complete! Website binary is at ./nail-website"
