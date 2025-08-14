@@ -20,11 +20,13 @@ print(`Valid age: `);
 print(age);
 
 // Safe handling with fallback
-bad_input:s = `not_a_number`;
-safe_age:i = safe(parse_age(bad_input), f(err:s):i {
+f handle_parse_error(err:e):i {
     print(`Error: `);
     print(err);
     r 0;  // Default value
-});
+}
+
+bad_input:s = `not_a_number`;
+safe_age:i = safe(parse_age(bad_input), handle_parse_error);
 print(`Safe age with fallback: `);
 print(safe_age);

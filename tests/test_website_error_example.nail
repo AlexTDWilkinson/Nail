@@ -13,7 +13,7 @@ result:i = danger(divide(10, 2));
 print(`Result: `, result);
 
 // Test division by zero with safe handling
-f handle_error(error_msg:s):i {
+f handle_error(error_msg:e):i {
     print(`Error occurred: `, error_msg);
     r 0;
 }

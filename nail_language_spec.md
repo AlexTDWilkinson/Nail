@@ -172,7 +172,7 @@ has_charlie:b = hashmap_contains_key(user_scores, `charlie`);
 map_size:i = hashmap_len(user_scores);
 
 // Safe access with error handling
-f handle_missing_key(err:s):s { r `0`; }
+f handle_missing_key(err:e):s { r `0`; }
 alice_score:s = safe(hashmap_get(user_scores, `alice`), handle_missing_key);
 
 origin:Point = Point { x_pos: 0, y_pos: 0 };
@@ -607,7 +607,7 @@ user_input:s!e = lib_io_readline();
 user_input:s = danger(lib_io_readline());
 
 // OR safely handle the error
-f handle_input_error(e:s):s { r `default value`; }
+f handle_input_error(e:e):s { r `default value`; }
 user_input:s!e = lib_io_readline();
 user_input:s = safe(lib_io_readline(), handle_input_error);
 
@@ -1204,7 +1204,7 @@ Nail provides several ways to handle errors:
 The `safe` function allows you to handle potential errors with a handler function:
 
 ```js
-f handle_error(err:s):i {
+f handle_error(err:e):i {
     print(`An error occurred: ` + err);
     r -1;  // Return a default value or handle the error appropriately
 }
@@ -1225,7 +1225,27 @@ result:i = danger(potentially_failing_function());
 The `expect` function is identical to danger, but with a different semantic meaning. It is an error so catastrophic, there is no point in not crashing the program if it fails. Used for errors that should never happen in a well-functioning program. For example, you may have a program that displays data from a CSV. Instead of using `safe` to handle the error, which would display no data to the user anyway, you would likely prefer to crash the program so you actually are aware there is a massive problematic error occuring, rather than give users a terrible experience of seeing no data at all, and not trip any monitoring systems. The choice is up to the programmer of when to use which.
 
 
+### Error Handler Function Types
+
+**Important**: Error handling functions used with `safe()` must accept a parameter of type `:e` (error), not `:s` (string). The type checker enforces this requirement.
+
+```js
+// ✓ Correct - error handler accepts :e type
+f handle_error(err:e):i {
+    print(`Error: `, err);
+    r 0;
+}
+
+// ✗ Incorrect - will cause type checker error
+f bad_handler(err:s):i {
+    print(`Error: `, err);
+    r 0;
+}
+```
+
 ### Best Practices
+
+- **Use Proper Error Types**: Always declare error handler parameters as `:e` type, not `:s` type.
 
 - **Be Specific**: When adding to error messages, be as specific as possible about what operation failed and why.
 
