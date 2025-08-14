@@ -172,44 +172,27 @@ lazy_static! {
     pub static ref STDLIB_FUNCTIONS: HashMap<&'static str, StdlibFunction> = {
         let mut m = HashMap::new();
 
-        // HTTP functions
-        m.insert("http_server_start", StdlibFunction {
-            rust_path: "std_lib::http::http_server_start".to_string(),
+        // HTTP server function - THE ONE AND ONLY
+        m.insert("http_server", StdlibFunction {
+            rust_path: "std_lib::http::http_server".to_string(),
 
             crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
             struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
             custom_type_imports: vec![],
             module: StdlibModule::Http,
             parameters: vec![
-                StdlibParameter { name: "port".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
-                StdlibParameter { name: "content".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
-            ],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-        });
-
-        m.insert("http_server_route", StdlibFunction {
-            rust_path: "std_lib::http::http_server_route".to_string(),
-
-            crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
-            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
-            custom_type_imports: vec![],
-            module: StdlibModule::Http,
-            parameters: vec![
-                StdlibParameter {
-                    name: "port".to_string(),
-                    param_type: NailDataTypeDescriptor::Int,
-                    pass_by_reference: false,
+                StdlibParameter { 
+                    name: "port".to_string(), 
+                    param_type: NailDataTypeDescriptor::Int, 
+                    pass_by_reference: false 
                 },
-                StdlibParameter {
-                    name: "routes".to_string(),
+                StdlibParameter { 
+                    name: "routes".to_string(), 
                     param_type: NailDataTypeDescriptor::HashMap(
                         Box::new(NailDataTypeDescriptor::String),
                         Box::new(NailDataTypeDescriptor::String)
-                    ),
-                    pass_by_reference: true,
+                    ), 
+                    pass_by_reference: false 
                 }
             ],
             return_type: NailDataTypeDescriptor::Void,
@@ -1467,31 +1450,6 @@ lazy_static! {
             diverging: false,
         });
 
-        m.insert("http_server_with_query", StdlibFunction {
-            rust_path: "std_lib::http::http_server_with_query".to_string(),
-            crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
-            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
-            custom_type_imports: vec![],
-            module: StdlibModule::Http,
-            parameters: vec![
-                StdlibParameter {
-                    name: "port".to_string(),
-                    param_type: NailDataTypeDescriptor::Int,
-                    pass_by_reference: false,
-                },
-                StdlibParameter {
-                    name: "routes".to_string(),
-                    param_type: NailDataTypeDescriptor::HashMap(
-                        Box::new(NailDataTypeDescriptor::String),
-                        Box::new(NailDataTypeDescriptor::String)
-                    ),
-                    pass_by_reference: true,
-                }
-            ],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-            diverging: false,
-        });
 
         // HTTP client functions
         m.insert("http_request_get", StdlibFunction {
