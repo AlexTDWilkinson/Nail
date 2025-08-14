@@ -19,11 +19,13 @@ pub async fn contains<T: PartialEq + Sync + Send>(arr: Vec<T>, item: T) -> bool
 where T: Sync + Send
 {
     use rayon::prelude::*;
+    use rayon::iter::IntoParallelIterator;
     arr.par_iter().any(|x| x == &item)
 }
 
 pub async fn join<T: std::fmt::Display + Send + Sync>(arr: Vec<T>, separator: String) -> String {
     use rayon::prelude::*;
+    use rayon::iter::IntoParallelIterator;
     
     arr.par_iter()
         .map(|item| format!("{}", item))
@@ -33,6 +35,7 @@ pub async fn join<T: std::fmt::Display + Send + Sync>(arr: Vec<T>, separator: St
 
 pub async fn sort<T: Ord + Clone + Send>(mut arr: Vec<T>) -> Vec<T> {
     use rayon::prelude::*;
+    use rayon::iter::IntoParallelIterator;
     arr.par_sort();
     arr
 }
