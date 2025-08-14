@@ -2,7 +2,7 @@
 name = "nail"
 version = "0.0.1"
 edition = "2021"
-default-run = "nail-website"
+default-run = "nail"
 
 [[bin]]
 name = "nail"
