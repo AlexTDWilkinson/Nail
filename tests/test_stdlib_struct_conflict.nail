@@ -1,0 +1,16 @@
+// This test should FAIL type checking
+// Attempting to define a struct with a stdlib type name
+
+// Try to define HTTP_Route locally (should fail)
+struct HTTP_Route {
+    my_field:s,
+    another_field:i
+}
+
+// Try to define HTTP_Response locally (should also fail)
+struct HTTP_Response {
+    custom_field:s
+}
+
+// This should never be reached because type checking should fail
+print(`This should not execute`);

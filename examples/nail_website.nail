@@ -419,7 +419,7 @@ f generate_problem_section():s {
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin-bottom: 3rem;">
             <div style="text-align: center;">
                 <div style="font-size: 3rem; margin-bottom: 1rem;">NULL</div>
-                <p>Tony Hoare's "billion dollar mistake" - still causing crashes today</p>
+                <p>The "billion dollar mistake" - still causing crashes today</p>
             </div>
             <div style="text-align: center;">
                 <div style="font-size: 3rem; margin-bottom: 1rem;">LOOPS</div>
@@ -596,14 +596,42 @@ website_html:s = array_join([
 </html>`
 ], ``);
 
-// Create routes map with main page and example runners
-routes:h<s,s> = hashmap_new();
-hashmap_insert(routes, `/`, website_html);
+// Create routes map with HTTP_Route structs from std_lib
+routes:h<s,HTTP_Route> = hashmap_new();
 
-// Add routes for running examples
-hashmap_insert(routes, `/run-example?name=concurrent`, `{"output": "API Data: {data from file}\nUser Info: User data from API\nConfig: Configuration loaded\nAll concurrent I/O operations completed!"}`);
-hashmap_insert(routes, `/run-example?name=parallel`, `{"output": "Factorial of 10: 3628800\nSum to 100000: 5000050000\nPrimes under 100000: 9592\nBackground tasks spawned\nMain program continues immediately!"}`);
-hashmap_insert(routes, `/run-example?name=error`, `{"output": "10 / 2 = 5\nError occurred: Cannot divide by zero!\nResult with error handling: 0"}`);
+// Main page route
+main_route:HTTP_Route = HTTP_Route { 
+    path: `/`, 
+    content: website_html, 
+    content_type: `text/html; charset=utf-8`,
+    status_code: 200
+};
+hashmap_insert(routes, `/`, main_route);
+
+// Add routes for running examples with proper JSON content type
+concurrent_route:HTTP_Route = HTTP_Route {
+    path: `/run-example?name=concurrent`,
+    content: `{"output": "API Data: {data from file}\\nUser Info: User data from API\\nConfig: Configuration loaded\\nAll concurrent I/O operations completed!"}`,
+    content_type: `application/json`,
+    status_code: 200
+};
+hashmap_insert(routes, `/run-example?name=concurrent`, concurrent_route);
+
+parallel_route:HTTP_Route = HTTP_Route {
+    path: `/run-example?name=parallel`,
+    content: `{"output": "Factorial of 10: 3628800\\nSum to 100000: 5000050000\\nPrimes under 100000: 9592\\nBackground tasks spawned\\nMain program continues immediately!"}`,
+    content_type: `application/json`,
+    status_code: 200
+};
+hashmap_insert(routes, `/run-example?name=parallel`, parallel_route);
+
+error_route:HTTP_Route = HTTP_Route {
+    path: `/run-example?name=error`,
+    content: `{"output": "10 / 2 = 5\\nError occurred: Cannot divide by zero!\\nResult with error handling: 0"}`,
+    content_type: `application/json`,
+    status_code: 200
+};
+hashmap_insert(routes, `/run-example?name=error`, error_route);
 
 // Serve the website with routes
 http_server(port, routes);
