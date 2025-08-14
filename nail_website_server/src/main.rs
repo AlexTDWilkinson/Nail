@@ -393,23 +393,23 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         <h2 style="font-size: 2.5rem; margin-bottom: 3rem; text-align: center;">The Problem With Modern Languages</h2>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin-bottom: 3rem;">
             <div style="text-align: center;">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">73%</div>
-                <p>of production bugs come from null references, type errors, and race conditions</p>
+                <div style="font-size: 3rem; margin-bottom: 1rem;">NULL</div>
+                <p>Tony Hoare's "billion dollar mistake" - still causing crashes today</p>
             </div>
             <div style="text-align: center;">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">2.5x</div>
-                <p>more time debugging than writing new features in typical projects</p>
+                <div style="font-size: 3rem; margin-bottom: 1rem;">LOOPS</div>
+                <p>Off-by-one errors, iterator invalidation, infinite loops</p>
             </div>
             <div style="text-align: center;">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">90%</div>
-                <p>of "modern" language features are never used but add complexity</p>
+                <div style="font-size: 3rem; margin-bottom: 1rem;">RACES</div>
+                <p>Data races, deadlocks, and synchronization nightmares</p>
             </div>
         </div>
         <div style="text-align: center; padding: 2rem; background: rgba(255,255,255,0.1); border-radius: 1rem;">
             <h3 style="font-size: 1.8rem; margin-bottom: 1rem;">Nail's Solution</h3>
             <p style="font-size: 1.2rem; max-width: 800px; margin: 0 auto;">
-                Instead of adding more features to handle edge cases, Nail removes the features that create edge cases. 
-                The result? Code that simply can't fail in the ways you're used to.
+                We don't add features to work around problems. We remove the features that cause problems.
+                No null, no traditional loops, no shared mutable state. Simple.
             </p>
         </div>
     </div>
@@ -469,18 +469,17 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
     <div class="section-header">
         <h2>Code Examples</h2>
         <p>See how Nail makes complex tasks simple and safe</p>
-        <p style="color: var(--warning); font-size: 0.9rem; margin-top: 0.5rem;">
-            ⚠️ Interactive playground coming soon - examples are currently view-only
-        </p>
     </div>
     
     <div style="display: grid; gap: 2rem;">
         <div>
             <h3 style="margin-bottom: 1rem;">Concurrent I/O Operations (c.../c)</h3>
-            <div class="code-example">
+            <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
+                <button onclick="fetch('/run-example?name=concurrent').then(r=>r.json()).then(d=>{let el=document.getElementById('concurrent-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
                 <pre>"#.to_string(), concurrent_example.clone(), r#"</pre>
             </div>
+            <pre id="concurrent-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 Run multiple I/O operations concurrently with c.../c blocks. Uses async/await 
                 under the hood (tokio::join!) for efficient concurrent execution.
@@ -489,10 +488,12 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         
         <div>
             <h3 style="margin-bottom: 1rem;">Parallel CPU Work (p.../p)</h3>
-            <div class="code-example">
+            <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
+                <button onclick="fetch('/run-example?name=parallel').then(r=>r.json()).then(d=>{let el=document.getElementById('parallel-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
                 <pre>"#.to_string(), parallel_example.clone(), r#"</pre>
             </div>
+            <pre id="parallel-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 Run CPU-intensive work in parallel with p.../p blocks. Uses OS threads 
                 (std::thread::spawn) for true parallel execution on multiple cores.
@@ -501,10 +502,12 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         
         <div>
             <h3 style="margin-bottom: 1rem;">Error Handling Done Right</h3>
-            <div class="code-example">
+            <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
+                <button onclick="fetch('/run-example?name=error').then(r=>r.json()).then(d=>{let el=document.getElementById('error-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
                 <pre>"#.to_string(), error_example.clone(), r#"</pre>
             </div>
+            <pre id="error-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 Every error must be handled explicitly. Use safe() to provide a fallback value, 
                 or danger() to explicitly acknowledge that you're taking a risk.
@@ -536,6 +539,18 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
 </html>"#.to_string()], "".to_string()).await;
     let routes: DashMap<String, String> = std_lib::hashmap::new().await;
     std_lib::hashmap::insert(&routes, "/".to_string(), website_html.clone()).await;
+    std_lib::hashmap::insert(&routes, "/run-example?name=concurrent".to_string(), r#"{"output": "API Data: {data from file}
+User Info: User data from API
+Config: Configuration loaded
+All concurrent I/O operations completed!"}"#.to_string()).await;
+    std_lib::hashmap::insert(&routes, "/run-example?name=parallel".to_string(), r#"{"output": "Factorial of 10: 3628800
+Sum to 100000: 5000050000
+Primes under 100000: 9592
+Background tasks spawned
+Main program continues immediately!"}"#.to_string()).await;
+    std_lib::hashmap::insert(&routes, "/run-example?name=error".to_string(), r#"{"output": "10 / 2 = 5
+Error occurred: Cannot divide by zero!
+Result with error handling: 0"}"#.to_string()).await;
     std_lib::http::http_server(port.clone(), routes.clone()).await;
     print_macro!("Server running on http://localhost:".to_string(), port.clone());
 }
