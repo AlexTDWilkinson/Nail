@@ -201,6 +201,9 @@ impl Transpiler {
         writeln!(output, "use nail::print_macro;")?;
         // Always import Box in case of recursive functions
         writeln!(output, "use std::boxed::Box;")?;
+        // Always import rayon and futures since map/filter/reduce are so common
+        writeln!(output, "use rayon::prelude::*;")?;
+        writeln!(output, "use futures::future;")?;
         
         // Collect and import all custom types from used stdlib functions
         let mut custom_type_imports = std::collections::HashSet::new();
