@@ -4,7 +4,7 @@
 // Example 1: Using panic in error conditions
 user_input:i = 2;  // Change this to test different branches
 
-print(array_join([`Checking user input: `, string_from(user_input)], ``));
+print(`Checking user input: `, user_input);
 
 result:s = if {
     user_input == 1 => {
@@ -29,7 +29,7 @@ result:s = if {
 };
 
 // This line will only execute if user_input == 1
-print(array_join([`Program completed successfully with result: `, result], ``));
+print(`Program completed successfully with result: `, result);
 
 // Example 2: Using todo for unimplemented features
 feature_flag:s = `new_feature`;
@@ -49,4 +49,4 @@ implementation:s = if {
 };
 
 // This line will never execute in this example
-print(array_join([`Feature result: `, implementation], ``));
+print(`Feature result: `, implementation);

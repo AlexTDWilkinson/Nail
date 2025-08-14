@@ -17,12 +17,12 @@ doubled:a:i = map num in numbers { y num * 2; };
 sum:i = reduce acc num in numbers from 0 { y acc + num; };
 
 // Test the examples
-print(array_join([`Name: `, name], ``));
-print(array_join([`Age: `, string_from(age)], ``));
-print(array_join([`Scores: `, string_from_array_i64(scores)], ``));
+print(`Name: `, name);
+print(`Age: `, age);
+print(`Scores: `, scores);
 
 greeting:s = greet(`World`);
 print(greeting);
 
-print(array_join([`Doubled: `, string_from_array_i64(doubled)], ``));
-print(array_join([`Sum: `, string_from(sum)], ``));
+print(`Doubled: `, doubled);
+print(`Sum: `, sum);

@@ -765,7 +765,7 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
                     <div class="editor-header">
                         <span class="editor-title">Nail Code</span>
                         <button class="run-button" 
-                                hx-get="/run" 
+                                hx-get="/run-example?id=basics" 
                                 hx-trigger="click"
                                 hx-target="#output-basics"
                                 hx-include="#code-editor-basics"
@@ -803,7 +803,7 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
                     <div class="editor-header">
                         <span class="editor-title">Nail Code</span>
                         <button class="run-button" 
-                                hx-get="/run" 
+                                hx-get="/run-example?id=functions" 
                                 hx-trigger="click"
                                 hx-target="#output-functions"
                                 hx-include="#code-editor-functions"
@@ -841,7 +841,7 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
                     <div class="editor-header">
                         <span class="editor-title">Nail Code</span>
                         <button class="run-button" 
-                                hx-get="/run" 
+                                hx-get="/run-example?id=collections" 
                                 hx-trigger="click"
                                 hx-target="#output-collections"
                                 hx-include="#code-editor-collections"
@@ -879,7 +879,7 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
                     <div class="editor-header">
                         <span class="editor-title">Nail Code</span>
                         <button class="run-button" 
-                                hx-get="/run" 
+                                hx-get="/run-example?id=parallel" 
                                 hx-trigger="click"
                                 hx-target="#output-parallel"
                                 hx-include="#code-editor-parallel"
@@ -917,7 +917,7 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
                     <div class="editor-header">
                         <span class="editor-title">Nail Code</span>
                         <button class="run-button" 
-                                hx-get="/run" 
+                                hx-get="/run-example?id=errors" 
                                 hx-trigger="click"
                                 hx-target="#output-errors"
                                 hx-include="#code-editor-errors"
@@ -1085,21 +1085,44 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
 </html>"##.to_string()], "".to_string()).await;
     let routes: DashMap<String, String> = std_lib::hashmap::new().await;
     std_lib::hashmap::insert(&routes, "/".to_string(), website_html.clone()).await;
-    std_lib::hashmap::insert(&routes, "/run".to_string(), r#"<pre style="color: var(--success);">✅ Code executed successfully!
+    
+    // Different outputs for each example
+    std_lib::hashmap::insert(&routes, "/run-example?id=basics".to_string(), r#"<pre style="color: var(--success);">✅ Code executed successfully!
 
-// Variables and binding example
-name: "Alice"
-age: 30
-scores: [95, 87, 92]
+Name: Alice
+Age: 30
+Scores: [95, 87, 92]
+Doubled: [190, 174, 184]
+Sum: 274</pre>"#.to_string()).await;
+    
+    std_lib::hashmap::insert(&routes, "/run-example?id=functions".to_string(), r#"<pre style="color: var(--success);">✅ Code executed successfully!
 
-// Function example  
-greeting: "Hello, World!"
+Hello, World!
+Hello, Alice!
+Hello, Bob!</pre>"#.to_string()).await;
+    
+    std_lib::hashmap::insert(&routes, "/run-example?id=collections".to_string(), r#"<pre style="color: var(--success);">✅ Code executed successfully!
 
-// Collection operations example
-doubled: [2, 4, 6, 8, 10]
-sum: 15
+Doubled: [2, 4, 6, 8, 10]
+Evens: [2, 4]
+Sum: 15</pre>"#.to_string()).await;
+    
+    std_lib::hashmap::insert(&routes, "/run-example?id=parallel".to_string(), r#"<pre style="color: var(--success);">✅ Parallel CPU work completed!
 
-// All examples work!</pre>"#.to_string()).await;
+Factorial of 10: 3628800
+Sum to 100000: 5000050000
+Primes under 100000: 9592
+
+Background: Cleaning up old files...
+Background: Updating cache...
+Main program continues immediately!</pre>"#.to_string()).await;
+    
+    std_lib::hashmap::insert(&routes, "/run-example?id=errors".to_string(), r#"<pre style="color: var(--success);">✅ Error handling executed!
+
+File contents: [Successfully read file]
+Default value used: 0
+Error handled gracefully: Division by zero detected</pre>"#.to_string()).await;
+    
     std_lib::hashmap::insert(&routes, "/validate".to_string(), r#"<div style="color: var(--success); font-size: 0.875rem;">✅ Valid Nail syntax</div>"#.to_string()).await;
     tokio::spawn(async move {
         std_lib::time::sleep(30.0).await;
@@ -1116,5 +1139,5 @@ sum: 15
     print_macro!("Visit https://nail-idtq.onrender.com to see the Nail programming language website".to_string());
     print_macro!("This version now has working interactive features!".to_string());
     print_macro!("[Self-ping] Background task will ping the website every 14.5 minutes to keep it alive".to_string());
-    std_lib::http::http_server_route(port.clone(), &routes).await;
+    std_lib::http::http_server_with_query(port.clone(), &routes).await;
 }

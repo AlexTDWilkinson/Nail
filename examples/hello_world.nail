@@ -31,6 +31,6 @@ all_start_capital:b = all greeting in greetings {
 };
 
 print(`\n=== Greeting Analysis ===`);
-print(array_join([`Greetings with 'o': `, string_from_array_string(greetings_with_o)], ``));
-print(array_join([`Has long greeting (>6 chars): `, string_from(has_long_greeting)], ``));
-print(array_join([`All start with capital: `, string_from(all_start_capital)], ``));
+print(`Greetings with 'o': `, greetings_with_o);
+print(`Has long greeting (>6 chars): `, has_long_greeting);
+print(`All start with capital: `, all_start_capital);

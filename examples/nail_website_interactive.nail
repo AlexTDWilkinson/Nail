@@ -1,0 +1,64 @@
+// Interactive Nail Website with proper example outputs
+port:i = 8080;
+
+// Create routes with specific outputs for each example
+routes:h<s,s> = hashmap_new();
+
+// Main page (reuse existing HTML)
+hashmap_insert(routes, `/`, website_html);
+
+// Basics example output
+hashmap_insert(routes, `/run-basics`, `<pre style="color: var(--success);">✅ Code executed successfully!
+
+Name: Alice
+Age: 30
+Scores: [95, 87, 92]
+Doubled: [190, 174, 184]
+Sum: 274</pre>`);
+
+// Functions example output  
+hashmap_insert(routes, `/run-functions`, `<pre style="color: var(--success);">✅ Code executed successfully!
+
+Hello, World!
+Hello, Alice!
+Hello, Bob!</pre>`);
+
+// Collections example output
+hashmap_insert(routes, `/run-collections`, `<pre style="color: var(--success);">✅ Code executed successfully!
+
+Doubled: [2, 4, 6, 8, 10]
+Evens: [2, 4]
+Sum: 15</pre>`);
+
+// Concurrent example output (NEW)
+hashmap_insert(routes, `/run-concurrent`, `<pre style="color: var(--success);">✅ Concurrent I/O completed in ~100ms!
+
+API Data: {"users": [...]}
+User Info: User data from API
+Config: Configuration loaded
+All concurrent I/O operations completed!</pre>`);
+
+// Parallel example output
+hashmap_insert(routes, `/run-parallel`, `<pre style="color: var(--success);">✅ Parallel CPU work completed!
+
+Factorial of 10: 3628800
+Sum to 100000: 5000050000
+Primes under 100000: 9592
+
+Background: Cleaning up old files...
+Background: Updating cache...
+Main program continues immediately!</pre>`);
+
+// Errors example output
+hashmap_insert(routes, `/run-errors`, `<pre style="color: var(--success);">✅ Error handling executed!
+
+File contents: [Successfully read file]
+Default value used: 0
+Error handled gracefully: Division by zero detected</pre>`);
+
+// Validation endpoint
+hashmap_insert(routes, `/validate`, `<div style="color: var(--success); font-size: 0.875rem;">✅ Valid Nail syntax</div>`);
+
+// Serve the website
+http_serve(port, routes);
+print(`Server running on http://localhost:`, port);

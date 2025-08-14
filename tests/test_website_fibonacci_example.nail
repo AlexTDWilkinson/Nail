@@ -15,4 +15,4 @@ sequence:a:i = map idx in nums {
     y fib(idx);
 };
 
-print(array_join([`Fibonacci sequence: `, string_from_array_i64(sequence)], ``));
+print(`Fibonacci sequence: `, sequence);

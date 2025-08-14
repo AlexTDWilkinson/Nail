@@ -65,11 +65,11 @@ port_options:a:s = map port_num in valid_ports {
 };
 
 print(`=== Server Configuration ===`);
-print(array_join([`Selected port: `, string_from(port)], ``));
-print(array_join([`Port is valid: `, string_from(is_valid_port)], ``));
+print(`Selected port: `, port);
+print(`Port is valid: `, is_valid_port);
 print(`Available ports:`);
 each option in port_options {
-    print(array_join([`- `, option], ``));
+    print(`- `, option);
 }
 
 // Start the HTTP server

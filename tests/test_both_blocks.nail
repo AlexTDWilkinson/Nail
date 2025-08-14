@@ -1,0 +1,19 @@
+// Test both concurrent and parallel blocks
+
+// Concurrent block using tokio::join!
+c
+    result1:i = 10;
+    result2:i = 20;
+/c
+
+print(result1);
+print(result2);
+
+// Parallel block using std::thread::spawn
+p
+    result3:i = 30;
+    result4:i = 40;
+/p
+
+print(result3);
+print(result4);

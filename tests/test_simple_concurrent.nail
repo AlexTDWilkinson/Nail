@@ -1,0 +1,12 @@
+// Simple test of concurrent blocks
+
+// Test basic concurrent block
+print(`Testing concurrent execution...`);
+
+c
+    print(`Concurrent task 1`);
+    print(`Concurrent task 2`);
+    print(`Concurrent task 3`);
+/c
+
+print(`Concurrent test completed!`);

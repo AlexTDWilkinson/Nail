@@ -11,7 +11,7 @@ loop {
 // Test 2: Simple indexed loop
 print(`Test 2: Simple indexed loop`);
 loop index {
-    print(string_from(index));
+    print(index);
     // Just demonstrate index works, then break
     break;
 }
@@ -47,19 +47,19 @@ message:s = `External message`;
 loop {
     // Access external immutable data in loop
     print(message);
-    print(array_join(data, `,`));
+    print(data);  // Direct array print is fine
     break;
 }
 
 // Test 6: Multiple indexed loops
 print(`Test 6: Multiple indexed loops`);
 loop first_index {
-    print(array_join([`First loop index: `, string_from(first_index)], ``));
+    print(`First loop index: `, first_index);
     break;
 }
 
 loop second_index {
-    print(array_join([`Second loop index: `, string_from(second_index)], ``));
+    print(`Second loop index: `, second_index);
     break;
 }
 

@@ -21,7 +21,6 @@ nav_items:a:NavItem = [
 
 // Read example files that showcase Nail's philosophy
 error_example:s = danger(fs_read(`examples/website_examples/simple_error.nail`));
-concurrent_example:s = danger(fs_read(`examples/website_examples/simple_concurrent.nail`));
 parallel_example:s = danger(fs_read(`examples/website_examples/simple_parallel.nail`));  
 immutable_example:s = danger(fs_read(`examples/website_examples/immutable_safety.nail`));
 basics_example:s = danger(fs_read(`examples/website_examples/binding_values.nail`));
@@ -459,10 +458,9 @@ f generate_features():s {
         </div>`,
         `<div class="feature-card">
             <div class="feature-icon">⚡</div>
-            <h3>Concurrent & Parallel Blocks</h3>
-            <p>Use c.../c for concurrent I/O operations (async with tokio::join!) or p.../p for 
-               CPU-intensive parallel work (OS threads). No locks, no race conditions, just simple 
-               concurrent and parallel programming.</p>
+            <h3>Parallel by Default</h3>
+            <p>Write parallel blocks and watch your code run in parallel. No threads, no locks, no race conditions. 
+               Nail makes concurrent programming as easy as sequential programming.</p>
         </div>`,
         `<div class="feature-card">
             <div class="feature-icon">🔀</div>
@@ -511,21 +509,7 @@ f generate_examples():s {
     
     <div style="display: grid; gap: 2rem;">
         <div>
-            <h3 style="margin-bottom: 1rem;">Concurrent I/O Operations (c.../c)</h3>
-            <div class="code-example">
-                <span class="code-label">Nail</span>
-                <pre>`,
-        concurrent_example,
-        `</pre>
-            </div>
-            <p style="color: var(--text-secondary); margin-top: 1rem;">
-                Run multiple I/O operations concurrently with c.../c blocks. Uses async/await 
-                under the hood (tokio::join!) for efficient concurrent execution.
-            </p>
-        </div>
-        
-        <div>
-            <h3 style="margin-bottom: 1rem;">Parallel CPU Work (p.../p)</h3>
+            <h3 style="margin-bottom: 1rem;">Simple Concurrent Operations</h3>
             <div class="code-example">
                 <span class="code-label">Nail</span>
                 <pre>`,
@@ -533,8 +517,8 @@ f generate_examples():s {
         `</pre>
             </div>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
-                Run CPU-intensive work in parallel with p.../p blocks. Uses OS threads 
-                (std::thread::spawn) for true parallel execution on multiple cores.
+                Run multiple operations concurrently with zero effort. No async/await, no callbacks, 
+                no race conditions. Just write c...c/ and Nail handles the rest.
             </p>
         </div>
         
