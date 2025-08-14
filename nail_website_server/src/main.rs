@@ -1,11 +1,12 @@
-use tokio;
-use nail::std_lib;
-use nail::print_macro;
-use std::boxed::Box;
-use rayon::prelude::*;
-use rayon::iter::IntoParallelIterator;
-use futures::future;
 use dashmap::DashMap;
+use futures::future;
+use nail::print_macro;
+use nail::std_lib;
+use nail::std_lib::http::HTTP_Route;
+use rayon::iter::IntoParallelIterator;
+use rayon::prelude::*;
+use std::boxed::Box;
+use tokio;
 
 #[tokio::main]
 async fn main() {
@@ -17,7 +18,14 @@ async fn main() {
         name: String,
         path: String,
     }
-    let nav_items: Vec<NavItem> = vec! [NavItem { name: "Home".to_string(),  path: "#home".to_string() }, NavItem { name: "Philosophy".to_string(),  path: "#philosophy".to_string() }, NavItem { name: "Features".to_string(),  path: "#features".to_string() }, NavItem { name: "Examples".to_string(),  path: "#examples".to_string() }, NavItem { name: "Documentation".to_string(),  path: "#docs".to_string() }, NavItem { name: "Getting Started".to_string(),  path: "#start".to_string() }];
+    let nav_items: Vec<NavItem> = vec![
+        NavItem { name: "Home".to_string(), path: "#home".to_string() },
+        NavItem { name: "Philosophy".to_string(), path: "#philosophy".to_string() },
+        NavItem { name: "Features".to_string(), path: "#features".to_string() },
+        NavItem { name: "Examples".to_string(), path: "#examples".to_string() },
+        NavItem { name: "Documentation".to_string(), path: "#docs".to_string() },
+        NavItem { name: "Getting Started".to_string(), path: "#start".to_string() },
+    ];
     let error_example: String = std_lib::fs::read_file("examples/website_examples/simple_error.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
     let concurrent_example: String = std_lib::fs::read_file("examples/website_examples/simple_concurrent.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
     let parallel_example: String = std_lib::fs::read_file("examples/website_examples/simple_parallel.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
@@ -27,14 +35,18 @@ async fn main() {
     let collections_test: String = std_lib::fs::read_file("tests/test_website_collections_example.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
     let factorial_test: String = std_lib::fs::read_file("tests/test_website_factorial_example.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
     let nav_links: Vec<String> = {
-        use rayon::prelude::*;
-        use rayon::iter::IntoParallelIterator;
         use futures::future;
-        let __futures: Vec<_> = nav_items.clone().into_par_iter().enumerate().map(|(_idx, item)| {
-            async move {
-std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" class="nav-link" hx-boost="true">"#.to_string(), item.name.clone(), "</a>".to_string()], "".to_string()).await
-            }
-        }).collect();
+        use rayon::iter::IntoParallelIterator;
+        use rayon::prelude::*;
+        let __futures: Vec<_> = nav_items
+            .clone()
+            .into_par_iter()
+            .enumerate()
+            .map(|(_idx, item)| async move {
+                std_lib::array::join(vec![r#"<a href=""#.to_string(), item.path.clone(), r#"" class="nav-link" hx-boost="true">"#.to_string(), item.name.clone(), "</a>".to_string()], "".to_string())
+                    .await
+            })
+            .collect();
         let __result = future::join_all(__futures).await;
         __result
     };
@@ -65,9 +77,9 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         line-height: 1.6;
         color: var(--text-primary);
         background-color: var(--bg-secondary);
-    }"#.to_string();
-;
-                let navbar_styles: String = r#"
+    }"#
+        .to_string();
+        let navbar_styles: String = r#"
     .navbar {
         position: sticky;
         top: 0;
@@ -111,9 +123,9 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
     
     .nav-link:hover {
         color: var(--primary);
-    }"#.to_string();
-;
-                let hero_styles: String = r#"
+    }"#
+        .to_string();
+        let hero_styles: String = r#"
     .hero {
         max-width: 1200px;
         margin: 0 auto;
@@ -152,9 +164,9 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         gap: 1rem;
         justify-content: center;
         animation: fadeIn 1.2s ease-out;
-    }"#.to_string();
-;
-                let button_styles: String = r#"
+    }"#
+        .to_string();
+        let button_styles: String = r#"
     .btn {
         padding: 0.75rem 2rem;
         border-radius: 0.5rem;
@@ -185,9 +197,9 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
     .btn-secondary:hover {
         background: var(--bg-secondary);
         transform: translateY(-2px);
-    }"#.to_string();
-;
-                let section_styles: String = r#"
+    }"#
+        .to_string();
+        let section_styles: String = r#"
     section {
         max-width: 1200px;
         margin: 0 auto;
@@ -209,9 +221,9 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
     .section-header p {
         font-size: 1.2rem;
         color: var(--text-secondary);
-    }"#.to_string();
-;
-                let feature_styles: String = r#"
+    }"#
+        .to_string();
+        let feature_styles: String = r#"
     .features-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -246,9 +258,9 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
     .feature-card p {
         color: var(--text-secondary);
         line-height: 1.6;
-    }"#.to_string();
-;
-                let code_styles: String = r#"
+    }"#
+        .to_string();
+        let code_styles: String = r#"
     .code-example {
         background: #1e293b;
         color: #e2e8f0;
@@ -275,9 +287,9 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         padding: 0.25rem 0.75rem;
         border-radius: 0.25rem;
         font-size: 0.85rem;
-    }"#.to_string();
-;
-                let philosophy_styles: String = r#"
+    }"#
+        .to_string();
+        let philosophy_styles: String = r#"
     .philosophy-content {
         max-width: 800px;
         margin: 0 auto;
@@ -294,43 +306,81 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         font-style: italic;
         font-size: 1.2rem;
         color: var(--text-primary);
-    }"#.to_string();
-;
-                let animation_styles: String = r#"
+    }"#
+        .to_string();
+        let animation_styles: String = r#"
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
-    }"#.to_string();
-;
-                return std_lib::array::join(vec! [base_styles.clone(), navbar_styles.clone(), hero_styles.clone(), button_styles.clone(), section_styles.clone(), feature_styles.clone(), code_styles.clone(), philosophy_styles.clone(), animation_styles.clone()], "".to_string()).await;
+    }"#
+        .to_string();
+        return std_lib::array::join(
+            vec![
+                base_styles.clone(),
+                navbar_styles.clone(),
+                hero_styles.clone(),
+                button_styles.clone(),
+                section_styles.clone(),
+                feature_styles.clone(),
+                code_styles.clone(),
+                philosophy_styles.clone(),
+                animation_styles.clone(),
+            ],
+            "".to_string(),
+        )
+        .await;
     }
     async fn generate_head(site_title: String, site_description: String) -> String {
-        let head_html: String = std_lib::array::join(vec! [r#"<!DOCTYPE html>
+        let head_html: String = std_lib::array::join(
+            vec![
+                r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content=""#.to_string(), site_description.clone(), r#"">
-    <title>"#.to_string(), site_title.clone(), r#"</title>
+    <meta name="description" content=""#
+                    .to_string(),
+                site_description.clone(),
+                r#"">
+    <title>"#
+                    .to_string(),
+                site_title.clone(),
+                r#"</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
-    <style>"#.to_string(), generate_css().await, r#"</style>
-</head>"#.to_string()], "".to_string()).await;
-;
-                return head_html.clone();
+    <style>"#
+                    .to_string(),
+                generate_css().await,
+                r#"</style>
+</head>"#
+                    .to_string(),
+            ],
+            "".to_string(),
+        )
+        .await;
+        return head_html.clone();
     }
     async fn generate_navbar(nav_html: String) -> String {
-        let navbar_html: String = std_lib::array::join(vec! [r##"<nav class="navbar">
+        let navbar_html: String = std_lib::array::join(
+            vec![
+                r##"<nav class="navbar">
     <div class="nav-container">
         <a href="#home" class="nav-brand">
             <span style="font-size: 1.5rem;">🔨</span>
             <span>Nail</span>
         </a>
-        <div class="nav-links">"##.to_string(), nav_html.clone(), r#"</div>
+        <div class="nav-links">"##
+                    .to_string(),
+                nav_html.clone(),
+                r#"</div>
     </div>
-</nav>"#.to_string()], "".to_string()).await;
-;
-                return navbar_html.clone();
+</nav>"#
+                    .to_string(),
+            ],
+            "".to_string(),
+        )
+        .await;
+        return navbar_html.clone();
     }
     async fn generate_hero() -> String {
         return r##"<section id="home" class="hero">
@@ -385,7 +435,8 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
             complexity crisis in modern software.
         </p>
     </div>
-</section>"#.to_string();
+</section>"#
+            .to_string();
     }
     async fn generate_problem_section() -> String {
         return r#"<section class="problems" style="padding: 4rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
@@ -394,7 +445,7 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin-bottom: 3rem;">
             <div style="text-align: center;">
                 <div style="font-size: 3rem; margin-bottom: 1rem;">NULL</div>
-                <p>Tony Hoare's "billion dollar mistake" - still causing crashes today</p>
+                <p>The "billion dollar mistake" - still causing crashes today</p>
             </div>
             <div style="text-align: center;">
                 <div style="font-size: 3rem; margin-bottom: 1rem;">LOOPS</div>
@@ -409,60 +460,81 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
             <h3 style="font-size: 1.8rem; margin-bottom: 1rem;">Nail's Solution</h3>
             <p style="font-size: 1.2rem; max-width: 800px; margin: 0 auto;">
                 We don't add features to work around problems. We remove the features that cause problems.
-                No null, no traditional loops, no shared mutable state. Simple.
+                No null. Functional iteration with map/filter/reduce. Immutable by default. Simple.
             </p>
         </div>
     </div>
-</section>"#.to_string();
+</section>"#
+            .to_string();
     }
     async fn generate_features() -> String {
-        let features_data: Vec<String> = vec! [r#"<div class="feature-card">
+        let features_data: Vec<String> = vec![
+            r#"<div class="feature-card">
             <div class="feature-icon">🔒</div>
             <h3>Immutable by Default</h3>
             <p>All values are constants. While arrays and hashmaps appear mutable for convenience, 
                they're actually immutable under the hood. This eliminates race conditions and 
                unexpected state changes.</p>
-        </div>"#.to_string(), r#"<div class="feature-card">
+        </div>"#
+                .to_string(),
+            r#"<div class="feature-card">
             <div class="feature-icon">🔄</div>
             <h3>Functional Collections</h3>
             <p>No for or while loops. Use map, filter, and reduce for all iterations. 
                This prevents off-by-one errors and makes your intent clear. The syntax is 
                designed for readability, not terseness.</p>
-        </div>"#.to_string(), r#"<div class="feature-card">
+        </div>"#
+                .to_string(),
+            r#"<div class="feature-card">
             <div class="feature-icon">⚡</div>
             <h3>Concurrent & Parallel Blocks</h3>
             <p>Use c.../c for concurrent I/O operations (async with tokio::join!) or p.../p for 
                CPU-intensive parallel work (OS threads). No locks, no race conditions, just simple 
                concurrent and parallel programming.</p>
-        </div>"#.to_string(), r#"<div class="feature-card">
+        </div>"#
+                .to_string(),
+            r#"<div class="feature-card">
             <div class="feature-icon">🔀</div>
             <h3>No Silent Failures</h3>
             <p>Every error must be handled explicitly. Use safe() with a fallback or danger() 
                to acknowledge risk. Nail won't let you ignore errors—eliminating an entire class of production bugs.</p>
-        </div>"#.to_string(), r#"<div class="feature-card">
+        </div>"#
+                .to_string(),
+            r#"<div class="feature-card">
             <div class="feature-icon">🛡️</div>
             <h3>Zero Overhead</h3>
             <p>Simple doesn't mean slow. Nail compiles to optimized Rust that rivals C++ performance. 
                Automatic parallelization and zero-cost abstractions mean your code is both simple AND fast.</p>
-        </div>"#.to_string(), r#"<div class="feature-card">
+        </div>"#
+                .to_string(),
+            r#"<div class="feature-card">
             <div class="feature-icon">🦀</div>
             <h3>Production Ready</h3>
             <p>Built on Rust's proven foundation. Deploy anywhere Rust runs—from embedded systems 
                to web servers. This website? It's running on Nail-generated code right now.</p>
-        </div>"#.to_string()];
-;
-                let features_html: String = std_lib::array::join(features_data.clone(), "".to_string()).await;
-;
-                let section_html: String = std_lib::array::join(vec! [r#"<section id="features" class="features">
+        </div>"#
+                .to_string(),
+        ];
+        let features_html: String = std_lib::array::join(features_data.clone(), "".to_string()).await;
+        let section_html: String = std_lib::array::join(
+            vec![
+                r#"<section id="features" class="features">
     <div class="section-header">
         <h2>Key Features</h2>
         <p>Every feature in Nail is designed to eliminate entire categories of bugs</p>
     </div>
-    <div class="features-grid">"#.to_string(), features_html.clone(), r#"
+    <div class="features-grid">"#
+                    .to_string(),
+                features_html.clone(),
+                r#"
     </div>
-</section>"#.to_string()], "".to_string()).await;
-;
-                return section_html.clone();
+</section>"#
+                    .to_string(),
+            ],
+            "".to_string(),
+        )
+        .await;
+        return section_html.clone();
     }
     async fn generate_examples(concurrent_example: String, parallel_example: String, error_example: String) -> String {
         let examples_html: String = std_lib::array::join(vec! [r#"<section id="examples" class="examples">
@@ -515,8 +587,7 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
         </div>
     </div>
 </section>"#.to_string()], "".to_string()).await;
-;
-                return examples_html.clone();
+        return examples_html.clone();
     }
     async fn generate_footer() -> String {
         return r#"<footer style="background: var(--text-primary); color: white; padding: 3rem 2rem; margin-top: 4rem;">
@@ -533,24 +604,51 @@ std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" c
             </a>
         </div>
     </div>
-</footer>"#.to_string();
+</footer>"#
+            .to_string();
     }
-    let website_html: String = std_lib::array::join(vec! [generate_head(site_title.clone(), site_description.clone()).await, r#"<body hx-boost="true">"#.to_string(), generate_navbar(nav_html.clone()).await, generate_hero().await, generate_philosophy().await, generate_problem_section().await, generate_features().await, generate_examples(concurrent_example.clone(), parallel_example.clone(), error_example.clone()).await, generate_footer().await, r#"</body>
-</html>"#.to_string()], "".to_string()).await;
-    let routes: DashMap<String, String> = std_lib::hashmap::new().await;
-    std_lib::hashmap::insert(&routes, "/".to_string(), website_html.clone()).await;
-    std_lib::hashmap::insert(&routes, "/run-example?name=concurrent".to_string(), r#"{"output": "API Data: {data from file}
-User Info: User data from API
-Config: Configuration loaded
-All concurrent I/O operations completed!"}"#.to_string()).await;
-    std_lib::hashmap::insert(&routes, "/run-example?name=parallel".to_string(), r#"{"output": "Factorial of 10: 3628800
-Sum to 100000: 5000050000
-Primes under 100000: 9592
-Background tasks spawned
-Main program continues immediately!"}"#.to_string()).await;
-    std_lib::hashmap::insert(&routes, "/run-example?name=error".to_string(), r#"{"output": "10 / 2 = 5
-Error occurred: Cannot divide by zero!
-Result with error handling: 0"}"#.to_string()).await;
+    let website_html: String = std_lib::array::join(
+        vec![
+            generate_head(site_title.clone(), site_description.clone()).await,
+            r#"<body hx-boost="true">"#.to_string(),
+            generate_navbar(nav_html.clone()).await,
+            generate_hero().await,
+            generate_philosophy().await,
+            generate_problem_section().await,
+            generate_features().await,
+            generate_examples(concurrent_example.clone(), parallel_example.clone(), error_example.clone()).await,
+            generate_footer().await,
+            r#"</body>
+</html>"#
+                .to_string(),
+        ],
+        "".to_string(),
+    )
+    .await;
+    let routes: DashMap<String, HTTP_Route> = std_lib::hashmap::new().await;
+    let main_route: HTTP_Route = nail::std_lib::http::HTTP_Route { path: "/".to_string(), content: website_html.clone(), content_type: "text/html; charset=utf-8".to_string(), status_code: 200 };
+    std_lib::hashmap::insert(&routes, "/".to_string(), main_route.clone()).await;
+    let concurrent_route: HTTP_Route = nail::std_lib::http::HTTP_Route {
+        path: "/run-example?name=concurrent".to_string(),
+        content: r#"{"output": "API Data: {data from file}\nUser Info: User data from API\nConfig: Configuration loaded\nAll concurrent I/O operations completed!"}"#.to_string(),
+        content_type: "application/json".to_string(),
+        status_code: 200,
+    };
+    std_lib::hashmap::insert(&routes, "/run-example?name=concurrent".to_string(), concurrent_route.clone()).await;
+    let parallel_route: HTTP_Route = nail::std_lib::http::HTTP_Route {
+        path: "/run-example?name=parallel".to_string(),
+        content: r#"{"output": "Factorial of 10: 3628800\nSum to 100000: 5000050000\nPrimes under 100000: 9592\nBackground tasks spawned\nMain program continues immediately!"}"#.to_string(),
+        content_type: "application/json".to_string(),
+        status_code: 200,
+    };
+    std_lib::hashmap::insert(&routes, "/run-example?name=parallel".to_string(), parallel_route.clone()).await;
+    let error_route: HTTP_Route = nail::std_lib::http::HTTP_Route {
+        path: "/run-example?name=error".to_string(),
+        content: r#"{"output": "10 / 2 = 5\nError occurred: Cannot divide by zero!\nResult with error handling: 0"}"#.to_string(),
+        content_type: "application/json".to_string(),
+        status_code: 200,
+    };
+    std_lib::hashmap::insert(&routes, "/run-example?name=error".to_string(), error_route.clone()).await;
     std_lib::http::http_server(port.clone(), routes.clone()).await;
     print_macro!("Server running on http://localhost:".to_string(), port.clone());
 }

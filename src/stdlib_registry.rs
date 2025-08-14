@@ -1,6 +1,6 @@
 use crate::lexer::NailDataTypeDescriptor;
 use lazy_static::lazy_static;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum CrateDependency {
@@ -178,7 +178,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
             struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
-            custom_type_imports: vec![],
+            custom_type_imports: vec![("HTTP_Route", "nail::std_lib::http")],
             module: StdlibModule::Http,
             parameters: vec![
                 StdlibParameter { 
@@ -190,7 +190,7 @@ lazy_static! {
                     name: "routes".to_string(), 
                     param_type: NailDataTypeDescriptor::HashMap(
                         Box::new(NailDataTypeDescriptor::String),
-                        Box::new(NailDataTypeDescriptor::String)
+                        Box::new(NailDataTypeDescriptor::Struct("HTTP_Route".to_string()))
                     ), 
                     pass_by_reference: false 
                 }
@@ -2123,5 +2123,62 @@ pub fn is_stdlib_function(name: &str) -> bool {
 /// Get stdlib function info
 pub fn get_stdlib_function(name: &str) -> Option<&'static StdlibFunction> {
     STDLIB_FUNCTIONS.get(name)
+}
+
+/// Information about a stdlib struct/type
+#[derive(Clone, Debug)]
+pub struct StdlibTypeInfo {
+    pub name: String,
+    pub fields: HashMap<String, NailDataTypeDescriptor>,
+}
+
+lazy_static! {
+    /// Registry of all stdlib types and their field information
+    pub static ref STDLIB_TYPES: HashMap<&'static str, StdlibTypeInfo> = {
+        let mut m = HashMap::new();
+        
+        // HTTP_Route struct
+        m.insert("HTTP_Route", StdlibTypeInfo {
+            name: "HTTP_Route".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("content".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("content_type".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("status_code".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+        
+        // HTTP_Response struct
+        m.insert("HTTP_Response", StdlibTypeInfo {
+            name: "HTTP_Response".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("status".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("body".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+        
+        m
+    };
+}
+
+/// Get all stdlib type names (structs/enums defined in stdlib)
+pub fn get_stdlib_type_names() -> HashSet<String> {
+    STDLIB_TYPES.keys().map(|k| k.to_string()).collect()
+}
+
+/// Get field type for a stdlib struct
+pub fn get_stdlib_struct_field_type(struct_name: &str, field_name: &str) -> Option<NailDataTypeDescriptor> {
+    STDLIB_TYPES.get(struct_name)
+        .and_then(|info| info.fields.get(field_name))
+        .cloned()
+}
+
+/// Check if a struct is a stdlib struct
+pub fn is_stdlib_struct(name: &str) -> bool {
+    STDLIB_TYPES.contains_key(name)
 }
 

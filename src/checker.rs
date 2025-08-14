@@ -1206,7 +1206,15 @@ fn visit_struct_field_access(struct_name: &str, field_name: &str, state: &mut An
                         add_error(state, format!("Field '{}' does not exist in struct '{}'", field_name, struct_type_name), code_span);
                     }
                 } else {
-                    add_error(state, format!("FailedToResolve struct type: {}", struct_type_name), code_span);
+                    // Check if it's a stdlib struct
+                    if !crate::stdlib_registry::is_stdlib_struct(struct_type_name) {
+                        add_error(state, format!("FailedToResolve struct type: {}", struct_type_name), code_span);
+                    } else {
+                        // For stdlib structs, check if the field exists using the registry
+                        if crate::stdlib_registry::get_stdlib_struct_field_type(struct_type_name, field_name).is_none() {
+                            add_error(state, format!("Field '{}' does not exist in stdlib struct '{}'", field_name, struct_type_name), code_span);
+                        }
+                    }
                 }
             }
             _ => {
@@ -1234,7 +1242,15 @@ fn visit_nested_field_access(object: &mut Box<ASTNode>, field_name: &str, state:
                     add_error(state, format!("Field '{}' does not exist in struct '{}'", field_name, struct_type_name), code_span);
                 }
             } else {
-                add_error(state, format!("FailedToResolve struct type: {}", struct_type_name), code_span);
+                // Check if it's a stdlib struct
+                if !crate::stdlib_registry::is_stdlib_struct(struct_type_name) {
+                    add_error(state, format!("FailedToResolve struct type: {}", struct_type_name), code_span);
+                } else {
+                    // For stdlib structs, check if the field exists using the registry
+                    if crate::stdlib_registry::get_stdlib_struct_field_type(struct_type_name, field_name).is_none() {
+                        add_error(state, format!("Field '{}' does not exist in stdlib struct '{}'", field_name, struct_type_name), code_span);
+                    }
+                }
             }
         }
         _ => {
@@ -1244,6 +1260,13 @@ fn visit_nested_field_access(object: &mut Box<ASTNode>, field_name: &str, state:
 }
 
 fn visit_struct_declaration(name: &str, fields: &[ASTNode], state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+    // Check if this struct name conflicts with stdlib types
+    let stdlib_types = crate::stdlib_registry::get_stdlib_type_names();
+    if stdlib_types.contains(name) {
+        add_error(state, format!("Cannot define struct '{}': this name is reserved for a standard library type", name), code_span);
+        return;
+    }
+    
     // Register the struct in the type system
     if let Some(existing) = state.structs.get(name) {
         if existing != fields {
@@ -1281,7 +1304,14 @@ fn visit_struct_declaration(name: &str, fields: &[ASTNode], state: &mut Analyzer
     }
 }
 
-fn visit_enum_declaration(name: &str, variants: &[ASTNode], state: &mut AnalyzerState, _code_span: &mut CodeSpan) {
+fn visit_enum_declaration(name: &str, variants: &[ASTNode], state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+    // Check if this enum name conflicts with stdlib types
+    let stdlib_types = crate::stdlib_registry::get_stdlib_type_names();
+    if stdlib_types.contains(name) {
+        add_error(state, format!("Cannot define enum '{}': this name is reserved for a standard library type", name), code_span);
+        return;
+    }
+    
     let mut variant_set = HashSet::new();
     variants.iter().for_each(|variant| {
         if let ASTNode::EnumVariant { variant: variant_name, code_span, .. } = variant {
@@ -1948,6 +1978,11 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                                     }
                                 }
                             }
+                        } else {
+                            // For stdlib structs, get field type from registry
+                            if let Some(field_type) = crate::stdlib_registry::get_stdlib_struct_field_type(struct_type_name, field_name) {
+                                return field_type;
+                            }
                         }
                     }
                     _ => {
@@ -1971,6 +2006,11 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                                     return data_type.clone();
                                 }
                             }
+                        }
+                    } else {
+                        // For stdlib structs, get field type from registry
+                        if let Some(field_type) = crate::stdlib_registry::get_stdlib_struct_field_type(struct_type_name, field_name) {
+                            return field_type;
                         }
                     }
                 }

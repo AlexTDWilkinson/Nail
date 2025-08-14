@@ -1,0 +1,11 @@
+// This test should FAIL type checking
+// Attempting to define an enum with a stdlib type name
+
+// Try to define an enum with a stdlib struct name (should fail)
+enum HTTP_Route {
+    Option1,
+    Option2
+}
+
+// This should never be reached because type checking should fail
+print(`This should not execute`);

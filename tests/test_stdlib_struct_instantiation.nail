@@ -1,0 +1,61 @@
+// Test that stdlib structs can be instantiated properly
+
+// Test creating HTTP_Route structs
+route1:HTTP_Route = HTTP_Route {
+    path: `/api/users`,
+    content: `{"users": []}`,
+    content_type: `application/json`,
+    status_code: 200
+};
+
+// Test creating multiple routes
+route2:HTTP_Route = HTTP_Route {
+    path: `/api/health`,
+    content: `{"status": "ok"}`,
+    content_type: `application/json`,
+    status_code: 200
+};
+
+// Test using HTTP_Route in a hashmap
+routes:h<s,HTTP_Route> = hashmap_new();
+hashmap_insert(routes, `/api/users`, route1);
+hashmap_insert(routes, `/api/health`, route2);
+
+// Test that we can access struct fields
+path1:s = route1.path;
+content1:s = route1.content;
+type1:s = route1.content_type;
+status1:i = route1.status_code;
+
+print(`Route 1 path: `, path1);
+print(`Route 1 content type: `, type1);
+print(`Route 1 status: `, status1);
+
+// Test creating a route inline in function call
+inline_route:HTTP_Route = HTTP_Route {
+    path: `/`,
+    content: `<html><body>Hello</body></html>`,
+    content_type: `text/html`,
+    status_code: 200
+};
+hashmap_insert(routes, `/`, inline_route);
+
+// Verify we have 3 routes
+route_count:i = hashmap_len(routes);
+print(`Total routes: `, route_count);
+
+// Test that local structs still work
+struct LocalTestStruct {
+    field1:s,
+    field2:i
+}
+
+local_struct:LocalTestStruct = LocalTestStruct {
+    field1: `test`,
+    field2: 42
+};
+
+print(`Local struct field1: `, local_struct.field1);
+print(`Local struct field2: `, local_struct.field2);
+
+print(`Test completed successfully!`);

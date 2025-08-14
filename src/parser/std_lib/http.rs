@@ -1,8 +1,10 @@
 use axum::{
     extract::{Query},
-    response::Html,
+    response::{Html, IntoResponse, Response},
     routing::get,
     Router,
+    http::{header, StatusCode},
+    body::Body,
 };
 use reqwest;
 use std::net::SocketAddr;
@@ -15,9 +17,17 @@ pub struct HTTP_Response {
     pub body: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct HTTP_Route {
+    pub path: String,
+    pub content: String,
+    pub content_type: String,  // e.g., "text/html", "application/json"
+    pub status_code: u16,      // HTTP status code (200, 404, etc.)
+}
+
 // THE ONE AND ONLY HTTP SERVER FUNCTION
 // Handles static content, routes, and query parameters
-pub async fn http_server(port: i64, routes: DashMap<String, String>) -> Result<(), String> {
+pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Result<(), String> {
     let mut app = Router::new();
     
     // If there's only one route with key "/" or "", serve it as static
@@ -25,17 +35,26 @@ pub async fn http_server(port: i64, routes: DashMap<String, String>) -> Result<(
         if let Some(entry) = routes.iter().next() {
             let key = entry.key();
             if key == "/" || key == "" {
-                let html = entry.value().clone();
-                app = app.route("/", get(move || async move { Html(html.clone()) }));
+                let route = entry.value().clone();
+                let content = route.content.clone();
+                let content_type = route.content_type.clone();
+                let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
+                app = app.route("/", get(move || async move {
+                    Response::builder()
+                        .status(status)
+                        .header(header::CONTENT_TYPE, content_type)
+                        .body(content)
+                        .unwrap()
+                }));
             }
         }
     } else {
         // Group routes by path for query parameter handling
-        let mut path_routes: HashMap<String, DashMap<String, String>> = HashMap::new();
+        let mut path_routes: HashMap<String, DashMap<String, HTTP_Route>> = HashMap::new();
         
         for entry in routes.iter() {
             let key = entry.key().clone();
-            let value = entry.value().clone();
+            let route = entry.value().clone();
             
             // Check if this is a query-based route
             if let Some(pos) = key.find('?') {
@@ -44,12 +63,12 @@ pub async fn http_server(port: i64, routes: DashMap<String, String>) -> Result<(
                 
                 path_routes.entry(path.clone())
                     .or_insert_with(DashMap::new)
-                    .insert(query, value);
+                    .insert(query, route);
             } else {
                 // Simple path without query params
                 path_routes.entry(key.clone())
                     .or_insert_with(DashMap::new)
-                    .insert("".to_string(), value);
+                    .insert("".to_string(), route);
             }
         }
         
@@ -69,16 +88,30 @@ pub async fn http_server(port: i64, routes: DashMap<String, String>) -> Result<(
                     let query_string = query_parts.join("&");
                     
                     // Try exact match first
-                    if let Some(html) = qmap.get(&query_string) {
-                        return Html(html.clone());
+                    if let Some(route) = qmap.get(&query_string) {
+                        let content = route.content.clone();
+                        let content_type = route.content_type.clone();
+                        let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
+                        return Response::builder()
+                            .status(status)
+                            .header(header::CONTENT_TYPE, content_type)
+                            .body(Body::from(content))
+                            .unwrap();
                     }
                     
                     // Fall back to no-query-param version
-                    if let Some(html) = qmap.get("") {
-                        return Html(html.clone());
+                    if let Some(route) = qmap.get("") {
+                        let content = route.content.clone();
+                        let content_type = route.content_type.clone();
+                        let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
+                        return Response::builder()
+                            .status(status)
+                            .header(header::CONTENT_TYPE, content_type)
+                            .body(Body::from(content))
+                            .unwrap();
                     }
                     
-                    Html(format!("<pre>404 - Route not found: {}?{}</pre>", path_for_error, query_string))
+                    Html(format!("<pre>404 - Route not found: {}?{}</pre>", path_for_error, query_string)).into_response()
                 }
             }));
         }

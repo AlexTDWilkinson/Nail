@@ -1,7 +1,7 @@
 use crate::lexer::{NailDataTypeDescriptor, Operation};
 use crate::parser::ASTNode;
 use crate::stdlib_registry::{self, CrateDependency};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 pub struct Transpiler {
@@ -11,11 +11,20 @@ pub struct Transpiler {
     current_function_name: Option<String>,
     used_stdlib_functions: HashSet<String>,
     in_collection_operation: bool,
+    stdlib_types: HashMap<String, String>,  // Maps stdlib type names to their full paths
 }
 
 impl Transpiler {
     pub fn new() -> Self {
-        Transpiler { indent_level: 0, scope_level: 0, current_function_return_type: None, current_function_name: None, used_stdlib_functions: HashSet::new(), in_collection_operation: false }
+        Transpiler { 
+            indent_level: 0, 
+            scope_level: 0, 
+            current_function_return_type: None, 
+            current_function_name: None, 
+            used_stdlib_functions: HashSet::new(), 
+            in_collection_operation: false,
+            stdlib_types: HashMap::new(),
+        }
     }
 
     fn has_return_statements(&self, node: &ASTNode) -> bool {
@@ -221,9 +230,11 @@ impl Transpiler {
             }
         }
         
-        // Generate imports for custom types
+        // Generate imports for custom types and populate stdlib_types map
         for (type_name, module_path) in custom_type_imports {
             writeln!(output, "use {}::{};", module_path, type_name)?;
+            // Store the mapping for use during struct instantiation
+            self.stdlib_types.insert(type_name.to_string(), format!("{}::{}", module_path, type_name));
         }
         
         // Generate imports for required crates
@@ -1128,7 +1139,13 @@ impl Transpiler {
                 write!(output, " }} }}")?;
             }
             ASTNode::StructInstantiation { name, fields, .. } => {
-                write!(output, "{} {{", name)?;
+                // Check if this is a stdlib struct and use the full path if so
+                let struct_name = if let Some(full_path) = self.stdlib_types.get(name) {
+                    full_path.clone()
+                } else {
+                    name.clone()
+                };
+                write!(output, "{} {{", struct_name)?;
                 for (i, field) in fields.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
