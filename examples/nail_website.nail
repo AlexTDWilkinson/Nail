@@ -315,7 +315,7 @@ f generate_css():s {
 }
 
 // Generate HTML sections
-f generate_head():s {
+f generate_head(site_title:s, site_description:s):s {
     head_html:s = array_join([
         `<!DOCTYPE html>
 <html lang="en">
@@ -338,7 +338,7 @@ f generate_head():s {
     r head_html;
 }
 
-f generate_navbar():s {
+f generate_navbar(nav_html:s):s {
     navbar_html:s = array_join([
         `<nav class="navbar">
     <div class="nav-container">
@@ -501,7 +501,7 @@ f generate_features():s {
     r section_html;
 }
 
-f generate_examples():s {
+f generate_examples(concurrent_example:s, parallel_example:s, error_example:s):s {
     examples_html:s = array_join([
         `<section id="examples" class="examples">
     <div class="section-header">
@@ -577,14 +577,14 @@ f generate_footer():s {
 
 // Assemble the complete HTML
 website_html:s = array_join([
-    generate_head(),
+    generate_head(site_title, site_description),
     `<body hx-boost="true">`,
-    generate_navbar(),
+    generate_navbar(nav_html),
     generate_hero(),
     generate_philosophy(),
     generate_problem_section(),
     generate_features(),
-    generate_examples(),
+    generate_examples(concurrent_example, parallel_example, error_example),
     generate_footer(),
     `</body>
 </html>`

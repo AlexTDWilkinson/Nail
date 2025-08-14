@@ -29,4 +29,4 @@ nail-website
 nail_website_build/
 examples/*.rs
 tests/*.rs
-*_transpilation/
+*_transpilation/nail_website_server/

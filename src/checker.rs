@@ -103,6 +103,7 @@ struct AnalyzerState {
     enum_variants: HashMap<String, HashSet<String>>,
     structs: HashMap<String, Vec<ASTNode>>,
     in_loop: bool,
+    function_scope: Option<usize>,  // Track the scope of the current function
 }
 
 fn new_analyzer_state() -> AnalyzerState {
@@ -113,6 +114,7 @@ fn new_analyzer_state() -> AnalyzerState {
         enum_variants: HashMap::new(), 
         structs: HashMap::new(),
         in_loop: false,
+        function_scope: None,
     }
 }
 
@@ -379,6 +381,14 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         ASTNode::BinaryOperation { left, operator, right, code_span, .. } => visit_binary_operation(left, operator, right, state, code_span),
         ASTNode::UnaryOperation { operator, operand, code_span, .. } => visit_unary_operation(operator, operand, state, code_span),
         ASTNode::Identifier { name, code_span, .. } => {
+            // Check if we're in a function and the variable is from outside
+            if let Some(func_scope) = state.function_scope {
+                if !check_variable_in_function_scope(state, name, func_scope) {
+                    add_error(state, format!("Cannot access variable '{}' from outside function scope. Functions can only use parameters and local variables.", name), code_span);
+                    return;
+                }
+            }
+            
             if !mark_symbol_as_used(state, name) {
                 add_error(state, format!("Undefined variable: {}", name), code_span);
             }
@@ -490,6 +500,9 @@ fn visit_function_declaration(
         *scope = function_scope;
     }
 
+    // Track that we're in a function scope
+    let previous_function_scope = state.function_scope;
+    state.function_scope = Some(function_scope);
     state.return_context = ReturnContext::Function;
 
     // Add parameters to the function's scope
@@ -507,6 +520,8 @@ fn visit_function_declaration(
     // and needs access to all scopes. Scopes will be preserved throughout
     // the entire type checking process.
 
+    // Restore the previous function scope context
+    state.function_scope = previous_function_scope;
     state.return_context = ReturnContext::None;
 }
 
@@ -1992,6 +2007,35 @@ fn lookup_symbol(arena: &ScopeArena, scope: usize, name: &str) -> Option<Symbol>
         scope_for_traversal = scope_data.parent;
     }
     None
+}
+
+fn check_variable_in_function_scope(state: &AnalyzerState, name: &str, function_scope: usize) -> bool {
+    // Check if the variable exists in the function scope or its child scopes
+    let mut current_scope = state.scope_arena.current_scope();
+    
+    // Walk up from current scope to function scope
+    loop {
+        let scope = state.scope_arena.get_scope(current_scope);
+        
+        // Check if variable exists in this scope
+        if scope.symbols.contains_key(name) {
+            return true;  // Found in function scope or child scope
+        }
+        
+        // If we've reached the function scope, stop
+        if current_scope == function_scope {
+            break;
+        }
+        
+        // If we've gone past the function scope to a parent, the variable is external
+        if current_scope == GLOBAL_SCOPE || scope.parent < function_scope {
+            return false;
+        }
+        
+        current_scope = scope.parent;
+    }
+    
+    false  // Not found in function scope
 }
 
 fn mark_symbol_as_used(state: &mut AnalyzerState, name: &str) -> bool {
