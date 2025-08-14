@@ -373,10 +373,12 @@ styles:s = `
         font-family: 'Consolas', 'Monaco', monospace;
         font-size: 0.875rem;
         line-height: 1.6;
-        min-height: 200px;
+        min-height: 400px;
+        height: 450px;
         resize: vertical;
         border: 1px solid var(--border);
         width: 100%;
+        overflow-y: auto;
     }
     
     .run-button {
@@ -408,10 +410,12 @@ styles:s = `
         border: 1px solid var(--border);
         border-radius: 0.5rem;
         padding: 1.5rem;
-        min-height: 200px;
+        min-height: 400px;
+        height: 450px;
         font-family: monospace;
         font-size: 0.875rem;
         position: relative;
+        overflow: auto;
     }
     
     .output-loading {
