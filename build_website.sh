@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Building Nail website for Render deployment..."
+echo "Building Nail website for Render deployment (with IntoParallelIterator fix)..."
 
 # Step 1: Build the Nail compiler
 echo "Step 1: Building Nail compiler..."
