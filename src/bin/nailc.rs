@@ -41,7 +41,9 @@ fn main() {
     };
     
     // Run lexer
-    println!("=== Lexing {} ===", filename);
+    if mode != "--transpile" && mode != "--transpile-skip-check" {
+        println!("=== Lexing {} ===", filename);
+    }
     let tokens = lexer(&input);
     
     if mode == "--lex-only" {
@@ -53,11 +55,15 @@ fn main() {
     }
     
     // Run parser
-    println!("\n=== Parsing ===");
+    if mode != "--transpile" && mode != "--transpile-skip-check" {
+        println!("\n=== Parsing ===");
+    }
     let (ast, _used_stdlib_functions) = match parse(tokens) {
         Ok((ast, used_functions)) => {
-            println!("Parse successful!");
-            println!("Used stdlib functions: {:?}", used_functions);
+            if mode != "--transpile" && mode != "--transpile-skip-check" {
+                println!("Parse successful!");
+                println!("Used stdlib functions: {:?}", used_functions);
+            }
             (ast, used_functions)
         }
         Err(e) => {
@@ -74,15 +80,21 @@ fn main() {
     
     // Skip type checking if requested
     let checked_ast = if skip_check || mode == "--transpile-skip-check" {
-        println!("\n=== Skipping Type Check ===");
+        if mode != "--transpile" && mode != "--transpile-skip-check" {
+            println!("\n=== Skipping Type Check ===");
+        }
         ast
     } else {
         // Run type checker
-        println!("\n=== Type Checking ===");
+        if mode != "--transpile" && mode != "--transpile-skip-check" {
+            println!("\n=== Type Checking ===");
+        }
         let mut checked_ast = ast;
         match checker(&mut checked_ast) {
             Ok(_) => {
-                println!("Type check successful!");
+                if mode != "--transpile" && mode != "--transpile-skip-check" {
+                    println!("Type check successful!");
+                }
                 checked_ast
             }
             Err(errors) => {
@@ -105,7 +117,9 @@ fn main() {
     }
     
     // Run transpiler
-    println!("\n=== Transpiling to Rust ===");
+    if mode != "--transpile" && mode != "--transpile-skip-check" {
+        println!("\n=== Transpiling to Rust ===");
+    }
     let mut transpiler = Transpiler::new();
     let rust_code = match transpiler.transpile(&checked_ast) {
         Ok(code) => code,
@@ -124,13 +138,30 @@ fn main() {
         return;
     }
     
-    println!("\nGenerated Rust code:");
-    println!("{}", rust_code);
+    if mode != "--transpile" && mode != "--transpile-skip-check" {
+        println!("\nGenerated Rust code:");
+    }
     
-    // Optionally save the Rust code
-    let output_filename = filename.replace(".nail", ".rs");
-    match fs::write(&output_filename, &rust_code) {
-        Ok(_) => println!("\nRust code saved to: {}", output_filename),
-        Err(e) => eprintln!("Error writing output file: {}", e),
+    // For --transpile mode, just output the code directly
+    if mode == "--transpile" || mode == "--transpile-skip-check" {
+        // Save the Rust code to file
+        let output_filename = filename.replace(".nail", ".rs");
+        match fs::write(&output_filename, &rust_code) {
+            Ok(_) => {
+                // Don't print anything, just save the file
+            }
+            Err(e) => {
+                eprintln!("Error writing output file: {}", e);
+                process::exit(1);
+            }
+        }
+    } else {
+        // For other modes, print the code and save message
+        println!("{}", rust_code);
+        let output_filename = filename.replace(".nail", ".rs");
+        match fs::write(&output_filename, &rust_code) {
+            Ok(_) => println!("\nRust code saved to: {}", output_filename),
+            Err(e) => eprintln!("Error writing output file: {}", e),
+        }
     }
 }

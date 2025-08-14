@@ -93,12 +93,24 @@ pub enum ASTNode {
         code_span: CodeSpan, 
         scope: usize 
     },
+    Loop {
+        index_iterator: Option<String>, // Optional index parameter
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
+    SpawnBlock {
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
     BreakStatement { code_span: CodeSpan, scope: usize },
     ContinueStatement { code_span: CodeSpan, scope: usize },
     ParallelBlock { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     Block { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     BinaryOperation { left: Box<ASTNode>, operator: Operation, right: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     UnaryOperation { operator: Operation, operand: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    Assignment { left: Box<ASTNode>, right: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     StructDeclaration { name: String, fields: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     StructDeclarationField { name: String, data_type: NailDataTypeDescriptor, scope: usize },
     StructInstantiation { name: String, fields: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
@@ -140,12 +152,15 @@ impl ASTNode {
             ASTNode::AllExpression { code_span, .. } => code_span.clone(),
             ASTNode::AnyExpression { code_span, .. } => code_span.clone(),
             ASTNode::WhileLoop { code_span, .. } => code_span.clone(),
+            ASTNode::Loop { code_span, .. } => code_span.clone(),
+            ASTNode::SpawnBlock { code_span, .. } => code_span.clone(),
             ASTNode::BreakStatement { code_span, .. } => code_span.clone(),
             ASTNode::ContinueStatement { code_span, .. } => code_span.clone(),
             ASTNode::ParallelBlock { code_span, .. } => code_span.clone(),
             ASTNode::Block { code_span, .. } => code_span.clone(),
             ASTNode::BinaryOperation { code_span, .. } => code_span.clone(),
             ASTNode::UnaryOperation { code_span, .. } => code_span.clone(),
+            ASTNode::Assignment { code_span, .. } => code_span.clone(),
             ASTNode::StructDeclaration { code_span, .. } => code_span.clone(),
             ASTNode::StructDeclarationField { .. } => CodeSpan::default(), // No code_span for this variant
             ASTNode::StructInstantiation { code_span, .. } => code_span.clone(),
@@ -275,6 +290,7 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::AllDeclaration => parse_all_expression(state)?,
             TokenType::AnyDeclaration => parse_any_expression(state)?,
             TokenType::WhileDeclaration => parse_while_loop(state)?,
+            TokenType::LoopKeyword => parse_loop(state)?,
             TokenType::FunctionSignature(_) => parse_inline_function_from_signature(state)?,
             _ => {
                 let code_span = token.code_span;
@@ -305,6 +321,8 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::AllDeclaration => parse_all_expression(state),
             TokenType::AnyDeclaration => parse_any_expression(state),
             TokenType::WhileDeclaration => parse_while_loop(state),
+            TokenType::LoopKeyword => parse_loop(state),
+            TokenType::SpawnKeyword => parse_spawn_block(state),
             TokenType::BreakKeyword => parse_break_statement(state),
             TokenType::ContinueKeyword => parse_continue_statement(state),
             TokenType::ParallelStart => parse_parallel_block_start(state),
@@ -355,6 +373,19 @@ fn parse_expression(state: &mut ParserState, min_precedence: u8) -> Result<ASTNo
                     let right = parse_expression(state, op.precedence() + 1)?;
                     left = ASTNode::BinaryOperation { left: Box::new(left), operator: op, right: Box::new(right), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
                 }
+            }
+            Some(Token { token_type: TokenType::Assignment, .. }) => {
+                // Assignment has very low precedence (right-associative)
+                let assignment_precedence = 0;
+                if assignment_precedence < min_precedence {
+                    break;
+                }
+
+                advance(state); // Consume the assignment token
+                let code_span = state.current_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
+                
+                let right = parse_expression(state, assignment_precedence)?;
+                left = ASTNode::Assignment { left: Box::new(left), right: Box::new(right), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
             }
             _ => break,
         }
@@ -1300,6 +1331,56 @@ fn parse_while_loop(state: &mut ParserState) -> Result<ASTNode, CodeError> {
         condition: Box::new(condition),
         initial_value,
         max_iterations,
+        body: Box::new(body),
+        code_span,
+        scope: GLOBAL_SCOPE,
+    })
+}
+
+fn parse_loop(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::LoopKeyword)?;
+    
+    // Check for optional index parameter (e.g., "loop index {")
+    let index_iterator = if let Some(token) = state.tokens.peek() {
+        if let TokenType::Identifier(name) = &token.token_type {
+            let name = name.clone();
+            // Consume the identifier and use it as the index parameter
+            state.tokens.next();
+            Some(name)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    let body = parse_block(state)?;
+    let code_span = CodeSpan {
+        start_line: start_span.start_line,
+        start_column: start_span.start_column,
+        end_line: body.code_span().end_line,
+        end_column: body.code_span().end_column,
+    };
+    
+    Ok(ASTNode::Loop {
+        index_iterator,
+        body: Box::new(body),
+        code_span,
+        scope: GLOBAL_SCOPE,
+    })
+}
+
+fn parse_spawn_block(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let start_span = expect_token(state, TokenType::SpawnKeyword)?;
+    let body = parse_block(state)?;
+    let code_span = CodeSpan {
+        start_line: start_span.start_line,
+        start_column: start_span.start_column,
+        end_line: body.code_span().end_line,
+        end_column: body.code_span().end_column,
+    };
+    
+    Ok(ASTNode::SpawnBlock {
         body: Box::new(body),
         code_span,
         scope: GLOBAL_SCOPE,

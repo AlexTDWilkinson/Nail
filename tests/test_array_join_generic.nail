@@ -1,0 +1,23 @@
+// Test that array_join works with different types
+
+// Test with integers
+ints:a:i = [1, 2, 3, 4, 5];
+int_result:s = array_join(ints, `, `);
+print(int_result); // Should print: "1, 2, 3, 4, 5"
+
+// Test with floats
+floats:a:f = [1.5, 2.5, 3.5];
+float_result:s = array_join(floats, ` | `);
+print(float_result); // Should print: "1.5 | 2.5 | 3.5"
+
+// Test with booleans
+bools:a:b = [true, false, true];
+bool_result:s = array_join(bools, ` and `);
+print(bool_result); // Should print: "true and false and true"
+
+// Test with strings (original functionality)
+strings:a:s = [`hello`, `world`, `test`];
+string_result:s = array_join(strings, ` `);
+print(string_result); // Should print: "hello world test"
+
+print(`All array_join tests completed`);

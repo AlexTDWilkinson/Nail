@@ -124,7 +124,9 @@ count:f = 6.0;  // Valid
 count:f!e = to_float(5);  // Invalid, all result type errors cannot be assigned to a variable. They must be handled explicitly.
 count:f = danger(to_float(5));  // Valid, removes the error type.
 count:f = expect(to_float(5));  // Valid, removes the error type (same as danger but different semantic meaning).
-count:f = safe(to_float(5),f(e):f { r 0.0; });  // Valid, handles error safely.
+// Handler function must be defined separately
+f handle_float_error(e:s):f { r 0.0; }
+count:f = safe(to_float(5), handle_float_error);  // Valid, handles error safely.
 ```
 
 ### 5.4 Composite Types
@@ -170,7 +172,8 @@ has_charlie:b = hashmap_contains_key(user_scores, `charlie`);
 map_size:i = hashmap_len(user_scores);
 
 // Safe access with error handling
-alice_score:s = safe(hashmap_get(user_scores, `alice`), f(err:s):s { r `0`; });
+f handle_missing_key(err:s):s { r `0`; }
+alice_score:s = safe(hashmap_get(user_scores, `alice`), handle_missing_key);
 
 origin:Point = Point { x_pos: 0, y_pos: 0 };
 ```
@@ -254,17 +257,17 @@ Reduce accumulates values from a collection into a single result:
 ```js
 // Sum all numbers
 sum:i = reduce acc num in numbers from 0 {
-    r acc + num;
+    y acc + num;
 };
 
 // Find maximum (with index access)
 max_val:i = reduce acc num idx in numbers from danger(array_get(numbers, 0)) {
-    r if { num > acc => { num }, else => { acc } };
+    y if { num > acc => { num }, else => { acc } };
 };
 
 // Build string
 concatenated:s = reduce acc str in [`hello`, ` `, `world`] from `` {
-    r acc + str;
+    y acc + str;
 };
 ```
 
@@ -383,6 +386,45 @@ factorial:i = while n > 1 from (acc = 1, n = 5) max 10 {
 // Returns the final accumulator value
 ```
 
+#### Loop (Infinite Loops)
+
+Loop construct for explicit infinite loops with `break` and `continue` support:
+
+```js
+// Basic infinite loop with break
+counter:i = 0;
+loop {
+    counter = counter + 1;
+    if counter >= 10 {
+        break;
+    }
+}
+
+// Loop with continue to skip iterations
+sum:i = 0;
+loop {
+    x:i = get_next_value();
+    
+    if x < 0 {
+        continue; // Skip negative values
+    }
+    
+    if x == 0 {
+        break; // Exit on zero
+    }
+    
+    sum = sum + x;
+}
+
+// Background task using spawn (conceptual - spawn blocks not yet fully implemented)
+// spawn {
+//     loop {
+//         health_check();
+//         time_sleep(870.0); // 14.5 minutes
+//     }
+// }
+```
+
 ### 6.4 Collection Operation Transpilation
 
 All collection operations transpile to simple for loops with enumerate() in Rust:
@@ -402,23 +444,23 @@ let doubled = {
     __result
 };
 
-// Nail with index (no comma)
-indexed:a:s = map num idx in numbers {
-    y danger(string_from(idx)) + ": " + danger(string_from(num));
+// Nail reduce operation
+sum:i = reduce acc num in numbers from 0 {
+    y acc + num;
+};
+
+// Transpiles to Rust (reduce operation)
+let sum = {
+    let mut __accumulator = 0;
+    for (_idx, num) in numbers.iter().enumerate() {
+        __accumulator = __accumulator + num;
+    }
+    __accumulator
 };
 
 // Filter operation (block with yield statement)
 evens:a:i = filter num in numbers {
     y num % 2 == 0;
-};
-
-// Transpiles to Rust (map operation)
-let indexed = {
-    let mut __result = Vec::new();
-    for (idx, num) in numbers.iter().enumerate() {
-        __result.push(format!("{}: {}", idx, num));
-    }
-    __result
 };
 
 // Transpiles to Rust (filter operation)
@@ -482,6 +524,9 @@ for_loop :=
 
 while_loop :=
     "while" expression ["from" expression] ["max" expression] block
+
+loop :=
+    "loop" block
 
 block :=
     "{" statement* "}"
@@ -562,9 +607,9 @@ user_input:s!e = lib_io_readline();
 user_input:s = danger(lib_io_readline());
 
 // OR safely handle the error
-
+f handle_input_error(e:s):s { r `default value`; }
 user_input:s!e = lib_io_readline();
-user_input:s = safe(lib_io_readline(), (e):s { r `default value`; });
+user_input:s = safe(lib_io_readline(), handle_input_error);
 
 ```
 
@@ -651,6 +696,7 @@ expression :=
     block                     // A sequence of statements inside `{}` (e.g., `{ stmt1; stmt2 }`)
     for_loop                  // For loop construct (e.g., `for (i in 0..10) { ... }`)
     while_loop                // While loop construct (e.g., `while (condition) { ... }`)
+    loop                      // Infinite loop construct (e.g., `loop { ... }`)
     break                     // Breaks out of a loop (e.g., `break`)
     continue                  // Skips to the next loop iteration (e.g., `continue`)
     return                    // Returns a value from a function (e.g., `r x`)
@@ -1115,7 +1161,7 @@ f convert_user_input_to_record(input:UserInput, id:i):UserRecord {
     r UserRecord {
         id:id,
         first_name: danger(get_index(name_parts, 0)), // This could error but we're just going to danger it.
-        last_name: safe(get_index(name_parts, 1), (e):s {r ``;}), // We could also do this to avoid a potential program error at this point.
+        last_name: danger(get_index(name_parts, 1)), // Use danger or define a handler function for safe
         email:input.email,
         age:input.age
     }
@@ -1155,16 +1201,15 @@ Nail provides several ways to handle errors:
 
 #### Using `safe`
 
-The `safe` function allows you to handle potential errors inline:
+The `safe` function allows you to handle potential errors with a handler function:
 
 ```js
-result:i = safe(
-    potentially_failing_function(),
-    f (err:e):i {
-        print(`An error occurred: ` + err);
-        r -1;  // Return a default value or handle the error appropriately
-    }
-);
+f handle_error(err:s):i {
+    print(`An error occurred: ` + err);
+    r -1;  // Return a default value or handle the error appropriately
+}
+
+result:i = safe(potentially_failing_function(), handle_error);
 ```
 
 #### Using `danger`

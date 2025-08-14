@@ -1,0 +1,21 @@
+// Test nested indexed loops to ensure scoping works correctly
+
+print(`Testing nested indexed loops`);
+
+// Outer indexed loop
+loop outer_idx {
+    print(array_join([`Outer index: `, string_from(outer_idx)], ``));
+    
+    // Inner indexed loop
+    loop inner_idx {
+        print(array_join([`  Inner index: `, string_from(inner_idx)], ``));
+        
+        // Break inner loop after first iteration
+        break;
+    }
+    
+    // Break outer loop after first iteration
+    break;
+}
+
+print(`Nested indexed loops completed`);

@@ -13,4 +13,4 @@ COLOR_RED:s = `Red`;
 COLOR_GREEN:s = `Green`;
 
 point:Point = Point { x_coord: 10, y_coord: 20 };
-print(danger(string_from(value)));
+print(string_from(value));

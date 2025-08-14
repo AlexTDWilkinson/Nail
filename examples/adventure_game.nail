@@ -26,8 +26,8 @@ player:Player = Player {
 
 // Display initial stats using field access
 print(array_join([`\nWelcome, `, player.name, `!`], ``));
-print(array_join([`Starting Health: `, danger(string_from(player.health))], ``));
-print(array_join([`Starting Gold: `, danger(string_from(player.gold))], ``));
+print(array_join([`Starting Health: `, string_from(player.health)], ``));
+print(array_join([`Starting Gold: `, string_from(player.gold)], ``));
 print(`\nYour adventure begins...\n`);
 
 // Turn 1
@@ -60,7 +60,7 @@ player_turn1:Player = Player {
     gold: gold_after_fight
 };
 
-print(array_join([`Health: `, danger(string_from(player_turn1.health)), ` Gold: `, danger(string_from(player_turn1.gold))], ``));
+print(array_join([`Health: `, string_from(player_turn1.health), ` Gold: `, string_from(player_turn1.gold)], ``));
 
 // Turn 2
 print(`\n=== Turn 2 ===`);
@@ -74,7 +74,7 @@ player_turn2:Player = Player {
     health: health_turn2,
     gold: gold_turn2
 };
-print(array_join([`You now have `, danger(string_from(player_turn2.gold)), ` gold!`], ``));
+print(array_join([`You now have `, string_from(player_turn2.gold), ` gold!`], ``));
 
 // Turn 3
 print(`\n=== Turn 3 ===`);
@@ -120,13 +120,13 @@ player_final:Player = Player {
     gold: final_gold
 };
 
-print(array_join([`Health: `, danger(string_from(player_final.health)), ` Gold: `, danger(string_from(player_final.gold))], ``));
+print(array_join([`Health: `, string_from(player_final.health), ` Gold: `, string_from(player_final.gold)], ``));
 
 // Game Over
 print(`\n=== Game Over ===`);
 print(array_join([`Thanks for playing, `, player_final.name, `!`], ``));
 print(`Final stats:`);
 print(`- Survived 3 turns`);
-print(array_join([`- Final health: `, danger(string_from(player_final.health)), `/`, danger(string_from(max_health))], ``));
-print(array_join([`- Final gold: `, danger(string_from(player_final.gold)), ` coins`], ``));
+print(array_join([`- Final health: `, string_from(player_final.health), `/`, string_from(max_health)], ``));
+print(array_join([`- Final gold: `, string_from(player_final.gold), ` coins`], ``));
 print(`\nRun the game again for a different adventure!`);

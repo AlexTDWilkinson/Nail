@@ -1,0 +1,20 @@
+// Test spawn with loop for background monitoring
+// This demonstrates a background task running in parallel
+
+// Spawn a background monitoring task
+spawn {
+    loop {
+        print(`Background monitor check`);
+        time_sleep(0.1);
+        
+        // For testing, we'll break after one iteration
+        // In real use, this could check conditions and continue
+        break;
+    }
+    print(`Background monitor stopped`);
+}
+
+// Main thread work
+print(`Main thread doing work`);
+time_sleep(0.5);
+print(`Main thread finished`);

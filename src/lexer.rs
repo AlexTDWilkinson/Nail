@@ -160,6 +160,8 @@ pub enum TokenType {
     AllDeclaration,                          // For all keyword
     AnyDeclaration,                          // For any keyword
     WhileDeclaration,                        // For while keyword
+    LoopKeyword,                             // For loop keyword (infinite loops)
+    SpawnKeyword,                            // For spawn keyword (background tasks)
     InKeyword,                               // For in keyword
     FromKeyword,                             // For from keyword (initial accumulator)
     WhenKeyword,                             // For when keyword (filtering)
@@ -1083,7 +1085,8 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "await" => TokenType::LexerError("'await' is a reserved keyword and cannot be used as an identifier".to_string()),
         "move" => TokenType::LexerError("'move' is a reserved keyword and cannot be used as an identifier".to_string()),
         "match" => TokenType::LexerError("'match' is a reserved keyword and cannot be used as an identifier".to_string()),
-        "loop" => TokenType::LexerError("'loop' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "loop" => TokenType::LoopKeyword,
+        "spawn" => TokenType::SpawnKeyword,
         "while" => TokenType::WhileDeclaration,
         "for" => TokenType::ForDeclaration,
         "map" => TokenType::MapDeclaration,

@@ -1,0 +1,18 @@
+// Test loop with spawn for background task
+// Since Nail is immutable, we can't have mutable counters
+// This test demonstrates basic loop functionality with break
+
+// Test spawn with a simple task
+spawn {
+    print(`Spawned task started`);
+    time_sleep(0.1);
+    print(`Spawned task completed`);
+}
+
+// Main loop - runs once and breaks
+loop {
+    print(`Main loop iteration`);
+    break;
+}
+
+print(`Main loop completed`);

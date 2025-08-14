@@ -1,7 +1,7 @@
 // Test the greet function example from the website
 
 f greet(name:s):s {
-    r `Hello, ` + name + `!`;
+    r array_join([`Hello, `, name, `!`], ``);
 }
 
 message:s = greet(`World`);

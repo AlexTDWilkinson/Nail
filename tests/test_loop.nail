@@ -1,0 +1,22 @@
+// Test that loop syntax parses correctly
+// Note: In Nail, variables are immutable, so we can't have traditional counters
+// This test just verifies the loop/break/continue syntax works
+
+// Simple loop with immediate break
+loop {
+    print(`Loop iteration`);
+    break;
+}
+
+// Loop demonstrating that external values can be accessed
+value:i = 5;
+loop {
+    print(string_from(value));
+    print(`Breaking loop`);
+    break;
+}
+
+// Note: continue without break would create infinite loop
+// since we can't mutate variables to change loop conditions
+
+print(`Loop tests completed`);

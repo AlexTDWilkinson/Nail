@@ -1,0 +1,12 @@
+// Test map transpilation
+numbers:a:i = [1, 2, 3, 4, 5];
+
+// Map to double each number
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
+
+// Print the doubled array
+each val in doubled {
+    print(string_from(val));
+}

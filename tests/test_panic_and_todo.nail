@@ -4,7 +4,7 @@
 // Example 1: Using panic in error conditions
 user_input:i = 2;  // Change this to test different branches
 
-print(array_join([`Checking user input: `, danger(string_from(user_input))], ``));
+print(array_join([`Checking user input: `, string_from(user_input)], ``));
 
 result:s = if {
     user_input == 1 => {
@@ -23,7 +23,7 @@ result:s = if {
     },
     else => {
         print(`Unexpected input!`);
-        panic(array_join([`Unexpected input value: `, danger(string_from(user_input))], ``));  // panic exits the program
+        panic(array_join([`Unexpected input value: `, string_from(user_input)], ``));  // panic exits the program
         r `This will never be reached`; 
     }
 };

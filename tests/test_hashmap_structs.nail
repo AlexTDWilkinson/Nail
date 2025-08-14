@@ -26,7 +26,7 @@ hashmap_insert(user_map, `charlie_id`, charlie);
 
 // Retrieve and use struct from hashmap
 alice_from_map:User = danger(hashmap_get(user_map, `alice_id`));
-print(array_join([`Retrieved user: `, alice_from_map.name, ` age: `, danger(string_from(alice_from_map.age))], ``));
+print(array_join([`Retrieved user: `, alice_from_map.name, ` age: `, string_from(alice_from_map.age)], ``));
 
 // Test hashmap with integer keys and struct values
 point_map:h<i,Point> = hashmap_new();
@@ -47,11 +47,11 @@ keys:a:i = hashmap_keys(point_map);
 total_distance:f = reduce sum key in keys from 0.0 {
     point:Point = danger(hashmap_get(point_map, key));
     distance:f = math_sqrt(point.x_coord * point.x_coord + point.y_coord * point.y_coord);
-    print(array_join([`Point `, danger(string_from(key)), ` distance from origin: `, danger(string_from(distance))], ``));
+    print(array_join([`Point `, string_from(key), ` distance from origin: `, string_from(distance)], ``));
     y sum + distance;
 };
 
-print(array_join([`Total distance: `, danger(string_from(total_distance))], ``));
+print(array_join([`Total distance: `, string_from(total_distance)], ``));
 
 // Test nested access with struct fields
 user_ages:h<s,i> = hashmap_new();
@@ -65,7 +65,7 @@ dummy:i = reduce sum user in user_list from 0 {
 
 // Verify the ages were inserted correctly
 alice_age:i = danger(hashmap_get(user_ages, `Alice`));
-print(array_join([`Alice's age from derived map: `, danger(string_from(alice_age))], ``));
+print(array_join([`Alice's age from derived map: `, string_from(alice_age)], ``));
 
 // Test with expressions in hashmap operations
 computed_key:s = array_join([`user_`, `alice`], ``);
@@ -78,6 +78,6 @@ new_user:User = User {
 
 hashmap_insert(user_map, computed_key, new_user);
 updated_user:User = danger(hashmap_get(user_map, computed_key));
-print(array_join([`Updated user age: `, danger(string_from(updated_user.age)), `, active: `, danger(string_from(updated_user.active))], ``));
+print(array_join([`Updated user age: `, string_from(updated_user.age), `, active: `, string_from(updated_user.active)], ``));
 
 print(`All hashmap struct tests completed!`);

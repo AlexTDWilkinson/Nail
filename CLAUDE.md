@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL: Clean Up Generated Files
+
+**ALWAYS clean up after yourself**:
+
+1. Delete any `.rs` files generated in `examples/` or `tests/` directories after transpilation
+2. Remove any temporary test files you create (unless they should be permanent tests)
+3. Clean up test compilation directories (`*_transpilation/` folders)
+4. Never commit generated/transpiled `.rs` files to the repository
+5. When running tests, the test script automatically cleans up - let it do its job
+
+Generated files to watch for and delete:
+- `examples/*.rs` (transpiler output)
+- `tests/*.rs` (transpiler output)
+- `tests/*_transpilation/` (test compilation directories)
+- Any temporary test files you create for experimentation
+
 ## CRITICAL: Test After Every Change
 
 **IMPORTANT**: After making ANY changes to the Nail language implementation (lexer, parser, checker, transpiler), you MUST:
@@ -56,8 +72,9 @@ This ensures the language remains consistent and bugs are actually fixed, not hi
 ## Testing Guidelines
 
 **ABSOLUTELY MOST IMPORTANT THING Testing Principle**:
-- The only tool that should EVER be used for testing is run_comprehensive_tests.sh with no flags (except to specify the specific test to run). Flags can only be used for specific diagnosis, but generally no flags should ever be used.
-- **CRITICAL: Never continue-on-error when running ./run_comprehensive_tests.sh**
+- Use the fast test scripts (`test_lexer_parser.sh`, `test_type_checker.sh`, `test_transpiler.sh`) for development
+- These scripts test specific compiler stages quickly without slow Rust compilation
+- Only test Rust compilation manually when absolutely necessary
 
 ## Development Commands
 
@@ -69,25 +86,36 @@ This ensures the language remains consistent and bugs are actually fixed, not hi
 
 ### Running Tests
 
-**Primary Test Runner** (use this for all testing):
-- **`./run_comprehensive_tests.sh`** - Complete validation of all Nail files and Rust tests
-  - Runs lexer → parser → type checker → transpiler → Rust compilation on all files
-  - Tests both `tests/` and `examples/` directories
-  - Automatically cleans up generated `.rs` files
-  - **IMPORTANT**: Takes 5-10 minutes to run full suite due to Rust compilation - use massive timeout (600000ms+)
-  - **Options:**
-    - `--tests-only` - Run only files in tests/ directory
-    - `--examples-only` - Run only files in examples/ directory  
-    - `--exclude-fails` - Skip fail_* test files
-    - `-v, --verbose` - Show detailed error output
-    - `--help` - Show full help
-  - **Examples:**
-    ```bash
-    ./run_comprehensive_tests.sh                    # Test everything
-    ./run_comprehensive_tests.sh --tests-only       # Only test files
-    ./run_comprehensive_tests.sh tests/specific.nail # Test one file
-    ./run_comprehensive_tests.sh -v                 # Verbose output
-    ```
+**Fast Test Scripts** (use these for rapid development):
+- **`./test_lexer_parser.sh`** - Tests lexer and parser only (very fast)
+- **`./test_type_checker.sh`** - Tests type checking for files that pass lexer/parser (fast)
+- **`./test_transpiler.sh`** - Tests transpilation for files that pass type checking (fast)
+- **`./test_rust_compilation.sh`** - Tests Rust compilation of transpiled files (VERY SLOW - only use when specifically needed)
+- **`./test_all_stages.sh`** - DO NOT USE THIS UNLESS ASKED TO TEST ALL (it's slow) - Runs all three fast test scripts in sequence
+- **`./test_all_stages.sh --with-rust`** - DO NOT USE UNLESS EXPLICITLY ASKED - Also runs Rust compilation tests (EXTREMELY SLOW)
+
+**Usage:**
+```bash
+# Test all files
+./test_lexer_parser.sh   # Test lexing/parsing
+./test_type_checker.sh   # Test type checking
+./test_transpiler.sh     # Test transpilation
+./test_rust_compilation.sh  # Test Rust compilation (slow)
+
+# Test individual files
+./test_rust_compilation.sh tests/test_arrays.nail  # Test single file
+./test_rust_compilation.sh tests/*.nail  # Test multiple files
+
+# Run all stages
+./test_all_stages.sh     # Run all tests (no Rust compilation)
+./test_all_stages.sh --with-rust  # Include Rust compilation (very slow)
+```
+
+**Important Notes:**
+- These scripts automatically test both `tests/` and `examples/` directories
+- They show progress and summarize results
+- Much faster than testing Rust compilation (seconds vs minutes)
+- Fix issues as you encounter them during testing
 
 **Rust Unit Tests** (for core compiler testing):
 - **`cargo test`** - Runs all Rust unit/integration tests

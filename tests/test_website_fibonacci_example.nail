@@ -2,17 +2,17 @@
 
 // Calculate fibonacci sequence
 f fib(num:i):i {
-    if num <= 1 {
-        r num;
-    } else {
-        r fib(num - 1) + fib(num - 2);
-    }
+    result:i = if {
+        num <= 1 => { r num; },
+        else => { r fib(num - 1) + fib(num - 2); }
+    };
+    r result;
 }
 
-// Generate first 10 fibonacci numbers
-nums:a:i = range(0, 10);
+// Generate first 10 fibonacci numbers  
+nums:a:i = danger(range(0, 10));
 sequence:a:i = map idx in nums {
     y fib(idx);
 };
 
-print(`Fibonacci sequence: ` + string_from_array_i64(sequence));
+print(array_join([`Fibonacci sequence: `, string_from_array_i64(sequence)], ``));

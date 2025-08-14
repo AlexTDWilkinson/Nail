@@ -312,5 +312,5 @@ router_html:s = array_join([`
 </html>`], ``);
 
 // Start the server
-print(array_join([`Starting blog server on port `, danger(string_from(port)), `...`], ``));
+print(array_join([`Starting blog server on port `, string_from(port), `...`], ``));
 http_server_start(port, router_html);

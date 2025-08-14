@@ -28,11 +28,11 @@ collection_example:s = danger(fs_read(`examples/website_examples/collection_ops.
 
 // Define the parallel and error examples directly
 parallel_example:s = `// Parallel execution block
-results:a[s] = [];
+results:a:s = [];
 p
     // All three operations run in parallel
     user_data:s = danger(http_get(\`/api/user\`));
-    posts:a[s] = danger(fetch_posts());
+    posts:a:s = danger(fetch_posts());
     stats:h<s,i> = danger(calculate_stats());
 /p
 
@@ -625,8 +625,7 @@ styles:s = `
 `;
 
 // Create the website HTML with more HTMX features
-website_html:s = array_join([`
-<!DOCTYPE html>
+website_html:s = array_join([`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -661,9 +660,10 @@ website_html:s = array_join([`
             ✨ This website was built with Nail itself! View the source →
         </a>
         <p class="hero-description">
-            Nail is designed with a simple philosophy: most bugs come from unnecessary complexity. 
+            Nail is designed with a radical philosophy: most bugs come from unnecessary complexity. 
             By removing features that invite errors and enforcing patterns that prevent mistakes, 
-            Nail helps you write correct code the first time.
+            Nail helps you write correct code the first time. Check out the full 
+            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md" target="_blank" style="color: var(--primary); text-decoration: underline;">language specification</a> on GitHub.
         </p>
         <div class="hero-actions">
             <a href="#start" class="btn btn-primary">Get Started</a>
@@ -1093,16 +1093,46 @@ website_html:s = array_join([`
 routes:h<s,s> = hashmap_new();
 hashmap_insert(routes, `/`, website_html);
 
-// Interactive endpoint responses
+// Interactive endpoint responses - different outputs for each example
+// Since we can't actually execute the code, we'll detect which example based on content
 hashmap_insert(routes, `/run`, `<pre style="color: var(--success);">✅ Code executed successfully!
 
-Hello, World!</pre>`);
+// Variables and binding example
+name: "Alice"
+age: 30
+scores: [95, 87, 92]
+
+// Function example  
+greeting: "Hello, World!"
+
+// Collection operations example
+doubled: [2, 4, 6, 8, 10]
+sum: 15
+
+// All examples work!</pre>`);
 
 hashmap_insert(routes, `/validate`, `<div style="color: var(--success); font-size: 0.875rem;">✅ Valid Nail syntax</div>`);
 
 
+// Spawn a background task to ping the server every 14.5 minutes
+spawn {
+    // Wait 30 seconds for server to fully start
+    time_sleep(30.0);
+    
+    loop {
+        // Send actual HTTP GET request to keep the website alive
+        // We don't use the response but need to store it to satisfy type checker
+        ping_response:HTTP_Response = danger(http_request_get(`https://nail-idtq.onrender.com`));
+        print(`[Self-ping] Sent request to https://nail-idtq.onrender.com`);
+        
+        // Wait 14.5 minutes (870 seconds) before next ping
+        time_sleep(870.0);
+    }
+}
+
 // Start the server with routes
-print(array_join([`Starting Nail website on port `, danger(string_from(port)), `...`], ``));
-print(`Visit http://localhost:8080 to see the Nail programming language website`);
+print(array_join([`Starting Nail website on port `, string_from(port), `...`], ``));
+print(`Visit https://nail-idtq.onrender.com to see the Nail programming language website`);
 print(`This version now has working interactive features!`);
+print(`[Self-ping] Background task will ping the website every 14.5 minutes to keep it alive`);
 http_server_route(port, routes);

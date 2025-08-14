@@ -15,16 +15,25 @@ pub async fn pop<T: Clone>(mut arr: Vec<T>) -> (Vec<T>, Option<T>) {
     (arr, item)
 }
 
-pub async fn contains<T: PartialEq>(arr: Vec<T>, item: T) -> bool {
-    arr.contains(&item)
+pub async fn contains<T: PartialEq + Sync + Send>(arr: Vec<T>, item: T) -> bool 
+where T: Sync + Send
+{
+    use rayon::prelude::*;
+    arr.par_iter().any(|x| x == &item)
 }
 
-pub async fn join(arr: Vec<String>, separator: String) -> String {
-    arr.join(&separator)
+pub async fn join<T: std::fmt::Display + Send + Sync>(arr: Vec<T>, separator: String) -> String {
+    use rayon::prelude::*;
+    
+    arr.par_iter()
+        .map(|item| format!("{}", item))
+        .collect::<Vec<String>>()
+        .join(&separator)
 }
 
-pub async fn sort<T: Ord + Clone>(mut arr: Vec<T>) -> Vec<T> {
-    arr.sort();
+pub async fn sort<T: Ord + Clone + Send>(mut arr: Vec<T>) -> Vec<T> {
+    use rayon::prelude::*;
+    arr.par_sort();
     arr
 }
 

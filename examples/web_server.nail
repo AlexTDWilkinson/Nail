@@ -61,12 +61,12 @@ is_valid_port:b = any valid_port in valid_ports {
 
 // Generate port options using map
 port_options:a:s = map port_num in valid_ports {
-    y array_join([`Port `, danger(string_from(port_num)), ` available`], ``);
+    y array_join([`Port `, string_from(port_num), ` available`], ``);
 };
 
 print(`=== Server Configuration ===`);
-print(array_join([`Selected port: `, danger(string_from(port))], ``));
-print(array_join([`Port is valid: `, danger(string_from(is_valid_port))], ``));
+print(array_join([`Selected port: `, string_from(port)], ``));
+print(array_join([`Port is valid: `, string_from(is_valid_port)], ``));
 print(`Available ports:`);
 each option in port_options {
     print(array_join([`- `, option], ``));

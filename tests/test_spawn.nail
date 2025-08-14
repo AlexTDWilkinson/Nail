@@ -1,0 +1,24 @@
+// Test spawn block functionality
+// Spawn blocks run asynchronously in the background
+
+// Spawn a simple task
+spawn {
+    print(`Background task 1 started`);
+    time_sleep(0.1);
+    print(`Background task 1 completed`);
+}
+
+// Spawn another task
+spawn {
+    print(`Background task 2 started`);
+    time_sleep(0.05);
+    print(`Background task 2 completed`);
+}
+
+// Main thread continues
+print(`Main thread continuing`);
+
+// Give spawned tasks time to complete
+time_sleep(0.2);
+
+print(`All tasks should be complete`);

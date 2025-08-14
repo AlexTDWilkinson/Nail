@@ -1,0 +1,66 @@
+// Comprehensive tests for loop functionality
+// Testing various loop scenarios to ensure proper behavior
+
+// Test 1: Basic loop with immediate break
+print(`Test 1: Basic loop with break`);
+loop {
+    print(`Single iteration`);
+    break;
+}
+
+// Test 2: Simple indexed loop
+print(`Test 2: Simple indexed loop`);
+loop index {
+    print(string_from(index));
+    // Just demonstrate index works, then break
+    break;
+}
+
+// Test 3: Nested loops
+print(`Test 3: Nested loops`);
+loop {
+    print(`Outer loop`);
+    loop {
+        print(`Inner loop`);
+        break;
+    }
+    break;
+}
+
+// Test 4: Loop with spawn
+print(`Test 4: Loop with spawn`);
+spawn {
+    loop {
+        print(`Spawned loop iteration`);
+        break;
+    }
+    print(`Spawn completed`);
+}
+
+// Give spawned task time to complete
+time_sleep(0.1);
+
+// Test 5: Loop accessing external data
+print(`Test 5: Loop with external data`);
+data:a:s = [`a`, `b`, `c`];
+message:s = `External message`;
+loop {
+    // Access external immutable data in loop
+    print(message);
+    print(array_join(data, `,`));
+    break;
+}
+
+// Test 6: Multiple indexed loops
+print(`Test 6: Multiple indexed loops`);
+loop first_index {
+    print(array_join([`First loop index: `, string_from(first_index)], ``));
+    break;
+}
+
+loop second_index {
+    print(array_join([`Second loop index: `, string_from(second_index)], ``));
+    break;
+}
+
+print(`All loop tests completed`);

@@ -102,6 +102,7 @@ struct AnalyzerState {
     return_context: ReturnContext,
     enum_variants: HashMap<String, HashSet<String>>,
     structs: HashMap<String, Vec<ASTNode>>,
+    in_loop: bool,
 }
 
 fn new_analyzer_state() -> AnalyzerState {
@@ -110,7 +111,8 @@ fn new_analyzer_state() -> AnalyzerState {
         errors: Vec::new(), 
         return_context: ReturnContext::None,
         enum_variants: HashMap::new(), 
-        structs: HashMap::new() 
+        structs: HashMap::new(),
+        in_loop: false,
     }
 }
 
@@ -139,6 +141,7 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::BooleanLiteral { scope, .. }
         | ASTNode::UnaryOperation { scope, .. }
         | ASTNode::BinaryOperation { scope, .. }
+        | ASTNode::Assignment { scope, .. }
         | ASTNode::Identifier { scope, .. }
         | ASTNode::IfStatement { scope, .. }
         | ASTNode::ForLoop { scope, .. }
@@ -150,6 +153,8 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::AllExpression { scope, .. }
         | ASTNode::AnyExpression { scope, .. }
         | ASTNode::WhileLoop { scope, .. }
+        | ASTNode::Loop { scope, .. }
+        | ASTNode::SpawnBlock { scope, .. }
         | ASTNode::BreakStatement { scope, .. }
         | ASTNode::ContinueStatement { scope, .. }
         | ASTNode::StructDeclaration { scope, .. }
@@ -190,6 +195,12 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         }
         ASTNode::WhileLoop { condition, body, .. } => {
             update_node_scope(condition, new_scope);
+            update_node_scope(body, new_scope);
+        }
+        ASTNode::Loop { body, .. } => {
+            update_node_scope(body, new_scope);
+        }
+        ASTNode::SpawnBlock { body, .. } => {
             update_node_scope(body, new_scope);
         }
         ASTNode::MapExpression { iterable, body, .. } | ASTNode::EachExpression { iterable, body, .. } => {
@@ -302,6 +313,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         | ASTNode::BooleanLiteral { scope, .. }
         | ASTNode::UnaryOperation { scope, .. }
         | ASTNode::BinaryOperation { scope, .. }
+        | ASTNode::Assignment { scope, .. }
         | ASTNode::Identifier { scope, .. }
         | ASTNode::IfStatement { scope, .. }
         | ASTNode::ForLoop { scope, .. }
@@ -313,6 +325,8 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         | ASTNode::AllExpression { scope, .. }
         | ASTNode::AnyExpression { scope, .. }
         | ASTNode::WhileLoop { scope, .. }
+        | ASTNode::Loop { scope, .. }
+        | ASTNode::SpawnBlock { scope, .. }
         | ASTNode::BreakStatement { scope, .. }
         | ASTNode::ContinueStatement { scope, .. }
         | ASTNode::StructDeclaration { scope, .. }
@@ -336,7 +350,23 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
     }
 
     match node {
-        ASTNode::Program { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
+        ASTNode::Program { statements, .. } => {
+            // Check each top-level statement
+            for statement in statements.iter_mut() {
+                // Check if this is a function call used as a statement
+                if let ASTNode::FunctionCall { name, args, code_span, scope } = statement {
+                    let return_type = visit_function_call(name, args, state, *scope, code_span);
+                    // Functions that return non-void values must have their results used
+                    if return_type != NailDataTypeDescriptor::Void && 
+                       return_type != NailDataTypeDescriptor::Never && 
+                       return_type != NailDataTypeDescriptor::FailedToResolve {
+                        add_error(state, format!("Function '{}' returns a value that must be used", name), code_span);
+                    }
+                } else {
+                    visit_node(statement, state);
+                }
+            }
+        }
         ASTNode::FunctionDeclaration { name, params, data_type, body, code_span, .. } => visit_function_declaration(name, params, data_type, body, state, code_span),
         ASTNode::ConstDeclaration { name, data_type, value, code_span, .. } => visit_const_declaration(name, data_type, value, state, code_span),
         ASTNode::BinaryOperation { left, operator, right, code_span, .. } => visit_binary_operation(left, operator, right, state, code_span),
@@ -356,6 +386,8 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         ASTNode::AllExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_all_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::AnyExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_any_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::WhileLoop { condition, initial_value, body, max_iterations, .. } => visit_while_loop(condition, initial_value, body, max_iterations, state),
+        ASTNode::Loop { index_iterator, body, scope, .. } => visit_loop(index_iterator, body, state, *scope),
+        ASTNode::SpawnBlock { body, .. } => visit_spawn_block(body, state),
         ASTNode::BreakStatement { code_span, .. } => visit_break_statement(state, code_span),
         ASTNode::ContinueStatement { code_span, .. } => visit_continue_statement(state, code_span),
         ASTNode::StructDeclaration { name, fields, code_span, .. } => visit_struct_declaration(name, fields, state, code_span),
@@ -364,6 +396,8 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         ASTNode::EnumDeclaration { name, variants, code_span, .. } => visit_enum_declaration(name, variants, state, code_span),
         ASTNode::ArrayLiteral { elements, code_span, .. } => visit_array_literal(elements, state, code_span),
         ASTNode::FunctionCall { name, args, code_span, scope } => {
+            // Just visit the function call, don't check return usage here
+            // The check for unused returns should only happen at the statement level
             visit_function_call(name, args, state, *scope, code_span);
         }
         ASTNode::ReturnDeclaration { statement, code_span, .. } => visit_return_declaration(statement, state, code_span),
@@ -379,7 +413,20 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
             }
 
             // Visit all statements in the block
-            statements.iter_mut().for_each(|statement| visit_node(statement, state));
+            for statement in statements.iter_mut() {
+                // Check if this is a function call used as a statement
+                if let ASTNode::FunctionCall { name, args, code_span, scope } = statement {
+                    let return_type = visit_function_call(name, args, state, *scope, code_span);
+                    // Functions that return non-void values must have their results used
+                    if return_type != NailDataTypeDescriptor::Void && 
+                       return_type != NailDataTypeDescriptor::Never && 
+                       return_type != NailDataTypeDescriptor::FailedToResolve {
+                        add_error(state, format!("Function '{}' returns a value that must be used", name), code_span);
+                    }
+                } else {
+                    visit_node(statement, state);
+                }
+            }
 
             // NOTE: We don't pop the scope here because type checking happens later
             // and needs access to all scopes. Scopes will be preserved throughout
@@ -394,6 +441,11 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
             fields.iter_mut().for_each(|field| visit_node(field, state));
         }
         ASTNode::EnumVariant { .. } => {},  // Enum variants don't need additional processing
+        ASTNode::Assignment { left, right, .. } => {
+            // Visit both sides of assignment
+            visit_node(left, state);
+            visit_node(right, state);
+        }
         _ => {
             panic!("visit_node: unhandled node type");
         }
@@ -1020,13 +1072,22 @@ fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterabl
 
 
 fn visit_while_loop(condition: &mut ASTNode, initial_value: &mut Option<Box<ASTNode>>, body: &mut ASTNode, max_iterations: &mut Option<Box<ASTNode>>, state: &mut AnalyzerState) {
+    // Mark that we're in a loop context for break/continue validation
+    let previous_in_loop = state.in_loop;
+    state.in_loop = true;
+    
     // Visit the condition
-    visit_node(body, state);
+    visit_node(condition, state);
     
     // Check that condition is boolean
     let condition_type = check_type(condition, state);
     if condition_type != NailDataTypeDescriptor::Boolean && condition_type != NailDataTypeDescriptor::FailedToResolve {
         add_error(state, format!("While condition must be boolean, got: {:?}", condition_type), &mut condition.code_span());
+    }
+    
+    // Visit initial value if present
+    if let Some(init) = initial_value {
+        visit_node(init, state);
     }
     
     // Visit max iterations if present
@@ -1042,16 +1103,64 @@ fn visit_while_loop(condition: &mut ASTNode, initial_value: &mut Option<Box<ASTN
     
     // Visit the body
     visit_node(body, state);
+    
+    // Restore previous loop context
+    state.in_loop = previous_in_loop;
 }
 
-fn visit_break_statement(_state: &mut AnalyzerState, _code_span: &CodeSpan) {
-    // In a proper implementation, we'd track whether we're in a loop
-    // For now, we'll accept break statements anywhere
+fn visit_loop(index_iterator: &Option<String>, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
+    // Mark that we're in a loop context for break/continue validation
+    let previous_in_loop = state.in_loop;
+    state.in_loop = true;
+    
+    // Create a new scope for the loop body if there's an index iterator
+    if index_iterator.is_some() {
+        let loop_scope = state.scope_arena.push_scope();
+        update_node_scope(body, loop_scope);
+        
+        // Add the index iterator to the scope
+        if let Some(idx_name) = index_iterator {
+            let scope_data = state.scope_arena.get_scope_mut(loop_scope);
+            scope_data.symbols.insert(
+                idx_name.clone(),
+                Symbol {
+                    name: idx_name.clone(),
+                    data_type: NailDataTypeDescriptor::Int,
+                    is_used: false,
+                },
+            );
+        }
+    }
+    
+    // Visit the body
+    visit_node(body, state);
+    
+    // Pop the scope if we created one
+    if index_iterator.is_some() {
+        let _ = state.scope_arena.pop_scope();
+    }
+    
+    // Restore previous loop context
+    state.in_loop = previous_in_loop;
 }
 
-fn visit_continue_statement(_state: &mut AnalyzerState, _code_span: &CodeSpan) {
-    // In a proper implementation, we'd track whether we're in a loop
-    // For now, we'll accept continue statements anywhere
+fn visit_spawn_block(body: &mut ASTNode, state: &mut AnalyzerState) {
+    // Visit the body - spawn blocks run asynchronously
+    visit_node(body, state);
+}
+
+fn visit_break_statement(state: &mut AnalyzerState, code_span: &CodeSpan) {
+    // Check if we're in a loop
+    if !state.in_loop {
+        add_error(state, "break statement can only be used inside a loop".to_string(), &mut code_span.clone());
+    }
+}
+
+fn visit_continue_statement(state: &mut AnalyzerState, code_span: &CodeSpan) {
+    // Check if we're in a loop
+    if !state.in_loop {
+        add_error(state, "continue statement can only be used inside a loop".to_string(), &mut code_span.clone());
+    }
 }
 
 fn visit_struct_field_access(struct_name: &str, field_name: &str, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
@@ -1760,6 +1869,8 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
             NailDataTypeDescriptor::Boolean
         }
         ASTNode::WhileLoop { .. } => NailDataTypeDescriptor::Void,
+        ASTNode::Loop { .. } => NailDataTypeDescriptor::Void,
+        ASTNode::SpawnBlock { .. } => NailDataTypeDescriptor::Void,
         ASTNode::BreakStatement { .. } => NailDataTypeDescriptor::Never,
         ASTNode::ContinueStatement { .. } => NailDataTypeDescriptor::Never,
         ASTNode::FunctionCall { name, args, .. } => {
@@ -1844,6 +1955,10 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                 }
             }
             NailDataTypeDescriptor::FailedToResolve
+        }
+        ASTNode::Assignment { left, .. } => {
+            // For assignments, the type is the type of the left-hand side (variable being assigned to)
+            check_type(left, state)
         }
     }
 }

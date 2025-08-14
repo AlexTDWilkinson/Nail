@@ -77,12 +77,12 @@ any_eq_index:b = any num idx in numbers {
 
 // EACH: Print each number (side effects) - Statement form (recommended)
 each num in numbers {
-    print(array_join([`Number: `, danger(string_from(num))], ``));
+    print(array_join([`Number: `, string_from(num)], ``));
 }
 
 // EACH with index: Print with position - Expression assignment form
 each_result:v = each num idx in numbers {
-    print(array_join([`[`, danger(string_from(idx)), `] = `, danger(string_from(num))], ``));
+    print(array_join([`[`, string_from(idx), `] = `, string_from(num)], ``));
 };
 
 // Demonstrate both syntaxes for other void-returning functions
@@ -96,19 +96,19 @@ print_result:v = print(`This is expression assignment form`);
 
 // Print results
 print(`=== Collection Operations Test Results ===`);
-print(array_join([`Original: `, danger(string_from_array_i64(numbers))], ``));
-print(array_join([`Doubled: `, danger(string_from_array_i64(doubled))], ``));
-print(array_join([`Indexed sums: `, danger(string_from_array_i64(indexed_sums))], ``));
-print(array_join([`Evens: `, danger(string_from_array_i64(evens))], ``));
-print(array_join([`Greater than index: `, danger(string_from_array_i64(greater_than_index))], ``));
-print(array_join([`Total: `, danger(string_from(total))], ``));
-print(array_join([`Weighted sum: `, danger(string_from(weighted_sum))], ``));
-print(array_join([`First big: `, danger(string_from(first_big))], ``));
-print(array_join([`Equal to index: `, danger(string_from(equal_to_index))], ``));
-print(array_join([`All positive: `, danger(string_from(all_positive))], ``));
-print(array_join([`All > index: `, danger(string_from(all_gt_index))], ``));
-print(array_join([`Any big: `, danger(string_from(any_big))], ``));
-print(array_join([`Any == index: `, danger(string_from(any_eq_index))], ``));
+print(array_join([`Original: `, string_from_array_i64(numbers)], ``));
+print(array_join([`Doubled: `, string_from_array_i64(doubled)], ``));
+print(array_join([`Indexed sums: `, string_from_array_i64(indexed_sums)], ``));
+print(array_join([`Evens: `, string_from_array_i64(evens)], ``));
+print(array_join([`Greater than index: `, string_from_array_i64(greater_than_index)], ``));
+print(array_join([`Total: `, string_from(total)], ``));
+print(array_join([`Weighted sum: `, string_from(weighted_sum)], ``));
+print(array_join([`First big: `, string_from(first_big)], ``));
+print(array_join([`Equal to index: `, string_from(equal_to_index)], ``));
+print(array_join([`All positive: `, string_from(all_positive)], ``));
+print(array_join([`All > index: `, string_from(all_gt_index)], ``));
+print(array_join([`Any big: `, string_from(any_big)], ``));
+print(array_join([`Any == index: `, string_from(any_eq_index)], ``));
 
 // Test collection operations with structs
 print(`\n=== Testing Collection Operations with Structs ===`);
@@ -128,15 +128,15 @@ items:a:Item = [
 
 // Map with struct field access
 item_values:a:i = map item in items { y item.value; };
-print(array_join([`Item values: `, danger(string_from_array_i64(item_values))], ``));
+print(array_join([`Item values: `, string_from_array_i64(item_values)], ``));
 
 // Filter with struct field
 rare_items:a:Item = filter item in items { y item.is_rare; };
-print(array_join([`Number of rare items: `, danger(string_from(array_len(rare_items)))], ``));
+print(array_join([`Number of rare items: `, string_from(array_len(rare_items))], ``));
 
 // Reduce with struct field
 total_value:i = reduce acc item in items from 0 { y acc + item.value; };
-print(array_join([`Total inventory value: `, danger(string_from(total_value))], ``));
+print(array_join([`Total inventory value: `, string_from(total_value)], ``));
 
 // Find with struct field
 magic_item:Item = danger(find item in items { y string_contains(item.name, `Magic`); });
@@ -145,6 +145,6 @@ print(array_join([`Found magic item: `, magic_item.name], ``));
 // All/Any with struct fields
 all_cheap:b = all item in items { y item.value < 1000; };
 any_rare:b = any item in items { y item.is_rare; };
-print(array_join([`All items cheap: `, danger(string_from(all_cheap)), `, Any rare: `, danger(string_from(any_rare))], ``));
+print(array_join([`All items cheap: `, string_from(all_cheap), `, Any rare: `, string_from(any_rare)], ``));
 
 print(`All collection operations completed successfully!`);

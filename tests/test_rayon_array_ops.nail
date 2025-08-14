@@ -1,0 +1,25 @@
+// Test Rayon-parallelized array operations
+
+// Test array_sort with Rayon
+unsorted:a:i = [5, 2, 8, 1, 9, 3, 7, 4, 6];
+sorted:a:i = array_sort(unsorted);
+print(array_join(sorted, `, `)); // Should print sorted numbers
+
+// Test array_contains with Rayon  
+numbers:a:i = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+has_five:b = array_contains(numbers, 5);
+has_twenty:b = array_contains(numbers, 20);
+
+// Now that array_join is generic, we can join booleans directly
+bools:a:b = [has_five, has_twenty];
+labels:a:s = [`Has 5: `, `, Has 20: `];
+print(array_join(labels, ``));
+print(array_join(bools, `, `));
+
+// Test array_join with larger array (benefits from Rayon)
+large_array:a:i = range(1, 200);
+count:i = array_len(large_array);
+print(array_join(large_array, `, `));
+print(array_join([count], ``));
+
+print(`Rayon array operations completed`);

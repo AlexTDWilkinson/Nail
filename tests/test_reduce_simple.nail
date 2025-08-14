@@ -1,15 +1,16 @@
-// Demonstrating loops since reduce is removed
+// Test simple reduce operation
 numbers:a:i = [1, 2, 3, 4, 5];
 
-// We can't do accumulation without mutable variables
-// So we'll demonstrate a different operation - doubling
-doubled:a:i = map num in numbers {
-    y num * 2;
+// Sum all numbers using reduce
+sum:i = reduce acc num in numbers from 0 {
+    y acc + num;
 };
 
-// Convert to strings and print
-doubled_strings:a:s = map num in doubled {
-    y danger(string_from(num));
+print(array_join([`Sum: `, string_from(sum)], ``));
+
+// Product of all numbers
+product:i = reduce acc num in numbers from 1 {
+    y acc * num;
 };
 
-print(array_join([`Doubled: `, array_join(doubled_strings, `, `)], ``));
+print(array_join([`Product: `, string_from(product)], ``));

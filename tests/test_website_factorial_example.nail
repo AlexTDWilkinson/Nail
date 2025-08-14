@@ -1,14 +1,14 @@
 // Test the factorial example from the website
 
 f factorial(number:i):i {
-    if number <= 1 {
-        y 1;
-    } else {
-        y number * factorial(number - 1);
-    }
+    result:i = if {
+        number <= 1 => { r 1; },
+        else => { r number * factorial(number - 1); }
+    };
+    r result;
 }
 
 // Process in parallel
 numbers:a:i = [1, 2, 3, 4, 5];
 results:a:i = map num in numbers { y factorial(num); };
-print(results); // [1, 2, 6, 24, 120]
+print(string_from_array_i64(results)); // [1, 2, 6, 24, 120]

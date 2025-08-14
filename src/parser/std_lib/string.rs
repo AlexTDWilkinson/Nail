@@ -30,27 +30,27 @@ pub async fn to_lowercase(s: String) -> String {
     s.to_lowercase()
 }
 
-// Convert any type that implements Display to string
-pub async fn from<T: std::fmt::Display>(value: T) -> Result<String, String> {
-    Ok(format!("{}", value))
+// Convert any type that implements Debug to string
+pub async fn from<T: std::fmt::Debug>(value: T) -> String {
+    format!("{:?}", value)
 }
 
 // Convert array of integers to string
-pub async fn from_array_i64(arr: Vec<i64>) -> Result<String, String> {
-    Ok(format!("{:?}", arr))
+pub async fn from_array_i64(arr: Vec<i64>) -> String {
+    format!("{:?}", arr)
 }
 
 // Convert array of floats to string
-pub async fn from_array_f64(arr: Vec<f64>) -> Result<String, String> {
-    Ok(format!("{:?}", arr))
+pub async fn from_array_f64(arr: Vec<f64>) -> String {
+    format!("{:?}", arr)
 }
 
 // Convert array of strings to string
-pub async fn from_array_string(arr: Vec<String>) -> Result<String, String> {
-    Ok(format!("{:?}", arr))
+pub async fn from_array_string(arr: Vec<String>) -> String {
+    format!("{:?}", arr)
 }
 
 // Convert array of booleans to string
-pub async fn from_array_bool(arr: Vec<bool>) -> Result<String, String> {
-    Ok(format!("{:?}", arr))
+pub async fn from_array_bool(arr: Vec<bool>) -> String {
+    format!("{:?}", arr)
 }

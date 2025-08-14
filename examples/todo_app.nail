@@ -21,8 +21,8 @@ f format_task(task_name:s, priority:i, priority_high:i, priority_medium:i, prior
 
 // Function to calculate task statistics
 f calculate_stats(task_count:i, completed_count:i):f {
-    total_float:f = danger(float_from(danger(string_from(task_count))));
-    completed_float:f = danger(float_from(danger(string_from(completed_count))));
+    total_float:f = danger(float_from(string_from(task_count)));
+    completed_float:f = danger(float_from(string_from(completed_count)));
     percentage:f = math_round(math_max(0.0, completed_float / total_float * 100.0));
     r percentage;
 }
@@ -57,9 +57,9 @@ has_medium_tasks:b = any task in all_tasks {
 
 // Build output
 header:s = array_join([app_title, `\n`, separator], ``);
-stats_line:s = array_join([`Total Tasks: `, danger(string_from(total_tasks)), ` | Completed: `, danger(string_from(completed_tasks)), ` (`, danger(string_from(completion_rate)), `%)`], ``);
-high_priority_line:s = array_join([`High Priority Tasks: `, danger(string_from(array_len(high_priority_tasks)))], ``);
-medium_priority_line:s = array_join([`Has Medium Priority: `, danger(string_from(has_medium_tasks))], ``);
+stats_line:s = array_join([`Total Tasks: `, string_from(total_tasks), ` | Completed: `, string_from(completed_tasks), ` (`, string_from(completion_rate), `%)`], ``);
+high_priority_line:s = array_join([`High Priority Tasks: `, string_from(array_len(high_priority_tasks))], ``);
+medium_priority_line:s = array_join([`Has Medium Priority: `, string_from(has_medium_tasks)], ``);
 
 // Build task list using collection operations
 task_list:s = reduce acc task in all_tasks from `` {
@@ -69,7 +69,7 @@ task_list:s = reduce acc task in all_tasks from `` {
     };
 };
 
-timestamp:s = array_join([`\nGenerated at: `, danger(string_from(time_now())), ` seconds since epoch`], ``);
+timestamp:s = array_join([`\nGenerated at: `, string_from(time_now()), ` seconds since epoch`], ``);
 
 // Create final output
 output_parts:a:s = [header, `\n\n`, stats_line, `\n`, high_priority_line, `\n`, medium_priority_line, `\n\n`, `Tasks:\n`, task_list, `\n`, separator, timestamp];

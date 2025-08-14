@@ -132,6 +132,12 @@ impl Transpiler {
                 }
                 self.collect_used_functions(body);
             }
+            ASTNode::Loop { body, .. } => {
+                self.collect_used_functions(body);
+            }
+            ASTNode::SpawnBlock { body, .. } => {
+                self.collect_used_functions(body);
+            }
             ASTNode::BinaryOperation { left, right, .. } => {
                 self.collect_used_functions(left);
                 self.collect_used_functions(right);
@@ -174,6 +180,11 @@ impl Transpiler {
             ASTNode::EnumVariant { .. } => {
                 // These nodes don't contain function calls or other expressions
             }
+            ASTNode::Assignment { left, right, .. } => {
+                // Collect functions from both sides of assignment
+                self.collect_used_functions(left);
+                self.collect_used_functions(right);
+            }
             _ => {
                 panic!("collect_used_functions: unhandled node type");
             }
@@ -188,6 +199,23 @@ impl Transpiler {
         writeln!(output, "use tokio;")?;
         writeln!(output, "use nail::std_lib;")?;
         writeln!(output, "use nail::print_macro;")?;
+        // Always import Box in case of recursive functions
+        writeln!(output, "use std::boxed::Box;")?;
+        
+        // Collect and import all custom types from used stdlib functions
+        let mut custom_type_imports = std::collections::HashSet::new();
+        for func_name in &self.used_stdlib_functions {
+            if let Some(func) = stdlib_registry::get_stdlib_function(func_name) {
+                for (type_name, module_path) in &func.custom_type_imports {
+                    custom_type_imports.insert((*type_name, *module_path));
+                }
+            }
+        }
+        
+        // Generate imports for custom types
+        for (type_name, module_path) in custom_type_imports {
+            writeln!(output, "use {}::{};", module_path, type_name)?;
+        }
         
         // Generate imports for required crates
         let required_deps = self.get_required_dependencies();
@@ -375,8 +403,13 @@ impl Transpiler {
                 }
             }
             ASTNode::Block { statements, .. } => {
-                for stmt in statements {
+                for (i, stmt) in statements.iter().enumerate() {
                     self.transpile_node_internal(stmt, output, add_semicolons)?;
+                    if i < statements.len() - 1 {
+                        // Add semicolon and newline between statements
+                        writeln!(output, ";")?;
+                        write!(output, "{}", self.indent())?;
+                    }
                 }
             }
             ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, .. } => {
@@ -448,19 +481,24 @@ impl Transpiler {
                 }
             }
             ASTNode::MapExpression { iterator, index_iterator, iterable, body, .. } => {
-                // Map expressions always collect values
+                // Map expressions collect values using Rayon for parallelism
                 if add_semicolons {
                     write!(output, "{}", self.indent())?;
                 }
                 write!(output, "{{")?;
                 writeln!(output)?;
                 self.indent_level += 1;
-                writeln!(output, "{}let mut __result = Vec::new();", self.indent())?;
+                writeln!(output, "{}use rayon::prelude::*;", self.indent())?;
+                writeln!(output, "{}use futures::future;", self.indent())?;
                 
-                // Always use enumerate()
-                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                // Use Rayon to create futures in parallel, then await them all
+                write!(output, "{}let __futures: Vec<_> = ", self.indent())?;
                 self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_iter().enumerate() {{")?;
+                writeln!(output, ".into_par_iter().enumerate().map(|(_idx, {})| {{", iterator)?;
+                self.indent_level += 1;
+                
+                // Create async block that captures variables by cloning
+                writeln!(output, "{}async move {{", self.indent())?;
                 self.indent_level += 1;
                 
                 // Convert index to i64 if needed
@@ -468,53 +506,59 @@ impl Transpiler {
                     writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
                 }
                 
-                // Transpile the body statements
+                // Transpile the body statements and collect result
                 if let ASTNode::Block { statements, .. } = body.as_ref() {
-                    let mut found_yield = false;
-                    for stmt in statements {
+                    let num_statements = statements.len();
+                    for (i, stmt) in statements.iter().enumerate() {
                         if let ASTNode::YieldDeclaration { statement, .. } = stmt {
-                            // This is the yield statement - push to result
-                            write!(output, "{}__result.push(", self.indent())?;
+                            // This is the yield statement - it's the return value
                             self.transpile_node_internal(statement, output, false)?;
-                            writeln!(output, ");")?;
-                            found_yield = true;
+                            if i < num_statements - 1 {
+                                writeln!(output)?;
+                            }
                         } else if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
-                            // Support legacy return statement - push to result
-                            write!(output, "{}__result.push(", self.indent())?;
+                            // Return statement - it's the return value
                             self.transpile_node_internal(statement, output, false)?;
-                            writeln!(output, ");")?;
-                            found_yield = true;
+                            if i < num_statements - 1 {
+                                writeln!(output)?;
+                            }
                         } else {
                             // Regular statement in the map body
                             self.transpile_node_internal(stmt, output, true)?;
+                            if i < num_statements - 1 {
+                                writeln!(output)?;
+                            }
                         }
-                    }
-                    if !found_yield {
-                        // Should not happen if type checker did its job
-                        writeln!(output, "{}// ERROR: No yield statement in map body", self.indent())?;
                     }
                 }
                 
                 self.indent_level -= 1;
+                writeln!(output)?;
                 writeln!(output, "{}}}", self.indent())?;
+                
+                self.indent_level -= 1;
+                writeln!(output, "{}}}).collect();", self.indent())?;
+                
+                writeln!(output, "{}let __result = future::join_all(__futures).await;", self.indent())?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
             }
             ASTNode::FilterExpression { iterator, index_iterator, iterable, body, .. } => {
-                // Filter expressions collect values that match a condition
+                // Filter expressions collect values that match a condition using Rayon for parallelism
                 if add_semicolons {
                     write!(output, "{}", self.indent())?;
                 }
                 write!(output, "{{")?;
                 writeln!(output)?;
                 self.indent_level += 1;
-                writeln!(output, "{}let mut __result = Vec::new();", self.indent())?;
+                writeln!(output, "{}use rayon::prelude::*;", self.indent())?;
+                writeln!(output, "{}use futures::future;", self.indent())?;
                 
-                // Always use enumerate()
-                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+                // Use Rayon to create futures in parallel, then await them all
+                write!(output, "{}let __futures: Vec<_> = ", self.indent())?;
                 self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_iter().enumerate() {{")?;
+                writeln!(output, ".into_par_iter().enumerate().map(|(_idx, {})| async move {{", iterator)?;
                 self.indent_level += 1;
                 
                 // Convert index to i64 if needed
@@ -539,21 +583,28 @@ impl Transpiler {
                 self.indent_level -= 1;
                 writeln!(output, "{}}};", self.indent())?;
                 
-                // Use the result as condition
+                // Return Some(value) if condition is true, None otherwise
                 writeln!(output, "{}if condition_result {{", self.indent())?;
                 self.indent_level += 1;
-                writeln!(output, "{}__result.push({}.clone());", self.indent(), iterator)?;
+                writeln!(output, "{}Some({}.clone())", self.indent(), iterator)?;
+                self.indent_level -= 1;
+                writeln!(output, "{}}} else {{", self.indent())?;
+                self.indent_level += 1;
+                writeln!(output, "{}None", self.indent())?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
                 
                 self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
+                writeln!(output, "{}}}).collect();", self.indent())?;
+                writeln!(output, "{}let __results = future::join_all(__futures).await;", self.indent())?;
+                writeln!(output, "{}let __result: Vec<_> = __results.into_iter().filter_map(|x| x).collect();", self.indent())?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
             }
             ASTNode::ReduceExpression { iterator, index_iterator, iterable, initial_value, accumulator, body, .. } => {
                 // Reduce expressions fold values into a single result
+                // Note: We use sequential iteration for reduce to maintain order-dependent operations
                 if add_semicolons {
                     write!(output, "{}", self.indent())?;
                 }
@@ -566,7 +617,7 @@ impl Transpiler {
                 self.transpile_node_internal(initial_value, output, false)?;
                 writeln!(output, ";")?;
                 
-                // Always use enumerate()
+                // Use regular iteration for sequential reduce
                 write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
                 self.transpile_node_internal(iterable, output, false)?;
                 writeln!(output, ".into_iter().enumerate() {{")?;
@@ -586,7 +637,7 @@ impl Transpiler {
                             self.transpile_node_internal(statement, output, false)?;
                             writeln!(output, ";")?;
                         } else if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
-                            // Legacy return statement support - assign to accumulator
+                            // Return statement - assign to accumulator
                             write!(output, "{}{} = ", self.indent(), accumulator)?;
                             self.transpile_node_internal(statement, output, false)?;
                             writeln!(output, ";")?;
@@ -842,6 +893,66 @@ impl Transpiler {
                     }
                 }
             }
+            ASTNode::Loop { index_iterator, body, .. } => {
+                if let Some(index_name) = index_iterator {
+                    // Loop with index iterator - needs mutable counter outside loop
+                    if add_semicolons {
+                        writeln!(output, "{}{{", self.indent())?;
+                        self.indent_level += 1;
+                        writeln!(output, "{}let mut __loop_index: i64 = 0;", self.indent())?;
+                        writeln!(output, "{}loop {{", self.indent())?;
+                    } else {
+                        writeln!(output, "{{")?;
+                        writeln!(output, "let mut __loop_index: i64 = 0;")?;
+                        writeln!(output, "loop {{")?;
+                    }
+                    self.indent_level += 1;
+                    // Make index available inside loop as immutable
+                    writeln!(output, "{}let {} = __loop_index;", self.indent(), index_name)?;
+                    writeln!(output, "{}__loop_index += 1;", self.indent())?;
+                    self.transpile_node_internal(body, output, true)?;
+                    self.indent_level -= 1;
+                    if add_semicolons {
+                        writeln!(output, "{}}}", self.indent())?;
+                        self.indent_level -= 1;
+                        writeln!(output, "{}}}", self.indent())?;
+                    } else {
+                        writeln!(output, "}}")?;
+                        write!(output, "}}")?;
+                    }
+                } else {
+                    // Simple loop without index
+                    if add_semicolons {
+                        writeln!(output, "{}loop {{", self.indent())?;
+                    } else {
+                        writeln!(output, "loop {{")?;
+                    }
+                    self.indent_level += 1;
+                    self.transpile_node_internal(body, output, true)?;
+                    self.indent_level -= 1;
+                    if add_semicolons {
+                        writeln!(output, "{}}}", self.indent())?;
+                    } else {
+                        write!(output, "}}")?;
+                    }
+                }
+            }
+            ASTNode::SpawnBlock { body, .. } => {
+                // Spawn a new async task
+                if add_semicolons {
+                    writeln!(output, "{}tokio::spawn(async move {{", self.indent())?;
+                } else {
+                    writeln!(output, "tokio::spawn(async move {{")?;
+                }
+                self.indent_level += 1;
+                self.transpile_node_internal(body, output, true)?;
+                self.indent_level -= 1;
+                if add_semicolons {
+                    writeln!(output, "{}}}){};", self.indent(), if add_semicolons { "" } else { "" })?;
+                } else {
+                    write!(output, "}})")?;
+                }
+            }
             ASTNode::BreakStatement { .. } => {
                 if add_semicolons {
                     writeln!(output, "{}break;", self.indent())?;
@@ -860,8 +971,7 @@ impl Transpiler {
                 self.transpile_parallel_block(statements, output)?;
             }
             ASTNode::BinaryOperation { left, operator, right, .. } => {
-                // Binary operations - no special string concatenation handling
-                // String concatenation in Nail should only be done via array_join()
+                // No string concatenation with + allowed in Nail - use array_join instead
                 self.transpile_node_internal(left, output, false)?;
                 write!(output, " {} ", self.rust_operator(operator))?;
                 self.transpile_node_internal(right, output, false)?;
@@ -878,11 +988,12 @@ impl Transpiler {
                 write!(output, "{}", value)?;
             }
             ASTNode::StringLiteral { value, .. } => {
-                // Check if the string contains problematic characters that would benefit from raw strings
+                // For multiline strings or strings with backslashes, use raw strings
+                // Quotes don't need escaping in backtick strings and work fine in raw strings
                 if value.contains('\n') || value.contains('\t') || value.contains('\\') || value.contains('"') {
                     // Use raw string literal with enough # symbols to avoid conflicts
                     let mut delimiter = String::from("#");
-                    while value.contains(&format!("\"{}", delimiter)) {
+                    while value.contains(&format!("\"{}", delimiter)) || value.contains(&format!("#{}", delimiter)) {
                         delimiter.push('#');
                     }
                     write!(output, "r{0}\"{1}\"{0}.to_string()", delimiter, value)?;
@@ -950,7 +1061,7 @@ impl Transpiler {
                 }
             }
             ASTNode::StructDeclaration { name, fields, .. } => {
-                writeln!(output, "{}#[derive(Debug, Clone)]", self.indent())?;
+                writeln!(output, "{}#[derive(Debug, Clone, PartialEq)]", self.indent())?;
                 writeln!(output, "{}struct {} {{", self.indent(), name)?;
                 self.indent_level += 1;
                 for field in fields {
@@ -1034,6 +1145,17 @@ impl Transpiler {
                 }
                 write!(output, "]")?;
             }
+            ASTNode::Assignment { left, right, .. } => {
+                // Transpile assignment: left = right
+                // For assignment left-hand side, don't clone - just use the variable name
+                if let ASTNode::Identifier { name, .. } = left.as_ref() {
+                    write!(output, "{}", name)?;
+                } else {
+                    self.transpile_node_internal(left, output, false)?;
+                }
+                write!(output, " = ")?;
+                self.transpile_node_internal(right, output, false)?;
+            }
         }
         Ok(())
     }
@@ -1090,6 +1212,7 @@ impl Transpiler {
     fn indent(&self) -> String {
         "    ".repeat(self.indent_level)
     }
+
 
     fn transpile_function_call(&mut self, name: &str, args: &[ASTNode], output: &mut String, add_indent: bool) -> Result<(), std::fmt::Error> {
         // Special handling for error-related functions
@@ -1248,10 +1371,8 @@ impl Transpiler {
 
                 write!(output, ")")?;
                 
-                // Add .await only for async functions
-                if stdlib_registry::get_stdlib_function(name).map(|f| f.rust_path.ends_with("!")).unwrap_or(false) {
-                    // It's a macro, no .await needed
-                } else {
+                // Add .await for all non-macro functions (everything is async in Nail)
+                if stdlib_registry::get_stdlib_function(name).map(|f| !f.rust_path.ends_with("!")).unwrap_or(false) {
                     write!(output, ".await")?;
                 }
 
@@ -1267,14 +1388,32 @@ impl Transpiler {
             if add_indent {
                 write!(output, "{}", self.indent())?;
             }
-            write!(output, "{}(", name)?;
+            
+            // Check if this is a recursive call
+            let is_recursive = self.current_function_name.as_ref()
+                .map(|current| current == name)
+                .unwrap_or(false);
+            
+            if is_recursive {
+                // Wrap recursive calls in Box::pin to avoid infinite-sized futures
+                write!(output, "Box::pin({}(", name)?;
+            } else {
+                write!(output, "{}(", name)?;
+            }
+            
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     write!(output, ", ")?;
                 }
                 self.transpile_node_internal(arg, output, false)?;
             }
-            write!(output, ").await")?;
+            
+            if is_recursive {
+                write!(output, ")).await")?;
+            } else {
+                write!(output, ").await")?;
+            }
+            
             if add_indent {
                 writeln!(output, ";")?;
             }

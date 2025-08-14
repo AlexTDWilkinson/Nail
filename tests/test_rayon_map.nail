@@ -1,0 +1,12 @@
+// Test Rayon parallelization in map
+numbers:a:i = [1, 2, 3, 4, 5];
+
+// Test map with Rayon
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
+
+// Print results
+each val in doubled {
+    print(string_from(val));
+}

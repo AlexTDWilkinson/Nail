@@ -1,0 +1,7 @@
+// Test simple loop with break
+loop {
+    print(`Loop iteration`);
+    break;
+}
+
+print(`Loop completed`);

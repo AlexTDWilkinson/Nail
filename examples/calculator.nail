@@ -22,23 +22,23 @@ product:i = multiply(number_one, number_two);
 difference:i = number_one - number_two;
 quotient:i = number_one / number_two;
 
-print(array_join([danger(string_from(number_one)), ` + `, danger(string_from(number_two)), ` = `, danger(string_from(sum))], ``));
-print(array_join([danger(string_from(number_one)), ` * `, danger(string_from(number_two)), ` = `, danger(string_from(product))], ``));
-print(array_join([danger(string_from(number_one)), ` - `, danger(string_from(number_two)), ` = `, danger(string_from(difference))], ``));
-print(array_join([danger(string_from(number_one)), ` / `, danger(string_from(number_two)), ` = `, danger(string_from(quotient))], ``));
+print(array_join([string_from(number_one), ` + `, string_from(number_two), ` = `, string_from(sum)], ``));
+print(array_join([string_from(number_one), ` * `, string_from(number_two), ` = `, string_from(product)], ``));
+print(array_join([string_from(number_one), ` - `, string_from(number_two), ` = `, string_from(difference)], ``));
+print(array_join([string_from(number_one), ` / `, string_from(number_two), ` = `, string_from(quotient)], ``));
 
 // Math library functions
 square_root:f = math_sqrt(16.0);
 power:f = math_pow(2.0, 3.0);
 rounded:f = math_round(3.7);
 
-print(array_join([`Square root of 16: `, danger(string_from(square_root))], ``));
-print(array_join([`2 to the power of 3: `, danger(string_from(power))], ``));
-print(array_join([`3.7 rounded: `, danger(string_from(rounded))], ``));
+print(array_join([`Square root of 16: `, string_from(square_root)], ``));
+print(array_join([`2 to the power of 3: `, string_from(power)], ``));
+print(array_join([`3.7 rounded: `, string_from(rounded)], ``));
 
 // Area calculation
 room_area:f = calculate_area(12.5, 8.0);
-print(array_join([`Room area (12.5 x 8.0): `, danger(string_from(room_area)), ` square feet`], ``));
+print(array_join([`Room area (12.5 x 8.0): `, string_from(room_area), ` square feet`], ``));
 
 // Batch calculations using collection operations
 numbers:a:i = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -69,9 +69,9 @@ first_big:i = danger(find num in numbers {
 });
 
 print(`\n=== Batch Calculations ===`);
-print(array_join([`Original numbers: `, danger(string_from_array_i64(numbers))], ``));
-print(array_join([`Squares: `, danger(string_from_array_i64(squares))], ``));
-print(array_join([`Even squares: `, danger(string_from_array_i64(even_squares))], ``));
-print(array_join([`Sum of squares: `, danger(string_from(total_squares))], ``));
-print(array_join([`All positive: `, danger(string_from(all_positive))], ``));
-print(array_join([`First number > 5: `, danger(string_from(first_big))], ``));
+print(array_join([`Original numbers: `, string_from_array_i64(numbers)], ``));
+print(array_join([`Squares: `, string_from_array_i64(squares)], ``));
+print(array_join([`Even squares: `, string_from_array_i64(even_squares)], ``));
+print(array_join([`Sum of squares: `, string_from(total_squares)], ``));
+print(array_join([`All positive: `, string_from(all_positive)], ``));
+print(array_join([`First number > 5: `, string_from(first_big)], ``));

@@ -1,4 +1,6 @@
 use tokio::process::Command as TokioCommand;
+use std::future::Future;
+use std::pin::Pin;
 
 pub async fn exit(code: i64) -> ! {
     std::process::exit(code as i32)
@@ -17,4 +19,11 @@ pub async fn run(command: String, args: Vec<String>) -> Result<String, String> {
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
+}
+
+pub async fn spawn<F>(future: F) 
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(future);
 }

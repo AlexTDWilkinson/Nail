@@ -156,6 +156,9 @@ pub struct StdlibFunction {
     pub crate_deps: Vec<CrateDependency>,
     /// Additional derives needed for structs/enums when this function is used
     pub struct_derives: Vec<StructDerive>,
+    /// Custom types (structs/enums) to import when this function is used
+    /// Format: ("TypeName", "module_path") e.g., ("HTTP_Response", "nail::std_lib::http")
+    pub custom_type_imports: Vec<(&'static str, &'static str)>,
     /// The module group this function belongs to
     pub module: StdlibModule,
     pub parameters: Vec<StdlibParameter>,
@@ -175,6 +178,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
             struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            custom_type_imports: vec![],
             module: StdlibModule::Http,
             parameters: vec![
                 StdlibParameter { name: "port".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
@@ -191,6 +195,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
             struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            custom_type_imports: vec![],
             module: StdlibModule::Http,
             parameters: vec![
                 StdlibParameter {
@@ -219,6 +224,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Fs,
             parameters: vec![
                 StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -234,6 +240,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Fs,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -248,6 +255,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::SerdeJson, CrateDependency::Serde],
             struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            custom_type_imports: vec![],
             module: StdlibModule::Json,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -261,6 +269,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::SerdeJson, CrateDependency::Serde],
             struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            custom_type_imports: vec![],
             module: StdlibModule::Json,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -274,11 +283,12 @@ lazy_static! {
             rust_path: "std_lib::string::from".to_string(),
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
             ],
-            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
         });
@@ -288,11 +298,12 @@ lazy_static! {
             rust_path: "std_lib::string::from_array_i64".to_string(),
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)), pass_by_reference: false }
             ],
-            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
         });
@@ -301,11 +312,12 @@ lazy_static! {
             rust_path: "std_lib::string::from_array_f64".to_string(),
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)), pass_by_reference: false }
             ],
-            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
         });
@@ -314,11 +326,12 @@ lazy_static! {
             rust_path: "std_lib::string::from_array_string".to_string(),
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false }
             ],
-            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
         });
@@ -327,11 +340,12 @@ lazy_static! {
             rust_path: "std_lib::string::from_array_bool".to_string(),
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Boolean)), pass_by_reference: false }
             ],
-            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
         });
@@ -341,6 +355,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Int,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
@@ -356,6 +371,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
@@ -372,6 +388,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Print,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -385,6 +402,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -398,6 +416,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Print,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -411,6 +430,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::IO,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -424,6 +444,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::IO,
             parameters: vec![
                 StdlibParameter { name: "prompt".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -439,6 +460,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::IO,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -452,6 +474,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::IO,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -465,6 +488,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::IO,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -478,6 +502,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::IO,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -491,6 +516,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Print,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -504,6 +530,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Print,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -518,6 +545,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -531,6 +559,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -544,6 +573,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -559,6 +589,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
@@ -575,6 +606,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
@@ -592,6 +624,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -607,6 +640,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -622,6 +656,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![
                 StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -638,6 +673,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
@@ -653,6 +689,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -669,6 +706,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -682,9 +720,13 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
+            parameters: vec![
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)), pass_by_reference: false },
+                StdlibParameter { name: "item".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
             type_inference: None,
 
             diverging: false,
@@ -695,9 +737,10 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
-                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false },
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)), pass_by_reference: false },
                 StdlibParameter { name: "separator".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
             ],
             return_type: NailDataTypeDescriptor::String,
@@ -711,6 +754,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
@@ -726,6 +770,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
@@ -741,6 +786,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "first".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -757,6 +803,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -773,6 +820,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -789,6 +837,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
@@ -804,6 +853,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -820,6 +870,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)), pass_by_reference: false }
@@ -835,6 +886,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)), pass_by_reference: false }
@@ -850,10 +902,15 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
+            parameters: vec![
+                StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)), pass_by_reference: false },
+                StdlibParameter { name: "start".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "end".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)))),
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
         });
@@ -863,6 +920,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -879,6 +937,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "array".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -896,6 +955,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "start".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
@@ -911,6 +971,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Array,
             parameters: vec![
                 StdlibParameter { name: "start".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
@@ -928,6 +989,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Int,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -941,6 +1003,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Int,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -954,6 +1017,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Int,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -967,6 +1031,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Int,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -981,6 +1046,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -994,6 +1060,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1007,6 +1074,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1020,6 +1088,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1033,6 +1102,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1046,6 +1116,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1059,6 +1130,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1072,6 +1144,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1085,6 +1158,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Rand],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1099,6 +1173,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
@@ -1114,6 +1189,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
@@ -1129,6 +1205,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "base".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false },
@@ -1145,6 +1222,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
@@ -1160,6 +1238,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
@@ -1175,6 +1254,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
@@ -1190,6 +1270,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "first".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false },
@@ -1206,6 +1287,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "first".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false },
@@ -1222,6 +1304,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Rand],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Float,
@@ -1235,6 +1318,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Math,
             parameters: vec![
                 StdlibParameter { name: "numerator".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -1252,6 +1336,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Time,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Int,
@@ -1265,8 +1350,15 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Time,
-            parameters: vec![],
+            parameters: vec![
+                StdlibParameter { 
+                    name: "seconds".to_string(), 
+                    param_type: NailDataTypeDescriptor::Float, 
+                    pass_by_reference: false 
+                },
+            ],
             return_type: NailDataTypeDescriptor::Void,
             type_inference: None,
 
@@ -1278,6 +1370,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Time,
             parameters: vec![
                 StdlibParameter { name: "timestamp".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
@@ -1295,6 +1388,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Env,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1308,6 +1402,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Env,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1321,6 +1416,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Env,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)),
@@ -1335,6 +1431,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Process,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1348,6 +1445,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Process,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1356,28 +1454,64 @@ lazy_static! {
             diverging: false,
         });
 
-        // HTTP client functions
-        m.insert("http_get", StdlibFunction {
-            rust_path: "std_lib::http::get".to_string(),
-
-            crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
-            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
-            module: StdlibModule::Http,
+        // Async/spawning functions
+        m.insert("spawn", StdlibFunction {
+            rust_path: "std_lib::process::spawn".to_string(),
+            crate_deps: vec![CrateDependency::Tokio],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Process,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
+            type_inference: None,
+            diverging: false,
+        });
+
+        // HTTP client functions
+        m.insert("http_request_get", StdlibFunction {
+            rust_path: "std_lib::http::request_get".to_string(),
+
+            crate_deps: vec![CrateDependency::Tokio],
+            struct_derives: vec![],
+            custom_type_imports: vec![("HTTP_Response", "nail::std_lib::http")],
+            module: StdlibModule::Http,
+            parameters: vec![
+                StdlibParameter { 
+                    name: "url".to_string(), 
+                    param_type: NailDataTypeDescriptor::String, 
+                    pass_by_reference: false 
+                },
+            ],
+            return_type: NailDataTypeDescriptor::Result(
+                Box::new(NailDataTypeDescriptor::Struct("HTTP_Response".to_string()))
+            ),
             type_inference: None,
 
             diverging: false,
         });
 
-        m.insert("http_post", StdlibFunction {
-            rust_path: "std_lib::http::post".to_string(),
+        m.insert("http_request_post", StdlibFunction {
+            rust_path: "std_lib::http::request_post".to_string(),
 
-            crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio],
-            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            crate_deps: vec![CrateDependency::Tokio],
+            struct_derives: vec![],
+            custom_type_imports: vec![("HTTP_Response", "nail::std_lib::http")],
             module: StdlibModule::Http,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
+            parameters: vec![
+                StdlibParameter { 
+                    name: "url".to_string(), 
+                    param_type: NailDataTypeDescriptor::String, 
+                    pass_by_reference: false 
+                },
+                StdlibParameter { 
+                    name: "body".to_string(), 
+                    param_type: NailDataTypeDescriptor::String, 
+                    pass_by_reference: false 
+                },
+            ],
+            return_type: NailDataTypeDescriptor::Result(
+                Box::new(NailDataTypeDescriptor::Struct("HTTP_Response".to_string()))
+            ),
             type_inference: None,
 
             diverging: false,
@@ -1389,6 +1523,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Http, // TODO: Add Database module when available,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1402,6 +1537,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Http, // TODO: Add Database module when available,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1415,6 +1551,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Http, // TODO: Add Database module when available,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1429,6 +1566,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String, // TODO: Add Crypto module when available,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1442,6 +1580,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String, // TODO: Add Crypto module when available,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1455,6 +1594,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String, // TODO: Add Crypto module when available,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1469,6 +1609,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Path,
             parameters: vec![
                 StdlibParameter { name: "base".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
@@ -1485,6 +1626,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Path,
             parameters: vec![
                 StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -1500,6 +1642,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Fs,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1513,6 +1656,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Fs,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1526,6 +1670,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Fs,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1539,6 +1684,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Tokio],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Fs,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1553,6 +1699,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Regex],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1566,6 +1713,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Regex],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1580,6 +1728,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1593,6 +1742,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1607,6 +1757,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1620,6 +1771,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::String,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1634,6 +1786,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Error,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
@@ -1650,6 +1803,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Error,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
@@ -1665,6 +1819,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Error,
             parameters: vec![
                 StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
@@ -1680,6 +1835,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Error,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1693,6 +1849,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Error,
             parameters: vec![
                 StdlibParameter { name: "message".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -1708,6 +1865,7 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Error,
             parameters: vec![
                 StdlibParameter { name: "message".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -1724,6 +1882,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
@@ -1737,6 +1896,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true },
@@ -1754,6 +1914,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true },
@@ -1770,6 +1931,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true },
@@ -1786,6 +1948,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true },
@@ -1802,6 +1965,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true }
@@ -1817,6 +1981,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true }
@@ -1832,6 +1997,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true }
@@ -1847,6 +2013,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true }
@@ -1862,6 +2029,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![
                 StdlibParameter { name: "map".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: true }
@@ -1877,6 +2045,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1890,6 +2059,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1903,6 +2073,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1916,6 +2087,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::DashMap],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::HashMap,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1930,6 +2102,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Pulldown],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Markdown,
             parameters: vec![
                 StdlibParameter { name: "markdown".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -1945,6 +2118,7 @@ lazy_static! {
 
             crate_deps: vec![CrateDependency::Pulldown],
             struct_derives: vec![],
+            custom_type_imports: vec![],
             module: StdlibModule::Markdown,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
@@ -1966,3 +2140,4 @@ pub fn is_stdlib_function(name: &str) -> bool {
 pub fn get_stdlib_function(name: &str) -> Option<&'static StdlibFunction> {
     STDLIB_FUNCTIONS.get(name)
 }
+

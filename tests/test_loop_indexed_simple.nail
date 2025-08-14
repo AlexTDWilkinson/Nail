@@ -1,0 +1,7 @@
+// Test simple indexed loop
+loop index {
+    print(string_from(index));
+    break;
+}
+
+print(`Done`);

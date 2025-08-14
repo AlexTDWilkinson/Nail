@@ -1,0 +1,16 @@
+// Test ownership issues with loops
+data:s = `Some data`;
+
+// This should work - immutable reference in loop
+loop {
+    print(data); // Using immutable data
+    break; // Exit after one iteration
+}
+
+// Test with array
+items:a:s = [`a`, `b`, `c`];
+loop {
+    // Can we access items in loop?
+    print(array_join(items, `,`));
+    break; // Exit after one iteration
+}
