@@ -12,6 +12,7 @@ pub enum CrateDependency {
     Rand,
     DashMap,
     Pulldown,
+    Reqwest,
 }
 
 impl CrateDependency {
@@ -25,6 +26,7 @@ impl CrateDependency {
             CrateDependency::Rand => "rand = \"0.8\"",
             CrateDependency::DashMap => "dashmap = \"6.1.0\"",
             CrateDependency::Pulldown => "pulldown-cmark = \"0.9\"",
+            CrateDependency::Reqwest => "reqwest = \"0.11\"",
         }
     }
 
@@ -38,6 +40,7 @@ impl CrateDependency {
             CrateDependency::Rand => "rand",
             CrateDependency::DashMap => "dashmap",
             CrateDependency::Pulldown => "pulldown-cmark",
+            CrateDependency::Reqwest => "reqwest",
         }
     }
 
@@ -51,6 +54,7 @@ impl CrateDependency {
             CrateDependency::Rand => "use rand;",
             CrateDependency::DashMap => "use dashmap;",
             CrateDependency::Pulldown => "use pulldown_cmark;",
+            CrateDependency::Reqwest => "use reqwest;",
         }
     }
 }
@@ -1452,39 +1456,27 @@ lazy_static! {
 
 
         // HTTP client functions
-        m.insert("http_request_get", StdlibFunction {
-            rust_path: "std_lib::http::request_get".to_string(),
+        m.insert("http_request", StdlibFunction {
+            rust_path: "std_lib::http::http_request".to_string(),
 
-            crate_deps: vec![CrateDependency::Tokio],
+            crate_deps: vec![CrateDependency::Tokio, CrateDependency::Reqwest],
             struct_derives: vec![],
             custom_type_imports: vec![("HTTP_Response", "nail::std_lib::http")],
             module: StdlibModule::Http,
             parameters: vec![
+                StdlibParameter { 
+                    name: "method".to_string(), 
+                    param_type: NailDataTypeDescriptor::String, 
+                    pass_by_reference: false 
+                },
                 StdlibParameter { 
                     name: "url".to_string(), 
                     param_type: NailDataTypeDescriptor::String, 
                     pass_by_reference: false 
                 },
-            ],
-            return_type: NailDataTypeDescriptor::Result(
-                Box::new(NailDataTypeDescriptor::Struct("HTTP_Response".to_string()))
-            ),
-            type_inference: None,
-
-            diverging: false,
-        });
-
-        m.insert("http_request_post", StdlibFunction {
-            rust_path: "std_lib::http::request_post".to_string(),
-
-            crate_deps: vec![CrateDependency::Tokio],
-            struct_derives: vec![],
-            custom_type_imports: vec![("HTTP_Response", "nail::std_lib::http")],
-            module: StdlibModule::Http,
-            parameters: vec![
                 StdlibParameter { 
-                    name: "url".to_string(), 
-                    param_type: NailDataTypeDescriptor::String, 
+                    name: "headers".to_string(), 
+                    param_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)), 
                     pass_by_reference: false 
                 },
                 StdlibParameter { 

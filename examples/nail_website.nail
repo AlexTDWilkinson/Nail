@@ -640,7 +640,7 @@ spawn {
     
     loop {
         // Send actual HTTP GET request to keep the website alive
-        ping_response:HTTP_Response = danger(http_request(`https://nail-idtq.onrender.com`));
+        ping_response:HTTP_Response = danger(http_request(`GET`, `https://nail-idtq.onrender.com`, hashmap_new(), ``));
         print(`[Self-ping] Successfully pinged server to keep it warm, status: `, ping_response.status);
         
         // Wait 14.5 minutes (870 seconds) before next ping
