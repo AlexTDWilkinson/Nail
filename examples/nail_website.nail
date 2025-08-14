@@ -21,45 +21,11 @@ nav_items:a:NavItem = [
     NavItem { name: `Getting Started`, path: `#start` }
 ];
 
-// Read example files from the website_examples directory
-binding_example:s = danger(fs_read(`examples/website_examples/binding_values.nail`));
-function_example:s = danger(fs_read(`examples/website_examples/function_example.nail`));
-collection_example:s = danger(fs_read(`examples/website_examples/collection_ops.nail`));
-
-// Define the parallel and error examples directly
-parallel_example:s = `// Parallel execution block
-results:a:s = [];
-p
-    // All three operations run in parallel
-    user_data:s = danger(http_get(\`/api/user\`));
-    posts:a:s = danger(fetch_posts());
-    stats:h<s,i> = danger(calculate_stats());
-/p
-
-// All operations complete before continuing
-print(user_data);
-print(array_join(posts, \`, \`));
-print(danger(hashmap_get(stats, \`total\`)));`;
-
-error_example:s = `// Error handling example
-f divide(dividend:i, divisor:i):i!e {
-    if divisor == 0 {
-        r e(\`Cannot divide by zero\`);
-    };
-    r dividend / divisor;
-}
-
-// Error handler function
-f handle_error(err:s):i {
-    print(err);
-    r 0;
-}
-
-// Handle errors explicitly
-result:i = safe(divide(10, 2), handle_error);
-
-// Or panic on error
-answer:i = danger(divide(10, 2));`;
+// Read example files that showcase Nail's philosophy
+error_example:s = danger(fs_read(`examples/website_examples/simple_error.nail`));
+parallel_example:s = danger(fs_read(`examples/website_examples/simple_parallel.nail`));  
+immutable_example:s = danger(fs_read(`examples/website_examples/immutable_safety.nail`));
+basics_example:s = danger(fs_read(`examples/website_examples/binding_values.nail`));
 
 // Read test files for more complex examples
 greet_test:s = danger(fs_read(`tests/test_website_greet_example.nail`));
@@ -783,7 +749,7 @@ website_html:s = array_join([`<!DOCTYPE html>
                               name="code"
                               hx-get="/validate" 
                               hx-trigger="keyup changed delay:500ms"
-                              hx-target="#validation-hints-basics">`, binding_example, `</textarea>
+                              hx-target="#validation-hints-basics">`, basics_example, `</textarea>
                     <div id="validation-hints-basics" class="validation-hints"></div>
                 </div>
                 <div class="code-output">
@@ -800,9 +766,9 @@ website_html:s = array_join([`<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- Functions Example -->
+        <!-- Immutability Example -->
         <div class="example-content" style="margin-bottom: 3rem;">
-            <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--text-primary);">Functions</h3>
+            <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--text-primary);">Immutable Safety</h3>
             <div class="code-editor">
                 <div class="code-input">
                     <div class="editor-header">
@@ -821,7 +787,7 @@ website_html:s = array_join([`<!DOCTYPE html>
                               name="code"
                               hx-get="/validate" 
                               hx-trigger="keyup changed delay:500ms"
-                              hx-target="#validation-hints-functions">`, function_example, `</textarea>
+                              hx-target="#validation-hints-functions">`, immutable_example, `</textarea>
                     <div id="validation-hints-functions" class="validation-hints"></div>
                 </div>
                 <div class="code-output">
@@ -838,9 +804,9 @@ website_html:s = array_join([`<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- Collections Example -->
+        <!-- Error Handling Example -->
         <div class="example-content" style="margin-bottom: 3rem;">
-            <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--text-primary);">Collections</h3>
+            <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--text-primary);">Error Handling</h3>
             <div class="code-editor">
                 <div class="code-input">
                     <div class="editor-header">
@@ -859,7 +825,7 @@ website_html:s = array_join([`<!DOCTYPE html>
                               name="code"
                               hx-get="/validate" 
                               hx-trigger="keyup changed delay:500ms"
-                              hx-target="#validation-hints-collections">`, collection_example, `</textarea>
+                              hx-target="#validation-hints-collections">`, error_example, `</textarea>
                     <div id="validation-hints-collections" class="validation-hints"></div>
                 </div>
                 <div class="code-output">
@@ -876,9 +842,9 @@ website_html:s = array_join([`<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- Parallel Example -->
+        <!-- Parallel Processing Example -->
         <div class="example-content" style="margin-bottom: 3rem;">
-            <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--text-primary);">Parallel</h3>
+            <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--text-primary);">Parallel Processing</h3>
             <div class="code-editor">
                 <div class="code-input">
                     <div class="editor-header">
@@ -914,9 +880,9 @@ website_html:s = array_join([`<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- Error Handling Example -->
+        <!-- Collections Example -->
         <div class="example-content">
-            <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--text-primary);">Error Handling</h3>
+            <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--text-primary);">Functional Collections</h3>
             <div class="code-editor">
                 <div class="code-input">
                     <div class="editor-header">
@@ -935,7 +901,7 @@ website_html:s = array_join([`<!DOCTYPE html>
                               name="code"
                               hx-get="/validate" 
                               hx-trigger="keyup changed delay:500ms"
-                              hx-target="#validation-hints-errors">`, error_example, `</textarea>
+                              hx-target="#validation-hints-errors">`, collections_test, `</textarea>
                     <div id="validation-hints-errors" class="validation-hints"></div>
                 </div>
                 <div class="code-output">
@@ -1093,20 +1059,26 @@ website_html:s = array_join([`<!DOCTYPE html>
 routes:h<s,s> = hashmap_new();
 hashmap_insert(routes, `/`, website_html);
 
-// Show the actual output these examples would produce
-// These match what the print statements in the examples would output
+// Show realistic output for the examples
 hashmap_insert(routes, `/run`, `<pre style="color: var(--success);">✅ Execution Result:
 
-Alice
-30
-[95, 87, 92]
-Hello, World!
-Original numbers:
-[1, 2, 3, 4, 5]
-Doubled:
-[2, 4, 6, 8, 10]
-Sum:
-15</pre>`);
+10 / 2 = 5
+Error occurred: Cannot divide by zero!
+Result with error handling: 0
+
+Task 1: Starting download...
+Task 2: Processing data...
+Task 3: Sending email...
+All parallel tasks started!
+Background: Cleaning up old files...
+Background: Updating cache...
+Main program continues immediately!
+
+Active users with titles:
+Alice (Elite!)
+Charlie (Elite!)
+Total score: 277
+Original user count: 3</pre>`);
 
 hashmap_insert(routes, `/validate`, `<div style="color: var(--success); font-size: 0.875rem;">✅ Valid Nail syntax</div>`);
 
