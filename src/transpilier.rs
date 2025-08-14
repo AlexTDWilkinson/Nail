@@ -493,6 +493,7 @@ impl Transpiler {
                 writeln!(output)?;
                 self.indent_level += 1;
                 writeln!(output, "{}use rayon::prelude::*;", self.indent())?;
+                writeln!(output, "{}use rayon::iter::IntoParallelIterator;", self.indent())?;
                 writeln!(output, "{}use futures::future;", self.indent())?;
                 
                 // Use Rayon to create futures in parallel, then await them all
@@ -557,6 +558,7 @@ impl Transpiler {
                 writeln!(output)?;
                 self.indent_level += 1;
                 writeln!(output, "{}use rayon::prelude::*;", self.indent())?;
+                writeln!(output, "{}use rayon::iter::IntoParallelIterator;", self.indent())?;
                 writeln!(output, "{}use futures::future;", self.indent())?;
                 
                 // Use Rayon to create futures in parallel, then await them all

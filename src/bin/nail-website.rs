@@ -59,6 +59,7 @@ answer:i = danger(divide(10, 2));"#.to_string();
     let factorial_test: String = std_lib::fs::read_file("tests/test_website_factorial_example.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
     let nav_links: Vec<String> = {
         use rayon::prelude::*;
+        use rayon::iter::IntoParallelIterator;
         use futures::future;
         let __futures: Vec<_> = nav_items.clone().into_par_iter().enumerate().map(|(_idx, item)| {
             async move {
