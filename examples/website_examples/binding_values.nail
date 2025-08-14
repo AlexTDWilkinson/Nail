@@ -1,3 +1,7 @@
 name:s = `Alice`;
 age:i = 30;
 scores:a:i = [95, 87, 92];
+
+print(name);
+print(age);
+print(scores);

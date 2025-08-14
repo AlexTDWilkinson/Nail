@@ -1,3 +1,10 @@
 numbers:a:i = [1, 2, 3, 4, 5];
 doubled:a:i = map num in numbers { y num * 2; };
 sum:i = reduce acc num in numbers from 0 { y acc + num; };
+
+print(`Original numbers:`);
+print(numbers);
+print(`Doubled:`);
+print(doubled);
+print(`Sum:`);
+print(sum);
