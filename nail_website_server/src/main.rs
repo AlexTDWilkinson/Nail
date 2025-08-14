@@ -1,45 +1,46 @@
-port:i = 8080;
+use tokio;
+use nail::std_lib;
+use nail::print_macro;
+use std::boxed::Box;
+use rayon::prelude::*;
+use rayon::iter::IntoParallelIterator;
+use futures::future;
+use dashmap::DashMap;
 
-// Website configuration
-site_title:s = `Nail - Write Code That Can't Go Wrong`;
-site_description:s = `Stop debugging. Start shipping. Nail eliminates entire categories of bugs by design.`;
-
-// Navigation structure
-struct NavItem {
-    name:s,
-    path:s
-}
-
-nav_items:a:NavItem = [
-    NavItem { name: `Home`, path: `#home` },
-    NavItem { name: `Philosophy`, path: `#philosophy` },
-    NavItem { name: `Features`, path: `#features` },
-    NavItem { name: `Examples`, path: `#examples` },
-    NavItem { name: `Documentation`, path: `#docs` },
-    NavItem { name: `Getting Started`, path: `#start` }
-];
-
-// Read example files that showcase Nail's philosophy
-error_example:s = danger(fs_read(`examples/website_examples/simple_error.nail`));
-concurrent_example:s = danger(fs_read(`examples/website_examples/simple_concurrent.nail`));
-parallel_example:s = danger(fs_read(`examples/website_examples/simple_parallel.nail`));  
-immutable_example:s = danger(fs_read(`examples/website_examples/immutable_safety.nail`));
-basics_example:s = danger(fs_read(`examples/website_examples/binding_values.nail`));
-
-// Read test files for more complex examples
-greet_test:s = danger(fs_read(`tests/test_website_greet_example.nail`));
-collections_test:s = danger(fs_read(`tests/test_website_collections_example.nail`));
-factorial_test:s = danger(fs_read(`tests/test_website_factorial_example.nail`));
-
-// Create navigation HTML
-nav_links:a:s = map item in nav_items {
-    y array_join([`<a href="`, item.path, `" class="nav-link" hx-boost="true">`, item.name, `</a>`], ``);
-};
-nav_html:s = array_join(nav_links, ``);
-
-// CSS styles - broken into sections for clarity
-f generate_css():s {
-    base_styles:s = `
+#[tokio::main]
+async fn main() {
+    let port: i64 = 8080;
+    let site_title: String = "Nail - Write Code That Can't Go Wrong".to_string();
+    let site_description: String = "Stop debugging. Start shipping. Nail eliminates entire categories of bugs by design.".to_string();
+    #[derive(Debug, Clone, PartialEq)]
+    struct NavItem {
+        name: String,
+        path: String,
+    }
+    let nav_items: Vec<NavItem> = vec! [NavItem { name: "Home".to_string(),  path: "#home".to_string() }, NavItem { name: "Philosophy".to_string(),  path: "#philosophy".to_string() }, NavItem { name: "Features".to_string(),  path: "#features".to_string() }, NavItem { name: "Examples".to_string(),  path: "#examples".to_string() }, NavItem { name: "Documentation".to_string(),  path: "#docs".to_string() }, NavItem { name: "Getting Started".to_string(),  path: "#start".to_string() }];
+    let error_example: String = std_lib::fs::read_file("examples/website_examples/simple_error.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
+    let concurrent_example: String = std_lib::fs::read_file("examples/website_examples/simple_concurrent.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
+    let parallel_example: String = std_lib::fs::read_file("examples/website_examples/simple_parallel.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
+    let immutable_example: String = std_lib::fs::read_file("examples/website_examples/immutable_safety.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
+    let basics_example: String = std_lib::fs::read_file("examples/website_examples/binding_values.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
+    let greet_test: String = std_lib::fs::read_file("tests/test_website_greet_example.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
+    let collections_test: String = std_lib::fs::read_file("tests/test_website_collections_example.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
+    let factorial_test: String = std_lib::fs::read_file("tests/test_website_factorial_example.nail".to_string()).await.unwrap_or_else(|nail_error| panic!("🔨 Nail Error: {}", nail_error));
+    let nav_links: Vec<String> = {
+        use rayon::prelude::*;
+        use rayon::iter::IntoParallelIterator;
+        use futures::future;
+        let __futures: Vec<_> = nav_items.clone().into_par_iter().enumerate().map(|(_idx, item)| {
+            async move {
+std_lib::array::join(vec! [r#"<a href=""#.to_string(), item.path.clone(), r#"" class="nav-link" hx-boost="true">"#.to_string(), item.name.clone(), "</a>".to_string()], "".to_string()).await
+            }
+        }).collect();
+        let __result = future::join_all(__futures).await;
+        __result
+    };
+    let nav_html: String = std_lib::array::join(nav_links.clone(), "".to_string()).await;
+    async fn generate_css() -> String {
+        let base_styles: String = r#"
     * {
         margin: 0;
         padding: 0;
@@ -64,9 +65,9 @@ f generate_css():s {
         line-height: 1.6;
         color: var(--text-primary);
         background-color: var(--bg-secondary);
-    }`;
-    
-    navbar_styles:s = `
+    }"#.to_string();
+;
+                let navbar_styles: String = r#"
     .navbar {
         position: sticky;
         top: 0;
@@ -110,9 +111,9 @@ f generate_css():s {
     
     .nav-link:hover {
         color: var(--primary);
-    }`;
-    
-    hero_styles:s = `
+    }"#.to_string();
+;
+                let hero_styles: String = r#"
     .hero {
         max-width: 1200px;
         margin: 0 auto;
@@ -151,9 +152,9 @@ f generate_css():s {
         gap: 1rem;
         justify-content: center;
         animation: fadeIn 1.2s ease-out;
-    }`;
-    
-    button_styles:s = `
+    }"#.to_string();
+;
+                let button_styles: String = r#"
     .btn {
         padding: 0.75rem 2rem;
         border-radius: 0.5rem;
@@ -184,9 +185,9 @@ f generate_css():s {
     .btn-secondary:hover {
         background: var(--bg-secondary);
         transform: translateY(-2px);
-    }`;
-    
-    section_styles:s = `
+    }"#.to_string();
+;
+                let section_styles: String = r#"
     section {
         max-width: 1200px;
         margin: 0 auto;
@@ -208,9 +209,9 @@ f generate_css():s {
     .section-header p {
         font-size: 1.2rem;
         color: var(--text-secondary);
-    }`;
-    
-    feature_styles:s = `
+    }"#.to_string();
+;
+                let feature_styles: String = r#"
     .features-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -245,9 +246,9 @@ f generate_css():s {
     .feature-card p {
         color: var(--text-secondary);
         line-height: 1.6;
-    }`;
-    
-    code_styles:s = `
+    }"#.to_string();
+;
+                let code_styles: String = r#"
     .code-example {
         background: #1e293b;
         color: #e2e8f0;
@@ -274,9 +275,9 @@ f generate_css():s {
         padding: 0.25rem 0.75rem;
         border-radius: 0.25rem;
         font-size: 0.85rem;
-    }`;
-    
-    philosophy_styles:s = `
+    }"#.to_string();
+;
+                let philosophy_styles: String = r#"
     .philosophy-content {
         max-width: 800px;
         margin: 0 auto;
@@ -293,70 +294,46 @@ f generate_css():s {
         font-style: italic;
         font-size: 1.2rem;
         color: var(--text-primary);
-    }`;
-    
-    animation_styles:s = `
+    }"#.to_string();
+;
+                let animation_styles: String = r#"
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
-    }`;
-    
-    r array_join([
-        base_styles,
-        navbar_styles,
-        hero_styles,
-        button_styles,
-        section_styles,
-        feature_styles,
-        code_styles,
-        philosophy_styles,
-        animation_styles
-    ], ``);
-}
-
-// Generate HTML sections
-f generate_head(site_title:s, site_description:s):s {
-    head_html:s = array_join([
-        `<!DOCTYPE html>
+    }"#.to_string();
+;
+                return std_lib::array::join(vec! [base_styles.clone(), navbar_styles.clone(), hero_styles.clone(), button_styles.clone(), section_styles.clone(), feature_styles.clone(), code_styles.clone(), philosophy_styles.clone(), animation_styles.clone()], "".to_string()).await;
+    }
+    async fn generate_head(site_title: String, site_description: String) -> String {
+        let head_html: String = std_lib::array::join(vec! [r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="`,
-        site_description,
-        `">
-    <title>`,
-        site_title,
-        `</title>
+    <meta name="description" content=""#.to_string(), site_description.clone(), r#"">
+    <title>"#.to_string(), site_title.clone(), r#"</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
-    <style>`,
-        generate_css(),
-        `</style>
-</head>`
-    ], ``);
-    r head_html;
-}
-
-f generate_navbar(nav_html:s):s {
-    navbar_html:s = array_join([
-        `<nav class="navbar">
+    <style>"#.to_string(), generate_css().await, r#"</style>
+</head>"#.to_string()], "".to_string()).await;
+;
+                return head_html.clone();
+    }
+    async fn generate_navbar(nav_html: String) -> String {
+        let navbar_html: String = std_lib::array::join(vec! [r##"<nav class="navbar">
     <div class="nav-container">
         <a href="#home" class="nav-brand">
             <span style="font-size: 1.5rem;">🔨</span>
             <span>Nail</span>
         </a>
-        <div class="nav-links">`,
-        nav_html,
-        `</div>
+        <div class="nav-links">"##.to_string(), nav_html.clone(), r#"</div>
     </div>
-</nav>`
-    ], ``);
-    r navbar_html;
-}
-
-f generate_hero():s {
-    r `<section id="home" class="hero">
+</nav>"#.to_string()], "".to_string()).await;
+;
+                return navbar_html.clone();
+    }
+    async fn generate_hero() -> String {
+        return r##"<section id="home" class="hero">
     <h1 class="hero-title">Nail</h1>
     <p class="hero-tagline">A programming language that fights complexity</p>
     <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/nail_website.nail" 
@@ -376,11 +353,10 @@ f generate_hero():s {
         <a href="#start" class="btn btn-primary">Get Started</a>
         <a href="#examples" class="btn btn-secondary">Try Examples</a>
     </div>
-</section>`;
-}
-
-f generate_philosophy():s {
-    r `<section id="philosophy" class="philosophy">
+</section>"##.to_string();
+    }
+    async fn generate_philosophy() -> String {
+        return r#"<section id="philosophy" class="philosophy">
     <div class="section-header">
         <h2>Our Philosophy</h2>
         <p>Simplicity is not about doing less. It's about doing only what matters.</p>
@@ -409,11 +385,10 @@ f generate_philosophy():s {
             complexity crisis in modern software.
         </p>
     </div>
-</section>`;
-}
-
-f generate_problem_section():s {
-    r `<section class="problems" style="padding: 4rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+</section>"#.to_string();
+    }
+    async fn generate_problem_section() -> String {
+        return r#"<section class="problems" style="padding: 4rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
     <div style="max-width: 1200px; margin: 0 auto; color: white;">
         <h2 style="font-size: 2.5rem; margin-bottom: 3rem; text-align: center;">The Problem With Modern Languages</h2>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin-bottom: 3rem;">
@@ -438,72 +413,59 @@ f generate_problem_section():s {
             </p>
         </div>
     </div>
-</section>`;
-}
-
-f generate_features():s {
-    features_data:a:s = [
-        `<div class="feature-card">
+</section>"#.to_string();
+    }
+    async fn generate_features() -> String {
+        let features_data: Vec<String> = vec! [r#"<div class="feature-card">
             <div class="feature-icon">🔒</div>
             <h3>Immutable by Default</h3>
             <p>All values are constants. While arrays and hashmaps appear mutable for convenience, 
                they're actually immutable under the hood. This eliminates race conditions and 
                unexpected state changes.</p>
-        </div>`,
-        `<div class="feature-card">
+        </div>"#.to_string(), r#"<div class="feature-card">
             <div class="feature-icon">🔄</div>
             <h3>Functional Collections</h3>
             <p>No for or while loops. Use map, filter, and reduce for all iterations. 
                This prevents off-by-one errors and makes your intent clear. The syntax is 
                designed for readability, not terseness.</p>
-        </div>`,
-        `<div class="feature-card">
+        </div>"#.to_string(), r#"<div class="feature-card">
             <div class="feature-icon">⚡</div>
             <h3>Concurrent & Parallel Blocks</h3>
             <p>Use c.../c for concurrent I/O operations (async with tokio::join!) or p.../p for 
                CPU-intensive parallel work (OS threads). No locks, no race conditions, just simple 
                concurrent and parallel programming.</p>
-        </div>`,
-        `<div class="feature-card">
+        </div>"#.to_string(), r#"<div class="feature-card">
             <div class="feature-icon">🔀</div>
             <h3>No Silent Failures</h3>
             <p>Every error must be handled explicitly. Use safe() with a fallback or danger() 
                to acknowledge risk. Nail won't let you ignore errors—eliminating an entire class of production bugs.</p>
-        </div>`,
-        `<div class="feature-card">
+        </div>"#.to_string(), r#"<div class="feature-card">
             <div class="feature-icon">🛡️</div>
             <h3>Zero Overhead</h3>
             <p>Simple doesn't mean slow. Nail compiles to optimized Rust that rivals C++ performance. 
                Automatic parallelization and zero-cost abstractions mean your code is both simple AND fast.</p>
-        </div>`,
-        `<div class="feature-card">
+        </div>"#.to_string(), r#"<div class="feature-card">
             <div class="feature-icon">🦀</div>
             <h3>Production Ready</h3>
             <p>Built on Rust's proven foundation. Deploy anywhere Rust runs—from embedded systems 
                to web servers. This website? It's running on Nail-generated code right now.</p>
-        </div>`
-    ];
-    
-    features_html:s = array_join(features_data, ``);
-    
-    section_html:s = array_join([
-        `<section id="features" class="features">
+        </div>"#.to_string()];
+;
+                let features_html: String = std_lib::array::join(features_data.clone(), "".to_string()).await;
+;
+                let section_html: String = std_lib::array::join(vec! [r#"<section id="features" class="features">
     <div class="section-header">
         <h2>Key Features</h2>
         <p>Every feature in Nail is designed to eliminate entire categories of bugs</p>
     </div>
-    <div class="features-grid">`,
-        features_html,
-        `
+    <div class="features-grid">"#.to_string(), features_html.clone(), r#"
     </div>
-</section>`
-    ], ``);
-    r section_html;
-}
-
-f generate_examples(concurrent_example:s, parallel_example:s, error_example:s):s {
-    examples_html:s = array_join([
-        `<section id="examples" class="examples">
+</section>"#.to_string()], "".to_string()).await;
+;
+                return section_html.clone();
+    }
+    async fn generate_examples(concurrent_example: String, parallel_example: String, error_example: String) -> String {
+        let examples_html: String = std_lib::array::join(vec! [r#"<section id="examples" class="examples">
     <div class="section-header">
         <h2>Code Examples</h2>
         <p>See how Nail makes complex tasks simple and safe</p>
@@ -517,9 +479,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s):s
             <h3 style="margin-bottom: 1rem;">Concurrent I/O Operations (c.../c)</h3>
             <div class="code-example">
                 <span class="code-label">Nail</span>
-                <pre>`,
-        concurrent_example,
-        `</pre>
+                <pre>"#.to_string(), concurrent_example.clone(), r#"</pre>
             </div>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 Run multiple I/O operations concurrently with c.../c blocks. Uses async/await 
@@ -531,9 +491,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s):s
             <h3 style="margin-bottom: 1rem;">Parallel CPU Work (p.../p)</h3>
             <div class="code-example">
                 <span class="code-label">Nail</span>
-                <pre>`,
-        parallel_example,
-        `</pre>
+                <pre>"#.to_string(), parallel_example.clone(), r#"</pre>
             </div>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 Run CPU-intensive work in parallel with p.../p blocks. Uses OS threads 
@@ -545,9 +503,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s):s
             <h3 style="margin-bottom: 1rem;">Error Handling Done Right</h3>
             <div class="code-example">
                 <span class="code-label">Nail</span>
-                <pre>`,
-        error_example,
-        `</pre>
+                <pre>"#.to_string(), error_example.clone(), r#"</pre>
             </div>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 Every error must be handled explicitly. Use safe() to provide a fallback value, 
@@ -555,13 +511,12 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s):s
             </p>
         </div>
     </div>
-</section>`
-    ], ``);
-    r examples_html;
-}
-
-f generate_footer():s {
-    r `<footer style="background: var(--text-primary); color: white; padding: 3rem 2rem; margin-top: 4rem;">
+</section>"#.to_string()], "".to_string()).await;
+;
+                return examples_html.clone();
+    }
+    async fn generate_footer() -> String {
+        return r#"<footer style="background: var(--text-primary); color: white; padding: 3rem 2rem; margin-top: 4rem;">
     <div style="max-width: 1200px; margin: 0 auto; text-align: center;">
         <p style="font-size: 1.1rem; margin-bottom: 1rem;">
             Made with 🔨 by developers who care about simplicity
@@ -575,28 +530,12 @@ f generate_footer():s {
             </a>
         </div>
     </div>
-</footer>`;
+</footer>"#.to_string();
+    }
+    let website_html: String = std_lib::array::join(vec! [generate_head(site_title.clone(), site_description.clone()).await, r#"<body hx-boost="true">"#.to_string(), generate_navbar(nav_html.clone()).await, generate_hero().await, generate_philosophy().await, generate_problem_section().await, generate_features().await, generate_examples(concurrent_example.clone(), parallel_example.clone(), error_example.clone()).await, generate_footer().await, r#"</body>
+</html>"#.to_string()], "".to_string()).await;
+    let routes: DashMap<String, String> = std_lib::hashmap::new().await;
+    std_lib::hashmap::insert(&routes, "/".to_string(), website_html.clone()).await;
+    std_lib::http::http_server(port.clone(), routes.clone()).await;
+    print_macro!("Server running on http://localhost:".to_string(), port.clone());
 }
-
-// Assemble the complete HTML
-website_html:s = array_join([
-    generate_head(site_title, site_description),
-    `<body hx-boost="true">`,
-    generate_navbar(nav_html),
-    generate_hero(),
-    generate_philosophy(),
-    generate_problem_section(),
-    generate_features(),
-    generate_examples(concurrent_example, parallel_example, error_example),
-    generate_footer(),
-    `</body>
-</html>`
-], ``);
-
-// Create routes map with single entry for static website
-routes:h<s,s> = hashmap_new();
-hashmap_insert(routes, `/`, website_html);
-
-// Serve the website with routes
-http_server(port, routes);
-print(`Server running on http://localhost:`, port);
