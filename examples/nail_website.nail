@@ -1093,23 +1093,15 @@ website_html:s = array_join([`<!DOCTYPE html>
 routes:h<s,s> = hashmap_new();
 hashmap_insert(routes, `/`, website_html);
 
-// Interactive endpoint responses - different outputs for each example
-// Since we can't actually execute the code, we'll detect which example based on content
-hashmap_insert(routes, `/run`, `<pre style="color: var(--success);">✅ Code executed successfully!
+// Since we can't actually execute code dynamically, show what the output would be
+// This is a static demo showing typical results
+hashmap_insert(routes, `/run`, `<pre style="color: #888;">// This is a demo - actual execution coming soon
+// For now, here's what the output would look like:
 
-// Variables and binding example
-name: "Alice"
-age: 30
-scores: [95, 87, 92]
+<span style="color: var(--success);">✅ Code would execute successfully</span>
 
-// Function example  
-greeting: "Hello, World!"
-
-// Collection operations example
-doubled: [2, 4, 6, 8, 10]
-sum: 15
-
-// All examples work!</pre>`);
+Note: The web playground doesn't execute code yet.
+Visit the GitHub repo to run Nail locally.</pre>`);
 
 hashmap_insert(routes, `/validate`, `<div style="color: var(--success); font-size: 0.875rem;">✅ Valid Nail syntax</div>`);
 
