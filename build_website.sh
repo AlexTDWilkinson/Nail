@@ -11,20 +11,20 @@ cargo build --release --bin nailc
 echo "Step 2: Transpiling nail_website.nail to Rust..."
 ./target/release/nailc examples/nail_website.nail --transpile
 
-# Create the nail_website_server directory and move the transpiled file
-echo "Step 3: Setting up website server directory..."
-mkdir -p nail_website_server/src
-mv examples/nail_website.rs nail_website_server/src/main.rs
+# Create the nail_website_build directory and move the transpiled file
+echo "Step 3: Setting up website build directory..."
+mkdir -p nail_website_build/src
+cp examples/nail_website.rs nail_website_build/src/main.rs || echo "Warning: nail_website.rs not found, will be created by transpilation"
 
-# Create Cargo.toml for the website server
-cat > nail_website_server/Cargo.toml << 'EOF'
+# Create Cargo.toml for the website build
+cat > nail_website_build/Cargo.toml << 'EOF'
 [package]
-name = "nail_website_server"
+name = "nail-website"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "nail_website"
+name = "nail-website"
 path = "src/main.rs"
 
 [dependencies]
@@ -37,11 +37,11 @@ EOF
 
 # Build the website binary
 echo "Step 4: Building nail_website binary..."
-cd nail_website_server
+cd nail_website_build
 cargo build --release
 
 # Copy the binary to the expected location for Render
 echo "Step 5: Copying binary to target directory..."
-cp target/release/nail_website ../target/release/
+cp target/release/nail-website ../target/release/nail_website
 
 echo "Build complete! Website binary is at ./target/release/nail_website"
