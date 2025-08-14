@@ -1372,6 +1372,46 @@ fn visit_function_call(name: &str, args: &[ASTNode], state: &mut AnalyzerState, 
         }
         return NailDataTypeDescriptor::Void;
     }
+    
+    // Special handling for safe function to enforce error handler parameter types
+    if name == "safe" {
+        if args.len() != 2 {
+            add_error(state, format!("safe expects 2 arguments, got {}", args.len()), code_span);
+            return NailDataTypeDescriptor::FailedToResolve;
+        }
+        
+        // Visit both arguments
+        let mut arg1_clone = args[0].clone();
+        let mut arg2_clone = args[1].clone();
+        visit_node(&mut arg1_clone, state);
+        visit_node(&mut arg2_clone, state);
+        
+        // Check that the second argument (error handler) accepts error type
+        if let ASTNode::LambdaDeclaration { params, .. } = &args[1] {
+            if params.len() == 1 {
+                let (_, param_type) = &params[0];
+                if *param_type != NailDataTypeDescriptor::Error {
+                    add_error(state, format!("safe error handler parameter must be of type :e, got {:?}", param_type), code_span);
+                }
+            }
+        } else if let ASTNode::Identifier { name: handler_name, .. } = &args[1] {
+            // Check if it's a function that takes error type
+            if let Some(handler_symbol) = lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), handler_name) {
+                if let NailDataTypeDescriptor::Fn(param_types, _) = &handler_symbol.data_type {
+                    if param_types.len() == 1 && param_types[0] != NailDataTypeDescriptor::Error {
+                        add_error(state, format!("safe error handler function '{}' must accept parameter of type :e, got {:?}", handler_name, param_types[0]), code_span);
+                    }
+                }
+            }
+        }
+        
+        // Return the inner type of the first argument (Result type)
+        let first_arg_type = check_type(&arg1_clone, state);
+        return match first_arg_type {
+            NailDataTypeDescriptor::Result(inner) => (*inner).clone(),
+            _ => NailDataTypeDescriptor::FailedToResolve,
+        };
+    }
 
     // Check if this is a stdlib function first
     if let Some(func_type) = get_stdlib_function(name) {

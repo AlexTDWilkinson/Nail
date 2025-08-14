@@ -7,13 +7,13 @@ struct Sale {
 }
 
 // Helper function for safe float conversion
-f default_zero(err:s):f {
+f default_zero(err:e):f {
     print(err);
     r 0.0;
 }
 
 // Helper function for when array is empty
-f default_sale(err:s):Sale {
+f default_sale(err:e):Sale {
     print(err);
     // Return a dummy sale
     r Sale { quantity: 0, price: 0.0, region: `Unknown` };

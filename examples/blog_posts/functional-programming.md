@@ -133,7 +133,7 @@ struct Sales {
 }
 
 // Helper function for safe float conversion
-f default_zero(err:s):f {
+f default_zero(err:e):f {
     print(err);
     r 0.0;
 }
@@ -147,7 +147,7 @@ total_sales:f = reduce sum sale in sales_data from 0.0 {
 };
 
 // Helper function for when array is empty
-f default_sale(err:s):Sales {
+f default_sale(err:e):Sales {
     print(err);
     // Return a dummy sale
     r Sales { quantity: 0, price: 0.0, region: `Unknown` };

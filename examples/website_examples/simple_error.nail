@@ -13,7 +13,7 @@ print(`10 / 2 = `);
 print(result);
 
 // Safe handling with fallback function
-f handle_div_error(err:s):i {
+f handle_div_error(err:e):i {
     print(`Error occurred: `);
     print(err);
     r 0;  // Return default value
