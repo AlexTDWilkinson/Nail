@@ -591,5 +591,5 @@ website_html:s = array_join([
 ], ``);
 
 // Serve the website
-http_serve(port, website_html);
+http_server_start(port, website_html);
 print(`Server running on http://localhost:`, port);
