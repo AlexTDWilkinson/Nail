@@ -2,10 +2,11 @@ use std::env;
 use std::fs;
 use std::process;
 
-use nail::lexer::lexer;
+use nail::lexer::{lexer, lexer_with_context};
 use nail::parser::parse;
 use nail::checker::checker;
 use nail::transpilier::Transpiler;
+use std::path::Path;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -40,11 +41,12 @@ fn main() {
         }
     };
     
+    
     // Run lexer
     if mode != "--transpile" && mode != "--transpile-skip-check" {
         println!("=== Lexing {} ===", filename);
     }
-    let tokens = lexer(&input);
+    let tokens = lexer_with_context(&input, Some(Path::new(filename)));
     
     if mode == "--lex-only" {
         println!("Tokens:");

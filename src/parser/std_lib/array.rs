@@ -156,14 +156,14 @@ where
 }
 
 
-// Range function - generates a range of integers
-pub async fn range(start: i64, end: i64) -> Vec<i64> {
-    (start..=end).collect()
+// Range function - generates a range of integers (exclusive end, like Python)
+pub async fn array_range(start: i64, end: i64) -> Vec<i64> {
+    (start..end).collect()
 }
 
-// Range exclusive (like Python's range)
-pub async fn range_exclusive(start: i64, end: i64) -> Vec<i64> {
-    (start..end).collect()
+// Range inclusive 
+pub async fn array_range_inclusive(start: i64, end: i64) -> Vec<i64> {
+    (start..=end).collect()
 }
 
 
@@ -178,5 +178,152 @@ pub async fn take_float(arr: Vec<f64>, n: i64) -> Vec<f64> {
 
 pub async fn take_string(arr: Vec<String>, n: i64) -> Vec<String> {
     arr.into_iter().take(n as usize).collect()
+}
+
+// Find index of first occurrence of element
+pub async fn find<T: PartialEq>(arr: Vec<T>, value: T) -> Result<i64, String> {
+    for (idx, item) in arr.iter().enumerate() {
+        if item == &value {
+            return Ok(idx as i64);
+        }
+    }
+    Err(format!("Element not found in array"))
+}
+
+// Find index of last occurrence of element
+pub async fn find_last<T: PartialEq>(arr: Vec<T>, value: T) -> Result<i64, String> {
+    for (idx, item) in arr.iter().enumerate().rev() {
+        if item == &value {
+            return Ok(idx as i64);
+        }
+    }
+    Err(format!("Element not found in array"))
+}
+
+// Create array with value repeated count times
+pub async fn repeat<T: Clone>(value: T, count: i64) -> Vec<T> {
+    if count <= 0 {
+        return Vec::new();
+    }
+    vec![value; count as usize]
+}
+
+// NOTE: Removed sum/product/average functions - use reduce instead:
+// sum:i = reduce acc, num in nums from 0 { y acc + num; };
+// product:i = reduce acc, num in nums from 1 { y acc * num; };
+
+// Split array into chunks of specified size
+pub async fn chunk<T: Clone>(arr: Vec<T>, size: i64) -> Result<Vec<Vec<T>>, String> {
+    if size <= 0 {
+        return Err("Chunk size must be positive".to_string());
+    }
+    
+    let chunk_size = size as usize;
+    let mut result = Vec::new();
+    let mut i = 0;
+    
+    while i < arr.len() {
+        let end = (i + chunk_size).min(arr.len());
+        result.push(arr[i..end].to_vec());
+        i = end;
+    }
+    
+    Ok(result)
+}
+
+// Flatten nested arrays recursively (deep flatten)
+pub async fn flatten_deep<T: Clone>(arr: Vec<Vec<T>>) -> Vec<T> {
+    arr.into_iter().flatten().collect()
+}
+
+// Partition array into two based on predicate (returns [matching, non-matching])
+// Note: In Nail, use filter for this - keeping for completeness
+pub async fn partition<T: Clone + Send + Sync>(arr: Vec<T>, predicate: impl Fn(&T) -> bool + Send + Sync) -> (Vec<T>, Vec<T>) {
+    let mut matching = Vec::new();
+    let mut non_matching = Vec::new();
+    
+    for item in arr {
+        if predicate(&item) {
+            matching.push(item);
+        } else {
+            non_matching.push(item);
+        }
+    }
+    
+    (matching, non_matching)
+}
+
+// Remove consecutive duplicates
+pub async fn deduplicate<T: PartialEq + Clone>(arr: Vec<T>) -> Vec<T> {
+    if arr.is_empty() {
+        return Vec::new();
+    }
+    
+    let mut result = vec![arr[0].clone()];
+    for i in 1..arr.len() {
+        if arr[i] != arr[i - 1] {
+            result.push(arr[i].clone());
+        }
+    }
+    result
+}
+
+// Intersection of two arrays (common elements)
+pub async fn intersect<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
+    let mut result = Vec::new();
+    for item in &arr1 {
+        if arr2.contains(item) && !result.contains(item) {
+            result.push(item.clone());
+        }
+    }
+    result
+}
+
+// Difference of two arrays (elements in arr1 not in arr2)
+pub async fn difference<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
+    let mut result = Vec::new();
+    for item in arr1 {
+        if !arr2.contains(&item) {
+            result.push(item);
+        }
+    }
+    result
+}
+
+// Union of two arrays (all unique elements from both)
+pub async fn union<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
+    let mut result = arr1.clone();
+    for item in arr2 {
+        if !result.contains(&item) {
+            result.push(item);
+        }
+    }
+    result
+}
+
+// Rotate array elements by n positions (positive = right, negative = left)
+pub async fn rotate<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
+    if arr.is_empty() {
+        return Vec::new();
+    }
+    
+    let len = arr.len() as i64;
+    let shift = ((n % len) + len) % len; // Handle negative rotations
+    let split_point = (len - shift) as usize;
+    
+    let mut result = Vec::new();
+    result.extend_from_slice(&arr[split_point..]);
+    result.extend_from_slice(&arr[..split_point]);
+    result
+}
+
+// Shuffle array randomly
+pub async fn shuffle<T: Clone>(mut arr: Vec<T>) -> Vec<T> {
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
+    
+    let mut rng = thread_rng();
+    arr.shuffle(&mut rng);
+    arr
 }
 

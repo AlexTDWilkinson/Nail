@@ -87,6 +87,47 @@ some_number:i = 5; // This is an inline comment
 - String literals: `hello`, `nail is awesome`
 - Boolean literals: `true`, `false`
 
+### 4.5 Operators
+
+#### 4.5.1 Arithmetic Operators
+- `+` Addition
+- `-` Subtraction  
+- `*` Multiplication
+- `/` Division
+- `%` Modulo
+
+#### 4.5.2 Comparison Operators
+- `==` Equal
+- `!=` Not equal
+- `<` Less than
+- `<=` Less than or equal
+- `>` Greater than
+- `>=` Greater than or equal
+
+#### 4.5.3 Logical Operators
+- `&&` Logical AND
+- `||` Logical OR
+- `!` Logical NOT
+
+#### 4.5.4 Range Functions
+Nail provides range functions for creating sequences in for loops:
+
+```js
+// Range function creates arrays for iteration
+numbers:a:i = array_range(1, 5);  // Creates [1, 2, 3, 4] (end not included)
+
+// Use in for loops
+for idx in array_range(0, 5) {
+    print(string_from(idx));  // Prints 0, 1, 2, 3, 4
+}
+
+// Common patterns
+for idx in array_range(0, array_len(my_array)) {
+    item:T = danger(array_get(my_array, idx));
+    print(item);
+}
+```
+
 ## Data Types and constants
 
 ### 5.1 Type System
@@ -94,11 +135,13 @@ some_number:i = 5; // This is an inline comment
 Nail uses a prefix-based type system:
 
 - `i`: Integer
-- `f`: Float
+- `f`: Float  
 - `s`: String
 - `b`: Boolean
 - `a`: Array
 - `e`: Error
+- `v`: Void (no return value)
+- `h`: HashMap
 - `struct`: Struct
 - `enum`: Enum
 
@@ -152,30 +195,33 @@ struct Point {
 
 #### 5.4.3 HashMaps
 
-Key-value collections with type-safe keys and values:
+Key-value collections with type-safe keys and values. Both keys and values must be concrete types (cannot be void or error types):
 
 ```js
-// Create a new hashmap with string keys and string values
-user_scores:h<s,s> = hashmap_new();
+// Create a new hashmap with string keys and integer values
+user_scores:h<s,i> = hashmap_new();
 
-// Hashmaps with different type combinations
-int_map:h<s,i> = hashmap_new();      // String keys, integer values
-struct_map:h<s,Point> = hashmap_new(); // String keys, struct values
-bool_map:h<i,b> = hashmap_new();     // Integer keys, boolean values
+// Hashmaps with different valid type combinations
+config_map:h<s,s> = hashmap_new();      // String keys, string values
+id_to_struct:h<i,Point> = hashmap_new(); // Integer keys, struct values
+name_to_active:h<s,b> = hashmap_new();   // String keys, boolean values
 
 // Hashmap operations
-hashmap_insert(user_scores, `alice`, `100`);
-hashmap_insert(user_scores, `bob`, `85`);
+hashmap_insert(user_scores, `alice`, 100);
+hashmap_insert(user_scores, `bob`, 85);
 
-score:s = danger(hashmap_get(user_scores, `alice`));
+score:i = danger(hashmap_get(user_scores, `alice`));
 has_charlie:b = hashmap_contains_key(user_scores, `charlie`);
 map_size:i = hashmap_len(user_scores);
 
 // Safe access with error handling
-f handle_missing_key(err:e):s { r `0`; }
-alice_score:s = safe(hashmap_get(user_scores, `alice`), handle_missing_key);
+f handle_missing_key(err:e):i { r 0; }
+alice_score:i = safe(hashmap_get(user_scores, `alice`), handle_missing_key);
 
+// Example with struct values
+struct Point { x_pos:i, y_pos:i }
 origin:Point = Point { x_pos: 0, y_pos: 0 };
+hashmap_insert(id_to_struct, 1, origin);
 ```
 
 #### 5.4.3 Enums
@@ -194,19 +240,28 @@ current_light:TrafficLight = TrafficLight::Red;
 
 ## Control Structures
 
-### 6.1 Match Statements
+### 6.1 If Statements (Match-like Syntax)
 
-Used for control flow instead of if-else. Has some extra intelligence so if an enum is iffed, the compiler will check if all enum values are covered, unless there is an else branch, etc.
+Nail uses a unique match-like syntax for if statements. Traditional if-else syntax is NOT supported.
 
 ```js
+// Basic if statement syntax
 status:i = get_http_status_code(response);
 
 if {
-    status == 200 { print(`OK`) }
-    status == 404 { print(`Not Found`) }
-    else { print(`Unknown Status`) }
+    status == 200 => { print(`OK`); },
+    status == 404 => { print(`Not Found`); },
+    else => { print(`Unknown Status`); }
 }
+
+// If as an expression (returns a value)
+result:s = if {
+    status == 200 => { r `Success`; },
+    else => { r `Error`; }
+};
 ```
+
+**Important**: All branches use `=>` followed by blocks. When used as an expression, use `r` (return) to produce the value.
 
 ### 6.2 Collection Operations
 
@@ -324,51 +379,63 @@ has_negative:b = any num idx in numbers {
 };
 ```
 
-#### Zip Operation
+### 6.3 Array Function Operations
 
-Combine two arrays element-wise:
+Standard library provides array functions for common operations:
 
 ```js
-names:a:s = [`Alice`, `Bob`, `Charlie`];
-ages:a:i = [30, 25, 35];
+numbers:a:i = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-// Zip arrays together
-pairs:a:Pair = zip name, age in names, ages {
-    r Pair { name: name, age: age };
-};
+// Take and skip operations
+first_three:a:i = array_take(numbers, 3);  // [1, 2, 3]
+skip_three:a:i = array_skip(numbers, 3);   // [4, 5, 6, 7, 8, 9, 10]
+
+// Take/skip while operations with predicates
+f less_than_five(num:i):b { r num < 5; }
+small_nums:a:i = array_take_while(numbers, less_than_five);  // [1, 2, 3, 4]
+
+// Array utilities
+unique_nums:a:i = array_unique([1, 2, 2, 3, 3, 3]);  // [1, 2, 3]
+nested:a:a:i = [[1, 2], [3, 4]];
+flat_array:a:i = array_flatten(nested);    // [1, 2, 3, 4]
+
+// Finding elements
+index:i = danger(array_find(numbers, 5));  // Returns 4 (0-based index)
+
+// Functional operations as library functions
+f double(num:i):i { r num * 2; }
+doubled:a:i = array_map(numbers, double);
+
+f is_even(num:i):b { r num % 2 == 0; }
+evens:a:i = array_filter(numbers, is_even);
 ```
 
-#### Take/Skip Operations
+### 6.4 For Loops
 
-Take or skip a certain number of elements:
-
-```js
-// Take first 3 elements
-first_three:a:i = take 3 from numbers;
-
-// Skip first 2 elements
-remaining:a:i = skip 2 from numbers;
-
-// Take while condition is true
-small_nums:a:i = take_while num in numbers {
-    y num < 4;
-};
-```
-
-### 6.3 For Loops
-
-Traditional for loops for more complex iteration patterns:
+For loops iterate over arrays or function-generated ranges:
 
 ```js
-// Range iteration
-for idx in 0..5 {
-    print(danger(string_from(idx)));
-};
+// Range iteration - iterator can be any valid name
+for index in array_range(0, 5) {
+    print(string_from(index)); // Prints 0, 1, 2, 3, 4
+}
 
-// Inclusive range
-for idx in 1..=3 {
-    print(danger(string_from(idx * idx)));
-};
+// Iterator names are flexible
+for counter in array_range(1, 4) {
+    print(string_from(counter * counter)); // Prints 1, 4, 9
+}
+
+// Iterate over array elements directly
+numbers:a:i = [10, 20, 30];
+for value in numbers {
+    print(string_from(value));
+}
+
+// Common pattern: iterate by index with descriptive names
+for position in array_range(0, array_len(numbers)) {
+    current_num:i = danger(array_get(numbers, position));
+    print(`Index `, position, `: `, current_num);
+}
 ```
 
 #### While Loops
@@ -392,37 +459,51 @@ Loop construct for explicit infinite loops with `break` and `continue` support:
 
 ```js
 // Basic infinite loop with break
-counter:i = 0;
 loop {
-    counter = counter + 1;
-    if counter >= 10 {
-        break;
+    print(`Looping...`);
+    break; // Must break to avoid infinite loop (immutable variables)
+}
+
+// Indexed loop - provides automatic counter (still infinite until break)
+loop index {
+    print(string_from(index)); // index starts at 0, auto-increments each iteration
+    if {
+        index >= 10 => { break; },     // Exits the loop
+        index == 5 => { continue; },   // Skips to next iteration (index becomes 6)
+        else => { /* keep looping */ }
     }
 }
 
-// Loop with continue to skip iterations
-sum:i = 0;
-loop {
-    x:i = get_next_value();
-    
-    if x < 0 {
-        continue; // Skip negative values
-    }
-    
-    if x == 0 {
-        break; // Exit on zero
-    }
-    
-    sum = sum + x;
+// Key points about loop index:
+// - Still infinite by default (no built-in termination)
+// - index automatically increments each iteration (0, 1, 2, 3...)
+// - break and continue work as expected
+// - Provides counter without needing mutable variables
+```
+
+#### Spawn Blocks (Background Tasks)
+
+Spawn blocks run asynchronously in the background:
+
+```js
+// Spawn a background task
+spawn {
+    print(`Background task started`);
+    time_sleep(1.0);
+    print(`Background task completed`);
 }
 
-// Background task using spawn (conceptual - spawn blocks not yet fully implemented)
-// spawn {
-//     loop {
-//         health_check();
-//         time_sleep(870.0); // 14.5 minutes
-//     }
-// }
+// Main thread continues immediately
+print(`Main thread continues`);
+
+// Spawn with loop for continuous background processing
+spawn {
+    loop {
+        // Perform periodic task
+        health_check();
+        time_sleep(60.0); // Sleep 60 seconds
+    }
+}
 ```
 
 ### 6.4 Collection Operation Transpilation
@@ -504,20 +585,8 @@ any_expression :=
 // Note: Collection operations with optional index parameter:
 // - First identifier is the element iterator
 // - Optional second identifier is the index iterator (no comma separator)
-// - ALL collection operations use blocks with return statements for consistency
-// - This maintains Nail's principle of explicit returns everywhere
-
-zip_expression :=
-    "zip" identifier "," identifier "in" expression "," expression block
-
-take_expression :=
-    "take" expression "from" expression
-
-skip_expression :=
-    "skip" expression "from" expression
-
-take_while_expression :=
-    "take_while" identifier [identifier] "in" expression block
+// - ALL collection operations use yield (y) statements, not return (r)
+// - This maintains Nail's principle of explicit yields in iterations
 
 for_loop :=
     "for" identifier "in" expression block
@@ -526,75 +595,141 @@ while_loop :=
     "while" expression ["from" expression] ["max" expression] block
 
 loop :=
-    "loop" block
+    "loop" [identifier] block
+
+spawn_block :=
+    "spawn" block
+
+parallel_block :=
+    "p" statement* "/p"
+
+concurrent_block :=
+    "c" statement* "/c"
 
 block :=
     "{" statement* "}"
 
 return_statement :=
     "r" expression ";"
+
 yield_statement :=
     "y" expression ";"
+
+break_statement :=
+    "break" ";"
+
+continue_statement :=
+    "continue" ";"
+
+statement :=
+    const_decl | struct_decl | enum_decl | function_decl |
+    if_expression | for_loop | while_loop | loop |
+    spawn_block | parallel_block | concurrent_block |
+    return_statement | yield_statement | break_statement | continue_statement |
+    expression_statement
+
+expression_statement :=
+    expression ";"
 ```
 
 ## Return vs Yield Statements
 
-Nail uses two different keywords for different contexts:
+Nail uses two different keywords for different contexts - this is a critical distinction:
 
 ### Return Statements (`r`)
-- Used in functions to exit and return a value
-- Always exits the entire function
-- Required in all functions (no implicit returns)
+- **Purpose**: Exit a function and return a value to the caller
+- **Scope**: Function body only
+- **Behavior**: Immediately exits the entire function
+- **Required**: All non-void functions must have explicit return statements
 
 ```js
 f add(num_a:i, num_b:i):i {
-    r num_a + num_b;  // Exits function and returns result
+    r num_a + num_b;  // Exits function, returns result to caller
+}
+
+f process_data(data:s):s!e {
+    if {
+        string_len(data) == 0 => { r err(`Empty data`); },
+        else => { r ok(data); }
+    }
 }
 ```
 
 ### Yield Statements (`y`)
-- Used in collection operations to produce a value for that iteration
-- Does NOT exit the function - only provides the value for the current iteration
-- Required in all collection operation blocks
+- **Purpose**: Produce a value for the current iteration in collection operations
+- **Scope**: Collection operation blocks only (map, filter, reduce, etc.)
+- **Behavior**: Provides value for current iteration, continues to next iteration
+- **Required**: All collection operation blocks must yield a value
 
 ```js
-// Yield produces a value for each iteration
+// Map: yield transforms each element
 doubled:a:i = map num in numbers {
-    y num * 2;  // Yields doubled value for this iteration
+    y num * 2;  // Yields doubled value for THIS iteration, continues to next
 };
 
-// Yield produces a boolean condition
+// Filter: yield determines if element is included
 evens:a:i = filter num in numbers {
-    y num % 2 == 0;  // Yields true/false for this iteration
+    y num % 2 == 0;  // Yields true/false for THIS iteration
+};
+
+// Reduce: yield provides the new accumulator value
+sum:i = reduce acc num in numbers from 0 {
+    y acc + num;  // Yields new accumulator for THIS iteration
 };
 ```
 
-**Key Difference**: `r` exits functions, `y` produces iteration values. Using `r` in collection operations or `y` in functions is a compile error.
+### Critical Rules:
+1. **Never mix contexts**: Using `r` in collection operations is a compile error
+2. **Never mix contexts**: Using `y` in function bodies is a compile error
+3. **Collection operations are NOT functions**: They're language constructs that use yield
+4. **Functions always use return**: Even when called inside collection operations
+
+```js
+// CORRECT: Function uses r, collection operation uses y
+f double_value(num:i):i {
+    r num * 2;  // Function returns value
+}
+
+doubled:a:i = map num in numbers {
+    y double_value(num);  // Collection yields result of function call
+};
+
+// WRONG: This would be a compile error
+bad_example:a:i = map num in numbers {
+    r num * 2;  // ERROR: Cannot use 'r' in collection operation
+};
+```
 
 ## Functions
 
-Functions that can fail must return a result type (using the `!e` syntax).
+Functions must use `r` for return statements. Functions that can fail must return a result type (using the `!e` syntax).
 
 ```js
-f calculate_monthly_payment(principal:i, annual_rate:i, years:i):i!e {
-    if (annual_rate == 0) {
-        return e(`Annual rate cannot be zero`);
+f calculate_monthly_payment(principal:i, annual_rate:i, years:i):f!e {
+    if {
+        annual_rate == 0 => { 
+            r err(`Annual rate cannot be zero`); 
+        },
+        years <= 0 => { 
+            r err(`Loan term must be positive`); 
+        },
+        else => {
+            monthly_rate:f = expect(float_from(annual_rate)) / 12.0 / 100.0;
+            payments:i = years * 12;
+            
+            // Division by zero check
+            denominator:f = 1.0 - pow(1.0 + monthly_rate, -payments);
+            if {
+                denominator == 0.0 => { 
+                    r err(`Cannot calculate payment: invalid parameters`);
+                },
+                else => {
+                    payment:f = expect(float_from(principal)) * monthly_rate / denominator;
+                    r ok(payment);
+                }
+            }
+        }
     }
-    if (years <= 0) {
-        return e(`Loan term must be positive`);
-    }
-    
-    monthly_rate:f = expect(float_from(annual_rate)) / 12.0 / 100.0;
-    payments:i = years * 12;
-    
-    // Division by zero check
-    denominator:f = 1.0 - pow(1.0 + monthly_rate, -payments);
-    if (denominator == 0.0) {
-        return e(`Cannot calculate payment: invalid parameters resulted in division by zero`);
-    }
-    
-    payment:f = to_float(principal) * monthly_rate / denominator;
-    return string_from(payment); 
 }
 ```
 
@@ -613,15 +748,227 @@ user_input:s = safe(lib_io_readline(), handle_input_error);
 
 ```
 
+## File Inclusion
+
+Nail supports compile-time file inclusion through the `insert()` keyword. This allows you to include the contents of one Nail file directly into another, as if the code was typed in place.
+
+### Syntax
+
+```nail
+insert(`filename.nail`)
+```
+
+### Behavior
+
+- The `insert()` statement must appear at the beginning of a line (no indentation)
+- The file path is resolved relative to the current file's directory
+- The entire contents of the specified file are inserted at the location of the `insert()` statement
+- This happens at compile-time during lexical analysis
+- Circular includes are detected and prevented
+
+### Example
+
+```nail
+// math_helpers.nail
+f add(a:i, b:i):i {
+    r a + b;
+}
+
+f multiply(a:i, b:i):i {
+    r a * b;
+}
+```
+
+```nail
+// main.nail
+insert(`math_helpers.nail`)
+
+result:i = add(5, 3);
+product:i = multiply(result, 2);
+print(product); // Outputs: 16
+```
+
+### Use Cases
+
+- Sharing common functions across multiple files
+- Organizing large programs into separate files
+- Building libraries of reusable code
+
+### Restrictions
+
+- Cannot include files from outside the project directory
+- File paths must be string literals (not variables)
+- Included files must contain valid Nail code
+- No conditional includes (includes always happen)
+
 ## Standard Library
 
-Nail includes a comprehensive standard library:
+Nail includes a comprehensive standard library with functions organized by category:
 
-- Core operations: `print`, `assert`, `len`, `get_index`, etc.
-- `io_*`: Input/output operations
-- `math_*`: Mathematical operations
-- `http_*`: HTTP operations
-- `fs_*`: File system operations
+### Core Operations
+- `print(value)` - Print any value to stdout
+- `assert(condition:b)` - Assert a condition is true, panic if false
+- `panic(message:s)` - Panic with a message
+- `todo(message:s)` - Mark unimplemented code
+
+### String Operations
+- `string_from(value):s!e` - Convert any value to string
+- `string_to_uppercase(s:s):s` - Convert to uppercase
+- `string_to_lowercase(s:s):s` - Convert to lowercase
+- `string_to_title_case(s:s):s` - Convert to title case (capitalize each word)
+- `string_to_sentence_case(s:s):s` - Convert to sentence case (capitalize first letter)
+- `string_to_snake_case(s:s):s` - Convert to snake_case
+- `string_to_kebab_case(s:s):s` - Convert to kebab-case
+- `string_contains(s:s, substring:s):b` - Check if string contains substring
+- `string_replace(s:s, from:s, to:s):s` - Replace all occurrences of substring
+- `string_replace_first(s:s, from:s, to:s):s` - Replace first occurrence of substring
+- `string_replace_all(s:s, from:s, to:s):s` - Replace all occurrences (alias for string_replace)
+- `string_split(s:s, delimiter:s):a:s` - Split string by delimiter
+- `string_split_whitespace(s:s):a:s` - Split string by whitespace
+- `string_split_lines(s:s):a:s` - Split string by line breaks
+- `string_trim(s:s):s` - Remove leading/trailing whitespace
+- `string_trim_start(s:s):s` - Remove leading whitespace
+- `string_trim_end(s:s):s` - Remove trailing whitespace
+- `string_pad_left(s:s, length:i, pad:s):s` - Pad string on the left to specified length
+- `string_pad_right(s:s, length:i, pad:s):s` - Pad string on the right to specified length
+- `string_len(s:s):i` - Get string length
+- `string_chars(s:s):a:s` - Convert string to array of single-character strings
+- `string_starts_with(s:s, prefix:s):b` - Check if string starts with prefix
+- `string_ends_with(s:s, suffix:s):b` - Check if string ends with suffix
+- `string_index_of(s:s, substring:s):i!e` - Find index of first occurrence (can fail)
+- `string_last_index_of(s:s, substring:s):i!e` - Find index of last occurrence (can fail)
+- `string_substring(s:s, start:i, end:i):s!e` - Extract substring (can fail)
+- `string_repeat(s:s, count:i):s` - Repeat string count times
+- `string_reverse(s:s):s` - Reverse string characters
+- `string_join(arr:a:s, separator:s):s` - Join array of strings with separator
+- `string_is_alphabetic(s:s):b` - Check if string contains only alphabetic characters
+- `string_is_digits_only(s:s):b` - Check if string contains only digit characters (0-9)
+- `string_is_numeric(s:s):b` - Check if string can be parsed as a number (includes decimals, signs)
+- `string_is_alphanumeric(s:s):b` - Check if string contains only alphanumeric characters
+
+### Array Operations
+- `array_len(arr:a:T):i` - Get array length
+- `array_get(arr:a:T, index:i):T!e` - Get element at index (can fail)
+- `array_push(arr:a:T, item:T):v` - Add element to array
+- `array_join(arr:a:s, separator:s):s` - Join string array with separator
+- `array_contains(arr:a:T, item:T):b` - Check if array contains item
+- `array_concat(arr1:a:T, arr2:a:T):a:T` - Concatenate two arrays
+- `array_reverse(arr:a:T):a:T` - Reverse array elements
+- `array_slice(arr:a:T, start:i, end:i):a:T!e` - Get subarray (can fail)
+- `array_sort(arr:a:T):a:T` - Sort array elements
+- `array_range(start:i, end:i):a:i` - Generate array of integers from start (inclusive) to end (exclusive)
+- `array_range_inclusive(start:i, end:i):a:i` - Generate array of integers from start to end (both inclusive)
+- `array_repeat(value:T, count:i):a:T` - Create array with value repeated count times
+- `array_take(arr:a:T, count:i):a:T` - Take first count elements from array
+- `array_skip(arr:a:T, count:i):a:T` - Skip first count elements from array
+- `array_take_while(arr:a:T, predicate:f(T):b):a:T` - Take elements while predicate is true
+- `array_skip_while(arr:a:T, predicate:f(T):b):a:T` - Skip elements while predicate is true
+- `array_zip(arr1:a:T, arr2:a:U):a:Pair<T,U>` - Combine two arrays element-wise into pairs
+- `array_flatten(arr:a:a:T):a:T` - Flatten nested array by one level
+- `array_flatten_deep(arr:a:a:T):a:T` - Recursively flatten all nested arrays
+- `array_unique(arr:a:T):a:T` - Remove duplicate elements (alias for deduplicate)
+- `array_deduplicate(arr:a:T):a:T` - Remove duplicate elements
+- `array_find(arr:a:T, value:T):i!e` - Find index of first occurrence (can fail)
+- `array_find_last(arr:a:T, value:T):i!e` - Find index of last occurrence (can fail)
+- `array_filter(arr:a:T, predicate:f(T):b):a:T` - Filter elements using predicate function
+- `array_map(arr:a:T, mapper:f(T):U):a:U` - Transform elements using mapper function
+- `array_intersect(arr1:a:T, arr2:a:T):a:T` - Get intersection of two arrays
+- `array_difference(arr1:a:T, arr2:a:T):a:T` - Get elements in arr1 but not in arr2
+- `array_union(arr1:a:T, arr2:a:T):a:T` - Get union of two arrays (unique elements from both)
+- `array_rotate_left(arr:a:T, positions:i):a:T` - Rotate array elements left by n positions
+- `array_rotate_right(arr:a:T, positions:i):a:T` - Rotate array elements right by n positions
+- `array_partition(arr:a:T, predicate:f(T):b):a:a:T` - Partition array into [matching, non-matching]
+- `array_group_by(arr:a:T, key_fn:f(T):K):h<K,a:T>` - Group elements by key function result
+
+### HashMap Operations
+**Note**: HashMap keys and values must be concrete types (i, f, s, b, arrays, structs, enums). Void type cannot be used as a value.
+
+- `hashmap_new():h<K,V>` - Create new hashmap (K,V must be concrete types)
+- `hashmap_insert(map:h<K,V>, key:K, value:V):v` - Insert key-value pair
+- `hashmap_get(map:h<K,V>, key:K):V!e` - Get value by key (can fail)
+- `hashmap_remove(map:h<K,V>, key:K):V!e` - Remove and return value
+- `hashmap_contains_key(map:h<K,V>, key:K):b` - Check if key exists
+- `hashmap_len(map:h<K,V>):i` - Get number of entries
+- `hashmap_clear(map:h<K,V>):v` - Remove all entries
+- `hashmap_keys(map:h<K,V>):a:K` - Get all keys as array
+- `hashmap_values(map:h<K,V>):a:V` - Get all values as array
+- `hashmap_is_empty(map:h<K,V>):b` - Check if map is empty
+
+### Type Conversion
+- `int_from(value):i!e` - Convert to integer
+- `float_from(value):f!e` - Convert to float
+- `bool_from(value):b!e` - Convert to boolean
+
+### Math Operations (`math_*`)
+- `math_abs(n:i):i` - Absolute value (integer)
+- `math_abs(n:f):f` - Absolute value (float)
+- `math_min(a:i, b:i):i` - Minimum of two integers
+- `math_max(a:i, b:i):i` - Maximum of two integers
+- `math_min(a:f, b:f):f` - Minimum of two floats
+- `math_max(a:f, b:f):f` - Maximum of two floats
+- `math_pow(base:f, exp:f):f` - Power operation
+- `math_sqrt(n:f):f!e` - Square root (can fail for negative)
+- `math_ceil(n:f):i` - Round up to nearest integer
+- `math_floor(n:f):i` - Round down to nearest integer
+- `math_round(n:f):i` - Round to nearest integer
+- `math_gcd(a:i, b:i):i` - Greatest common divisor
+- `math_lcm(a:i, b:i):i` - Least common multiple
+- `math_factorial(n:i):i!e` - Factorial (can fail for negative or overflow)
+- `math_is_prime(n:i):b` - Check if number is prime
+- `math_sin(angle:f):f` - Sine function (radians)
+- `math_cos(angle:f):f` - Cosine function (radians)
+- `math_tan(angle:f):f` - Tangent function (radians)
+- `math_log(n:f):f!e` - Natural logarithm (can fail for non-positive)
+- `math_log10(n:f):f!e` - Base-10 logarithm (can fail for non-positive)
+- `math_log2(n:f):f!e` - Base-2 logarithm (can fail for non-positive)
+- `math_sigmoid(x:f):f` - Sigmoid function (1 / (1 + e^-x))
+- `math_lerp(start:f, end:f, t:f):f` - Linear interpolation
+- `math_clamp(value:f, min:f, max:f):f` - Clamp value between min and max
+
+### I/O Operations (`io_*`)
+- `io_read_line():s!e` - Read line from stdin
+- `io_read_line_prompt(prompt:s):s!e` - Read with prompt
+- `io_write_file(path:s, content:s):v!e` - Write to file
+- `io_read_file(path:s):s!e` - Read file contents
+
+### File System (`fs_*`)
+- `fs_exists(path:s):b` - Check if path exists
+- `fs_read_dir(path:s):a:s!e` - List directory contents
+- `fs_create_dir(path:s):v!e` - Create directory
+- `fs_remove_file(path:s):v!e` - Delete file
+
+### HTTP Operations (`http_*`)
+- `http_request(method:s, url:s, headers:h<s,s>, body:s):s!e` - Make HTTP request
+- `http_get(url:s):s!e` - Simple GET request
+- `http_post(url:s, body:s):s!e` - Simple POST request
+
+### Time Operations (`time_*`)
+- `time_sleep(seconds:f):v` - Sleep for specified seconds
+- `time_now():i` - Current timestamp in seconds
+- `time_now_millis():i` - Current timestamp in milliseconds
+- `time_format(timestamp:i, format:TimeFormat):s` - Format timestamp using TimeFormat enum
+- `time_parse(time_str:s, format:TimeFormat):i!e` - Parse time string using TimeFormat enum
+- `time_add_seconds(timestamp:i, seconds:i):i` - Add seconds to timestamp
+- `time_diff(t1:i, t2:i):i` - Get absolute difference between timestamps
+
+**TimeFormat enum values:**
+- `Unix` - Unix timestamp in seconds
+- `UnixMillis` - Unix timestamp in milliseconds
+- `ISO8601` - ISO 8601 format
+- `RFC3339` - RFC 3339 format
+- `RFC2822` - RFC 2822 format
+
+### Cryptography Operations (`crypto_*`)
+- `crypto_hash_sha256(s:s):s` - Calculate SHA-256 hash of string
+- `crypto_hash_md5(s:s):s` - Calculate MD5 hash of string (for checksums, not security)
+- `crypto_uuid_v4():s` - Generate a UUID v4 string
+
+### Error Handling
+- `safe(result:T!e, handler:f(e:e):T):T` - Handle error with function
+- `danger(result:T!e):T` - Unwrap or panic (use carefully)
+- `expect(result:T!e):T` - Unwrap or panic (for impossible errors)
+- `ok(value:T):T!e` - Wrap value in Ok result
+- `err(message:s):T!e` - Create error result
 
 ## Memory Management and Execution
 
@@ -646,16 +993,21 @@ The EBNF specification in this repo provides a more formal and comprehensive ove
 ```ebnf
 // Types
 type := base_type ["!" "e"]
-base_type := primitive_type | struct_type | enum_type | array_type | void_type | any_of_type
+base_type := primitive_type | struct_type | enum_type | array_type | hashmap_type | void_type | any_of_type
 result_type := base_type "!" error_type
 primitive_type := "i" | "f" | "s" | "b"
 struct_type := "struct" | pascal_identifier
-struct_field_type = primitive_type | enum_type | array_type
+struct_field_type = primitive_type | enum_type | array_type | hashmap_type
 enum_type := pascal_identifier
 array_type := "a" ":" base_type
+hashmap_type := "h" "<" concrete_type "," concrete_type ">"
+concrete_type := primitive_type | struct_type | enum_type | array_type | hashmap_type
 void_type := "v"
 any_of_type :="|" base_type ["|" base_type ["|" base_type]] "|"
 error_type := "e"
+
+// Note: hashmap_type uses concrete_type (excludes void and error types)
+// as both keys and values must be concrete, storable data types
 
 
 // Declarations
@@ -691,11 +1043,11 @@ expression :=
     function_call             // Invoking a function (e.g., `foo(a, b)`)
     binary_expression         // Binary operations (e.g., `a + b`)
     unary_expression          // Unary operations (e.g., `-a`, `!b`)
-    if_expression             // Conditional expression (e.g., `if a > b then ...`)
+    if_expression             // Conditional expression (e.g., `if { condition => { block } }`)
     match_expression          // Pattern matching (e.g., `match x { ... }`)
     block                     // A sequence of statements inside `{}` (e.g., `{ stmt1; stmt2 }`)
-    for_loop                  // For loop construct (e.g., `for (i in 0..10) { ... }`)
-    while_loop                // While loop construct (e.g., `while (condition) { ... }`)
+    for_loop                  // For loop construct (e.g., `for i in array_range(0, 10) { ... }`)
+    while_loop                // While loop construct (e.g., `while condition { ... }`)
     loop                      // Infinite loop construct (e.g., `loop { ... }`)
     break                     // Breaks out of a loop (e.g., `break`)
     continue                  // Skips to the next loop iteration (e.g., `continue`)
@@ -782,15 +1134,15 @@ today:DaysOfWeek = DaysOfWeek::Wednesday;
 
 // if statement that must cover all enum cases since it has no else branch
 if {
-   current_light == TrafficLight::Red => { println!(`Stop!`) },
-   current_light == TrafficLight::Yellow => { println!(`Prepare to stop`) },
-   current_light == TrafficLight::Green => { println!(`Go!`) }
+   current_light == TrafficLight::Red => { print(`Stop!`); },
+   current_light == TrafficLight::Yellow => { print(`Prepare to stop`); },
+   current_light == TrafficLight::Green => { print(`Go!`); }
 }
 
 // If you have an else branch, you don't need to cover all cases
 if {
-   current_light == TrafficLight::Red => { println!(`Stop!`) },
-   else { println!(`It could be yellow or green...`) }
+   current_light == TrafficLight::Red => { print(`Stop!`); },
+   else => { print(`It could be yellow or green...`); }
 }
 ```
 
@@ -827,7 +1179,7 @@ if current_light == TrafficLight::Red {
 
 ```ebnf
 if_expression :=
-    "if" "{" if_branch {"," if_branch} ["else" block] "}"
+    "if" "{" if_branch {"," if_branch} ["else" "=>" block] "}"
 
 if_branch :=
     expression "=>" block
@@ -846,13 +1198,13 @@ In Nail, if expressions are used similarly to other languages, but they offer co
 // Basic if statement in Nail
 if {
     today == DaysOfWeek::Monday => {
-        println(`Start of the week.`);
+        print(`Start of the week.`);
     },
     today == DaysOfWeek::Friday => {
-        println(`End of the workweek!`);
+        print(`End of the workweek!`);
     },
-    else {
-        println(`It's a regular day.`);
+    else => {
+        print(`It's a regular day.`);
     }
 }
 ```
@@ -883,13 +1235,13 @@ In Nail, when using an if statement with an enum, you must ensure that all possi
 ```js
 if {
     current_light == TrafficLight::Red => {
-        println(`Stop!`);
+        print(`Stop!`);
     },
     current_light == TrafficLight::Yellow => {
-        println(`Prepare to stop.`);
+        print(`Prepare to stop.`);
     },
     current_light == TrafficLight::Green => {
-        println(`Go!`);
+        print(`Go!`);
     }
 }
 ```
@@ -915,10 +1267,10 @@ One important aspect of if expressions in Nail is that all branches must return 
 ```js
 // Example where all branches return the same type (in this case, a string)
 message:s = if {
-    today == DaysOfWeek::Monday => `Start of the week`,
-    today == DaysOfWeek::Friday => `End of the workweek`,
-    else => `It's a regular day`
-}
+    today == DaysOfWeek::Monday => { r `Start of the week`; },
+    today == DaysOfWeek::Friday => { r `End of the workweek`; },
+    else => { r `It's a regular day`; }
+};
 
 // This will work because all branches return a string.
 ```
@@ -928,10 +1280,10 @@ However, if branches return different types, Nail will produce an error:
 ```js
 // Example where branches return different types (this will cause an error)
 message:s = if {
-    today == DaysOfWeek::Monday => `Start of the week`,  // String
-    today == DaysOfWeek::Friday => 5,  // Integer
-    else => `It's a regular day`  // String
-}
+    today == DaysOfWeek::Monday => { r `Start of the week`; },  // String
+    today == DaysOfWeek::Friday => { r 5; },  // Integer - ERROR!
+    else => { r `It's a regular day`; }  // String
+};
 
 // This will fail because one branch returns a string and another returns an integer.
 ```
@@ -1028,17 +1380,17 @@ f calculate(x:i, y:i):i {
     r x + y;
 }
 
-// Void function (no return type specified)
-f print_message(msg:s) {
+// Void function (returns void type :v)
+f print_message(msg:s):v {
     print(msg);
 }
 
 // Result type for error handling
 f divide(a:i, b:i):i!e {
-    if b == 0 {
-        r err(`Division by zero`);
-    };
-    r ok(a / b);
+    if {
+        b == 0 => { r err(`Division by zero`); },
+        else => { r ok(a / b); }
+    }
 }
 ```
 
@@ -1071,30 +1423,29 @@ greet(user_name);        // Allowed because constant name matches parameter name
 
 ### Loop-based Processing
 
-Nail uses traditional loop constructs for iteration and data processing:
+Nail provides collection operations for iteration and data processing. Since variables are immutable, traditional imperative loops are replaced with functional operations:
 
 ```js
 numbers:a:i = [1, 2, 3, 4, 5];
-doubled:a:i = [];
 
-// Transform each element
-for (idx:i in 0..len(numbers)) {
-    num:i = get_index(numbers, idx);
-    push(doubled, num * 2);
-}
+// Transform each element using map
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
 
-// Filter elements  
-even_numbers:a:i = [];
-for (num:i in numbers) {
-    if (num % 2 == 0) {
-        push(even_numbers, num);
-    }
-}
+// Filter elements using filter
+even_numbers:a:i = filter num in numbers {
+    y num % 2 == 0;
+};
 
-// Calculate sum
-sum:i = 0;
-for (num:i in numbers) {
-    sum = sum + num;
+// Calculate sum using reduce
+sum:i = reduce acc num in numbers from 0 {
+    y acc + num;
+};
+
+// For iteration with side effects, use each
+each num in numbers {
+    print(`Number: `, num);
 }
 ```
 
@@ -1123,19 +1474,31 @@ p
 - No semicolon needed after the closing brace
 - Ideal for I/O operations, API calls, or independent computations
 
-### Example:
+### Realistic Examples:
 
 ```js
-// Fetch data from multiple sources simultaneously
+// Example 1: Parallel API calls for a dashboard
 p
-    user_data:s = fetch_user_profile();
-    posts:a:s = fetch_user_posts();
-    notifications:i = get_notification_count();
+    user_profile:s = http_get(`https://api.example.com/user/123`);
+    recent_orders:s = http_get(`https://api.example.com/orders?user=123`);
+    account_balance:s = http_get(`https://api.example.com/balance/123`);
 /p
 
-// All variables are available here after parallel execution completes
-print(user_data);
-print(from(notifications));
+// All data is available after parallel block completes
+print(`Profile: `, user_profile);
+print(`Orders: `, recent_orders);
+print(`Balance: `, account_balance);
+
+// Example 2: Parallel file processing
+files:a:s = [`data1.txt`, `data2.txt`, `data3.txt`];
+p
+    content1:s = danger(fs_read_file(`data1.txt`));
+    content2:s = danger(fs_read_file(`data2.txt`));
+    content3:s = danger(fs_read_file(`data3.txt`));
+/p
+
+// Process all content together
+all_content:s = array_join([content1, content2, content3], `\n`);
 ```
 
 ## Structs
@@ -1254,3 +1617,124 @@ f bad_handler(err:s):i {
 - **Use Descriptive Error Messages**: Make your error messages clear and actionable to help with debugging and maintenance.
 
 By following these practices and leveraging Nail's error handling features, you can create robust, maintainable code that gracefully handles unexpected situations and provides clear, traceable error information when things go wrong.
+
+## Troubleshooting Common Issues
+
+### Compilation Errors
+
+#### Variable Name Too Short
+```
+Error: Variable name too short. Use descriptive names.
+Found: 'x'
+Suggestion: Use descriptive name like 'x_value' or 'x_coordinate'
+```
+**Solution**: All variable names must be descriptive. Use snake_case with meaningful names:
+```js
+// Wrong
+x:i = 5;
+
+// Correct
+count:i = 5;
+user_age:i = 25;
+```
+
+#### Traditional If Syntax Error
+```
+Error: Expected BlockOpen, found Identifier
+```
+**Solution**: Nail only supports match-like if syntax:
+```js
+// Wrong
+if count > 0 {
+    print(`Positive`);
+}
+
+// Correct
+if {
+    count > 0 => { print(`Positive`); },
+    else => { print(`Non-positive`); }
+}
+```
+
+#### Using Return in Collection Operations
+```
+Error: Cannot use 'r' (return) in collection operation
+```
+**Solution**: Use `y` (yield) in collection operations, `r` (return) in functions:
+```js
+// Wrong
+doubled:a:i = map num in numbers {
+    r num * 2;  // ERROR
+};
+
+// Correct
+doubled:a:i = map num in numbers {
+    y num * 2;  // Use yield
+};
+```
+
+#### Void Function Assignment Error
+```
+Error: Cannot assign void to variable
+```
+**Solution**: Void functions cannot be assigned to variables:
+```js
+// Wrong
+result:v = print(`Hello`);  // ERROR
+
+// Correct
+print(`Hello`);  // Just call the function
+```
+
+#### HashMap Type Errors
+```
+Error: Void type cannot be used as hashmap value
+```
+**Solution**: HashMap values must be concrete types:
+```js
+// Wrong
+map:h<s,v> = hashmap_new();  // ERROR
+
+// Correct
+map:h<s,i> = hashmap_new();  // Use concrete types
+```
+
+### Runtime Issues
+
+#### Error Propagation
+When a function returns an error type, it must be explicitly handled:
+```js
+// This will panic if the function fails
+result:i = danger(int_from(`abc`));
+
+// Safe handling with error function
+f handle_parse_error(err:e):i { r 0; }
+result:i = safe(int_from(`123`), handle_parse_error);
+```
+
+#### Infinite Loops
+Remember that `loop` and `loop index` are infinite by default:
+```js
+// This will run forever - BAD
+loop {
+    print(`Forever`);
+}
+
+// Always include a break condition
+loop index {
+    print(string_from(index));
+    if {
+        index >= 10 => { break; },
+        else => { /* continue */ }
+    }
+}
+```
+
+### Best Practices
+
+1. **Always handle errors explicitly** - Use `safe()`, `danger()`, or `expect()`
+2. **Use descriptive variable names** - Avoid single letters or abbreviations
+3. **Remember Nail's syntax** - Match-like if statements, yield in collections
+4. **Type your variables** - Always include type annotations
+5. **Use collection operations** - Prefer map/filter/reduce over manual loops
+6. **Handle concurrency carefully** - Use parallel blocks for I/O, spawn for background tasks

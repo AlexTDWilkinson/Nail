@@ -38,7 +38,7 @@ use ratatui::text::Span;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::Line,
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs},
     Frame, Terminal,
@@ -234,9 +234,18 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             // Always display status
             display_build_status(f, &editor);
 
-            // Check and draw errors
+            // Check and draw errors FIRST
             if let Some(error) = &editor.code_error {
                 display_error(f, error, &editor, content_layout[0]);
+            }
+            
+            // Draw completion popup LAST so it appears on top
+            if editor.show_completions && !editor.completions.is_empty() {
+                if editor.show_detail_view {
+                    display_completion_detail(f, &editor, content_layout[0]);
+                } else {
+                    display_completions(f, &editor, content_layout[0]);
+                }
             }
         });
 
@@ -309,6 +318,216 @@ fn display_error(f: &mut Frame, error: &CodeError, editor: &Editor, content_area
 
     f.render_widget(Clear, error_area);
     f.render_widget(paragraph, error_area);
+}
+
+fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect) {
+    use crate::CompletionKind;
+    use ratatui::widgets::Wrap;
+    
+    // Get the selected completion
+    if editor.completion_index >= editor.completions.len() {
+        return;
+    }
+    
+    let selected = &editor.completions[editor.completion_index];
+    
+    // Build the detailed content
+    let mut lines = vec![];
+    
+    // Title with function signature
+    lines.push(Line::from(vec![
+        Span::styled("Function: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(&selected.label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ]));
+    
+    lines.push(Line::from(""));
+    
+    // Signature
+    lines.push(Line::from(vec![
+        Span::styled("Signature: ", Style::default().fg(Color::Cyan)),
+        Span::styled(&selected.detail, Style::default().fg(Color::White)),
+    ]));
+    
+    lines.push(Line::from(""));
+    
+    // Description
+    if !selected.description.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled("Description:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(&selected.description, Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from(""));
+    }
+    
+    // Example
+    if !selected.example.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled("Example:", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(&selected.example, Style::default().fg(Color::Gray)),
+        ]));
+        lines.push(Line::from(""));
+    }
+    
+    // Help text
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Press ", Style::default().fg(Color::DarkGray)),
+        Span::styled("ESC", Style::default().fg(Color::Yellow)),
+        Span::styled(" to go back, ", Style::default().fg(Color::DarkGray)),
+        Span::styled("TAB", Style::default().fg(Color::Yellow)),
+        Span::styled(" to insert", Style::default().fg(Color::DarkGray)),
+    ]));
+    
+    // Calculate popup size
+    let width = lines.iter()
+        .map(|line| line.width())
+        .max()
+        .unwrap_or(40)
+        .max(50)
+        .min(100) as u16;
+    
+    let height = (lines.len() + 2).min(20) as u16; // +2 for borders
+    
+    // Center the popup
+    let popup_x = content_area.x + (content_area.width.saturating_sub(width)) / 2;
+    let popup_y = content_area.y + (content_area.height.saturating_sub(height)) / 2;
+    
+    let popup_area = Rect::new(
+        popup_x,
+        popup_y,
+        width,
+        height,
+    );
+    
+    // Clear the area and draw the detailed view
+    f.render_widget(Clear, popup_area);
+    
+    let detail_paragraph = Paragraph::new(lines)
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow))
+            .title(" Documentation (F1 to toggle) ")
+            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+        .style(Style::default().bg(editor.theme.background))
+        .wrap(Wrap { trim: true });
+    
+    f.render_widget(detail_paragraph, popup_area);
+}
+
+fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
+    use ratatui::widgets::{List, ListItem};
+    use crate::CompletionKind;
+    
+    // Calculate popup position (below current cursor line)
+    let cursor_y = editor.cursor_y.saturating_sub(editor.scroll_position as usize);
+    // Place popup BELOW the current line: +1 for border, +1 to go to next line, +1 for spacing
+    let popup_y = content_area.y + cursor_y as u16 + 3;
+    
+    // Position popup to the right of the current word being typed
+    let word_start = {
+        let mut start = editor.cursor_x;
+        if editor.cursor_y < editor.content.len() {
+            let line = &editor.content[editor.cursor_y];
+            while start > 0 && line.chars().nth(start - 1).map_or(false, |c| c.is_alphanumeric() || c == '_') {
+                start -= 1;
+            }
+        }
+        start
+    };
+    let popup_x = content_area.x + word_start as u16 + 1;
+    
+    // Limit completions shown
+    let max_items = 10;
+    let items_to_show = editor.completions.len().min(max_items);
+    
+    // Create list items with highlighting for selected item
+    let items: Vec<ListItem> = editor.completions
+        .iter()
+        .take(items_to_show)
+        .enumerate()
+        .map(|(i, item)| {
+            let icon = match item.kind {
+                CompletionKind::Function => "ƒ ",
+                CompletionKind::Variable => "v ",
+                CompletionKind::Keyword => "k ",
+            };
+            
+            let content = if i == editor.completion_index {
+                Line::from(vec![
+                    Span::styled(icon, Style::default().fg(Color::Yellow)),
+                    Span::styled(&item.label, Style::default().fg(Color::White).bg(Color::Blue)),
+                    Span::raw(" "),
+                    Span::styled(&item.detail, Style::default().fg(Color::Gray)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled(icon, Style::default().fg(Color::DarkGray)),
+                    Span::styled(&item.label, Style::default().fg(editor.theme.default)),
+                    Span::raw(" "),
+                    Span::styled(&item.detail, Style::default().fg(Color::DarkGray)),
+                ])
+            };
+            ListItem::new(content)
+        })
+        .collect();
+    
+    // Calculate popup width based on longest item - make it wider to show full signatures
+    let max_width = editor.completions
+        .iter()
+        .take(items_to_show)
+        .map(|item| {
+            // Consider label, detail, and description for width
+            let label_detail_len = item.label.len() + item.detail.len() + 5;
+            let desc_len = item.description.len();
+            label_detail_len.max(desc_len)
+        })
+        .max()
+        .unwrap_or(40)
+        .min(100) as u16; // Increased max width from 60 to 100
+    
+    let popup_area = Rect::new(
+        popup_x.min(f.area().width.saturating_sub(max_width + 2)),
+        popup_y.min(f.area().height.saturating_sub(items_to_show as u16 + 2)),
+        max_width + 2,
+        items_to_show as u16 + 2,
+    );
+    
+    // Clear the area first
+    f.render_widget(Clear, popup_area);
+    
+    // Check if selected item has documentation
+    let has_docs = if editor.completion_index < editor.completions.len() {
+        let selected = &editor.completions[editor.completion_index];
+        !selected.description.is_empty() || !selected.example.is_empty()
+    } else {
+        false
+    };
+    
+    // Create title with hint about F1 if docs are available
+    let title = if has_docs {
+        " Completions (F1 for docs) "
+    } else {
+        " Completions "
+    };
+    
+    // Create and render the list
+    let completions_list = List::new(items)
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(editor.theme.operator))
+            .title(title)
+            .title_style(if has_docs {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(editor.theme.operator)
+            }))
+        .style(Style::default().bg(editor.theme.background));
+    
+    f.render_widget(completions_list, popup_area);
 }
 
 pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>, tx: Sender<EditorMessage>, tx_build: Sender<EditorMessage>) {
@@ -405,15 +624,67 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     }
                                 }
                             }
-                            KeyCode::Char(c) => editor.insert_char(c),
-                            KeyCode::Up => editor.move_cursor_up(),
-                            KeyCode::Down => editor.move_cursor_down(),
+                            KeyCode::Char(c) => {
+                                editor.insert_char(c);
+                                editor.update_completions();
+                            },
+                            KeyCode::Up => {
+                                if editor.show_completions {
+                                    editor.previous_completion();
+                                } else {
+                                    editor.move_cursor_up();
+                                }
+                            },
+                            KeyCode::Down => {
+                                if editor.show_completions {
+                                    editor.next_completion();
+                                } else {
+                                    editor.move_cursor_down();
+                                }
+                            },
                             KeyCode::PageDown => editor.scroll_down(),
                             KeyCode::PageUp => editor.scroll_up(),
-                            KeyCode::Tab => editor.next_tab(),
+                            KeyCode::Tab => {
+                                if editor.show_completions {
+                                    editor.accept_completion();
+                                } else {
+                                    // Trigger completion
+                                    editor.update_completions();
+                                    if !editor.show_completions {
+                                        // If no completions, switch tabs as before
+                                        editor.next_tab();
+                                    }
+                                }
+                            },
                             KeyCode::BackTab => editor.previous_tab(),
-                            KeyCode::Backspace => editor.delete_char(),
-                            KeyCode::Enter => editor.insert_newline(),
+                            KeyCode::Backspace => {
+                                editor.delete_char();
+                                editor.update_completions();
+                            },
+                            KeyCode::Enter => {
+                                if editor.show_completions {
+                                    editor.accept_completion();
+                                } else {
+                                    editor.insert_newline();
+                                }
+                            },
+                            KeyCode::Esc => {
+                                if editor.show_detail_view {
+                                    // Go back to completion list from detail view
+                                    editor.show_detail_view = false;
+                                } else if editor.show_completions {
+                                    // Close completions entirely
+                                    editor.show_completions = false;
+                                    editor.show_detail_view = false;  // Reset detail view too
+                                    editor.completions.clear();
+                                }
+                            },
+                            KeyCode::F(1) => {
+                                // Toggle detail view for selected completion
+                                if editor.show_completions && !editor.completions.is_empty() {
+                                    editor.show_detail_view = !editor.show_detail_view;
+                                }
+                            },
                             KeyCode::Left => editor.move_cursor_left(),
                             KeyCode::Right => editor.move_cursor_right(),
                             _ => {}

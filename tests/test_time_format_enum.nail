@@ -1,0 +1,18 @@
+// Test TimeFormat enum usage
+// This demonstrates the proper implementation of TimeFormat enum for time functions
+
+// The TimeFormat enum is defined in the stdlib and should be available
+// as a built-in type, similar to how HTTP_Response works
+
+// For now, this test is a placeholder showing the intended API
+// The actual enum implementation requires:
+// 1. Proper enum value resolution in the type checker
+// 2. Support for enum constructors in expressions
+// 3. Transpilation support for enum values
+
+print(`TimeFormat enum test - pending full implementation`);
+
+// Expected future usage:
+// time_now:i = time_now();
+// formatted:s = time_format(time_now, TimeFormat.Unix);
+// parsed:i = danger(time_parse(`1234567890`, TimeFormat.Unix));

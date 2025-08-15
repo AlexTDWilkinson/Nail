@@ -10,7 +10,7 @@ f fib(num:i):i {
 }
 
 // Generate first 10 fibonacci numbers  
-nums:a:i = danger(range(0, 10));
+nums:a:i = array_range(0, 10);
 sequence:a:i = map idx in nums {
     y fib(idx);
 };

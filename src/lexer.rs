@@ -3,6 +3,9 @@ use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::hash::Hash;
+use std::path::{Path, PathBuf};
+use std::fs;
+use std::collections::HashSet;
 
 //  static the alphabet in lower and uppercase and 0-9
 
@@ -148,6 +151,7 @@ pub enum TokenType {
     FunctionSignature(Vec<Token>),           // For function declarations ie "fn"
     Dot,                                     // For dot operator (.)
     IfDeclaration,                           // For if keyword
+    InsertKeyword,                           // For insert keyword (file insertion)
     ElseDeclaration,                         // For else keyword
     ParallelStart,                           // For p keyword
     ParallelEnd,                             // For /p keyword
@@ -285,11 +289,16 @@ pub struct LexerState {
 }
 
 pub fn lexer(input: &str) -> Vec<Token> {
-    let mut state = LexerState { line: 1, column: 1 };
-    lexer_inner(input, &mut state)
+    lexer_with_context(input, None)
 }
 
-fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
+pub fn lexer_with_context(input: &str, current_file: Option<&Path>) -> Vec<Token> {
+    let mut state = LexerState { line: 1, column: 1 };
+    let mut included_files = HashSet::new();
+    lexer_inner(input, &mut state, current_file, &mut included_files)
+}
+
+fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>, included_files: &mut HashSet<PathBuf>) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
     let mut chars = input.chars().peekable();
 
@@ -381,10 +390,123 @@ fn lexer_inner(input: &str, state: &mut LexerState) -> Vec<Token> {
 
             _ if is_identifier_or_keyword(c) => {
                 let lexer_output = lex_identifier_or_keyword(&mut chars, state);
-                tokens.push(Token {
-                    token_type: lexer_output.token_type,
-                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
-                });
+                
+                // Check if this is an insert keyword followed by a file path
+                if lexer_output.token_type == TokenType::InsertKeyword {
+                    // Skip whitespace
+                    while let Some(&c) = chars.peek() {
+                        if c.is_whitespace() {
+                            if c == '\n' {
+                                state.line += 1;
+                                state.column = 1;
+                            } else {
+                                state.column += 1;
+                            }
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    // Check for opening parenthesis
+                    if chars.peek() == Some(&'(') {
+                        chars.next();
+                        state.column += 1;
+                        
+                        // Skip whitespace
+                        while let Some(&c) = chars.peek() {
+                            if c.is_whitespace() {
+                                if c == '\n' {
+                                    state.line += 1;
+                                    state.column = 1;
+                                } else {
+                                    state.column += 1;
+                                }
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        
+                        // Check for string literal
+                        if chars.peek() == Some(&'`') {
+                            let string_output = lex_string_literal(&mut chars, state);
+                            
+                            if let TokenType::StringLiteral(filepath) = string_output.token_type {
+                                // Skip whitespace
+                                while let Some(&c) = chars.peek() {
+                                    if c.is_whitespace() {
+                                        if c == '\n' {
+                                            state.line += 1;
+                                            state.column = 1;
+                                        } else {
+                                            state.column += 1;
+                                        }
+                                        chars.next();
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                
+                                // Check for closing parenthesis
+                                if chars.peek() == Some(&')') {
+                                    chars.next();
+                                    state.column += 1;
+                                    
+                                    // Now handle the file insertion
+                                    match handle_insert(&filepath, current_file, included_files, state) {
+                                        Ok(inserted_tokens) => {
+                                            tokens.extend(inserted_tokens);
+                                        }
+                                        Err(error) => {
+                                            tokens.push(Token {
+                                                token_type: TokenType::LexerError(format!("Insert error: {}", error)),
+                                                code_span: CodeSpan { 
+                                                    start_line: lexer_output.start_line, 
+                                                    end_line: state.line, 
+                                                    start_column: lexer_output.start_column, 
+                                                    end_column: state.column 
+                                                },
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    tokens.push(Token {
+                                        token_type: TokenType::LexerError("Expected ')' after insert filepath".to_string()),
+                                        code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column },
+                                    });
+                                }
+                            } else {
+                                tokens.push(Token {
+                                    token_type: string_output.token_type,
+                                    code_span: CodeSpan { start_line: string_output.start_line, end_line: string_output.end_line, start_column: string_output.start_column, end_column: string_output.end_column },
+                                });
+                            }
+                        } else {
+                            // Not an insert statement, push the keyword token
+                            tokens.push(Token {
+                                token_type: lexer_output.token_type,
+                                code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
+                            });
+                            // Push the open paren
+                            tokens.push(Token {
+                                token_type: TokenType::ParenthesisOpen,
+                                code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column - 1, end_column: state.column },
+                            });
+                        }
+                    } else {
+                        // Not followed by '(', just push the keyword token
+                        tokens.push(Token {
+                            token_type: lexer_output.token_type,
+                            code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
+                        });
+                    }
+                } else {
+                    tokens.push(Token {
+                        token_type: lexer_output.token_type,
+                        code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
+                    });
+                }
             }
             _ if is_number(&mut chars) => {
                 let lexer_output: LexerOutput = lex_number(&mut chars, state);
@@ -1105,6 +1227,7 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "use" => TokenType::LexerError("'use' is a reserved keyword and cannot be used as an identifier".to_string()),
         "fn" => TokenType::LexerError("'fn' is a reserved keyword and cannot be used as an identifier".to_string()),
         "let" => TokenType::LexerError("'let' is a reserved keyword and cannot be used as an identifier".to_string()),
+        "insert" => TokenType::InsertKeyword,
         "mut" => TokenType::LexerError("'mut' is a reserved keyword and cannot be used as an identifier".to_string()),
         "const" => TokenType::LexerError("'const' is a reserved keyword and cannot be used as an identifier".to_string()),
         "static" => TokenType::LexerError("'static' is a reserved keyword and cannot be used as an identifier".to_string()),
@@ -1693,6 +1816,46 @@ fn lex_enum_variant(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mu
     } else {
         LexerOutput { token_type: TokenType::LexerError(format!("Invalid enum variant syntax: {}", full_name)), start_line, start_column, end_line: state.line, end_column: state.column }
     }
+}
+
+fn handle_insert(
+    filepath: &str,
+    current_file: Option<&Path>,
+    included_files: &mut HashSet<PathBuf>,
+    state: &LexerState,
+) -> Result<Vec<Token>, String> {
+    // Resolve the path relative to the current file
+    let resolved_path = if let Some(current) = current_file {
+        if let Some(parent) = current.parent() {
+            parent.join(filepath)
+        } else {
+            PathBuf::from(filepath)
+        }
+    } else {
+        PathBuf::from(filepath)
+    };
+    
+    // Get canonical path to handle symlinks and relative paths
+    let canonical_path = resolved_path.canonicalize()
+        .map_err(|e| format!("Cannot resolve path '{}': {}", filepath, e))?;
+    
+    // Check for circular includes
+    if !included_files.insert(canonical_path.clone()) {
+        return Err(format!("Circular include detected: '{}'", filepath));
+    }
+    
+    // Read the file
+    let content = fs::read_to_string(&canonical_path)
+        .map_err(|e| format!("Cannot read file '{}': {}", filepath, e))?;
+    
+    // Lex the included file with its own context
+    let mut sub_state = LexerState { line: state.line, column: 1 };
+    let tokens = lexer_inner(&content, &mut sub_state, Some(&canonical_path), included_files);
+    
+    // Remove the file from included set after processing (allows same file in different branches)
+    included_files.remove(&canonical_path);
+    
+    Ok(tokens)
 }
 
 fn is_double_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {

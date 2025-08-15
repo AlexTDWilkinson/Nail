@@ -1,0 +1,8 @@
+// Test file insertion
+insert(`test_helper.nail`)
+
+// Now use the inserted functions
+sum:i = add_numbers(5, 3);
+product:i = multiply_numbers(4, 2);
+print(`Sum: `, sum);
+print(`Product: `, product);
