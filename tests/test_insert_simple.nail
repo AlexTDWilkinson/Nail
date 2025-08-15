@@ -1,0 +1,7 @@
+insert(`test_helper.nail`)
+
+// Test that the inserted functions work
+result:i = add_numbers(10, 5);
+print(`Result:`, result);
+product:i = multiply_numbers(3, 4);
+print(`Product:`, product);

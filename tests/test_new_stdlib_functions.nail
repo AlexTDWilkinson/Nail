@@ -1,0 +1,180 @@
+// Test all new stdlib functions
+// Note: TimeFormat enum support is pending full implementation
+
+// String case functions  
+test_str:s = `hello WORLD`;
+upper:s = string_to_uppercase(test_str);
+lower:s = string_to_lowercase(test_str);
+title:s = string_to_title_case(test_str);
+sentence:s = string_to_sentence_case(test_str);
+
+print(`Original:`, test_str);
+print(`Upper:`, upper);
+print(`Lower:`, lower);
+print(`Title:`, title);
+print(`Sentence:`, sentence);
+
+// Snake and kebab case
+camel_str:s = `helloWorldExample`;
+snake:s = string_to_snake_case(camel_str);
+kebab:s = string_to_kebab_case(camel_str);
+print(`Camel:`, camel_str);
+print(`Snake:`, snake);
+print(`Kebab:`, kebab);
+
+// String splitting
+csv:s = `apple,banana,cherry`;
+parts:a:s = string_split(csv, `,`);
+print(`Split CSV:`, parts);
+
+sentence_text:s = `hello world test`;
+words:a:s = string_split_whitespace(sentence_text);
+print(`Split whitespace:`, words);
+
+multi_line:s = `line1\nline2\nline3`;
+lines:a:s = string_split_lines(multi_line);
+print(`Split lines:`, lines);
+
+// String trimming
+space_str:s = `  hello world  `;
+trimmed:s = string_trim(space_str);
+left_trimmed:s = string_trim_start(space_str);
+right_trimmed:s = string_trim_end(space_str);
+print(`Original:`, space_str, `end`);
+print(`Trimmed:`, trimmed, `end`);
+print(`Left trimmed:`, left_trimmed, `end`);
+print(`Right trimmed:`, right_trimmed, `end`);
+
+// String padding
+short:s = `hi`;
+padded_left:s = string_pad_left(short, 5, ` `);
+padded_right:s = string_pad_right(short, 5, `-`);
+print(`Padded left:`, padded_left);
+print(`Padded right:`, padded_right);
+
+// String repeat and reverse
+repeated:s = string_repeat(`ab`, 3);
+reversed:s = string_reverse(`hello`);
+print(`Repeated:`, repeated);
+print(`Reversed:`, reversed);
+
+// String replace
+replaced:s = string_replace_all(`hello hello`, `hello`, `hi`);
+print(`Replace all:`, replaced);
+
+// String validation
+alpha:s = `hello`;
+digits:s = `12345`;
+number:s = `123.45`;
+alphanumeric:s = `hello123`;
+mixed:s = `hello 123!`;
+print(`Is alphabetic 'hello':`, string_is_alphabetic(alpha));
+print(`Is digits only '12345':`, string_is_digits_only(digits));
+print(`Is numeric '123.45':`, string_is_numeric(number));
+print(`Is alphanumeric 'hello123':`, string_is_alphanumeric(alphanumeric));
+print(`Is alphabetic 'hello 123!':`, string_is_alphabetic(mixed));
+
+// Array set operations
+arr1:a:i = [1, 2, 3, 4];
+arr2:a:i = [3, 4, 5, 6];
+intersection:a:i = array_intersect(arr1, arr2);
+difference:a:i = array_difference(arr1, arr2);
+union:a:i = array_union(arr1, arr2);
+print(`Array 1:`, arr1);
+print(`Array 2:`, arr2);
+print(`Intersection:`, intersection);
+print(`Difference:`, difference);
+print(`Union:`, union);
+
+// Deduplicate
+with_dups:a:i = [1, 2, 2, 3, 3, 3, 4];
+deduped:a:i = array_deduplicate(with_dups);
+print(`Deduplicated:`, deduped);
+
+// Array rotation
+arr:a:i = [1, 2, 3, 4, 5];
+rotated_left:a:i = array_rotate_left(arr, 2);
+rotated_right:a:i = array_rotate_right(arr, 2);
+print(`Original:`, arr);
+print(`Rotated left by 2:`, rotated_left);
+print(`Rotated right by 2:`, rotated_right);
+
+// Array flatten
+nested:a:a:i = [[1, 2], [3, 4], [5, 6]];
+flattened:a:i = array_flatten_deep(nested);
+print(`Flattened:`, flattened);
+
+// Skip array_partition and array_group_by as they require lambda functions
+// which are not yet working properly in tests
+
+// Math functions
+gcd_result:i = math_gcd(48, 18);
+lcm_result:i = math_lcm(12, 8);
+fact_5:i = danger(math_factorial(5));
+print(`GCD(48, 18):`, gcd_result);
+print(`LCM(12, 8):`, lcm_result);
+print(`5! =`, fact_5);
+
+// Prime check
+print(`Is 17 prime?`, math_is_prime(17));
+print(`Is 18 prime?`, math_is_prime(18));
+
+// Trigonometry
+angle:f = 0.5;
+sin_val:f = math_sin(angle);
+cos_val:f = math_cos(angle);
+tan_val:f = math_tan(angle);
+print(`sin(0.5):`, sin_val);
+print(`cos(0.5):`, cos_val);
+print(`tan(0.5):`, tan_val);
+
+// Logarithms
+log_val:f = danger(math_log(2.718));
+log10_val:f = danger(math_log10(100.0));
+log2_val:f = danger(math_log2(8.0));
+print(`ln(e):`, log_val);
+print(`log10(100):`, log10_val);
+print(`log2(8):`, log2_val);
+
+// Other math
+sigmoid_val:f = math_sigmoid(0.0);
+lerp_val:f = math_lerp(0.0, 10.0, 0.5);
+clamp_val:f = math_clamp(15.0, 0.0, 10.0);
+print(`sigmoid(0):`, sigmoid_val);
+print(`lerp(0, 10, 0.5):`, lerp_val);
+print(`clamp(15, 0, 10):`, clamp_val);
+
+// Crypto functions
+test_text:s = `hello world`;
+sha256_hash:s = crypto_hash_sha256(test_text);
+md5_hash:s = crypto_hash_md5(test_text);
+uuid:s = crypto_uuid_v4();
+print(`SHA256 of hello world:`, sha256_hash);
+print(`MD5 of hello world:`, md5_hash);
+print(`Generated UUID:`, uuid);
+
+// Time functions
+now_timestamp:i = time_now();
+now_millis:i = time_now_millis();
+print(`Current timestamp:`, now_timestamp);
+print(`Current millis:`, now_millis);
+
+// Time arithmetic
+future_time:i = time_add_seconds(now_timestamp, 3600);
+time_difference:i = time_diff(future_time, now_timestamp);
+print(`One hour from now:`, future_time);
+print(`Time difference:`, time_difference);
+
+// Time formatting and parsing commented out pending enum support
+// formatted:s = time_format(now_timestamp, `unix`);
+// print(`Formatted time:`, formatted);
+// parsed_time:i = danger(time_parse(`1234567890`, `unix`));
+// print(`Parsed timestamp:`, parsed_time);
+
+// Array range functions
+range1:a:i = array_range(0, 5);
+range2:a:i = array_range_inclusive(0, 5);
+print(`array_range(0, 5):`, range1);
+print(`array_range_inclusive(0, 5):`, range2);
+
+print(`All tests completed`);

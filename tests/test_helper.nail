@@ -1,0 +1,8 @@
+// Helper functions to be inserted
+f add_numbers(a:i, b:i):i {
+    r a + b;
+}
+
+f multiply_numbers(a:i, b:i):i {
+    r a * b;
+}

@@ -13,6 +13,9 @@ pub enum CrateDependency {
     DashMap,
     Pulldown,
     Reqwest,
+    Sha2,
+    Md5,
+    Uuid,
 }
 
 impl CrateDependency {
@@ -27,6 +30,9 @@ impl CrateDependency {
             CrateDependency::DashMap => "dashmap = \"6.1.0\"",
             CrateDependency::Pulldown => "pulldown-cmark = \"0.9\"",
             CrateDependency::Reqwest => "reqwest = \"0.11\"",
+            CrateDependency::Sha2 => "sha2 = \"0.10\"",
+            CrateDependency::Md5 => "md5 = \"0.7\"",
+            CrateDependency::Uuid => "uuid = { version = \"1.0\", features = [\"v4\"] }",
         }
     }
 
@@ -41,6 +47,9 @@ impl CrateDependency {
             CrateDependency::DashMap => "dashmap",
             CrateDependency::Pulldown => "pulldown-cmark",
             CrateDependency::Reqwest => "reqwest",
+            CrateDependency::Sha2 => "sha2",
+            CrateDependency::Md5 => "md5",
+            CrateDependency::Uuid => "uuid",
         }
     }
 
@@ -55,6 +64,9 @@ impl CrateDependency {
             CrateDependency::DashMap => "use dashmap;",
             CrateDependency::Pulldown => "use pulldown_cmark;",
             CrateDependency::Reqwest => "use reqwest;",
+            CrateDependency::Sha2 => "use sha2;",
+            CrateDependency::Md5 => "use md5;",
+            CrateDependency::Uuid => "use uuid;",
         }
     }
 }
@@ -103,6 +115,7 @@ pub enum StdlibModule {
     IO,
     Print,
     Markdown,
+    Crypto,
 }
 
 impl StdlibModule {
@@ -125,6 +138,7 @@ impl StdlibModule {
             StdlibModule::IO => "std_lib::io",
             StdlibModule::Print => "std_lib::print",
             StdlibModule::Markdown => "std_lib::markdown",
+            StdlibModule::Crypto => "std_lib::crypto",
         }
     }
 }
@@ -170,6 +184,10 @@ pub struct StdlibFunction {
     pub type_inference: Option<TypeInferenceRule>,
     /// Whether this function never returns (like panic! or exit)
     pub diverging: bool,
+    /// Description of what the function does
+    pub description: &'static str,
+    /// Example usage of the function
+    pub example: &'static str,
 }
 
 lazy_static! {
@@ -203,6 +221,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // File system functions (future)
@@ -220,6 +240,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("fs_write", StdlibFunction {
@@ -234,6 +256,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // JSON functions (future)
@@ -249,6 +273,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("json_stringify", StdlibFunction {
@@ -263,6 +289,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Type conversion functions
@@ -278,6 +306,8 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Array to string conversion functions
@@ -293,6 +323,8 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_from_array_f64", StdlibFunction {
@@ -307,6 +339,8 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_from_array_string", StdlibFunction {
@@ -321,6 +355,8 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_from_array_bool", StdlibFunction {
@@ -335,6 +371,8 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::String,
             type_inference: None,
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("int_from", StdlibFunction {
@@ -351,6 +389,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_from", StdlibFunction {
@@ -367,6 +407,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // IO functions
@@ -377,11 +419,19 @@ lazy_static! {
             struct_derives: vec![],
             custom_type_imports: vec![],
             module: StdlibModule::Print,
-            parameters: vec![],
+            parameters: vec![
+                StdlibParameter { 
+                    name: "message".to_string(), 
+                    param_type: NailDataTypeDescriptor::Any, 
+                    pass_by_reference: false 
+                }
+            ],
             return_type: NailDataTypeDescriptor::Void,
             type_inference: None,
 
             diverging: false,
+            description: "Print a value to stdout with a newline",
+            example: "print(\"Hello, World!\")",
         });
 
         m.insert("eprintln", StdlibFunction {
@@ -396,6 +446,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("print_no_newline", StdlibFunction {
@@ -410,6 +462,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("io_read_line", StdlibFunction {
@@ -424,6 +478,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("io_read_line_prompt", StdlibFunction {
@@ -440,6 +496,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("io_read_int", StdlibFunction {
@@ -454,6 +512,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("io_read_int_prompt", StdlibFunction {
@@ -468,6 +528,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("io_read_float", StdlibFunction {
@@ -482,6 +544,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("io_read_float_prompt", StdlibFunction {
@@ -496,6 +560,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("print_clear_screen", StdlibFunction {
@@ -510,6 +576,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("print_debug", StdlibFunction {
@@ -524,6 +592,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // String manipulation
@@ -539,6 +609,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_split", StdlibFunction {
@@ -548,11 +620,16 @@ lazy_static! {
             struct_derives: vec![],
             custom_type_imports: vec![],
             module: StdlibModule::String,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "delimiter".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)),
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_trim", StdlibFunction {
@@ -569,6 +646,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_contains", StdlibFunction {
@@ -586,6 +665,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_replace", StdlibFunction {
@@ -604,6 +685,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_len", StdlibFunction {
@@ -620,6 +703,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_to_uppercase", StdlibFunction {
@@ -636,6 +721,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("string_to_lowercase", StdlibFunction {
@@ -652,7 +739,547 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
+
+        // New string functions
+        m.insert("string_starts_with", StdlibFunction {
+            rust_path: "std_lib::string::starts_with".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "prefix".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_ends_with", StdlibFunction {
+            rust_path: "std_lib::string::ends_with".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "suffix".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_index_of", StdlibFunction {
+            rust_path: "std_lib::string::index_of".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "substring".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_last_index_of", StdlibFunction {
+            rust_path: "std_lib::string::last_index_of".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "substring".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_substring", StdlibFunction {
+            rust_path: "std_lib::string::substring".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "start".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "end".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_repeat", StdlibFunction {
+            rust_path: "std_lib::string::repeat".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "count".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_reverse", StdlibFunction {
+            rust_path: "std_lib::string::reverse".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_join", StdlibFunction {
+            rust_path: "std_lib::string::join".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false },
+                StdlibParameter { name: "separator".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_chars", StdlibFunction {
+            rust_path: "std_lib::string::chars".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_is_empty", StdlibFunction {
+            rust_path: "std_lib::string::is_empty".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_pad_start", StdlibFunction {
+            rust_path: "std_lib::string::pad_start".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "target_length".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "pad_str".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_pad_end", StdlibFunction {
+            rust_path: "std_lib::string::pad_end".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "target_length".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "pad_str".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_trim_start", StdlibFunction {
+            rust_path: "std_lib::string::trim_start".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_trim_end", StdlibFunction {
+            rust_path: "std_lib::string::trim_end".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_replace_first", StdlibFunction {
+            rust_path: "std_lib::string::replace_first".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "from".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "to".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        // More new string functions
+        m.insert("string_to_snake_case", StdlibFunction {
+            rust_path: "std_lib::string::to_snake_case".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_to_kebab_case", StdlibFunction {
+            rust_path: "std_lib::string::to_kebab_case".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_to_title_case", StdlibFunction {
+            rust_path: "std_lib::string::to_title_case".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_to_sentence_case", StdlibFunction {
+            rust_path: "std_lib::string::to_sentence_case".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_split_lines", StdlibFunction {
+            rust_path: "std_lib::string::split_lines".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_split_whitespace", StdlibFunction {
+            rust_path: "std_lib::string::split_whitespace".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_pad_left", StdlibFunction {
+            rust_path: "std_lib::string::pad_left".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "target_length".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "pad_str".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_pad_right", StdlibFunction {
+            rust_path: "std_lib::string::pad_right".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "target_length".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "pad_str".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_replace_all", StdlibFunction {
+            rust_path: "std_lib::string::replace_all".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "from".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "to".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_is_alphabetic", StdlibFunction {
+            rust_path: "std_lib::string::is_alphabetic".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_is_digits_only", StdlibFunction {
+            rust_path: "std_lib::string::is_digits_only".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_is_alphanumeric", StdlibFunction {
+            rust_path: "std_lib::string::is_alphanumeric".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_is_numeric", StdlibFunction {
+            rust_path: "std_lib::string::is_numeric".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_count", StdlibFunction {
+            rust_path: "std_lib::string::count".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "substring".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Int,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_capitalize", StdlibFunction {
+            rust_path: "std_lib::string::capitalize".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_slice", StdlibFunction {
+            rust_path: "std_lib::string::slice".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "start".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "end".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("string_is_numeric", StdlibFunction {
+            rust_path: "std_lib::string::is_numeric".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
 
         // Array operations
         m.insert("array_len", StdlibFunction {
@@ -669,6 +1296,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_push", StdlibFunction {
@@ -686,6 +1315,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_pop", StdlibFunction {
@@ -700,6 +1331,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_contains", StdlibFunction {
@@ -717,6 +1350,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_join", StdlibFunction {
@@ -734,6 +1369,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_sort", StdlibFunction {
@@ -750,6 +1387,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_reverse", StdlibFunction {
@@ -766,6 +1405,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_concat", StdlibFunction {
@@ -783,6 +1424,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_get", StdlibFunction {
@@ -800,6 +1443,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("get_index", StdlibFunction {
@@ -817,6 +1462,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ArrayElementType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("len", StdlibFunction {
@@ -833,6 +1480,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("push", StdlibFunction {
@@ -850,6 +1499,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_first", StdlibFunction {
@@ -866,6 +1517,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ArrayElementType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_last", StdlibFunction {
@@ -882,6 +1535,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ArrayElementType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_slice", StdlibFunction {
@@ -900,6 +1555,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_take", StdlibFunction {
@@ -917,6 +1574,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("array_skip", StdlibFunction {
@@ -934,11 +1593,13 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ParameterType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Range functions - moved to Array module
-        m.insert("range", StdlibFunction {
-            rust_path: "std_lib::array::range".to_string(),
+        m.insert("array_range", StdlibFunction {
+            rust_path: "std_lib::array::array_range".to_string(),
 
             crate_deps: vec![],
             struct_derives: vec![],
@@ -952,9 +1613,11 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
-        m.insert("range_exclusive", StdlibFunction {
-            rust_path: "std_lib::array::range_exclusive".to_string(),
+        m.insert("array_range_inclusive", StdlibFunction {
+            rust_path: "std_lib::array::array_range_inclusive".to_string(),
 
             crate_deps: vec![],
             struct_derives: vec![],
@@ -968,6 +1631,264 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
+        });
+
+        // New array functions
+        m.insert("array_find", StdlibFunction {
+            rust_path: "std_lib::array::find".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_find_last", StdlibFunction {
+            rust_path: "std_lib::array::find_last".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_repeat", StdlibFunction {
+            rust_path: "std_lib::array::repeat".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "count".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ArrayOfParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        // NOTE: Removed array_sum/product/average - use reduce instead
+
+        m.insert("array_chunk", StdlibFunction {
+            rust_path: "std_lib::array::chunk".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "size".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)))),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        // New array functions
+        m.insert("array_flatten_deep", StdlibFunction {
+            rust_path: "std_lib::array::flatten_deep".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_deduplicate", StdlibFunction {
+            rust_path: "std_lib::array::deduplicate".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_intersect", StdlibFunction {
+            rust_path: "std_lib::array::intersect".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr1".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "arr2".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_difference", StdlibFunction {
+            rust_path: "std_lib::array::difference".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr1".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "arr2".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_union", StdlibFunction {
+            rust_path: "std_lib::array::union".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr1".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "arr2".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_rotate", StdlibFunction {
+            rust_path: "std_lib::array::rotate".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "n".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_shuffle", StdlibFunction {
+            rust_path: "std_lib::array::shuffle".to_string(),
+            crate_deps: vec![CrateDependency::Rand],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_rotate_left", StdlibFunction {
+            rust_path: "std_lib::array::rotate_left".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "n".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_rotate_right", StdlibFunction {
+            rust_path: "std_lib::array::rotate_right".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "n".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Any,
+            type_inference: Some(TypeInferenceRule::ParameterType(0)),
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_partition", StdlibFunction {
+            rust_path: "std_lib::array::partition".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "predicate".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("array_group_by", StdlibFunction {
+            rust_path: "std_lib::array::group_by".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Array,
+            parameters: vec![
+                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
+                StdlibParameter { name: "key_fn".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::Any), Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)))),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
         });
 
         // Integer functions
@@ -983,6 +1904,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("int_min", StdlibFunction {
@@ -997,6 +1920,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("int_max", StdlibFunction {
@@ -1011,6 +1936,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("int_pow", StdlibFunction {
@@ -1025,6 +1952,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Float functions
@@ -1040,6 +1969,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_sqrt", StdlibFunction {
@@ -1054,6 +1985,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_pow", StdlibFunction {
@@ -1068,6 +2001,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_round", StdlibFunction {
@@ -1082,6 +2017,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_floor", StdlibFunction {
@@ -1096,6 +2033,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_ceil", StdlibFunction {
@@ -1110,6 +2049,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_min", StdlibFunction {
@@ -1124,6 +2065,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_max", StdlibFunction {
@@ -1138,6 +2081,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("float_random", StdlibFunction {
@@ -1152,6 +2097,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Math functions
@@ -1169,6 +2116,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_sqrt", StdlibFunction {
@@ -1185,6 +2134,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_pow", StdlibFunction {
@@ -1202,6 +2153,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_round", StdlibFunction {
@@ -1218,6 +2171,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_floor", StdlibFunction {
@@ -1234,6 +2189,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_ceil", StdlibFunction {
@@ -1250,6 +2207,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_min", StdlibFunction {
@@ -1267,6 +2226,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_max", StdlibFunction {
@@ -1284,6 +2245,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_random", StdlibFunction {
@@ -1298,6 +2261,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("math_divide", StdlibFunction {
@@ -1315,6 +2280,287 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
+        });
+
+        // New math functions
+        m.insert("math_gcd", StdlibFunction {
+            rust_path: "std_lib::math::gcd".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "a".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "b".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Int,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_lcm", StdlibFunction {
+            rust_path: "std_lib::math::lcm".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "a".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "b".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Int,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_factorial", StdlibFunction {
+            rust_path: "std_lib::math::factorial".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "n".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_is_prime", StdlibFunction {
+            rust_path: "std_lib::math::is_prime".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "n".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_sigmoid", StdlibFunction {
+            rust_path: "std_lib::math::sigmoid".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Float,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_lerp", StdlibFunction {
+            rust_path: "std_lib::math::lerp".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "a".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false },
+                StdlibParameter { name: "b".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false },
+                StdlibParameter { name: "t".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Float,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_sin", StdlibFunction {
+            rust_path: "std_lib::math::sin".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Float,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_cos", StdlibFunction {
+            rust_path: "std_lib::math::cos".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Float,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_tan", StdlibFunction {
+            rust_path: "std_lib::math::tan".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Float,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_asin", StdlibFunction {
+            rust_path: "std_lib::math::asin".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_acos", StdlibFunction {
+            rust_path: "std_lib::math::acos".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_atan", StdlibFunction {
+            rust_path: "std_lib::math::atan".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Float,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_log", StdlibFunction {
+            rust_path: "std_lib::math::log".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_log10", StdlibFunction {
+            rust_path: "std_lib::math::log10".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_log2", StdlibFunction {
+            rust_path: "std_lib::math::log2".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Float)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_clamp", StdlibFunction {
+            rust_path: "std_lib::math::clamp".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false },
+                StdlibParameter { name: "min".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false },
+                StdlibParameter { name: "max".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Float,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("math_exp", StdlibFunction {
+            rust_path: "std_lib::math::exp".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Math,
+            parameters: vec![
+                StdlibParameter { name: "x".to_string(), param_type: NailDataTypeDescriptor::Float, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Float,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
         });
 
         // Time functions
@@ -1330,6 +2576,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("time_sleep", StdlibFunction {
@@ -1350,6 +2598,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("time_format", StdlibFunction {
@@ -1357,16 +2607,83 @@ lazy_static! {
 
             crate_deps: vec![],
             struct_derives: vec![],
-            custom_type_imports: vec![],
+            custom_type_imports: vec![("TimeFormat", "nail::std_lib::time")],
             module: StdlibModule::Time,
             parameters: vec![
                 StdlibParameter { name: "timestamp".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
-                StdlibParameter { name: "format".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+                StdlibParameter { name: "format".to_string(), param_type: NailDataTypeDescriptor::Enum("TimeFormat".to_string()), pass_by_reference: false }
             ],
             return_type: NailDataTypeDescriptor::String,
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("time_parse", StdlibFunction {
+            rust_path: "std_lib::time::parse".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![("TimeFormat", "nail::std_lib::time")],
+            module: StdlibModule::Time,
+            parameters: vec![
+                StdlibParameter { name: "time_str".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "format".to_string(), param_type: NailDataTypeDescriptor::Enum("TimeFormat".to_string()), pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Int)),
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("time_add_seconds", StdlibFunction {
+            rust_path: "std_lib::time::add_seconds".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Time,
+            parameters: vec![
+                StdlibParameter { name: "timestamp".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "seconds".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Int,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("time_diff", StdlibFunction {
+            rust_path: "std_lib::time::diff".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Time,
+            parameters: vec![
+                StdlibParameter { name: "timestamp1".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false },
+                StdlibParameter { name: "timestamp2".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Int,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("time_now_millis", StdlibFunction {
+            rust_path: "std_lib::time::now_millis".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Time,
+            parameters: vec![],
+            return_type: NailDataTypeDescriptor::Int,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
         });
 
         // Environment functions
@@ -1382,6 +2699,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("env_set", StdlibFunction {
@@ -1396,6 +2715,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("env_args", StdlibFunction {
@@ -1410,6 +2731,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Process functions
@@ -1425,6 +2748,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("process_run", StdlibFunction {
@@ -1439,6 +2764,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Async/spawning functions
@@ -1452,6 +2779,8 @@ lazy_static! {
             return_type: NailDataTypeDescriptor::Void,
             type_inference: None,
             diverging: false,
+            description: "",
+            example: "",
         });
 
 
@@ -1491,6 +2820,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Database functions (future)
@@ -1506,6 +2837,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("db_query", StdlibFunction {
@@ -1520,6 +2853,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("db_execute", StdlibFunction {
@@ -1534,9 +2869,57 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Crypto functions
+        m.insert("crypto_hash_sha256", StdlibFunction {
+            rust_path: "std_lib::crypto::hash_sha256".to_string(),
+            crate_deps: vec![CrateDependency::Sha2],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Crypto,
+            parameters: vec![
+                StdlibParameter { name: "input".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("crypto_hash_md5", StdlibFunction {
+            rust_path: "std_lib::crypto::hash_md5".to_string(),
+            crate_deps: vec![CrateDependency::Md5],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Crypto,
+            parameters: vec![
+                StdlibParameter { name: "input".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
+        m.insert("crypto_uuid_v4", StdlibFunction {
+            rust_path: "std_lib::crypto::uuid_v4".to_string(),
+            crate_deps: vec![CrateDependency::Uuid],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Crypto,
+            parameters: vec![],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "",
+            example: "",
+        });
+
         m.insert("crypto_hash", StdlibFunction {
             rust_path: "std_lib::crypto::hash".to_string(),
 
@@ -1549,6 +2932,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("crypto_encrypt", StdlibFunction {
@@ -1563,6 +2948,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("crypto_decrypt", StdlibFunction {
@@ -1577,6 +2964,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Path/File system utilities
@@ -1595,6 +2984,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("path_exists", StdlibFunction {
@@ -1611,6 +3002,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("fs_create_dir", StdlibFunction {
@@ -1625,6 +3018,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("fs_remove_file", StdlibFunction {
@@ -1639,6 +3034,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("fs_copy", StdlibFunction {
@@ -1653,6 +3050,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("fs_move", StdlibFunction {
@@ -1667,6 +3066,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Regex functions
@@ -1682,6 +3083,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("regex_replace", StdlibFunction {
@@ -1696,6 +3099,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Base64 encoding/decoding
@@ -1711,6 +3116,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("base64_decode", StdlibFunction {
@@ -1725,6 +3132,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // URL encoding/decoding
@@ -1740,6 +3149,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("url_decode", StdlibFunction {
@@ -1754,6 +3165,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Error handling functions
@@ -1772,6 +3185,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ResultInnerType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("danger", StdlibFunction {
@@ -1788,6 +3203,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ResultInnerType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("expect", StdlibFunction {
@@ -1804,6 +3221,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::ResultInnerType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("dangerous", StdlibFunction {
@@ -1818,6 +3237,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("panic", StdlibFunction {
@@ -1834,6 +3255,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: true,
+            description: "",
+            example: "",
         });
 
         m.insert("todo", StdlibFunction {
@@ -1850,6 +3273,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: true,
+            description: "",
+            example: "",
         });
 
         // HashMap functions
@@ -1865,6 +3290,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_insert", StdlibFunction {
@@ -1883,6 +3310,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_get", StdlibFunction {
@@ -1900,6 +3329,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::HashMapValueType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_remove", StdlibFunction {
@@ -1917,6 +3348,8 @@ lazy_static! {
             type_inference: Some(TypeInferenceRule::HashMapValueType(0)),
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_contains_key", StdlibFunction {
@@ -1934,6 +3367,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_len", StdlibFunction {
@@ -1950,6 +3385,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_is_empty", StdlibFunction {
@@ -1966,6 +3403,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_clear", StdlibFunction {
@@ -1982,6 +3421,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_keys", StdlibFunction {
@@ -1998,6 +3439,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_values", StdlibFunction {
@@ -2014,6 +3457,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_to_vec", StdlibFunction {
@@ -2028,6 +3473,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_from_vec", StdlibFunction {
@@ -2042,6 +3489,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_entry_or_insert", StdlibFunction {
@@ -2056,6 +3505,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("hashmap_merge", StdlibFunction {
@@ -2070,6 +3521,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         // Markdown functions
@@ -2087,6 +3540,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m.insert("markdown_to_html_with_options", StdlibFunction {
@@ -2101,6 +3556,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
+            description: "",
+            example: "",
         });
 
         m
