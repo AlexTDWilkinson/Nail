@@ -24,10 +24,10 @@ greetings_with_o:a:s = filter greeting in greetings {
     y string_contains(greeting, `o`);
 };
 has_long_greeting:b = any greeting in greetings {
-    y string_len(greeting) > 6;
+    y string_length(greeting) > 6;
 };
 all_start_capital:b = all greeting in greetings {
-    y string_len(greeting) > 0;
+    y string_length(greeting) > 0;
 };
 
 print(`\n=== Greeting Analysis ===`);

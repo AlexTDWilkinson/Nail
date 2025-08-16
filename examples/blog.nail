@@ -311,6 +311,16 @@ router_html:s = array_join([`
 </body>
 </html>`], ``);
 
+// Create routes
+routes:h<s, HTTP_Route> = hashmap_new();
+home_route:HTTP_Route = HTTP_Route {
+    path: `/`,
+    content: router_html,
+    content_type: `text/html`,
+    status_code: 200
+};
+hashmap_set(routes, `/`, home_route);
+
 // Start the server
 print(`Starting blog server on port `, port, `...`);
-http_server(port, router_html);
+http_server(port, routes);

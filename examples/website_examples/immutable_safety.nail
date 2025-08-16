@@ -43,4 +43,4 @@ print(total_score);
 
 // Original data is still pristine - impossible to corrupt!
 print(`Original user count: `);
-print(array_len(users));
+print(array_length(users));

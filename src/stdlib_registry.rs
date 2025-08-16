@@ -16,6 +16,10 @@ pub enum CrateDependency {
     Sha2,
     Md5,
     Uuid,
+    UrlEncoding,
+    Flate2,
+    Base64,
+    Rusqlite,
 }
 
 impl CrateDependency {
@@ -33,6 +37,10 @@ impl CrateDependency {
             CrateDependency::Sha2 => "sha2 = \"0.10\"",
             CrateDependency::Md5 => "md5 = \"0.7\"",
             CrateDependency::Uuid => "uuid = { version = \"1.0\", features = [\"v4\"] }",
+            CrateDependency::UrlEncoding => "urlencoding = \"2.1\"",
+            CrateDependency::Flate2 => "flate2 = \"1.0\"",
+            CrateDependency::Base64 => "base64 = \"0.21\"",
+            CrateDependency::Rusqlite => "rusqlite = { version = \"0.31\", features = [\"bundled\"] }",
         }
     }
 
@@ -50,6 +58,10 @@ impl CrateDependency {
             CrateDependency::Sha2 => "sha2",
             CrateDependency::Md5 => "md5",
             CrateDependency::Uuid => "uuid",
+            CrateDependency::UrlEncoding => "urlencoding",
+            CrateDependency::Flate2 => "flate2",
+            CrateDependency::Base64 => "base64",
+            CrateDependency::Rusqlite => "rusqlite",
         }
     }
 
@@ -67,6 +79,10 @@ impl CrateDependency {
             CrateDependency::Sha2 => "use sha2;",
             CrateDependency::Md5 => "use md5;",
             CrateDependency::Uuid => "use uuid;",
+            CrateDependency::UrlEncoding => "use urlencoding;",
+            CrateDependency::Flate2 => "use flate2;",
+            CrateDependency::Base64 => "use base64;",
+            CrateDependency::Rusqlite => "use rusqlite;",
         }
     }
 }
@@ -116,6 +132,11 @@ pub enum StdlibModule {
     Print,
     Markdown,
     Crypto,
+    Regex,
+    Args,
+    Url,
+    Compress,
+    Database,
 }
 
 impl StdlibModule {
@@ -139,6 +160,11 @@ impl StdlibModule {
             StdlibModule::Print => "std_lib::print",
             StdlibModule::Markdown => "std_lib::markdown",
             StdlibModule::Crypto => "std_lib::crypto",
+            StdlibModule::Regex => "std_lib::regex",
+            StdlibModule::Args => "std_lib::args",
+            StdlibModule::Url => "std_lib::url",
+            StdlibModule::Compress => "std_lib::compress",
+            StdlibModule::Database => "std_lib::database",
         }
     }
 }
@@ -260,37 +286,45 @@ lazy_static! {
             example: "",
         });
 
-        // JSON functions (future)
-        m.insert("json_parse", StdlibFunction {
-            rust_path: "std_lib::json::parse".to_string(),
-
+        // JSON serialization/deserialization functions
+        m.insert("json_serialize", StdlibFunction {
+            rust_path: "std_lib::json::json_serialize".to_string(),
             crate_deps: vec![CrateDependency::SerdeJson, CrateDependency::Serde],
-            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            struct_derives: vec![StructDerive::SerdeSerialize],
             custom_type_imports: vec![],
             module: StdlibModule::Json,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
+            parameters: vec![
+                StdlibParameter {
+                    name: "value".to_string(),
+                    param_type: NailDataTypeDescriptor::Any,
+                    pass_by_reference: false,
+                },
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
             type_inference: None,
-
             diverging: false,
-            description: "",
-            example: "",
+            description: "Serialize a value (struct, enum, or array) to a JSON string",
+            example: "json_serialize(my_struct)",
         });
-
-        m.insert("json_stringify", StdlibFunction {
-            rust_path: "std_lib::json::stringify".to_string(),
-
+        
+        m.insert("json_deserialize", StdlibFunction {
+            rust_path: "std_lib::json::json_deserialize".to_string(),
             crate_deps: vec![CrateDependency::SerdeJson, CrateDependency::Serde],
-            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            struct_derives: vec![StructDerive::SerdeDeserialize],
             custom_type_imports: vec![],
             module: StdlibModule::Json,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
+            parameters: vec![
+                StdlibParameter {
+                    name: "json_string".to_string(),
+                    param_type: NailDataTypeDescriptor::String,
+                    pass_by_reference: false,
+                },
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Any)),
+            type_inference: Some(TypeInferenceRule::UseExpectedType),
             diverging: false,
-            description: "",
-            example: "",
+            description: "Deserialize a JSON string to a value (struct, enum, or array)",
+            example: "person:Person = danger(json_deserialize(json_string))",
         });
 
         // Type conversion functions
@@ -308,6 +342,38 @@ lazy_static! {
             diverging: false,
             description: "",
             example: "",
+        });
+
+        m.insert("int_to_string", StdlibFunction {
+            rust_path: "std_lib::string::from_int".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "Convert integer to string",
+            example: "int_to_string(42)",
+        });
+
+        m.insert("bool_to_string", StdlibFunction {
+            rust_path: "std_lib::string::from_bool".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::Boolean, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "Convert boolean to string",
+            example: "bool_to_string(true)",
         });
 
         // Array to string conversion functions
@@ -689,7 +755,7 @@ lazy_static! {
             example: "",
         });
 
-        m.insert("string_len", StdlibFunction {
+        m.insert("string_length", StdlibFunction {
             rust_path: "std_lib::string::len".to_string(),
 
             crate_deps: vec![],
@@ -703,8 +769,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
-            description: "",
-            example: "",
+            description: "Get string length",
+            example: "string_length(\"hello\")",
         });
 
         m.insert("string_to_uppercase", StdlibFunction {
@@ -861,6 +927,22 @@ lazy_static! {
             diverging: false,
             description: "",
             example: "",
+        });
+        
+        m.insert("string_minify", StdlibFunction {
+            rust_path: "std_lib::string::minify".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "Remove all whitespace outside of quoted strings (useful for minifying JSON)",
+            example: "string_minify(json_string)",
         });
 
         m.insert("string_join", StdlibFunction {
@@ -1264,25 +1346,8 @@ lazy_static! {
             example: "",
         });
 
-        m.insert("string_is_numeric", StdlibFunction {
-            rust_path: "std_lib::string::is_numeric".to_string(),
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::String,
-            parameters: vec![
-                StdlibParameter { name: "s".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
-            ],
-            return_type: NailDataTypeDescriptor::Boolean,
-            type_inference: None,
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-
         // Array operations
-        m.insert("array_len", StdlibFunction {
+        m.insert("array_length", StdlibFunction {
             rust_path: "std_lib::array::len".to_string(),
 
             crate_deps: vec![],
@@ -1447,61 +1512,6 @@ lazy_static! {
             example: "",
         });
 
-        m.insert("get_index", StdlibFunction {
-            rust_path: "std_lib::array::get".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Array,
-            parameters: vec![
-                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
-                StdlibParameter { name: "index".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
-            ],
-            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Any)),
-            type_inference: Some(TypeInferenceRule::ArrayElementType(0)),
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("len", StdlibFunction {
-            rust_path: "std_lib::array::len".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Array,
-            parameters: vec![
-                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
-            ],
-            return_type: NailDataTypeDescriptor::Int,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("push", StdlibFunction {
-            rust_path: "std_lib::array::push".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Array,
-            parameters: vec![
-                StdlibParameter { name: "arr".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false },
-                StdlibParameter { name: "item".to_string(), param_type: NailDataTypeDescriptor::Any, pass_by_reference: false }
-            ],
-            return_type: NailDataTypeDescriptor::Any,
-            type_inference: Some(TypeInferenceRule::ParameterType(0)),
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
 
         m.insert("array_first", StdlibFunction {
             rust_path: "std_lib::array::first".to_string(),
@@ -1947,151 +1957,6 @@ lazy_static! {
             struct_derives: vec![],
             custom_type_imports: vec![],
             module: StdlibModule::Int,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        // Float functions
-        m.insert("float_abs", StdlibFunction {
-            rust_path: "std_lib::float::abs".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("float_sqrt", StdlibFunction {
-            rust_path: "std_lib::float::sqrt".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("float_pow", StdlibFunction {
-            rust_path: "std_lib::float::pow".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("float_round", StdlibFunction {
-            rust_path: "std_lib::float::round".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("float_floor", StdlibFunction {
-            rust_path: "std_lib::float::floor".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("float_ceil", StdlibFunction {
-            rust_path: "std_lib::float::ceil".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("float_min", StdlibFunction {
-            rust_path: "std_lib::float::min".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("float_max", StdlibFunction {
-            rust_path: "std_lib::float::max".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("float_random", StdlibFunction {
-            rust_path: "std_lib::float::random".to_string(),
-
-            crate_deps: vec![CrateDependency::Rand],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::Float,
             parameters: vec![],
             return_type: NailDataTypeDescriptor::Void,
             type_inference: None,
@@ -3073,34 +2938,88 @@ lazy_static! {
         // Regex functions
         m.insert("regex_match", StdlibFunction {
             rust_path: "std_lib::regex::match_pattern".to_string(),
-
             crate_deps: vec![CrateDependency::Regex],
             struct_derives: vec![],
             custom_type_imports: vec![],
             module: StdlibModule::String,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
+            parameters: vec![
+                StdlibParameter { name: "pattern".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "text".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Boolean)),
             type_inference: None,
-
             diverging: false,
-            description: "",
-            example: "",
+            description: "Check if regex pattern matches text",
+            example: "regex_match(`\\\\d+`, `abc123`)",
         });
 
         m.insert("regex_replace", StdlibFunction {
             rust_path: "std_lib::regex::replace".to_string(),
-
             crate_deps: vec![CrateDependency::Regex],
             struct_derives: vec![],
             custom_type_imports: vec![],
             module: StdlibModule::String,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
+            parameters: vec![
+                StdlibParameter { name: "pattern".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "text".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "replacement".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
             type_inference: None,
-
             diverging: false,
-            description: "",
-            example: "",
+            description: "Replace regex matches with replacement text",
+            example: "regex_replace(`\\\\d+`, `abc123xyz`, `NUM`)",
+        });
+        
+        m.insert("regex_find", StdlibFunction {
+            rust_path: "std_lib::regex::find".to_string(),
+            crate_deps: vec![CrateDependency::Regex],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "pattern".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "text".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "Find first regex match in text",
+            example: "regex_find(`\\\\d+`, `abc123xyz`)",
+        });
+        
+        m.insert("regex_find_all", StdlibFunction {
+            rust_path: "std_lib::regex::find_all".to_string(),
+            crate_deps: vec![CrateDependency::Regex],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "pattern".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "text".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)))),
+            type_inference: None,
+            diverging: false,
+            description: "Find all regex matches in text",
+            example: "regex_find_all(`\\\\d+`, `a1b2c3`)",
+        });
+        
+        m.insert("regex_split", StdlibFunction {
+            rust_path: "std_lib::regex::split".to_string(),
+            crate_deps: vec![CrateDependency::Regex],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::String,
+            parameters: vec![
+                StdlibParameter { name: "pattern".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+                StdlibParameter { name: "text".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)))),
+            type_inference: None,
+            diverging: false,
+            description: "Split text by regex pattern",
+            example: "regex_split(`\\\\s+`, `hello world test`)",
         });
 
         // Base64 encoding/decoding
@@ -3136,38 +3055,6 @@ lazy_static! {
             example: "",
         });
 
-        // URL encoding/decoding
-        m.insert("url_encode", StdlibFunction {
-            rust_path: "std_lib::encoding::url_encode".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::String,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
-
-        m.insert("url_decode", StdlibFunction {
-            rust_path: "std_lib::encoding::url_decode".to_string(),
-
-            crate_deps: vec![],
-            struct_derives: vec![],
-            custom_type_imports: vec![],
-            module: StdlibModule::String,
-            parameters: vec![],
-            return_type: NailDataTypeDescriptor::Void,
-            type_inference: None,
-
-            diverging: false,
-            description: "",
-            example: "",
-        });
 
         // Error handling functions
         m.insert("safe", StdlibFunction {
@@ -3294,7 +3181,8 @@ lazy_static! {
             example: "",
         });
 
-        m.insert("hashmap_insert", StdlibFunction {
+        //
+        m.insert("hashmap_set", StdlibFunction {
             rust_path: "std_lib::hashmap::insert".to_string(),
 
             crate_deps: vec![CrateDependency::DashMap],
@@ -3310,8 +3198,8 @@ lazy_static! {
             type_inference: None,
 
             diverging: false,
-            description: "",
-            example: "",
+            description: "Set a key-value pair in hashmap",
+            example: "hashmap_set(map, \"key\", \"value\")",
         });
 
         m.insert("hashmap_get", StdlibFunction {
@@ -3560,6 +3448,411 @@ lazy_static! {
             example: "",
         });
 
+        // CLI Arguments
+        m.insert("args_get", StdlibFunction {
+            rust_path: "std_lib::args::get".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Args,
+            parameters: vec![
+                StdlibParameter { name: "index".to_string(), param_type: NailDataTypeDescriptor::Int, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "Get command-line argument by index",
+            example: "",
+        });
+
+        m.insert("args_flag", StdlibFunction {
+            rust_path: "std_lib::args::flag".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Args,
+            parameters: vec![
+                StdlibParameter { name: "name".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "Check if a flag is present",
+            example: "",
+        });
+
+        m.insert("args_value", StdlibFunction {
+            rust_path: "std_lib::args::value".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Args,
+            parameters: vec![
+                StdlibParameter { name: "name".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "Get flag value",
+            example: "",
+        });
+
+        m.insert("args_count", StdlibFunction {
+            rust_path: "std_lib::args::count".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Args,
+            parameters: vec![],
+            return_type: NailDataTypeDescriptor::Int,
+            type_inference: None,
+            diverging: false,
+            description: "Get argument count",
+            example: "",
+        });
+
+        // Path functions (additional)
+        m.insert("path_basename", StdlibFunction {
+            rust_path: "std_lib::path::basename".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Path,
+            parameters: vec![
+                StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "Get filename from path",
+            example: "",
+        });
+
+        m.insert("path_dirname", StdlibFunction {
+            rust_path: "std_lib::path::dirname".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Path,
+            parameters: vec![
+                StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "Get directory from path",
+            example: "",
+        });
+
+        m.insert("path_extension", StdlibFunction {
+            rust_path: "std_lib::path::extension".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Path,
+            parameters: vec![
+                StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "Get file extension",
+            example: "",
+        });
+
+        m.insert("path_is_absolute", StdlibFunction {
+            rust_path: "std_lib::path::is_absolute".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Path,
+            parameters: vec![
+                StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Boolean,
+            type_inference: None,
+            diverging: false,
+            description: "Check if path is absolute",
+            example: "",
+        });
+
+        m.insert("path_normalize", StdlibFunction {
+            rust_path: "std_lib::path::normalize".to_string(),
+            crate_deps: vec![],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Path,
+            parameters: vec![
+                StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "Normalize path",
+            example: "",
+        });
+
+        // URL functions
+        m.insert("url_encode", StdlibFunction {
+            rust_path: "std_lib::url::encode".to_string(),
+            crate_deps: vec![CrateDependency::UrlEncoding],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Url,
+            parameters: vec![
+                StdlibParameter { name: "text".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "URL encode a string",
+            example: "",
+        });
+
+        m.insert("url_decode", StdlibFunction {
+            rust_path: "std_lib::url::decode".to_string(),
+            crate_deps: vec![CrateDependency::UrlEncoding],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Url,
+            parameters: vec![
+                StdlibParameter { name: "text".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "URL decode a string",
+            example: "",
+        });
+
+        m.insert("url_parse_query", StdlibFunction {
+            rust_path: "std_lib::url::parse_query".to_string(),
+            crate_deps: vec![CrateDependency::UrlEncoding, CrateDependency::DashMap],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Url,
+            parameters: vec![
+                StdlibParameter { name: "query".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "Parse query string to hashmap",
+            example: "",
+        });
+
+        m.insert("url_build_query", StdlibFunction {
+            rust_path: "std_lib::url::build_query".to_string(),
+            crate_deps: vec![CrateDependency::UrlEncoding, CrateDependency::DashMap],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Url,
+            parameters: vec![
+                StdlibParameter { name: "params".to_string(), param_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)), pass_by_reference: true }
+            ],
+            return_type: NailDataTypeDescriptor::String,
+            type_inference: None,
+            diverging: false,
+            description: "Build query string from hashmap",
+            example: "",
+        });
+
+        // Compress functions
+        m.insert("compress_gzip", StdlibFunction {
+            rust_path: "std_lib::compress::gzip_compress".to_string(),
+            crate_deps: vec![CrateDependency::Flate2, CrateDependency::Base64],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Compress,
+            parameters: vec![
+                StdlibParameter { name: "data".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "Gzip compress a string",
+            example: "",
+        });
+
+        m.insert("compress_gunzip", StdlibFunction {
+            rust_path: "std_lib::compress::gzip_decompress".to_string(),
+            crate_deps: vec![CrateDependency::Flate2, CrateDependency::Base64],
+            struct_derives: vec![],
+            custom_type_imports: vec![],
+            module: StdlibModule::Compress,
+            parameters: vec![
+                StdlibParameter { name: "data".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            type_inference: None,
+            diverging: false,
+            description: "Gzip decompress a string",
+            example: "",
+        });
+
+        // Database functions
+        m.insert("db_sqlite_open", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_open".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap, CrateDependency::Uuid, CrateDependency::Serde],
+            struct_derives: vec![],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_SQLite".to_string()))),
+            type_inference: None,
+            diverging: false,
+            description: "Open SQLite database",
+            example: "",
+        });
+
+        m.insert("db_sqlite_memory", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_memory".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap, CrateDependency::Uuid, CrateDependency::Serde],
+            struct_derives: vec![],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_SQLite".to_string()))),
+            type_inference: None,
+            diverging: false,
+            description: "Open in-memory SQLite database",
+            example: "",
+        });
+
+        m.insert("db_sqlite_execute", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_execute".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap, CrateDependency::Serde],
+            struct_derives: vec![],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database"), ("DB_Result", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
+                StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_Result".to_string()))),
+            type_inference: None,
+            diverging: false,
+            description: "Execute SQL statement",
+            example: "",
+        });
+
+        m.insert("db_sqlite_query", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_query".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
+            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
+                StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any)))),
+            type_inference: Some(TypeInferenceRule::UseExpectedType),
+            diverging: false,
+            description: "Query database and return results as typed structs",
+            example: "",
+        });
+
+        m.insert("db_sqlite_query_single", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_query_single".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
+            struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
+                StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Any)),
+            type_inference: Some(TypeInferenceRule::UseExpectedType),
+            diverging: false,
+            description: "Query database and return single result as typed struct",
+            example: "",
+        });
+
+        m.insert("db_sqlite_close", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_close".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
+            struct_derives: vec![],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
+            type_inference: None,
+            diverging: false,
+            description: "Close database connection",
+            example: "",
+        });
+
+        m.insert("db_sqlite_begin", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_begin".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
+            struct_derives: vec![],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
+            type_inference: None,
+            diverging: false,
+            description: "Begin transaction (prefer db_sqlite_execute_batch for safer transactions)",
+            example: "",
+        });
+
+        m.insert("db_sqlite_commit", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_commit".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
+            struct_derives: vec![],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
+            type_inference: None,
+            diverging: false,
+            description: "Commit transaction (prefer db_sqlite_execute_batch for safer transactions)",
+            example: "",
+        });
+
+        m.insert("db_sqlite_rollback", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_rollback".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
+            struct_derives: vec![],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
+            type_inference: None,
+            diverging: false,
+            description: "Rollback transaction (prefer db_sqlite_execute_batch for safer transactions)",
+            example: "",
+        });
+
+        m.insert("db_sqlite_execute_batch", StdlibFunction {
+            rust_path: "std_lib::database::sqlite_execute_batch".to_string(),
+            crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
+            struct_derives: vec![],
+            custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database"), ("DB_Result", "nail::std_lib::database")],
+            module: StdlibModule::Database,
+            parameters: vec![
+                StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
+                StdlibParameter { name: "statements".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false }
+            ],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_Result".to_string()))),
+            type_inference: None,
+            diverging: false,
+            description: "Execute multiple SQL statements in a single transaction (all succeed or all fail)",
+            example: "",
+        });
+
         m
     };
 }
@@ -3606,6 +3899,28 @@ lazy_static! {
                 let mut fields = HashMap::new();
                 fields.insert("status".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("body".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+        
+        // DB_SQLite struct
+        m.insert("DB_SQLite", StdlibTypeInfo {
+            name: "DB_SQLite".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+        
+        // DB_Result struct
+        m.insert("DB_Result", StdlibTypeInfo {
+            name: "DB_Result".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("rows_affected".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("last_insert_id".to_string(), NailDataTypeDescriptor::Int);
                 fields
             }
         });

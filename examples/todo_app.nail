@@ -39,7 +39,7 @@ task_four:s = format_task(`Add more examples`, priority_low, priority_high, prio
 
 // Store tasks in arrays
 all_tasks:a:s = [task_one, task_two, task_three, task_four];
-total_tasks:i = array_len(all_tasks);
+total_tasks:i = array_length(all_tasks);
 
 // Track completed tasks
 completed_tasks:i = 2;
@@ -58,7 +58,7 @@ has_medium_tasks:b = any task in all_tasks {
 // Build output
 header:s = array_join([app_title, `\n`, separator], ``);
 stats_line:s = array_join([`Total Tasks: `, string_from(total_tasks), ` | Completed: `, string_from(completed_tasks), ` (`, string_from(completion_rate), `%)`], ``);
-high_priority_line:s = array_join([`High Priority Tasks: `, string_from(array_len(high_priority_tasks))], ``);
+high_priority_line:s = array_join([`High Priority Tasks: `, string_from(array_length(high_priority_tasks))], ``);
 medium_priority_line:s = array_join([`Has Medium Priority: `, string_from(has_medium_tasks)], ``);
 
 // Build task list using collection operations

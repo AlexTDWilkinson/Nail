@@ -122,7 +122,7 @@ for idx in array_range(0, 5) {
 }
 
 // Common patterns
-for idx in array_range(0, array_len(my_array)) {
+for idx in array_range(0, array_length(my_array)) {
     item:T = danger(array_get(my_array, idx));
     print(item);
 }
@@ -207,8 +207,8 @@ id_to_struct:h<i,Point> = hashmap_new(); // Integer keys, struct values
 name_to_active:h<s,b> = hashmap_new();   // String keys, boolean values
 
 // Hashmap operations
-hashmap_insert(user_scores, `alice`, 100);
-hashmap_insert(user_scores, `bob`, 85);
+hashmap_set(user_scores, `alice`, 100);
+hashmap_set(user_scores, `bob`, 85);
 
 score:i = danger(hashmap_get(user_scores, `alice`));
 has_charlie:b = hashmap_contains_key(user_scores, `charlie`);
@@ -221,7 +221,7 @@ alice_score:i = safe(hashmap_get(user_scores, `alice`), handle_missing_key);
 // Example with struct values
 struct Point { x_pos:i, y_pos:i }
 origin:Point = Point { x_pos: 0, y_pos: 0 };
-hashmap_insert(id_to_struct, 1, origin);
+hashmap_set(id_to_struct, 1, origin);
 ```
 
 #### 5.4.3 Enums
@@ -432,7 +432,7 @@ for value in numbers {
 }
 
 // Common pattern: iterate by index with descriptive names
-for position in array_range(0, array_len(numbers)) {
+for position in array_range(0, array_length(numbers)) {
     current_num:i = danger(array_get(numbers, position));
     print(`Index `, position, `: `, current_num);
 }
@@ -840,6 +840,7 @@ Nail includes a comprehensive standard library with functions organized by categ
 - `string_substring(s:s, start:i, end:i):s!e` - Extract substring (can fail)
 - `string_repeat(s:s, count:i):s` - Repeat string count times
 - `string_reverse(s:s):s` - Reverse string characters
+- `string_minify(s:s):s` - Remove all whitespace outside of quoted strings (useful for minifying JSON)
 - `string_join(arr:a:s, separator:s):s` - Join array of strings with separator
 - `string_is_alphabetic(s:s):b` - Check if string contains only alphabetic characters
 - `string_is_digits_only(s:s):b` - Check if string contains only digit characters (0-9)
@@ -847,7 +848,7 @@ Nail includes a comprehensive standard library with functions organized by categ
 - `string_is_alphanumeric(s:s):b` - Check if string contains only alphanumeric characters
 
 ### Array Operations
-- `array_len(arr:a:T):i` - Get array length
+- `array_length(arr:a:T):i` - Get array length
 - `array_get(arr:a:T, index:i):T!e` - Get element at index (can fail)
 - `array_push(arr:a:T, item:T):v` - Add element to array
 - `array_join(arr:a:s, separator:s):s` - Join string array with separator
@@ -884,7 +885,7 @@ Nail includes a comprehensive standard library with functions organized by categ
 **Note**: HashMap keys and values must be concrete types (i, f, s, b, arrays, structs, enums). Void type cannot be used as a value.
 
 - `hashmap_new():h<K,V>` - Create new hashmap (K,V must be concrete types)
-- `hashmap_insert(map:h<K,V>, key:K, value:V):v` - Insert key-value pair
+- `hashmap_set(map:h<K,V>, key:K, value:V):v` - Insert key-value pair
 - `hashmap_get(map:h<K,V>, key:K):V!e` - Get value by key (can fail)
 - `hashmap_remove(map:h<K,V>, key:K):V!e` - Remove and return value
 - `hashmap_contains_key(map:h<K,V>, key:K):b` - Check if key exists
@@ -898,6 +899,19 @@ Nail includes a comprehensive standard library with functions organized by categ
 - `int_from(value):i!e` - Convert to integer
 - `float_from(value):f!e` - Convert to float
 - `bool_from(value):b!e` - Convert to boolean
+
+### JSON Serialization/Deserialization
+- `json_serialize(value:T):s!e` - Serialize any value to pretty-formatted JSON string (with indentation)
+- `json_deserialize(json:s):T!e` - Deserialize JSON string to a value (type inferred from variable declaration)
+
+### Database Operations (`db_sqlite_*`)
+- `db_sqlite_memory():DB_SQLite!e` - Create an in-memory SQLite database
+- `db_sqlite_open(path:s):DB_SQLite!e` - Open a SQLite database file
+- `db_sqlite_execute(db:DB_SQLite, sql:s):DB_Result!e` - Execute SQL that doesn't return rows (CREATE, INSERT, UPDATE, DELETE)
+- `db_sqlite_query(db:DB_SQLite, sql:s):a:T!e` - Execute SQL query and return results as array of structs (type T inferred from variable declaration)
+- `db_sqlite_query_single(db:DB_SQLite, sql:s):T!e` - Execute SQL query and return single result as struct (type T inferred from variable declaration)
+- `db_sqlite_close(db:DB_SQLite):v!e` - Close database connection
+- `db_sqlite_execute_batch(db:DB_SQLite, statements:a:s):DB_Result!e` - Execute multiple SQL statements atomically
 
 ### Math Operations (`math_*`)
 - `math_abs(n:i):i` - Absolute value (integer)
@@ -1540,13 +1554,82 @@ record:UserRecord = convert_user_input_to_record(input, 1);
 Nail provides built-in functions for serializing structs to JSON and deserializing JSON to structs:
 
 ```js
-// Serialization
+// Serialization - converts structs, enums, arrays to pretty JSON
 user:User = User { name:`Bob`, age:25, email:`bob@example.com` };
-json_str:s = json_to_string(user);
+json_str:s = danger(json_serialize(user));  // Returns pretty-formatted JSON
 
-// Deserialization
-deserialized_user:User = json_to_type(json_str);
+// Arrays can also be serialized
+users:a:User = [user1, user2, user3];
+json_array:s = danger(json_serialize(users));
+
+// If you need compact JSON (no whitespace), use string_minify
+compact_json:s = string_minify(json_str);
+
+// Deserialization - converts JSON string back to typed value
+// Type is inferred from variable declaration
+deserialized_user:User = danger(json_deserialize(json_str));
+deserialized_users:a:User = danger(json_deserialize(json_array));
 ```
+
+Note: These functions return Result types, use `danger()` to unwrap or handle errors appropriately.
+
+### Database Operations
+
+Nail provides built-in SQLite database support with type-safe struct-based queries:
+
+```js
+// Define a struct that matches your database table
+struct Employee {
+    id:i,
+    name:s,
+    email:s,
+    salary:f,
+    active:b,
+    department:s
+}
+
+// Create an in-memory database
+db:DB_SQLite = expect(db_sqlite_memory());
+
+// Create table and insert data
+expect(db_sqlite_execute(db, `CREATE TABLE employees (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE,
+    salary REAL,
+    active BOOLEAN,
+    department TEXT
+)`));
+
+// Insert data
+expect(db_sqlite_execute(db, `INSERT INTO employees (name, email, salary, active, department) VALUES 
+    ('Alice Johnson', 'alice@company.com', 75000.50, 1, 'Engineering'),
+    ('Bob Smith', 'bob@company.com', 82000.00, 1, 'Marketing')`));
+
+// Query data - results automatically deserialize into structs
+employees:a:Employee = expect(db_sqlite_query(db, `SELECT * FROM employees ORDER BY id`));
+
+// Query single record
+alice:Employee = expect(db_sqlite_query_single(db, `SELECT * FROM employees WHERE name = 'Alice Johnson'`));
+
+// Query with filtering
+engineers:a:Employee = expect(db_sqlite_query(db, `SELECT * FROM employees WHERE department = 'Engineering'`));
+
+// Print employee information
+each employee in employees {
+    print(`Employee: `, employee.name, ` (`, employee.department, `) - $`, employee.salary);
+}
+
+// Close database connection
+expect(db_sqlite_close(db));
+```
+
+Key features:
+- **Type-safe queries**: Query results automatically deserialize into your defined structs
+- **No manual parsing**: Database rows map directly to struct fields
+- **Error handling**: All operations return Result types for proper error handling
+- **Transaction support**: Use `db_sqlite_execute_batch` for atomic operations
+- **Memory and file databases**: Support for both in-memory and persistent databases
 
 These additional features and examples demonstrate how Nail can work with complex data structures and transformations. By providing these utilities and patterns, Nail enables developers to handle various data scenarios while maintaining its core principle of simplicity.
 

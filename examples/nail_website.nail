@@ -606,7 +606,7 @@ main_route:HTTP_Route = HTTP_Route {
     content_type: `text/html; charset=utf-8`,
     status_code: 200
 };
-hashmap_insert(routes, `/`, main_route);
+hashmap_set(routes, `/`, main_route);
 
 // Add routes for running examples with proper JSON content type
 concurrent_route:HTTP_Route = HTTP_Route {
@@ -615,7 +615,7 @@ concurrent_route:HTTP_Route = HTTP_Route {
     content_type: `application/json`,
     status_code: 200
 };
-hashmap_insert(routes, `/run-example?name=concurrent`, concurrent_route);
+hashmap_set(routes, `/run-example?name=concurrent`, concurrent_route);
 
 parallel_route:HTTP_Route = HTTP_Route {
     path: `/run-example?name=parallel`,
@@ -623,7 +623,7 @@ parallel_route:HTTP_Route = HTTP_Route {
     content_type: `application/json`,
     status_code: 200
 };
-hashmap_insert(routes, `/run-example?name=parallel`, parallel_route);
+hashmap_set(routes, `/run-example?name=parallel`, parallel_route);
 
 error_route:HTTP_Route = HTTP_Route {
     path: `/run-example?name=error`,
@@ -631,7 +631,7 @@ error_route:HTTP_Route = HTTP_Route {
     content_type: `application/json`,
     status_code: 200
 };
-hashmap_insert(routes, `/run-example?name=error`, error_route);
+hashmap_set(routes, `/run-example?name=error`, error_route);
 
 // Keep the server warm by pinging itself every 14.5 minutes (870 seconds)
 spawn {

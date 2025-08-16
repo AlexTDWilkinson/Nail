@@ -123,7 +123,17 @@ blog_html:s = array_join([`
 </body>
 </html>`], ``);
 
+// Create routes
+routes:h<s, HTTP_Route> = hashmap_new();
+home_route:HTTP_Route = HTTP_Route {
+    path: `/`,
+    content: blog_html,
+    content_type: `text/html`,
+    status_code: 200
+};
+hashmap_set(routes, `/`, home_route);
+
 // Start the server
 print(`Starting blog server on port `, port, `...`);
 print(`Loading posts from examples/blog_posts/*.md`);
-http_server(port, blog_html);
+http_server(port, routes);

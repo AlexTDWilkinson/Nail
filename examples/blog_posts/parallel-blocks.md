@@ -187,7 +187,7 @@ f analyze_log_files(log_dir:s):LogAnalysis {
     r LogAnalysis {
         errors: error_count,
         warnings: warning_count,
-        unique_visitors: array_len(unique_ips),
+        unique_visitors: array_length(unique_ips),
         peak_hour: peak_hour,
         total_requests: total_requests
     };
