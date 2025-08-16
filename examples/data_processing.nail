@@ -5,13 +5,13 @@
 scores:a:i = [85, 92, 78, 96, 88, 73, 91, 87, 95, 82];
 
 print(`=== Test Score Analysis ===`);
-print(`Total students: `, array_len(scores));
+print(`Total students: `, array_length(scores));
 
 // Calculate statistics using collection operations
 total:i = reduce acc score in scores from 0 {
     y acc + score;
 };
-average:f = danger(float_from(string_from(total))) / danger(float_from(string_from(array_len(scores))));
+average:f = danger(float_from(string_from(total))) / danger(float_from(string_from(array_length(scores))));
 
 print(`Total points: `, total);
 print(`Average score: `, math_round(average));
@@ -20,7 +20,7 @@ print(`Average score: `, math_round(average));
 high_scores:a:i = filter score in scores {
     y score >= 90;
 };
-print(`Students with 90+: `, array_len(high_scores));
+print(`Students with 90+: `, array_length(high_scores));
 
 // Grade distribution
 grade_a:a:i = filter score in scores {
@@ -34,9 +34,9 @@ grade_c:a:i = filter score in scores {
 };
 
 print(`\n=== Grade Distribution ===`);
-print(`A grades (90-100): `, array_len(grade_a));
-print(`B grades (80-89): `, array_len(grade_b));
-print(`C grades (70-79): `, array_len(grade_c));
+print(`A grades (90-100): `, array_length(grade_a));
+print(`B grades (80-89): `, array_length(grade_b));
+print(`C grades (70-79): `, array_length(grade_c));
 
 // Apply curve (add 5 points to each score)
 curved_scores:a:i = map score in scores {

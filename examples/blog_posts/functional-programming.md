@@ -97,7 +97,7 @@ slow_requests:a:LogEntry = filter entry in log_entries {
 total_duration:i = reduce sum entry in slow_requests from 0 {
     y sum + entry.duration_ms;
 };
-avg_duration:f = float_from(total_duration) / float_from(array_len(slow_requests));
+avg_duration:f = float_from(total_duration) / float_from(array_length(slow_requests));
 
 print(array_join([`Average slow request duration: `, string_from(avg_duration), `ms`]));
 ```

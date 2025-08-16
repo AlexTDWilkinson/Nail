@@ -146,3 +146,17 @@ cargo run --bin nailc tests/example.nail --skip-check
 ## Transpilation Guidelines
 
 - **Return Keyword**: Transpilations should always use the return keyword, even though it's optional in Rust, we always use it because it's easier
+
+## Nail Website
+
+The Nail website is a demonstration of the language written in Nail itself:
+
+- **Source**: `examples/nail_website.nail` - The website code written in Nail
+- **Build Script**: `./run_website.sh` - Transpiles and runs the website
+- **How it works**:
+  1. The script transpiles `nail_website.nail` to Rust
+  2. Creates a separate Cargo project in `nail_website_server/`
+  3. Builds and runs the server on port 8080
+  4. The website showcases Nail examples and features using HTMX for interactivity
+
+**Important**: The `nail-website` binary in Cargo.toml is NOT the actual website - it's just a build helper. The real website runs from the transpiled `nail_website.nail` file.

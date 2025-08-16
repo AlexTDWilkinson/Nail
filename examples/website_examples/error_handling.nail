@@ -8,7 +8,7 @@ f parse_age(input:s):i!e {
         input == `not_a_number` => { r e(`Invalid input`); },
         else => { 
             // For demo, just parse the length as age
-            r string_len(input);
+            r string_length(input);
         }
     }
 }

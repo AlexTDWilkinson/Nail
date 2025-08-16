@@ -1,6 +1,6 @@
 use crate::lexer::{NailDataTypeDescriptor, Operation};
 use crate::parser::ASTNode;
-use crate::stdlib_registry::{self, CrateDependency};
+use crate::stdlib_registry::{self, CrateDependency, StructDerive};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
@@ -241,6 +241,20 @@ impl Transpiler {
         let required_deps = self.get_required_dependencies();
         if required_deps.contains(&CrateDependency::DashMap) {
             writeln!(output, "use dashmap::DashMap;")?;
+        }
+        
+        // Add serde import if any used functions require serde derives
+        let mut needs_serde = false;
+        for func_name in &self.used_stdlib_functions {
+            if let Some(func) = stdlib_registry::get_stdlib_function(func_name) {
+                if func.struct_derives.iter().any(|d| matches!(d, StructDerive::SerdeSerialize | StructDerive::SerdeDeserialize)) {
+                    needs_serde = true;
+                    break;
+                }
+            }
+        }
+        if needs_serde {
+            writeln!(output, "use serde::{{Serialize, Deserialize}};")?;
         }
         
         writeln!(output)?;
@@ -508,9 +522,6 @@ impl Transpiler {
                 write!(output, "{{")?;
                 writeln!(output)?;
                 self.indent_level += 1;
-                writeln!(output, "{}use rayon::prelude::*;", self.indent())?;
-                writeln!(output, "{}use rayon::iter::IntoParallelIterator;", self.indent())?;
-                writeln!(output, "{}use futures::future;", self.indent())?;
                 
                 // Use Rayon to create futures in parallel, then await them all
                 write!(output, "{}let __futures: Vec<_> = ", self.indent())?;
@@ -573,9 +584,6 @@ impl Transpiler {
                 write!(output, "{{")?;
                 writeln!(output)?;
                 self.indent_level += 1;
-                writeln!(output, "{}use rayon::prelude::*;", self.indent())?;
-                writeln!(output, "{}use rayon::iter::IntoParallelIterator;", self.indent())?;
-                writeln!(output, "{}use futures::future;", self.indent())?;
                 
                 // Use Rayon to create futures in parallel, then await them all
                 write!(output, "{}let __futures: Vec<_> = ", self.indent())?;
@@ -1086,7 +1094,30 @@ impl Transpiler {
                 }
             }
             ASTNode::StructDeclaration { name, fields, .. } => {
-                writeln!(output, "{}#[derive(Debug, Clone, PartialEq)]", self.indent())?;
+                // Collect all derives needed for this struct based on used stdlib functions
+                let mut derives = vec!["Debug", "Clone", "PartialEq"];
+                let mut needs_serde = false;
+                
+                for func_name in &self.used_stdlib_functions {
+                    if let Some(func) = stdlib_registry::get_stdlib_function(func_name) {
+                        for derive in &func.struct_derives {
+                            match derive {
+                                StructDerive::SerdeSerialize | 
+                                StructDerive::SerdeDeserialize => {
+                                    needs_serde = true;
+                                }
+                                _ => {} // Other derives handled by default
+                            }
+                        }
+                    }
+                }
+                
+                if needs_serde {
+                    derives.push("serde::Serialize");
+                    derives.push("serde::Deserialize");
+                }
+                
+                writeln!(output, "{}#[derive({})]", self.indent(), derives.join(", "))?;
                 writeln!(output, "{}struct {} {{", self.indent(), name)?;
                 self.indent_level += 1;
                 for field in fields {

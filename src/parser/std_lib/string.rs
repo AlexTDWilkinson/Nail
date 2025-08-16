@@ -35,6 +35,16 @@ pub async fn from<T: std::fmt::Debug>(value: T) -> String {
     format!("{:?}", value)
 }
 
+// Convert integer to string
+pub async fn from_int(value: i64) -> String {
+    value.to_string()
+}
+
+// Convert boolean to string
+pub async fn from_bool(value: bool) -> String {
+    value.to_string()
+}
+
 // Convert array of integers to string
 pub async fn from_array_i64(arr: Vec<i64>) -> String {
     format!("{:?}", arr)
@@ -123,6 +133,46 @@ pub async fn repeat(s: String, count: i64) -> String {
 // Reverse string
 pub async fn reverse(s: String) -> String {
     s.chars().rev().collect()
+}
+
+pub async fn minify(s: String) -> String {
+    // Minify JSON or any string by removing unnecessary whitespace
+    // This preserves whitespace inside quoted strings
+    let mut result = String::new();
+    let mut in_string = false;
+    let mut escape_next = false;
+    
+    for ch in s.chars() {
+        if escape_next {
+            result.push(ch);
+            escape_next = false;
+            continue;
+        }
+        
+        if ch == '\\' && in_string {
+            result.push(ch);
+            escape_next = true;
+            continue;
+        }
+        
+        if ch == '"' {
+            in_string = !in_string;
+            result.push(ch);
+            continue;
+        }
+        
+        if in_string {
+            // Inside strings, keep everything including whitespace
+            result.push(ch);
+        } else {
+            // Outside strings, skip all whitespace
+            if !ch.is_whitespace() {
+                result.push(ch);
+            }
+        }
+    }
+    
+    result
 }
 
 // Join array of strings with separator

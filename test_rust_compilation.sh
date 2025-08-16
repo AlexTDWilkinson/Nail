@@ -67,6 +67,9 @@ rayon = "1.5"
 futures = "0.3"
 nail = { path = "PROJECT_PATH" }
 dashmap = "6.1.0"
+serde = { version = "1.0", features = ["derive"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde_rusqlite = "0.35"
 EOF
     
     # Replace PROJECT_PATH with actual path
