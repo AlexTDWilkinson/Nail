@@ -32,7 +32,7 @@ struct Point {
     x_coord:i,
     y_coord:i
 }
-point:Point = Point { x_coord: 10, y_coord: 20 };
+point:Point = Point { x_coord = 10, y_coord = 20 };
 print(point);
 
 // Test 10: String with tab character

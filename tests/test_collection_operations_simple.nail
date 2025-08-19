@@ -120,10 +120,10 @@ struct Item {
 }
 
 items:a:Item = [
-    Item { name: `Sword`, value: 100, is_rare: false },
-    Item { name: `Shield`, value: 75, is_rare: false },
-    Item { name: `Magic Ring`, value: 500, is_rare: true },
-    Item { name: `Potion`, value: 25, is_rare: false }
+    Item { name = `Sword`, value = 100, is_rare = false },
+    Item { name = `Shield`, value = 75, is_rare = false },
+    Item { name = `Magic Ring`, value = 500, is_rare = true },
+    Item { name = `Potion`, value = 25, is_rare = false }
 ];
 
 // Map with struct field access

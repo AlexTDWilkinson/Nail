@@ -20,6 +20,6 @@ print(outer_value);
 // Struct field shadowing
 struct Data { value_field:i, other_field:s }
 value_field:i = 42;
-data:Data = Data { value_field: 99, other_field: `test` };
+data:Data = Data { value_field = 99, other_field = `test` };
 print(value_field);
 print(data.value_field);

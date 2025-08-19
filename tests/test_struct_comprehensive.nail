@@ -22,8 +22,8 @@ struct Rectangle {
 }
 
 // Test basic struct instantiation
-p1:Point = Point { x_coord: 10, y_coord: 20 };
-p2:Point = Point { x_coord: -5, y_coord: 15 };
+p1:Point = Point { x_coord = 10, y_coord = 20 };
+p2:Point = Point { x_coord = -5, y_coord = 15 };
 
 // Test field access
 x_val:i = p1.x_coord;
@@ -32,17 +32,17 @@ print(`Point 1: x=`, x_val, `, y=`, y_val);
 
 // Test complex struct instantiation
 person1:Person = Person { 
-    name: `Alice`, 
-    age: 30, 
-    height: 5.6, 
-    is_active: true 
+    name = `Alice`, 
+    age = 30, 
+    height = 5.6, 
+    is_active = true 
 };
 
 person2:Person = Person { 
-    name: `Bob`, 
-    age: 25, 
-    height: 6.0, 
-    is_active: false 
+    name = `Bob`, 
+    age = 25, 
+    height = 6.0, 
+    is_active = false 
 };
 
 // Test field access on complex struct
@@ -50,10 +50,10 @@ print(`Person: `, person1.name, `, age: `, person1.age);
 
 // Test array of structs
 points:a:Point = [
-    Point { x_coord: 1, y_coord: 1 },
-    Point { x_coord: 2, y_coord: 4 },
-    Point { x_coord: 3, y_coord: 9 },
-    Point { x_coord: 4, y_coord: 16 }
+    Point { x_coord = 1, y_coord = 1 },
+    Point { x_coord = 2, y_coord = 4 },
+    Point { x_coord = 3, y_coord = 9 },
+    Point { x_coord = 4, y_coord = 16 }
 ];
 
 // Test array access
@@ -64,7 +64,7 @@ print(`First point: x=`, first_point.x_coord, `, y=`, first_point.y_coord);
 doubled_points:a:Point = map point in points {
     new_x:i = point.x_coord * 2;
     new_y:i = point.y_coord * 2;
-    doubled:Point = Point { x_coord: new_x, y_coord: new_y };
+    doubled:Point = Point { x_coord = new_x, y_coord = new_y };
     y doubled;
 };
 
@@ -74,10 +74,10 @@ print(`Doubled first point: x=`, doubled_first.x_coord, `, y=`, doubled_first.y_
 
 // Test filter on array of structs
 people:a:Person = [
-    Person { name: `Alice`, age: 30, height: 5.6, is_active: true },
-    Person { name: `Bob`, age: 25, height: 6.0, is_active: false },
-    Person { name: `Charlie`, age: 35, height: 5.8, is_active: true },
-    Person { name: `Diana`, age: 28, height: 5.5, is_active: true }
+    Person { name = `Alice`, age = 30, height = 5.6, is_active = true },
+    Person { name = `Bob`, age = 25, height = 6.0, is_active = false },
+    Person { name = `Charlie`, age = 35, height = 5.8, is_active = true },
+    Person { name = `Diana`, age = 28, height = 5.5, is_active = true }
 ];
 
 // Filter active people using filter
@@ -94,8 +94,8 @@ print(`Total age of all people: `, total_age);
 
 // Test nested struct instantiation
 rect:Rectangle = Rectangle {
-    top_left_point: Point { x_coord: 0, y_coord: 10 },
-    bottom_right_point: Point { x_coord: 20, y_coord: 0 }
+    top_left_point = Point { x_coord = 0, y_coord = 10 },
+    bottom_right_point = Point { x_coord = 20, y_coord = 0 }
 };
 
 // Test nested field access
@@ -108,22 +108,22 @@ p3:Point = p1;
 print(`Copied point: x=`, p3.x_coord, `, y=`, p3.y_coord);
 
 // Test struct in variable declaration with immediate use
-p4:Point = Point { x_coord: 100, y_coord: 200 };
+p4:Point = Point { x_coord = 100, y_coord = 200 };
 sum:i = p4.x_coord + p4.y_coord;
 print(`Sum of p4 coordinates: `, sum);
 
 // Test struct field expressions (from test_struct_expression_fields.nail)
 base_x:i = 10;
 base_y:i = 20;
-p5:Point = Point { x_coord: base_x * 2 + 5, y_coord: base_y - 10 };
+p5:Point = Point { x_coord = base_x * 2 + 5, y_coord = base_y - 10 };
 print(`Point with expressions: x=`, p5.x_coord, `, y=`, p5.y_coord);
 
 // Test struct with function calls in field values
 max_val:f = math_max(10.0, 20.0);
 min_val:f = math_min(50.0, 30.0);
 p6:Point = Point { 
-    x_coord: danger(int_from(max_val)),
-    y_coord: danger(int_from(min_val))
+    x_coord = danger(int_from(max_val)),
+    y_coord = danger(int_from(min_val))
 };
 print(`Point with function calls: x=`, p6.x_coord, `, y=`, p6.y_coord);
 
@@ -133,7 +133,7 @@ total_y:i = reduce acc point in points from 0 { y acc + point.y_coord; };
 print(`Total x: `, total_x, `, Total y: `, total_y);
 
 // Test field access with operators
-player:Person = Person { name: `Test`, age: 25, height: 5.5, is_active: false };
+player:Person = Person { name = `Test`, age = 25, height = 5.5, is_active = false };
 is_inactive:b = !player.is_active;
 print(`Player is inactive: `, is_inactive);
 

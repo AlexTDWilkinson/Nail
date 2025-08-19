@@ -46,13 +46,13 @@ print(sum); // Output: 30
 Start your journey with Nail today and experience programming without the complexity!`;
 
 post1:BlogPost = BlogPost { 
-    title: `Welcome to Nail: A Language Without Complexity`, 
-    slug: `welcome-to-nail`, 
-    date: `2024-01-15`, 
-    content: post1_content 
+    title = `Welcome to Nail: A Language Without Complexity`, 
+    slug = `welcome-to-nail`, 
+    date = `2024-01-15`, 
+    content = post1_content 
 };
 
-post2:BlogPost = BlogPost { title:`Building a Web Server in 10 Lines of Nail`, slug:`web-server-tutorial`, date:`2024-01-20`, content:`# Building a Web Server in 10 Lines of Nail
+post2:BlogPost = BlogPost { title = `Building a Web Server in 10 Lines of Nail`, slug = `web-server-tutorial`, date = `2024-01-20`, content = `# Building a Web Server in 10 Lines of Nail
 
 One of Nail's strengths is how easy it makes common tasks. Let's build a web server!
 
@@ -314,10 +314,10 @@ router_html:s = array_join([`
 // Create routes
 routes:h<s, HTTP_Route> = hashmap_new();
 home_route:HTTP_Route = HTTP_Route {
-    path: `/`,
-    content: router_html,
-    content_type: `text/html`,
-    status_code: 200
+    path = `/`,
+    content = router_html,
+    content_type = `text/html`,
+    status_code = 200
 };
 hashmap_set(routes, `/`, home_route);
 

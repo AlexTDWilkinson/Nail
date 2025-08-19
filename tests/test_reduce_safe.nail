@@ -16,14 +16,14 @@ f default_zero(err:e):f {
 f default_sale(err:e):Sale {
     print(err);
     // Return a dummy sale
-    r Sale { quantity: 0, price: 0.0, region: `Unknown` };
+    r Sale { quantity = 0, price = 0.0, region = `Unknown` };
 }
 
 // Test data
 sales:a:Sale = [
-    Sale { quantity: 10, price: 99.99, region: `North` },
-    Sale { quantity: 5, price: 149.99, region: `South` },
-    Sale { quantity: 3, price: 299.99, region: `East` }
+    Sale { quantity = 10, price = 99.99, region = `North` },
+    Sale { quantity = 5, price = 149.99, region = `South` },
+    Sale { quantity = 3, price = 299.99, region = `East` }
 ];
 
 // Calculate total sales  

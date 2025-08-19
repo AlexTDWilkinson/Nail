@@ -9,9 +9,9 @@ struct User {
 
 // Original data
 users:a:User = [
-    User { name: `Alice`, score: 100, active: true },
-    User { name: `Bob`, score: 85, active: false },
-    User { name: `Charlie`, score: 92, active: true }
+    User { name = `Alice`, score = 100, active = true },
+    User { name = `Bob`, score = 85, active = false },
+    User { name = `Charlie`, score = 92, active = true }
 ];
 
 // "Update" by creating new data - original unchanged!

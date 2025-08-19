@@ -522,8 +522,8 @@ fn parse_struct_instantiation(state: &mut ParserState, struct_name: String, star
             });
         };
         
-        // Expect colon
-        let _ = expect_token(state, TokenType::Colon)?;
+        // Expect equals sign
+        let _ = expect_token(state, TokenType::Assignment)?;
         
         // Parse field value expression
         let field_value = parse_expression(state, 0)?;
@@ -1872,7 +1872,7 @@ mod tests {
     #[test]
     fn test_array_of_point_structs() {
         let input = r#"
-            points:a:struct:Point = [Point { x: 1, y: 5 }, Point { x: 3, y: 4 }];
+            points:a:struct:Point = [Point { x = 1, y = 5 }, Point { x = 3, y = 4 }];
             "#;
         let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);

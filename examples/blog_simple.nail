@@ -196,10 +196,10 @@ blog_html:s = array_join([`
 // Create routes
 routes:h<s, HTTP_Route> = hashmap_new();
 home_route:HTTP_Route = HTTP_Route {
-    path: `/`,
-    content: blog_html,
-    content_type: `text/html`,
-    status_code: 200
+    path = `/`,
+    content = blog_html,
+    content_type = `text/html`,
+    status_code = 200
 };
 hashmap_set(routes, `/`, home_route);
 
