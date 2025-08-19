@@ -28,13 +28,13 @@ transformed:a:i = map num in numbers {
 print(transformed); // Should output array with each element +10
 
 // Print structs
-point:Point = Point { x_coord: 10, y_coord: 20 };
+point:Point = Point { x_coord = 10, y_coord = 20 };
 print(point);
 
 // Print array of structs
 points:a:Point = [
-    Point { x_coord: 1, y_coord: 2 },
-    Point { x_coord: 3, y_coord: 4 }
+    Point { x_coord = 1, y_coord = 2 },
+    Point { x_coord = 3, y_coord = 4 }
 ];
 print(points);
 

@@ -12,5 +12,5 @@ struct Point { x_coord:i, y_coord:i }
 COLOR_RED:s = `Red`;
 COLOR_GREEN:s = `Green`;
 
-point:Point = Point { x_coord: 10, y_coord: 20 };
+point:Point = Point { x_coord = 10, y_coord = 20 };
 print(string_from(value));

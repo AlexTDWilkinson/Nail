@@ -19,9 +19,9 @@ player_name:s = danger(io_read_line_prompt(`Enter your character name: `));
 
 // Initialize player with struct instantiation
 player:Player = Player {
-    name: player_name,
-    health: max_health,
-    gold: initial_gold
+    name = player_name,
+    health = max_health,
+    gold = initial_gold
 };
 
 // Display initial stats using field access
@@ -55,9 +55,9 @@ gold_after_fight:i = if {
 current_name:s = player.name;
 
 player_turn1:Player = Player {
-    name: current_name,
-    health: health_after_fight,
-    gold: gold_after_fight
+    name = current_name,
+    health = health_after_fight,
+    gold = gold_after_fight
 };
 
 print(`Health: `, player_turn1.health, ` Gold: `, player_turn1.gold);
@@ -70,9 +70,9 @@ health_turn2:i = player_turn1.health;
 gold_turn2:i = player_turn1.gold + 30;
 
 player_turn2:Player = Player {
-    name: name_turn2,
-    health: health_turn2,
-    gold: gold_turn2
+    name = name_turn2,
+    health = health_turn2,
+    gold = gold_turn2
 };
 print(`You now have `, player_turn2.gold, ` gold!`);
 
@@ -115,9 +115,9 @@ final_gold:i = if {
 final_name:s = player_turn2.name;
 
 player_final:Player = Player {
-    name: final_name,
-    health: final_health,
-    gold: final_gold
+    name = final_name,
+    health = final_health,
+    gold = final_gold
 };
 
 print(`Health: `, player_final.health, ` Gold: `, player_final.gold);

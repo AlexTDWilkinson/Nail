@@ -46,4 +46,5 @@ flate2 = "1.0"
 base64 = "0.21"
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde_rusqlite = "0.35"
+arboard = "3.2"
 

@@ -3,10 +3,10 @@
 
 // Use HTTP_Route from stdlib
 test_route:HTTP_Route = HTTP_Route {
-    path: `/test`,
-    content: `Test content`,
-    content_type: `text/plain`,
-    status_code: 200
+    path = `/test`,
+    content = `Test content`,
+    content_type = `text/plain`,
+    status_code = 200
 };
 
 // Create a local struct with a different name
@@ -17,8 +17,8 @@ struct MyCustomStruct {
 
 // Use the local struct
 my_struct:MyCustomStruct = MyCustomStruct {
-    name: `example`,
-    value: 123
+    name = `example`,
+    value = 123
 };
 
 // Both should work without conflicts

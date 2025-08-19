@@ -75,10 +75,10 @@ each option in port_options {
 // Create routes
 routes:h<s, HTTP_Route> = hashmap_new();
 home_route:HTTP_Route = HTTP_Route {
-    path: `/`,
-    content: html_content,
-    content_type: `text/html`,
-    status_code: 200
+    path = `/`,
+    content = html_content,
+    content_type = `text/html`,
+    status_code = 200
 };
 hashmap_set(routes, `/`, home_route);
 

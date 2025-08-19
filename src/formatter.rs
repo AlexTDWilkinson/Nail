@@ -12,6 +12,39 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
             last_line_had_closing_brace = false;
             continue;
         }
+        
+        // Check if this line has content followed by a closing brace (like "age:i}" or "age:i }")
+        // Split it into two separate lines
+        let needs_split = (trimmed.contains("}") && !trimmed.starts_with("}") && 
+                          !trimmed.contains("{") && !trimmed.contains("=>") &&
+                          !trimmed.starts_with("//")) && 
+                          trimmed.chars().filter(|&c| c != '}' && c != ' ').count() > 0;
+        
+        if needs_split {
+            // Split the line at the closing brace
+            if let Some(brace_pos) = trimmed.rfind('}') {
+                let content_part = &trimmed[..brace_pos];
+                let brace_part = &trimmed[brace_pos..];
+                
+                // Process the content part
+                if !content_part.trim().is_empty() {
+                    let formatted_content = format_nail_line(content_part.trim());
+                    let indented = format!("{}{}", "    ".repeat(indent_level), formatted_content);
+                    formatted_lines.push(indented);
+                }
+                
+                // Process the closing brace(s) on a new line
+                // Decrease indent BEFORE formatting the brace line
+                let brace_count = brace_part.matches('}').count();
+                indent_level = indent_level.saturating_sub(brace_count);
+                let brace_formatted = format_nail_line(brace_part.trim());
+                let brace_indented = format!("{}{}", "    ".repeat(indent_level), brace_formatted);
+                formatted_lines.push(brace_indented);
+                
+                last_line_had_closing_brace = indent_level == 0;
+                continue;
+            }
+        }
 
         // Check if this line starts a new block (function, struct, enum, etc.)
         let starts_new_top_level_block = trimmed.starts_with("f ") || trimmed.starts_with("struct ") || trimmed.starts_with("enum ") || trimmed.starts_with("parallel ");
@@ -92,6 +125,7 @@ pub fn format_nail_line(line: &str) -> String {
     let mut chars = line.chars().peekable();
     let mut in_string = false;
     let mut in_comment = false;
+    let mut brace_stack: Vec<bool> = Vec::new();  // Track whether each brace level is a struct init
 
     while let Some(ch) = chars.next() {
         // Check for string start/end
@@ -123,9 +157,32 @@ pub fn format_nail_line(line: &str) -> String {
             continue;
         }
 
+        // Track brace context for struct initialization
+        if ch == '{' {
+            // Check if this is a struct initialization by looking back
+            // Struct init pattern: CapitalizedName { or , { (for nested structs)
+            let is_struct = {
+                let trimmed = formatted.trim_end();
+                // Check if preceded by a capitalized identifier (struct name)
+                if let Some(last_word_start) = trimmed.rfind(|c: char| !c.is_alphanumeric() && c != '_') {
+                    let last_word = &trimmed[last_word_start + 1..];
+                    last_word.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+                } else {
+                    // If no non-alphanumeric found, check the whole string
+                    trimmed.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+                }
+            };
+            brace_stack.push(is_struct);
+        } else if ch == '}' {
+            brace_stack.pop();
+        }
+
         // Format operators
         match ch {
             '=' => {
+                // Check if we're inside a struct initialization
+                let in_struct_init = brace_stack.last().copied().unwrap_or(false);
+
                 // Trim trailing space before operator
                 while formatted.ends_with(' ') {
                     formatted.pop();
@@ -139,8 +196,15 @@ pub fn format_nail_line(line: &str) -> String {
                     // =>
                     formatted.push_str(" => ");
                     chars.next();
+                } else if in_struct_init {
+                    // = in struct initialization - no space before, one space after
+                    formatted.push_str("= ");
+                    // Skip any following spaces (we already added one)
+                    while chars.peek() == Some(&' ') {
+                        chars.next();
+                    }
                 } else {
-                    // =
+                    // = regular assignment
                     formatted.push_str(" = ");
                 }
             }
@@ -338,6 +402,15 @@ mod tests {
         assert_eq!(format_nail_line("name:s = `Alice`"), "name:s = `Alice`");
         assert_eq!(format_nail_line("numbers:a:i = [1,2,3]"), "numbers:a:i = [1, 2, 3]");
         assert_eq!(format_nail_line("result:i = calc()"), "result:i = calc()");
+    }
+
+    #[test]
+    fn test_struct_initialization() {
+        assert_eq!(format_nail_line("Person { age = 0 }"), "Person { age= 0 }");
+        assert_eq!(format_nail_line("Person { name = `Alice`, age = 30 }"), "Person { name= `Alice`, age= 30 }");
+        assert_eq!(format_nail_line("Point { x_coord = 10, y_coord = 20 }"), "Point { x_coord= 10, y_coord= 20 }");
+        // Regular assignment should still have spaces
+        assert_eq!(format_nail_line("person:Person = Person { age = 25 }"), "person:Person = Person { age= 25 }");
     }
 
     #[test]

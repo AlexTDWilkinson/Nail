@@ -2,18 +2,18 @@
 
 // Test creating HTTP_Route structs
 route1:HTTP_Route = HTTP_Route {
-    path: `/api/users`,
-    content: `{"users": []}`,
-    content_type: `application/json`,
-    status_code: 200
+    path = `/api/users`,
+    content = `{"users": []}`,
+    content_type = `application/json`,
+    status_code = 200
 };
 
 // Test creating multiple routes
 route2:HTTP_Route = HTTP_Route {
-    path: `/api/health`,
-    content: `{"status": "ok"}`,
-    content_type: `application/json`,
-    status_code: 200
+    path = `/api/health`,
+    content = `{"status": "ok"}`,
+    content_type = `application/json`,
+    status_code = 200
 };
 
 // Test using HTTP_Route in a hashmap
@@ -33,10 +33,10 @@ print(`Route 1 status: `, status1);
 
 // Test creating a route inline in function call
 inline_route:HTTP_Route = HTTP_Route {
-    path: `/`,
-    content: `<html><body>Hello</body></html>`,
-    content_type: `text/html`,
-    status_code: 200
+    path = `/`,
+    content = `<html><body>Hello</body></html>`,
+    content_type = `text/html`,
+    status_code = 200
 };
 hashmap_insert(routes, `/`, inline_route);
 
@@ -51,8 +51,8 @@ struct LocalTestStruct {
 }
 
 local_struct:LocalTestStruct = LocalTestStruct {
-    field1: `test`,
-    field2: 42
+    field1 = `test`,
+    field2 = 42
 };
 
 print(`Local struct field1: `, local_struct.field1);

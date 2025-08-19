@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+use log;
 use ratatui::text::Span;
 use ratatui::{
     style::{Color, Style},
@@ -120,11 +121,30 @@ lazy_static! {
 }
 
 pub fn colorize_code(content: Vec<Line>, theme: &ColorScheme) -> Vec<Line<'static>> {
+    // Safety check: ensure we have a valid theme and content
+    if content.is_empty() {
+        return vec![Line::from(vec![Span::raw("")])];
+    }
+    
+    // Validate theme colors to prevent unexpected green text
+    if matches!(theme.default, Color::Green) && !cfg!(test) {
+        log::warn!("Detected potentially incorrect theme with green default color");
+    }
+
     // First pass: detect multi-line strings
     let string_state = detect_multiline_strings(&content);
 
-    // Parallel colorization per line
-    let colored_lines: Vec<Line<'static>> = content.into_par_iter().enumerate().map(|(line_idx, line)| colorize_line(line, line_idx, &string_state, theme)).collect();
+    // Parallel colorization per line with bounds checking
+    let colored_lines: Vec<Line<'static>> = content.into_par_iter().enumerate().map(|(line_idx, line)| {
+        // Add bounds checking for line_idx
+        if line_idx < string_state.len() {
+            colorize_line(line, line_idx, &string_state, theme)
+        } else {
+            log::warn!("Colorizer: line index {} out of bounds for string_state len {}", line_idx, string_state.len());
+            // Return uncolored line as fallback
+            Line::from(line.spans.into_iter().map(|span| Span::raw(span.content.to_string())).collect::<Vec<_>>())
+        }
+    }).collect();
 
     colored_lines
 }
@@ -201,8 +221,8 @@ fn colorize_line(line: Line, line_idx: usize, string_state: &[bool], theme: &Col
                     } else {
                         // Start of string
                         if !result.is_empty() {
-                            // Colorize non-string content before the string
-                            colorize_non_string_content(&result, &mut colored_spans, theme);
+                            // Colorize non-string content before the string - preserve exact spacing
+                            colorize_non_string_content_preserve_positions(&result, &mut colored_spans, theme);
                             result.clear();
                         }
                         string_start = current_pos;
@@ -227,24 +247,13 @@ fn colorize_line(line: Line, line_idx: usize, string_state: &[bool], theme: &Col
                     let comment_part = &result[comment_pos..];
 
                     if !pre_comment.is_empty() {
-                        // Remove trailing spaces from pre_comment
-                        let pre_comment_trimmed = pre_comment.trim_end();
-                        let space_count = pre_comment.len() - pre_comment_trimmed.len();
-
-                        if !pre_comment_trimmed.is_empty() {
-                            colorize_non_string_content(pre_comment_trimmed, &mut colored_spans, theme);
-                        }
-
-                        // Add back the spaces between pre-comment and comment
-                        if space_count > 0 {
-                            colored_spans.push(Span::raw(" ".repeat(space_count)));
-                        }
+                        colorize_non_string_content_preserve_positions(pre_comment, &mut colored_spans, theme);
                     }
 
                     // Add comment as a single span - DO NOT tokenize!
                     colored_spans.push(Span::styled(comment_part.to_string(), Style::default().fg(theme.comment)));
                 } else {
-                    colorize_non_string_content(&result, &mut colored_spans, theme);
+                    colorize_non_string_content_preserve_positions(&result, &mut colored_spans, theme);
                 }
             }
 
@@ -253,82 +262,20 @@ fn colorize_line(line: Line, line_idx: usize, string_state: &[bool], theme: &Col
 
         // Check for inline comments and handle them specially
         if let Some(comment_pos) = content.find("//") {
-            // Debug log
-            if content.contains("final_message") {
-                log::debug!("Processing line with final_message: '{}'", content);
+            // Split into pre-comment and comment
+            let pre_comment = &content[..comment_pos];
+            let comment_part = &content[comment_pos..];
+
+            // Colorize pre-comment part normally
+            if !pre_comment.is_empty() {
+                colorize_non_string_content_preserve_positions(pre_comment, &mut colored_spans, theme);
             }
-            // Handle leading whitespace first
-            let leading_spaces = content.len() - content.trim_start().len();
-            let actual_comment_pos = comment_pos;
 
-            if leading_spaces > 0 && actual_comment_pos >= leading_spaces {
-                // Preserve leading whitespace
-                colored_spans.push(Span::raw(" ".repeat(leading_spaces)));
-
-                // Split into pre-comment and comment parts after leading spaces
-                let content_after_spaces = &content[leading_spaces..];
-                let comment_pos_adjusted = actual_comment_pos - leading_spaces;
-
-                let pre_comment = &content_after_spaces[..comment_pos_adjusted];
-                let comment_part = &content_after_spaces[comment_pos_adjusted..];
-
-                // Colorize pre-comment part normally (without leading spaces)
-                if !pre_comment.is_empty() {
-                    // Remove trailing spaces from pre_comment
-                    let pre_comment_trimmed = pre_comment.trim_end();
-                    let space_count = pre_comment.len() - pre_comment_trimmed.len();
-
-                    if !pre_comment_trimmed.is_empty() {
-                        colorize_non_string_content(pre_comment_trimmed, &mut colored_spans, theme);
-                    }
-
-                    // Add back the spaces between pre-comment and comment
-                    if space_count > 0 {
-                        colored_spans.push(Span::raw(" ".repeat(space_count)));
-                    }
-                }
-
-                // Colorize comment part
-                // Debug check
-                if comment_part.contains("/ /") {
-                    log::error!("WARNING: comment_part already has space: '{}'", comment_part);
-                } else if comment_part.starts_with("//") {
-                    log::debug!("Comment part is correct: '{}'", comment_part);
-                }
-                colored_spans.push(Span::styled(comment_part.to_string(), Style::default().fg(theme.comment)));
-            } else {
-                // Original logic for no leading spaces
-                let pre_comment = &content[..comment_pos];
-                let comment_part = &content[comment_pos..];
-
-                // Colorize pre-comment part normally
-                if !pre_comment.is_empty() {
-                    // Remove trailing spaces from pre_comment
-                    let pre_comment_trimmed = pre_comment.trim_end();
-                    let space_count = pre_comment.len() - pre_comment_trimmed.len();
-
-                    if !pre_comment_trimmed.is_empty() {
-                        colorize_non_string_content(pre_comment_trimmed, &mut colored_spans, theme);
-                    }
-
-                    // Add back the spaces between pre-comment and comment
-                    if space_count > 0 {
-                        colored_spans.push(Span::raw(" ".repeat(space_count)));
-                    }
-                }
-
-                // Colorize comment part
-                // Debug check
-                if comment_part.contains("/ /") {
-                    log::error!("WARNING: comment_part already has space: '{}'", comment_part);
-                } else if comment_part.starts_with("//") {
-                    log::debug!("Comment part is correct: '{}'", comment_part);
-                }
-                colored_spans.push(Span::styled(comment_part.to_string(), Style::default().fg(theme.comment)));
-            }
+            // Colorize comment part
+            colored_spans.push(Span::styled(comment_part.to_string(), Style::default().fg(theme.comment)));
         } else {
-            // Tokenize and colorize individual words normally
-            colorize_non_string_content(content, &mut colored_spans, theme);
+            // Colorize content while preserving exact positions
+            colorize_non_string_content_preserve_positions(content, &mut colored_spans, theme);
         }
     }
 
@@ -490,6 +437,144 @@ fn colorize_non_string_content(content: &str, colored_spans: &mut Vec<Span<'stat
 
         // Set need_space for next iteration
         need_space = !matches!(token.as_str(), "(" | "[" | "{");
+    }
+}
+
+// New function that preserves exact character positions
+fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: &mut Vec<Span<'static>>, theme: &ColorScheme) {
+    // Safety check: never tokenize comments
+    if content.trim().starts_with("//") {
+        colored_spans.push(Span::styled(content.to_string(), Style::default().fg(theme.comment)));
+        return;
+    }
+
+    // Track position in original string
+    let mut pos = 0;
+    let chars: Vec<char> = content.chars().collect();
+    
+    while pos < chars.len() {
+        // Skip whitespace
+        let start_pos = pos;
+        // Add safety counter to prevent infinite loops
+        let mut ws_counter = 0;
+        while pos < chars.len() && chars[pos].is_whitespace() && ws_counter < 100 {
+            pos += 1;
+            ws_counter += 1;
+        }
+        
+        // Add whitespace span if any
+        if pos > start_pos {
+            let whitespace: String = chars[start_pos..pos].iter().collect();
+            colored_spans.push(Span::raw(whitespace));
+        }
+        
+        if pos >= chars.len() {
+            break;
+        }
+        
+        // Find the end of the current token
+        let token_start = pos;
+        
+        // Check for operators and delimiters
+        let ch = chars[pos];
+        if matches!(ch, '(' | ')' | '{' | '}' | '[' | ']' | ',' | ';' | ':') {
+            // Single character delimiter
+            colored_spans.push(colorize_single_char(ch, theme));
+            pos += 1;
+        } else if matches!(ch, '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/') {
+            // Potentially multi-character operator
+            let mut token_end = pos + 1;
+            
+            // Check for two-character operators
+            if token_end < chars.len() {
+                let next_ch = chars[token_end];
+                if (ch == '=' && next_ch == '=') ||
+                   (ch == '=' && next_ch == '>') ||
+                   (ch == '!' && next_ch == '=') ||
+                   (ch == '<' && next_ch == '=') ||
+                   (ch == '>' && next_ch == '=') ||
+                   (ch == '/' && next_ch == 'p') {
+                    token_end += 1;
+                }
+            }
+            
+            // Special case for error types (e.g., i!e)
+            if ch == '!' && pos > 0 && token_end < chars.len() && chars[token_end] == 'e' {
+                let prev_ch = chars[pos - 1];
+                if matches!(prev_ch, 'i' | 'f' | 's' | 'b' | 'a') {
+                    // This is part of an error type, handled elsewhere
+                    pos += 1;
+                    continue;
+                }
+            }
+            
+            let token: String = chars[token_start..token_end].iter().collect();
+            colored_spans.push(Span::styled(token, Style::default().fg(theme.operator)));
+            pos = token_end;
+        } else {
+            // Regular word/identifier
+            let mut token_end = pos;
+            // Add safety counter to prevent infinite loops
+            let mut loop_counter = 0;
+            while token_end < chars.len() && loop_counter < 1000 {
+                loop_counter += 1;
+                let ch = chars[token_end];
+                if ch.is_whitespace() || matches!(ch, '(' | ')' | '{' | '}' | '[' | ']' | ',' | ';' | ':' | '=' | '<' | '>' | '+' | '-' | '*' | '/') {
+                    // Special case: don't break on ! if it's part of an error type
+                    if ch == '!' && token_end + 1 < chars.len() && chars[token_end + 1] == 'e' {
+                        let token_so_far: String = chars[token_start..token_end].iter().collect();
+                        if token_so_far.chars().all(|c| matches!(c, 'i' | 'f' | 's' | 'b' | 'a')) {
+                            token_end += 2; // Include !e
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                // Special case for error types: include !e
+                if ch == '!' && token_end + 1 < chars.len() && chars[token_end + 1] == 'e' {
+                    token_end += 2;
+                } else {
+                    token_end += 1;
+                }
+            }
+            
+            // Safety check: if we hit the loop limit, skip this token
+            if loop_counter >= 1000 {
+                log::warn!("Colorizer: potential infinite loop detected, skipping token");
+                pos += 1;
+                continue;
+            }
+            
+            let token: String = chars[token_start..token_end].iter().collect();
+            
+            // Check if next token is '(' to identify function calls
+            let mut next_non_ws = token_end;
+            // Add safety counter to prevent infinite loops
+            let mut ws_loop_counter = 0;
+            while next_non_ws < chars.len() && chars[next_non_ws].is_whitespace() && ws_loop_counter < 100 {
+                next_non_ws += 1;
+                ws_loop_counter += 1;
+            }
+            
+            if next_non_ws < chars.len() && chars[next_non_ws] == '(' {
+                colored_spans.push(Span::styled(token, Style::default().fg(theme.function)));
+            } else {
+                colored_spans.push(colorize_word(&token, theme));
+            }
+            
+            pos = token_end;
+        }
+    }
+}
+
+fn colorize_single_char(ch: char, theme: &ColorScheme) -> Span<'static> {
+    match ch {
+        '(' | ')' => Span::styled(ch.to_string(), Style::default().fg(theme.parenthesis)),
+        '{' | '}' => Span::styled(ch.to_string(), Style::default().fg(theme.block)),
+        ';' => Span::styled(ch.to_string(), Style::default().fg(theme.end_statement)),
+        ',' => Span::styled(ch.to_string(), Style::default().fg(theme.comma)),
+        ':' => Span::styled(ch.to_string(), Style::default().fg(theme.operator)),
+        _ => Span::styled(ch.to_string(), Style::default().fg(theme.default)),
     }
 }
 

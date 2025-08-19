@@ -15,9 +15,9 @@ struct Point {
 user_map:h<s,User> = hashmap_new();
 
 // Create some users
-alice:User = User { name: `Alice`, age: 30, active: true };
-bob:User = User { name: `Bob`, age: 25, active: false };
-charlie:User = User { name: `Charlie`, age: 35, active: true };
+alice:User = User { name = `Alice`, age = 30, active = true };
+bob:User = User { name = `Bob`, age = 25, active = false };
+charlie:User = User { name = `Charlie`, age = 35, active = true };
 
 // Insert users into map
 hashmap_insert(user_map, `alice_id`, alice);
@@ -32,9 +32,9 @@ print(`Retrieved user: `, alice_from_map.name, ` age: `, alice_from_map.age);
 point_map:h<i,Point> = hashmap_new();
 
 // Add points with expressions in struct fields
-origin:Point = Point { x_coord: 0.0, y_coord: 0.0 };
-point1:Point = Point { x_coord: 1.5 * 2.0, y_coord: 4.0 - 1.0 };
-point2:Point = Point { x_coord: origin.x_coord + 5.0, y_coord: origin.y_coord + 10.0 };
+origin:Point = Point { x_coord = 0.0, y_coord = 0.0 };
+point1:Point = Point { x_coord = 1.5 * 2.0, y_coord = 4.0 - 1.0 };
+point2:Point = Point { x_coord = origin.x_coord + 5.0, y_coord = origin.y_coord + 10.0 };
 
 hashmap_insert(point_map, 0, origin);
 hashmap_insert(point_map, 1, point1);
@@ -71,9 +71,9 @@ print(`Alice's age from derived map: `, alice_age);
 computed_key:s = array_join([`user_`, `alice`], ``);
 computed_user:User = danger(hashmap_get(user_map, `alice_id`));
 new_user:User = User { 
-    name: computed_user.name, 
-    age: computed_user.age + 1, 
-    active: !computed_user.active 
+    name = computed_user.name, 
+    age = computed_user.age + 1, 
+    active = !computed_user.active 
 };
 
 hashmap_insert(user_map, computed_key, new_user);

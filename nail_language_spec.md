@@ -220,7 +220,7 @@ alice_score:i = safe(hashmap_get(user_scores, `alice`), handle_missing_key);
 
 // Example with struct values
 struct Point { x_pos:i, y_pos:i }
-origin:Point = Point { x_pos: 0, y_pos: 0 };
+origin:Point = Point { x_pos = 0, y_pos = 0 };
 hashmap_set(id_to_struct, 1, origin);
 ```
 
@@ -1545,7 +1545,7 @@ f convert_user_input_to_record(input:UserInput, id:i):UserRecord {
 }
 
 // Usage
-input:UserInput = UserInput { full_name: `John Doe`, email: `john@example.com`, age: 30 };
+input:UserInput = UserInput { full_name = `John Doe`, email = `john@example.com`, age = 30 };
 record:UserRecord = convert_user_input_to_record(input, 1);
 ```
 
@@ -1555,7 +1555,7 @@ Nail provides built-in functions for serializing structs to JSON and deserializi
 
 ```js
 // Serialization - converts structs, enums, arrays to pretty JSON
-user:User = User { name:`Bob`, age:25, email:`bob@example.com` };
+user:User = User { name = `Bob`, age = 25, email = `bob@example.com` };
 json_str:s = danger(json_serialize(user));  // Returns pretty-formatted JSON
 
 // Arrays can also be serialized
