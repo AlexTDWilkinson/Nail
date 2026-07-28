@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, String:
-        "string_from" => "std_lib::string::from", (value: any) -> s,
+        "string_from" => "std_lib::string::from", (value: T) -> s,
             "Converts any value (int, float, bool, struct, etc.) to its string representation.",
             "text:s = string_from(42);";
         "string_from_array_i64" => "std_lib::string::from_array_i64", (array: [i]) -> s,

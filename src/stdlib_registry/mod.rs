@@ -15,11 +15,13 @@ use std::collections::HashSet;
 
 /// Shorthand for NailDataTypeDescriptor values in registry entries, mirroring
 /// Nail's own type syntax:
-///   i, f, s, b, v (void), any, never    - primitive types
-///   T (any other bare ident)            - type variable
+///   i, f, s, b, v (void), e, never      - primitive types
+///   T (any other bare ident)            - type variable, accepts any type
+///   (T: i|f)                            - bounded type variable, accepts only the listed types
 ///   [X]                                 - array of X
 ///   (X!e)                               - result of X
 ///   (h K V)                             - hashmap from K to V
+///   (fn(X, Y) -> Z)                     - function from X, Y to Z
 /// Compose by nesting, e.g. ([s]!e) is a result of an array of strings. A
 /// result of a hashmap must parenthesize the hashmap: ((h s s)!e).
 macro_rules! nail_type {
@@ -28,12 +30,14 @@ macro_rules! nail_type {
     (s) => { NailDataTypeDescriptor::String };
     (b) => { NailDataTypeDescriptor::Boolean };
     (v) => { NailDataTypeDescriptor::Void };
-    (any) => { NailDataTypeDescriptor::Any };
+    (e) => { NailDataTypeDescriptor::Error };
     (never) => { NailDataTypeDescriptor::Never };
     ([ $($inner:tt)+ ]) => { NailDataTypeDescriptor::Array(Box::new(nail_type!($($inner)+))) };
     ((h $key:tt $value:tt)) => { NailDataTypeDescriptor::HashMap(Box::new(nail_type!($key)), Box::new(nail_type!($value))) };
     (($inner:tt !e)) => { NailDataTypeDescriptor::Result(Box::new(nail_type!($inner))) };
-    ($type_var:ident) => { NailDataTypeDescriptor::TypeVar(stringify!($type_var).to_string()) };
+    ((fn( $($param:tt),* ) -> $ret:tt)) => { NailDataTypeDescriptor::Fn(vec![ $( nail_type!($param) ),* ], Box::new(nail_type!($ret))) };
+    (($type_var:ident : $($bound:tt)|+)) => { NailDataTypeDescriptor::TypeVar(stringify!($type_var).to_string(), vec![ $( nail_type!($bound) ),+ ]) };
+    ($type_var:ident) => { NailDataTypeDescriptor::TypeVar(stringify!($type_var).to_string(), vec![]) };
 }
 
 /// Builds one StdlibParameter. Wrap the type in (& ...) for pass-by-reference:
@@ -85,6 +89,7 @@ macro_rules! simple_fns {
 
 mod args;
 mod array;
+mod code;
 mod compress;
 mod crypto;
 mod database;
@@ -119,6 +124,13 @@ macro_rules! crate_dependencies {
         }
 
         impl CrateDependency {
+            /// Every crate the stdlib registry can ever require. The bundle
+            /// build uses this to pre-compile the full dependency superset so
+            /// user machines never touch crates.io.
+            pub fn all() -> Vec<CrateDependency> {
+                vec![$(CrateDependency::$variant,)*]
+            }
+
             /// Exact line for a generated Cargo.toml [dependencies] section
             pub fn to_cargo_dep(&self) -> &'static str {
                 match self { $(CrateDependency::$variant => $cargo,)* }
@@ -154,7 +166,7 @@ crate_dependencies! {
     Rand => { cargo: "rand = \"0.8\"", name: "rand", import: "use rand;" },
     DashMap => { cargo: "dashmap = \"6.1.0\"", name: "dashmap", import: "use dashmap;" },
     Pulldown => { cargo: "pulldown-cmark = \"0.9\"", name: "pulldown-cmark", import: "use pulldown_cmark;" },
-    Reqwest => { cargo: "reqwest = \"0.11\"", name: "reqwest", import: "use reqwest;" },
+    Reqwest => { cargo: "reqwest = { version = \"0.11\", default-features = false, features = [\"json\", \"rustls-tls\"] }", name: "reqwest", import: "use reqwest;" },
     Sha2 => { cargo: "sha2 = \"0.10\"", name: "sha2", import: "use sha2;" },
     Md5 => { cargo: "md5 = \"0.7\"", name: "md5", import: "use md5;" },
     Uuid => { cargo: "uuid = { version = \"1.0\", features = [\"v4\"] }", name: "uuid", import: "use uuid;" },
@@ -200,6 +212,7 @@ stdlib_modules! {
     IO => "std_lib::io",
     Print => "std_lib::print",
     Markdown => "std_lib::markdown",
+    Code => "std_lib::code",
     Crypto => "std_lib::crypto",
     Regex => "std_lib::regex",
     Args => "std_lib::args",
@@ -270,6 +283,7 @@ lazy_static! {
         let mut m = HashMap::new();
         args::register(&mut m);
         array::register(&mut m);
+        code::register(&mut m);
         compress::register(&mut m);
         crypto::register(&mut m);
         database::register(&mut m);
@@ -331,6 +345,26 @@ pub fn is_stdlib_function(name: &str) -> bool {
 /// Get stdlib function info
 pub fn get_stdlib_function(name: &str) -> Option<&'static StdlibFunction> {
     STDLIB_FUNCTIONS.get(name)
+}
+
+lazy_static! {
+    /// Stdlib calls that have a lazy Rust-iterator form. When such a call is
+    /// the iterable of a collection operation or for loop, the transpiler can
+    /// emit this template (with {0}, {1}, ... as the transpiled argument
+    /// expressions) instead of materializing a Vec through the async function.
+    /// This keeps function-specific knowledge in the registry — the transpiler
+    /// only knows the generic mechanism.
+    static ref ITERATOR_FORMS: HashMap<&'static str, &'static str> = {
+        let mut m = HashMap::new();
+        m.insert("array_range", "({0}..{1})");
+        m.insert("array_range_inclusive", "({0}..={1})");
+        m
+    };
+}
+
+/// Lazy iterator template for a stdlib call in iterable position, if one exists.
+pub fn get_iterator_form(name: &str) -> Option<&'static str> {
+    ITERATOR_FORMS.get(name).copied()
 }
 
 /// Information about a stdlib struct/type
@@ -431,6 +465,11 @@ pub fn get_stdlib_struct_field_type(struct_name: &str, field_name: &str) -> Opti
 /// Check if a struct is a stdlib struct
 pub fn is_stdlib_struct(name: &str) -> bool {
     STDLIB_TYPES.contains_key(name)
+}
+
+/// Get the full field list of a stdlib struct
+pub fn get_stdlib_struct_fields(name: &str) -> Option<Vec<(String, NailDataTypeDescriptor)>> {
+    STDLIB_TYPES.get(name).map(|info| info.fields.iter().map(|(field_name, field_type)| (field_name.clone(), field_type.clone())).collect())
 }
 
 #[cfg(test)]

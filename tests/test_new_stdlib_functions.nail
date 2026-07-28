@@ -101,11 +101,8 @@ print(`Rotated right by 2:`, rotated_right);
 
 // Array flatten
 nested:a:a:i = [[1, 2], [3, 4], [5, 6]];
-flattened:a:i = array_flatten_deep(nested);
+flattened:a:i = array_flatten(nested);
 print(`Flattened:`, flattened);
-
-// Skip array_partition and array_group_by as they require lambda functions
-// which are not yet working properly in tests
 
 // Math functions
 gcd_result:i = math_gcd(48, 18);

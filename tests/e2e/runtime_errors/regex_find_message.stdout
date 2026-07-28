@@ -1,0 +1,4 @@
+regex_find: no match for pattern 'q+' in the text
+none
+regex_find_all: no matches for pattern 'q+' in the text
+[]

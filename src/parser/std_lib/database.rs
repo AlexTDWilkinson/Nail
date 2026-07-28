@@ -28,7 +28,7 @@ fn get_connection(handle: &str) -> Result<Arc<Mutex<Connection>>, String> {
     CONNECTIONS
         .get(handle)
         .map(|entry| entry.value().clone())
-        .ok_or_else(|| format!("Database handle '{}' not found", handle))
+        .ok_or_else(|| format!("db_sqlite: unknown database handle '{}' (was the connection already closed?)", handle))
 }
 
 /// Run blocking SQLite work on the blocking thread pool so it doesn't
@@ -40,14 +40,14 @@ where
 {
     tokio::task::spawn_blocking(work)
         .await
-        .map_err(|e| format!("Database task failed: {}", e))?
+        .map_err(|e| format!("db_sqlite: background database task failed: {}", e))?
 }
 
 /// Open or create a SQLite database
 pub async fn sqlite_open(path: String) -> Result<DB_SQLite, String> {
     run_blocking(move || {
         let conn = Connection::open(&path)
-            .map_err(|e| format!("Failed to open database '{}': {}", path, e))?;
+            .map_err(|e| format!("db_sqlite_open: could not open database '{}': {}", path, e))?;
 
         // Generate a unique handle for this connection
         let handle = format!("db_{}", uuid::Uuid::new_v4().to_string());
@@ -65,7 +65,7 @@ pub async fn sqlite_open(path: String) -> Result<DB_SQLite, String> {
 pub async fn sqlite_memory() -> Result<DB_SQLite, String> {
     run_blocking(move || {
         let conn = Connection::open_in_memory()
-            .map_err(|e| format!("Failed to open in-memory database: {}", e))?;
+            .map_err(|e| format!("db_sqlite_memory: could not open an in-memory database: {}", e))?;
 
         let handle = format!("db_mem_{}", uuid::Uuid::new_v4().to_string());
 
@@ -84,10 +84,10 @@ pub async fn sqlite_execute(db: &DB_SQLite, sql: String) -> Result<DB_Result, St
 
     run_blocking(move || {
         let conn = conn_arc.lock()
-            .map_err(|e| format!("Failed to lock database connection: {}", e))?;
+            .map_err(|e| format!("db_sqlite_execute: could not lock the database connection: {}", e))?;
 
         let affected = conn.execute(&sql, [])
-            .map_err(|e| format!("Failed to execute SQL: {}", e))?;
+            .map_err(|e| format!("db_sqlite_execute: failed to execute SQL '{}': {}", sql, e))?;
 
         // Try to get last insert rowid
         let last_insert_id = conn.last_insert_rowid();
@@ -108,14 +108,14 @@ where
 
     run_blocking(move || {
         let conn = conn_arc.lock()
-            .map_err(|e| format!("Failed to lock database connection: {}", e))?;
+            .map_err(|e| format!("db_sqlite_query: could not lock the database connection: {}", e))?;
 
         let mut stmt = conn.prepare(&sql)
-            .map_err(|e| format!("Failed to prepare SQL statement: {}", e))?;
+            .map_err(|e| format!("db_sqlite_query: could not prepare SQL '{}': {}", sql, e))?;
 
-        let rows = from_rows::<T>(stmt.query([]).map_err(|e| format!("Failed to execute query: {}", e))?)
+        let rows = from_rows::<T>(stmt.query([]).map_err(|e| format!("db_sqlite_query: failed to execute SQL '{}': {}", sql, e))?)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("Failed to deserialize rows: {}", e))?;
+            .map_err(|e| format!("db_sqlite_query: could not deserialize the result rows into the target struct: {}", e))?;
 
         Ok(rows)
     }).await
@@ -130,18 +130,18 @@ where
 
     run_blocking(move || {
         let conn = conn_arc.lock()
-            .map_err(|e| format!("Failed to lock database connection: {}", e))?;
+            .map_err(|e| format!("db_sqlite_query_single: could not lock the database connection: {}", e))?;
 
         let mut stmt = conn.prepare(&sql)
-            .map_err(|e| format!("Failed to prepare SQL statement: {}", e))?;
+            .map_err(|e| format!("db_sqlite_query_single: could not prepare SQL '{}': {}", sql, e))?;
 
         let mut rows = stmt.query([])
-            .map_err(|e| format!("Failed to execute query: {}", e))?;
+            .map_err(|e| format!("db_sqlite_query_single: failed to execute SQL '{}': {}", sql, e))?;
 
-        match rows.next().map_err(|e| format!("Failed to get row: {}", e))? {
+        match rows.next().map_err(|e| format!("db_sqlite_query_single: could not read the result row: {}", e))? {
             Some(row) => from_row::<T>(row)
-                .map_err(|e| format!("Failed to deserialize row: {}", e)),
-            None => Err("No results found".to_string()),
+                .map_err(|e| format!("db_sqlite_query_single: could not deserialize the result row into the target struct: {}", e)),
+            None => Err(format!("db_sqlite_query_single: the query '{}' returned no rows", sql)),
         }
     }).await
 }
@@ -153,7 +153,7 @@ pub async fn sqlite_close(db: &DB_SQLite) -> Result<(), String> {
     run_blocking(move || {
         // Dropping the connection closes the database, which can block
         CONNECTIONS.remove(&handle)
-            .ok_or_else(|| format!("Database handle '{}' not found", handle))?;
+            .ok_or_else(|| format!("db_sqlite_close: unknown database handle '{}' (was the connection already closed?)", handle))?;
 
         Ok(())
     }).await
@@ -184,11 +184,11 @@ pub async fn sqlite_execute_batch(db: &DB_SQLite, statements: Vec<String>) -> Re
 
     run_blocking(move || {
         let conn = conn_arc.lock()
-            .map_err(|e| format!("Failed to lock database connection: {}", e))?;
+            .map_err(|e| format!("db_sqlite_execute_batch: could not lock the database connection: {}", e))?;
 
         // Start transaction
         conn.execute("BEGIN TRANSACTION", [])
-            .map_err(|e| format!("Failed to begin transaction: {}", e))?;
+            .map_err(|e| format!("db_sqlite_execute_batch: could not begin the transaction: {}", e))?;
 
         let mut total_affected = 0i64;
         let mut last_id = 0i64;
@@ -203,7 +203,7 @@ pub async fn sqlite_execute_batch(db: &DB_SQLite, statements: Vec<String>) -> Re
                 Err(e) => {
                     // Rollback on any error
                     let _ = conn.execute("ROLLBACK", []);
-                    return Err(format!("Failed to execute SQL '{}': {}", sql, e));
+                    return Err(format!("db_sqlite_execute_batch: failed to execute SQL '{}': {} (the transaction was rolled back)", sql, e));
                 }
             }
         }
@@ -212,7 +212,7 @@ pub async fn sqlite_execute_batch(db: &DB_SQLite, statements: Vec<String>) -> Re
         conn.execute("COMMIT", [])
             .map_err(|e| {
                 let _ = conn.execute("ROLLBACK", []);
-                format!("Failed to commit transaction: {}", e)
+                format!("db_sqlite_execute_batch: could not commit the transaction: {} (the transaction was rolled back)", e)
             })?;
 
         Ok(DB_Result {

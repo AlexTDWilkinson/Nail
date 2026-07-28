@@ -1,0 +1,11 @@
+// E2E: regex_find and regex_find_all runtime errors echo the pattern
+f show_error_text(error_msg:e):s {
+    print(error_msg);
+    r `none`;
+}
+f show_error_list(error_msg:e):a:s {
+    print(error_msg);
+    r [];
+}
+print(safe(regex_find(`q+`, `hello`), show_error_text));
+print(safe(regex_find_all(`q+`, `hello`), show_error_list));

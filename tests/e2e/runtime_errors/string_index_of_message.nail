@@ -1,0 +1,8 @@
+// E2E: string_index_of and string_last_index_of errors echo the substring
+f show_error(error_msg:e):i {
+    print(error_msg);
+    r -1;
+}
+greeting:s = `hello world`;
+print(safe(string_index_of(greeting, `zzz`), show_error));
+print(safe(string_last_index_of(greeting, `zzz`), show_error));

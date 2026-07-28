@@ -1,0 +1,8 @@
+// Shadowing may redeclare a name with a new type; the old value stays usable
+// in the shadowing initializer.
+count:i = 5;
+count:s = string_from(count);
+print(count);
+first_value:i = 1;
+first_value:s = `now a string`;
+print(first_value);

@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Array:
-        "array_length" => "std_lib::array::len", (array: any) -> i,
+        "array_length" => "std_lib::array::len", (array: [T]) -> i,
             "Returns the number of elements in the array.",
             "count:i = array_length(numbers);";
         "array_push" => "std_lib::array::push", (array: [T], item: T) -> [T],
@@ -13,10 +13,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_pop" => "std_lib::array::pop", (array: [T]) -> ([T]!e),
             "Returns a new array with the last element removed; errors if the array is empty.",
             "shorter:a:i = danger(array_pop(numbers));";
-        "array_contains" => "std_lib::array::contains", (array: [any], item: any) -> b,
+        "array_contains" => "std_lib::array::contains", (array: [T], item: T) -> b,
             "Returns true if the array contains the given item.",
             "found:b = array_contains(numbers, 3);";
-        "array_join" => "std_lib::array::join", (array: [any], separator: s) -> s,
+        "array_join" => "std_lib::array::join", (array: [T], separator: s) -> s,
             "Converts each element to a string and joins them with the separator.",
             "csv:s = array_join(numbers, `, `);";
         "array_sort" => "std_lib::array::sort", (array: [T]) -> [T],
@@ -28,7 +28,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_concat" => "std_lib::array::concat", (first: [T], second: [T]) -> [T],
             "Returns a new array containing all elements of the first array followed by the second.",
             "all:a:i = array_concat(evens, odds);";
-        "array_get" => "std_lib::array::get", (array: any, index: i) -> (any!e),
+        "array_get" => "std_lib::array::get", (array: [T], index: i) -> (T!e),
             "Returns the element at the given index, or an error if the index is out of bounds.",
             "item:i = danger(array_get(numbers, 0));";
         "array_first" => "std_lib::array::first", (array: [T]) -> (T!e),
@@ -40,7 +40,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_slice" => "std_lib::array::slice", (array: [T], start: i, end: i) -> ([T]!e),
             "Returns elements from start (inclusive) to end (exclusive), or an error if out of bounds.",
             "middle:a:i = danger(array_slice(numbers, 1, 3));";
-        "array_take" => "std_lib::array::take", (array: any, count: i) -> any,
+        "array_take" => "std_lib::array::take", (array: [T], count: i) -> [T],
             "Returns a new array with the first count elements (fewer if the array is shorter).",
             "top:a:i = array_take(numbers, 3);";
         "array_skip" => "std_lib::array::skip", (array: [T], count: i) -> [T],
@@ -52,21 +52,21 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_range_inclusive" => "std_lib::array::array_range_inclusive", (start: i, end: i) -> [i],
             "Returns integers from start to end, both inclusive.",
             "nums:a:i = array_range_inclusive(1, 5);";
-        "array_find" => "std_lib::array::find", (array: any, value: any) -> (i!e),
+        "array_find" => "std_lib::array::find", (array: [T], value: T) -> (i!e),
             "Returns the index of the first occurrence of the value, or an error if not found.",
             "index:i = danger(array_find(numbers, 3));";
-        "array_find_last" => "std_lib::array::find_last", (array: any, value: any) -> (i!e),
+        "array_find_last" => "std_lib::array::find_last", (array: [T], value: T) -> (i!e),
             "Returns the index of the last occurrence of the value, or an error if not found.",
             "index:i = danger(array_find_last(numbers, 3));";
         "array_repeat" => "std_lib::array::repeat", (value: T, count: i) -> [T],
             "Returns an array containing the value repeated count times.",
             "zeros:a:i = array_repeat(0, 5);";
-        "array_chunk" => "std_lib::array::chunk", (array: any, size: i) -> ([any]!e),
+        "array_chunk" => "std_lib::array::chunk", (array: [T], size: i) -> ([[T]]!e),
             "Splits the array into chunks of the given size; errors if size is not positive.",
             "pairs:a:a:i = danger(array_chunk(numbers, 2));";
-        "array_flatten_deep" => "std_lib::array::flatten_deep", (array: any) -> any,
+        "array_flatten" => "std_lib::array::flatten", (array: [[T]]) -> [T],
             "Flattens a nested array by one level.",
-            "flat:a:i = array_flatten_deep(nested);";
+            "flat:a:i = array_flatten(nested);";
         "array_deduplicate" => "std_lib::array::deduplicate", (array: [T]) -> [T],
             "Removes consecutive duplicate elements.",
             "unique:a:i = array_deduplicate([1, 1, 2, 2, 3]);";
@@ -91,12 +91,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_rotate_right" => "std_lib::array::rotate_right", (array: [T], count: i) -> [T],
             "Rotates elements count positions to the right.",
             "moved:a:i = array_rotate_right(numbers, 1);";
-        "array_partition" => "std_lib::array::partition", (array: any, predicate: any) -> [any],
-            "Splits the array into two arrays: elements matching the predicate, then the rest.",
-            "split:a:a:i = array_partition(numbers, is_even);";
-        "array_group_by" => "std_lib::array::group_by", (array: any, key_fn: any) -> (h any [any]),
-            "Groups elements into a hashmap keyed by the result of key_fn.",
-            "groups:h<s,a:i> = array_group_by(numbers, key_of);";
         "array_sum" => "std_lib::array::sum", (array: [T]) -> T,
             "Returns the sum of all elements (0 for an empty array).",
             "total:i = array_sum(numbers);";

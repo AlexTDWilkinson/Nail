@@ -1,0 +1,7 @@
+error: Cannot define function 'math_sqrt': this name belongs to a standard library function
+  --> tests/errors/reserved_stdlib_name.nail:2:1
+   |
+ 2 | f math_sqrt(value:f):f {
+   | ^^^^^^^^^^^^^^^^^^^^^^
+help: choose a different name that does not collide with the standard library, e.g. 'my_math_sqrt'
+1 error found

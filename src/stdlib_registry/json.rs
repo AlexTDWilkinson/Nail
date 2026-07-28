@@ -35,7 +35,7 @@ m.insert("json_deserialize", StdlibFunction {
                 pass_by_reference: false,
             },
         ],
-        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string()))),
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))),
         diverging: false,
         description: "Deserialize a JSON string to a value (struct, enum, or array)",
         example: "person:Person = danger(json_deserialize(json_string))",

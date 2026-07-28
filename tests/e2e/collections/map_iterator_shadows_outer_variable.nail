@@ -1,0 +1,9 @@
+// A map iterator may shadow an outer variable of a different type; the outer
+// binding is intact after the map.
+item_name:s = `outer`;
+numbers:a:i = [1, 2, 3];
+doubled:a:i = map item_name in numbers {
+    y item_name * 2;
+};
+print(item_name);
+print(doubled);

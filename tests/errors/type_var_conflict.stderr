@@ -1,0 +1,6 @@
+error: 'array_contains' expects its parameter 'item' to be an integer (i), but this argument is a string (s)
+  --> tests/errors/type_var_conflict.nail:3:42
+   |
+ 3 | found:b = array_contains(numbers, `three`);
+   |                                          ^
+1 error found

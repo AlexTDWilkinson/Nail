@@ -1,0 +1,7 @@
+error: 'parsed' is declared as an integer (i) but its value is a result (i!e) that may contain an error
+  --> tests/errors/result_not_handled.nail:2:27
+   |
+ 2 | parsed:i = int_from(`abc`);
+   |                           ^
+help: results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: parsed:i = danger(...);
+1 error found

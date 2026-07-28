@@ -1,6 +1,45 @@
 use std::fmt::{Debug, Display};
 use std::io::{self, Write};
 
+/// Invert the escaping `{:?}` applies to strings (char::escape_debug): turn
+/// \n, \t, \r, \", \', \\ and \u{...} sequences back into their real
+/// characters so printed strings match what the program built.
+pub fn unescape_debug_string(escaped: &str) -> String {
+    let mut output = String::with_capacity(escaped.len());
+    let mut chars = escaped.chars();
+    while let Some(current) = chars.next() {
+        if current != '\\' {
+            output.push(current);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => output.push('\n'),
+            Some('t') => output.push('\t'),
+            Some('r') => output.push('\r'),
+            Some('0') => output.push('\0'),
+            Some('u') => {
+                // \u{XXXX}
+                let mut code = String::new();
+                for hex_char in chars.by_ref() {
+                    if hex_char == '{' {
+                        continue;
+                    }
+                    if hex_char == '}' {
+                        break;
+                    }
+                    code.push(hex_char);
+                }
+                if let Some(character) = u32::from_str_radix(&code, 16).ok().and_then(char::from_u32) {
+                    output.push(character);
+                }
+            }
+            Some(other) => output.push(other),
+            None => output.push('\\'),
+        }
+    }
+    output
+}
+
 /// Print macro wrapper that handles any number of arguments
 #[macro_export]
 macro_rules! print_macro {
@@ -12,10 +51,10 @@ macro_rules! print_macro {
                     print!(" ");
                 }
                 let formatted = format!("{:?}", $arg);
-                // For strings, remove surrounding quotes and replace \n with actual newlines
+                // Strings arrive Debug-escaped in quotes; strip the quotes and
+                // undo the escaping so the real text is printed
                 let output = if formatted.starts_with('"') && formatted.ends_with('"') && formatted.len() > 1 {
-                    let without_quotes = &formatted[1..formatted.len()-1];
-                    without_quotes.replace("\\n", "\n")
+                    $crate::std_lib::print::unescape_debug_string(&formatted[1..formatted.len()-1])
                 } else {
                     formatted.replace("\\n", "\n")
                 };
@@ -28,15 +67,15 @@ macro_rules! print_macro {
 }
 
 /// Print with newline (aliased as "print" for convenience)
-pub async fn print<T>(value: T) 
+pub async fn print<T>(value: T)
 where
     T: Debug
 {
     let formatted = format!("{:?}", value);
-    // For strings, remove surrounding quotes and replace \n with actual newlines
+    // Strings arrive Debug-escaped in quotes; strip the quotes and undo the
+    // escaping so the real text is printed
     let output = if formatted.starts_with('"') && formatted.ends_with('"') && formatted.len() > 1 {
-        let without_quotes = &formatted[1..formatted.len()-1];
-        without_quotes.replace("\\n", "\n")
+        unescape_debug_string(&formatted[1..formatted.len()-1])
     } else {
         formatted.replace("\\n", "\n")
     };

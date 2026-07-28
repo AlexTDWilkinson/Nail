@@ -1,0 +1,5 @@
+// Negative test: a struct and an enum sharing one name should FAIL type checking
+// because the transpiler would emit two Rust types with the same name.
+enum Shape { Circle }
+struct Shape { side_count:i }
+print(`done`);

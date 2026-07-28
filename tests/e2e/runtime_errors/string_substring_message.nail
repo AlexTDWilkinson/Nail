@@ -1,0 +1,10 @@
+// E2E: string_substring runtime errors echo the indices and string length
+f show_error(error_msg:e):s {
+    print(error_msg);
+    r `none`;
+}
+greeting:s = `hello world`;
+print(safe(string_substring(greeting, -1, 3), show_error));
+print(safe(string_substring(greeting, 99, 100), show_error));
+print(safe(string_substring(greeting, 0, 99), show_error));
+print(safe(string_substring(greeting, 4, 2), show_error));

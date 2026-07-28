@@ -1,0 +1,9 @@
+// E2E: hashmap_get and hashmap_remove runtime errors echo the missing key
+f show_error(error_msg:e):i {
+    print(error_msg);
+    r 0;
+}
+ages:h<s,i> = hashmap_new();
+hashmap_set(ages, `alice`, 30);
+print(safe(hashmap_get(ages, `bob`), show_error));
+print(safe(hashmap_remove(ages, `bob`), show_error));

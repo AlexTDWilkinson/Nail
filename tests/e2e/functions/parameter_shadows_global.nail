@@ -1,0 +1,8 @@
+// A function parameter may shadow a global of a different type without
+// affecting the global.
+total:i = 100;
+f describe(total:s):s {
+    r total;
+}
+print(describe(`shadowed param`));
+print(total);

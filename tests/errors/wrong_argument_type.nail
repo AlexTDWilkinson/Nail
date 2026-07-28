@@ -1,0 +1,2 @@
+// Error test: passing a string where a float is expected
+result:f = math_sqrt(`four`);

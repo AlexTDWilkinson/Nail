@@ -1,0 +1,19 @@
+// Test the code module: syntax highlighting and live transpilation
+
+nail_source:s = `// double the evens
+f double(num:i):i { r num * 2; }
+evens:a:i = filter num in [1, 2, 3, 4] { y num % 2 == 0; };
+doubled:a:i = map num in evens { y double(num); };
+print(doubled);`;
+
+// Highlighting wraps tokens in spans and escapes HTML
+highlighted:s = code_highlight_html(nail_source);
+print(highlighted);
+
+// Transpilation returns real Rust code
+rust_code:s = danger(code_transpile_to_rust(nail_source));
+print(code_escape_html(rust_code));
+
+// Escaping handles angle brackets and ampersands
+escaped:s = code_escape_html(`a < b && c > d`);
+print(escaped);

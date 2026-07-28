@@ -30,3 +30,5 @@ nail_website_build/
 examples/*.rs
 tests/**/*.rs
 *_transpilation/nail_website_server/
+bundle/downloads/
+bundle/*.tar.xz

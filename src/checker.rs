@@ -101,17 +101,25 @@ struct AnalyzerState {
     return_context: ReturnContext,
     enum_variants: HashMap<String, HashSet<String>>,
     structs: HashMap<String, Vec<ASTNode>>,
+    struct_spans: HashMap<String, CodeSpan>,
     in_loop: bool,
     function_scope: Option<usize>,  // Track the scope of the current function
 }
+
+/// Type names the transpiler emits unqualified in generated Rust (String, Vec<...>,
+/// Result<..., String>, ...). A user struct or enum with one of these names would
+/// shadow the real type inside the generated code and produce Rust that cannot
+/// compile, so declaring them is rejected outright.
+const RESERVED_RUST_TYPE_NAMES: &[&str] = &["String", "Vec", "Box", "Result", "Option", "HashMap", "DashMap"];
 
 fn new_analyzer_state() -> AnalyzerState {
     AnalyzerState { 
         scope_arena: ScopeArena::new(), 
         errors: Vec::new(), 
         return_context: ReturnContext::None,
-        enum_variants: HashMap::new(), 
+        enum_variants: HashMap::new(),
         structs: HashMap::new(),
+        struct_spans: HashMap::new(),
         in_loop: false,
         function_scope: None,
     }
@@ -125,6 +133,7 @@ pub fn checker(ast: &mut ASTNode) -> Result<(), Vec<CodeError>> {
     }
 
     visit_node(ast, &mut state);
+    check_recursive_structs(&mut state);
     check_unused_symbols(&mut state);
     if state.errors.is_empty() {
         Ok(())
@@ -359,6 +368,23 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
 
     match node {
         ASTNode::Program { statements, .. } => {
+            // Hoist top-level function signatures before visiting bodies so a
+            // function can call one declared later in the file (mutual
+            // recursion). Duplicate detection lives here because the hoisted
+            // symbol already exists by the time the declaration is visited.
+            let mut hoisted_functions = HashSet::new();
+            for statement in statements.iter() {
+                if let ASTNode::FunctionDeclaration { name, params, data_type, code_span, .. } = statement {
+                    if !hoisted_functions.insert(name.clone()) {
+                        add_error(state, format!("Function '{}' is already defined", name), &mut code_span.clone());
+                        continue;
+                    }
+                    let param_types: Vec<NailDataTypeDescriptor> = params.iter().map(|(_, t)| resolve_custom_type(state, t)).collect();
+                    let function_type = NailDataTypeDescriptor::Fn(param_types, Box::new(resolve_custom_type(state, data_type)));
+                    add_symbol(state, Symbol { name: name.clone(), data_type: function_type, is_used: false });
+                }
+            }
+
             // Check each top-level statement
             for statement in statements.iter_mut() {
                 // Check if this is a function call used as a statement
@@ -368,7 +394,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
                     if return_type != NailDataTypeDescriptor::Void && 
                        return_type != NailDataTypeDescriptor::Never && 
                        return_type != NailDataTypeDescriptor::FailedToResolve {
-                        add_error(state, format!("Function '{}' returns a value that must be used", name), code_span);
+                        add_error_with_help(state, format!("The value returned by '{}' is silently discarded here", name), Some(format!("assign it to a variable: result:<type> = {}(...); Nail has no bare expression statements for value-returning calls", name)), code_span);
                     }
                 } else {
                     visit_node(statement, state);
@@ -389,7 +415,8 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
             }
             
             if !mark_symbol_as_used(state, name) {
-                add_error(state, format!("Undefined variable: {}", name), code_span);
+                let help = best_suggestion(name, visible_symbol_names(state).iter().map(|s| s.as_str())).map(|suggestion| format!("did you mean '{}'?", suggestion));
+                add_error_with_help(state, format!("There is no variable named '{}' in this scope", name), help, code_span);
             }
         }
         ASTNode::IfStatement { condition_branches, else_branch, .. } => visit_if_statement(condition_branches, else_branch, state),
@@ -438,7 +465,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
                     if return_type != NailDataTypeDescriptor::Void && 
                        return_type != NailDataTypeDescriptor::Never && 
                        return_type != NailDataTypeDescriptor::FailedToResolve {
-                        add_error(state, format!("Function '{}' returns a value that must be used", name), code_span);
+                        add_error_with_help(state, format!("The value returned by '{}' is silently discarded here", name), Some(format!("assign it to a variable: result:<type> = {}(...); Nail has no bare expression statements for value-returning calls", name)), code_span);
                     }
                 } else {
                     visit_node(statement, state);
@@ -454,8 +481,10 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         ASTNode::NumberLiteral { .. } => {},
         ASTNode::BooleanLiteral { .. } => {},
         ASTNode::StructInstantiationField { value, .. } => visit_node(value, state),
-        ASTNode::StructInstantiation { fields, .. } => {
-            fields.iter_mut().for_each(|field| visit_node(field, state));
+        ASTNode::StructInstantiation { name, fields, code_span, .. } => {
+            let name = name.clone();
+            let mut code_span = code_span.clone();
+            visit_struct_instantiation(&name, fields, state, &mut code_span);
         }
         ASTNode::EnumVariant { .. } => {},  // Enum variants don't need additional processing
         ASTNode::Assignment { left, right, .. } => {
@@ -488,13 +517,29 @@ fn visit_function_declaration(
     // resolve before user symbols, so allowing this would silently shadow the
     // user's function - error loudly instead.
     if crate::stdlib_registry::is_stdlib_function(name) {
-        add_error(state, format!("Cannot define function '{}': this name is reserved for a standard library function", name), code_span);
+        add_error_with_help(
+            state,
+            format!("Cannot define function '{}': this name belongs to a standard library function", name),
+            Some(format!("choose a different name that does not collide with the standard library, e.g. 'my_{}'", name)),
+            code_span,
+        );
         return;
     }
 
-    // Create the function type
-    let param_types: Vec<NailDataTypeDescriptor> = params.iter().map(|(_, t)| t.clone()).collect();
-    let function_type = NailDataTypeDescriptor::Fn(param_types, Box::new(return_type.clone()));
+    // Duplicate function definitions are detected during signature hoisting in
+    // the Program visit; here only the parameters still need validation.
+
+    // Reject duplicate parameter names
+    let mut seen_params = HashSet::new();
+    for (param_name, _) in params {
+        if !seen_params.insert(param_name.clone()) {
+            add_error(state, format!("Duplicate parameter '{}' in function '{}'", param_name, name), code_span);
+        }
+    }
+
+    // Create the function type, resolving enum names the parser typed as structs
+    let param_types: Vec<NailDataTypeDescriptor> = params.iter().map(|(_, t)| resolve_custom_type(state, t)).collect();
+    let function_type = NailDataTypeDescriptor::Fn(param_types, Box::new(resolve_custom_type(state, return_type)));
 
     // Add the function to the current scope (parent scope)
     add_symbol(state, Symbol { name: name.to_string(), data_type: function_type, is_used: false });
@@ -514,7 +559,8 @@ fn visit_function_declaration(
 
     // Add parameters to the function's scope
     params.iter().for_each(|(param_name, param_type)| {
-        add_symbol(state, Symbol { name: param_name.clone(), data_type: param_type.clone(), is_used: false });
+        let param_type = resolve_custom_type(state, param_type);
+        add_symbol(state, Symbol { name: param_name.clone(), data_type: param_type, is_used: false });
     });
 
     // Visit the function body
@@ -532,6 +578,19 @@ fn visit_function_declaration(
     state.return_context = ReturnContext::None;
 }
 
+/// The parser cannot tell enum names from struct names in type annotations, so
+/// every custom type arrives as Struct(name). Resolve names that belong to a
+/// declared enum into Enum(name) so type comparisons see the real kind.
+fn resolve_custom_type(state: &AnalyzerState, data_type: &NailDataTypeDescriptor) -> NailDataTypeDescriptor {
+    match data_type {
+        NailDataTypeDescriptor::Struct(name) if state.enum_variants.contains_key(name) => NailDataTypeDescriptor::Enum(name.clone()),
+        NailDataTypeDescriptor::Array(inner) => NailDataTypeDescriptor::Array(Box::new(resolve_custom_type(state, inner))),
+        NailDataTypeDescriptor::Result(inner) => NailDataTypeDescriptor::Result(Box::new(resolve_custom_type(state, inner))),
+        NailDataTypeDescriptor::HashMap(key, value) => NailDataTypeDescriptor::HashMap(Box::new(resolve_custom_type(state, key)), Box::new(resolve_custom_type(state, value))),
+        other => other.clone(),
+    }
+}
+
 fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     // Check if the value is an if expression without an else branch
     if let ASTNode::IfStatement { else_branch, .. } = value {
@@ -542,8 +601,34 @@ fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value
 
     // Visit the value node to ensure proper scope setup for collection expressions
     visit_node(value, state);
-    
-    // Add the symbol using the declared type - type checking will happen in a separate phase
+
+    // Check the declared type against the value's inferred type. Only fully
+    // concrete inferred types are compared, so an earlier inference failure
+    // (already reported) doesn't cascade into a second confusing error here.
+    let data_type = &resolve_custom_type(state, data_type);
+    let value_type = check_type(value, state);
+    if let NailDataTypeDescriptor::Result(inner) = &value_type {
+        if !matches!(data_type, NailDataTypeDescriptor::Result(_)) {
+            add_error_with_help(
+                state,
+                format!("'{}' is declared as {} but its value is {}", name, data_type.describe(), value_type.describe()),
+                Some(format!(
+                    "results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: {}:{} = danger(...);",
+                    name, inner
+                )),
+                code_span,
+            );
+        }
+    } else if is_concrete_type(data_type) && is_concrete_type(&value_type) && *data_type != value_type {
+        add_error_with_help(
+            state,
+            format!("'{}' is declared as {} but its value is {}", name, data_type.describe(), value_type.describe()),
+            Some(format!("either change the declaration to '{}:{}' or make the value {}", name, value_type, data_type.describe())),
+            code_span,
+        );
+    }
+
+    // Add the symbol using the declared type
     add_symbol(state, Symbol { name: name.to_string(), data_type: data_type.clone(), is_used: false });
 }
 
@@ -553,22 +638,11 @@ fn visit_unary_operation(_operator: &Operation, operand: &mut ASTNode, state: &m
     visit_node(operand, state);
 }
 
-fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
-    // Type checking will happen in a separate phase after visiting
-    // Just visit the child nodes for now
-    match left {
-        ASTNode::FunctionCall { name, args, scope, .. } => {
-            visit_function_call(name, args, state, *scope, code_span);
-        }
-        _ => {}
-    }
-
-    match right {
-        ASTNode::FunctionCall { name, args, scope, .. } => {
-            visit_function_call(name, args, state, *scope, code_span);
-        }
-        _ => {}
-    }
+fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut ASTNode, state: &mut AnalyzerState, _code_span: &mut CodeSpan) {
+    // Type checking happens in a separate phase; here we visit both operands so
+    // errors inside them (undefined variables, bad calls, ...) are reported.
+    visit_node(left, state);
+    visit_node(right, state);
 }
 
 fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], else_branch: &mut Option<Box<ASTNode>>, state: &mut AnalyzerState) {
@@ -1274,14 +1348,35 @@ fn visit_struct_declaration(name: &str, fields: &[ASTNode], state: &mut Analyzer
         add_error(state, format!("Cannot define struct '{}': this name is reserved for a standard library type", name), code_span);
         return;
     }
-    
-    // Register the struct in the type system
-    if let Some(existing) = state.structs.get(name) {
-        if existing != fields {
-            add_error(state, format!("Struct '{}' is already defined", name), code_span);
-        }
+
+    if RESERVED_RUST_TYPE_NAMES.contains(&name) {
+        add_error(state, format!("Cannot define struct '{}': this name collides with a built-in type used by generated code", name), code_span);
+        return;
+    }
+
+    if state.enum_variants.contains_key(name) {
+        add_error(state, format!("Cannot define struct '{}': an enum with this name is already defined", name), code_span);
+        return;
+    }
+
+    // Register the struct in the type system. Any redefinition is an error, even
+    // an identical one: the transpiler emits one Rust struct per declaration, so
+    // two declarations produce duplicate type definitions.
+    if state.structs.contains_key(name) {
+        add_error(state, format!("Struct '{}' is already defined", name), code_span);
     } else {
         state.structs.insert(name.to_string(), fields.to_vec());
+        state.struct_spans.insert(name.to_string(), code_span.clone());
+    }
+
+    // Reject duplicate field names within the declaration
+    let mut seen_fields = HashSet::new();
+    for field in fields {
+        if let ASTNode::StructDeclarationField { name: field_name, .. } = field {
+            if !seen_fields.insert(field_name.clone()) {
+                add_error(state, format!("Duplicate field '{}' in struct '{}'", field_name, name), code_span);
+            }
+        }
     }
 
     // Nested structs are now allowed - just validate they exist
@@ -1312,6 +1407,112 @@ fn visit_struct_declaration(name: &str, fields: &[ASTNode], state: &mut Analyzer
     }
 }
 
+fn visit_struct_instantiation(name: &str, fields: &mut [ASTNode], state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+    for field in fields.iter_mut() {
+        visit_node(field, state);
+    }
+
+    // Resolve the declared field list from the user struct or the stdlib registry
+    let declared: Vec<(String, NailDataTypeDescriptor)> = if let Some(struct_fields) = state.structs.get(name) {
+        struct_fields
+            .iter()
+            .filter_map(|f| if let ASTNode::StructDeclarationField { name, data_type, .. } = f { Some((name.clone(), data_type.clone())) } else { None })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(field_name, field_type)| (field_name, resolve_custom_type(state, &field_type)))
+            .collect()
+    } else if let Some(stdlib_fields) = crate::stdlib_registry::get_stdlib_struct_fields(name) {
+        stdlib_fields
+    } else {
+        add_error(state, format!("Unknown struct '{}'", name), code_span);
+        return;
+    };
+
+    let mut seen = HashSet::new();
+    for field in fields.iter() {
+        if let ASTNode::StructInstantiationField { name: field_name, value, code_span: field_span, .. } = field {
+            if !seen.insert(field_name.clone()) {
+                add_error(state, format!("Duplicate field '{}' in instantiation of struct '{}'", field_name, name), &mut field_span.clone());
+                continue;
+            }
+            match declared.iter().find(|(declared_name, _)| declared_name == field_name) {
+                None => {
+                    add_error(state, format!("Field '{}' does not exist in struct '{}'", field_name, name), &mut field_span.clone());
+                }
+                Some((_, declared_type)) => {
+                    let value_type = check_type(value, state);
+                    if is_concrete_type(declared_type) && is_concrete_type(&value_type) && *declared_type != value_type && value_type != NailDataTypeDescriptor::Any {
+                        add_error(
+                            state,
+                            format!("Field '{}' of struct '{}' is declared as {} but its value is {}", field_name, name, declared_type.describe(), value_type.describe()),
+                            &mut field_span.clone(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    for (declared_name, _) in &declared {
+        if !seen.contains(declared_name) {
+            add_error(state, format!("Missing field '{}' in instantiation of struct '{}'", declared_name, name), code_span);
+        }
+    }
+}
+
+/// Structs that contain themselves through a chain of direct struct fields have
+/// infinite size in the generated Rust. Arrays and hashmaps introduce heap
+/// indirection, so only direct struct-typed fields form cycle edges.
+fn check_recursive_structs(state: &mut AnalyzerState) {
+    let edges: HashMap<String, Vec<String>> = state
+        .structs
+        .iter()
+        .map(|(name, fields)| {
+            let targets = fields
+                .iter()
+                .filter_map(|f| {
+                    if let ASTNode::StructDeclarationField { data_type: NailDataTypeDescriptor::Struct(target), .. } = f {
+                        Some(target.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            (name.clone(), targets)
+        })
+        .collect();
+
+    let mut reported = HashSet::new();
+    for start in edges.keys() {
+        if reported.contains(start) {
+            continue;
+        }
+        // Depth-first walk from `start`; a path back to `start` means its size is infinite
+        let mut stack: Vec<&String> = vec![start];
+        let mut visited = HashSet::new();
+        while let Some(current) = stack.pop() {
+            for target in edges.get(current).into_iter().flatten() {
+                if target == start {
+                    reported.insert(start.clone());
+                    let mut span = state.struct_spans.get(start).cloned().unwrap_or_default();
+                    add_error(
+                        state,
+                        format!("Struct '{}' contains itself (directly or through other structs), which would make it infinitely sized; store it in an array field or restructure the types", start),
+                        &mut span,
+                    );
+                    stack.clear();
+                    break;
+                }
+                if visited.insert(target.clone()) {
+                    if let Some(target_key) = edges.get_key_value(target) {
+                        stack.push(target_key.0);
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn visit_enum_declaration(name: &str, variants: &[ASTNode], state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     // Check if this enum name conflicts with stdlib types
     let stdlib_types = crate::stdlib_registry::get_stdlib_type_names();
@@ -1319,7 +1520,22 @@ fn visit_enum_declaration(name: &str, variants: &[ASTNode], state: &mut Analyzer
         add_error(state, format!("Cannot define enum '{}': this name is reserved for a standard library type", name), code_span);
         return;
     }
-    
+
+    if RESERVED_RUST_TYPE_NAMES.contains(&name) {
+        add_error(state, format!("Cannot define enum '{}': this name collides with a built-in type used by generated code", name), code_span);
+        return;
+    }
+
+    if state.structs.contains_key(name) {
+        add_error(state, format!("Cannot define enum '{}': a struct with this name is already defined", name), code_span);
+        return;
+    }
+
+    if state.enum_variants.contains_key(name) {
+        add_error(state, format!("Enum '{}' is already defined", name), code_span);
+        return;
+    }
+
     let mut variant_set = HashSet::new();
     variants.iter().for_each(|variant| {
         if let ASTNode::EnumVariant { variant: variant_name, code_span, .. } = variant {
@@ -1368,6 +1584,22 @@ fn visit_array_literal(elements: &[ASTNode], state: &mut AnalyzerState, code_spa
 }
 
 fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerState, call_scope: usize, code_span: &mut CodeSpan) -> NailDataTypeDescriptor {
+    // The error constructor e(message) builds an error value for early returns
+    if crate::stdlib_registry::get_intrinsic(name) == Some(crate::stdlib_registry::Intrinsic::ErrorConstructor) {
+        if args.len() != 1 {
+            add_error_with_help(
+                state,
+                format!("'e' expects exactly 1 argument (the error message), got {}", args.len()),
+                Some("construct an error like: r e(`something went wrong`);".to_string()),
+                code_span,
+            );
+        }
+        for arg in args.iter_mut() {
+            visit_node(arg, state);
+        }
+        return NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Error));
+    }
+
     // Special handling for print function (variable arguments)
     if name == "print" {
         if args.is_empty() {
@@ -1436,7 +1668,14 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
                 let actual_type = check_type(arg, state);
                 // Skip type checking if actual type is FailedToResolve (failed to infer)
                 if actual_type != NailDataTypeDescriptor::FailedToResolve && !unify_types(&expected_param.param_type, &actual_type, &mut type_var_bindings) {
-                    add_error(state, format!("{} parameter '{}' expects type {:?}, got {:?}", name, expected_param.name, expected_param.param_type, actual_type), code_span);
+                    // Show type variables as whatever earlier arguments bound them
+                    // to, so the message names a concrete type instead of 'T'
+                    let expected_display = substitute_bound_type_vars(&expected_param.param_type, &type_var_bindings);
+                    add_error(
+                        state,
+                        format!("'{}' expects its parameter '{}' to be {}, but this argument is {}", name, expected_param.name, expected_display.describe(), actual_type.describe()),
+                        code_span,
+                    );
                 }
             }
         }
@@ -1449,7 +1688,10 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
     let symbol_type = match lookup_symbol(&state.scope_arena, call_scope, name).map(|s| s.data_type.clone()) {
         Some(t) => t,
         None => {
-            add_error(state, format!("Undefined function: {}", name), code_span);
+            let visible = visible_symbol_names(state);
+            let candidates = crate::stdlib_registry::STDLIB_FUNCTIONS.keys().copied().chain(visible.iter().map(|s| s.as_str()));
+            let help = best_suggestion(name, candidates).map(|suggestion| format!("did you mean '{}'?", suggestion));
+            add_error_with_help(state, format!("There is no function named '{}'", name), help, code_span);
             return NailDataTypeDescriptor::FailedToResolve;
         }
     };
@@ -1465,7 +1707,7 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
             for (i, (arg, expected_type)) in args.iter().zip(param_types.iter()).enumerate() {
                 let arg_type = check_type(arg, state);
                 if arg_type != *expected_type {
-                    add_error(state, format!("Type mismatch in argument {} of function '{}': expected {:?}, got {:?}", i + 1, name, expected_type, arg_type), code_span);
+                    add_error(state, format!("Argument {} of '{}' should be {}, but this argument is {}", i + 1, name, expected_type.describe(), arg_type.describe()), code_span);
                     has_error = true;
                 }
             }
@@ -1483,13 +1725,16 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
     }
 }
 
-fn visit_return_declaration(expr: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+fn visit_return_declaration(expr: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     match state.return_context {
         ReturnContext::None => {
             add_error(state, "Return statement outside of function or collection operation".to_string(), code_span);
         }
         ReturnContext::Function => {
-            // Normal function return - type check the expression
+            // Normal function return - visit the expression so errors inside it
+            // (undefined variables, scope violations, ...) are reported, then
+            // type check it
+            visit_node(expr, state);
             check_type(expr, state);
         }
         ReturnContext::CollectionExpression => {
@@ -1505,7 +1750,12 @@ fn visit_yield_declaration(expr: &ASTNode, state: &mut AnalyzerState, code_span:
             add_error(state, "Yield statement outside of collection operation".to_string(), code_span);
         }
         ReturnContext::Function => {
-            add_error(state, "Use 'r' (return) instead of 'y' (yield) in functions".to_string(), code_span);
+            add_error_with_help(
+                state,
+                "'y' (yield) cannot be used here — it is only valid inside collection operation blocks (map, filter, reduce, ...)".to_string(),
+                Some("use 'r' (return) to produce a value from this block".to_string()),
+                code_span,
+            );
         }
         ReturnContext::CollectionExpression => {
             // Collection yield - type check the expression
@@ -1918,7 +2168,9 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                     }
                 }
                 _ => {
-                    panic!("check_type: unhandled object type for nested field access");
+                    // Field access on a non-struct or not-yet-resolved object;
+                    // fall through to FailedToResolve so the caller skips
+                    // type comparisons instead of crashing
                 }
             }
             NailDataTypeDescriptor::FailedToResolve
@@ -2003,7 +2255,7 @@ fn check_unused_symbols(state: &mut AnalyzerState) {
         for symbol in scope.symbols.values() {
             if !symbol.is_used {
                 // this works but is annoying, we need something else for this
-                // state.errors.push(CodeError { message: format!("Unused variable: {}", symbol.name), code_span: CodeSpan::default() });
+                // state.errors.push(CodeError { help: None, message: format!("Unused variable: {}", symbol.name), code_span: CodeSpan::default() });
             }
         }
     }
@@ -2019,9 +2271,11 @@ fn unify_types(expected: &NailDataTypeDescriptor, actual: &NailDataTypeDescripto
         // Unresolvable/wildcard actuals never fail unification (matches type_compatible)
         (_, NailDataTypeDescriptor::Any) | (_, NailDataTypeDescriptor::FailedToResolve) | (_, NailDataTypeDescriptor::OneOf(_)) => true,
 
-        (NailDataTypeDescriptor::TypeVar(name), _) => {
-            if let Some(bound) = bindings.get(name).cloned() {
-                type_compatible(&bound, actual)
+        (NailDataTypeDescriptor::TypeVar(name, bounds), _) => {
+            if let Some(existing) = bindings.get(name).cloned() {
+                type_compatible(&existing, actual)
+            } else if !bounds.is_empty() && !bounds.contains(actual) {
+                false
             } else {
                 bindings.insert(name.clone(), actual.clone());
                 true
@@ -2049,7 +2303,7 @@ fn unify_types(expected: &NailDataTypeDescriptor, actual: &NailDataTypeDescripto
 /// drives the concrete type (e.g. db_sqlite_query into a declared a:Person).
 fn substitute_type_vars(data_type: &NailDataTypeDescriptor, bindings: &HashMap<String, NailDataTypeDescriptor>) -> NailDataTypeDescriptor {
     match data_type {
-        NailDataTypeDescriptor::TypeVar(name) => bindings.get(name).cloned().unwrap_or(NailDataTypeDescriptor::Any),
+        NailDataTypeDescriptor::TypeVar(name, _) => bindings.get(name).cloned().unwrap_or(NailDataTypeDescriptor::Any),
         NailDataTypeDescriptor::Array(inner) => NailDataTypeDescriptor::Array(Box::new(substitute_type_vars(inner, bindings))),
         NailDataTypeDescriptor::Result(inner) => NailDataTypeDescriptor::Result(Box::new(substitute_type_vars(inner, bindings))),
         NailDataTypeDescriptor::HashMap(key, value) => {
@@ -2057,6 +2311,24 @@ fn substitute_type_vars(data_type: &NailDataTypeDescriptor, bindings: &HashMap<S
         }
         NailDataTypeDescriptor::Fn(params, ret) => {
             NailDataTypeDescriptor::Fn(params.iter().map(|p| substitute_type_vars(p, bindings)).collect(), Box::new(substitute_type_vars(ret, bindings)))
+        }
+        other => other.clone(),
+    }
+}
+
+/// Like substitute_type_vars, but leaves unbound variables in place instead of
+/// collapsing them to Any. Used for error messages, where a still-unbound
+/// variable should display as its name and bounds rather than as Any.
+fn substitute_bound_type_vars(data_type: &NailDataTypeDescriptor, bindings: &HashMap<String, NailDataTypeDescriptor>) -> NailDataTypeDescriptor {
+    match data_type {
+        NailDataTypeDescriptor::TypeVar(name, _) => bindings.get(name).cloned().unwrap_or_else(|| data_type.clone()),
+        NailDataTypeDescriptor::Array(inner) => NailDataTypeDescriptor::Array(Box::new(substitute_bound_type_vars(inner, bindings))),
+        NailDataTypeDescriptor::Result(inner) => NailDataTypeDescriptor::Result(Box::new(substitute_bound_type_vars(inner, bindings))),
+        NailDataTypeDescriptor::HashMap(key, value) => {
+            NailDataTypeDescriptor::HashMap(Box::new(substitute_bound_type_vars(key, bindings)), Box::new(substitute_bound_type_vars(value, bindings)))
+        }
+        NailDataTypeDescriptor::Fn(params, ret) => {
+            NailDataTypeDescriptor::Fn(params.iter().map(|p| substitute_bound_type_vars(p, bindings)).collect(), Box::new(substitute_bound_type_vars(ret, bindings)))
         }
         other => other.clone(),
     }
@@ -2109,7 +2381,67 @@ fn type_compatible(expected: &NailDataTypeDescriptor, actual: &NailDataTypeDescr
 }
 
 fn add_error(state: &mut AnalyzerState, message: String, code_span: &mut CodeSpan) {
-    state.errors.push(CodeError { message, code_span: code_span.clone() });
+    state.errors.push(CodeError { help: None, message, code_span: code_span.clone() });
+}
+
+fn add_error_with_help(state: &mut AnalyzerState, message: String, help: Option<String>, code_span: &mut CodeSpan) {
+    state.errors.push(CodeError { help, message, code_span: code_span.clone() });
+}
+
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = if ca == cb { prev } else { prev + 1 };
+            prev = row[j + 1];
+            row[j + 1] = cost.min(row[j] + 1).min(row[j + 1] + 1);
+        }
+    }
+    row[b.len()]
+}
+
+/// Closest candidate within an edit distance small enough to be a plausible
+/// typo, used for "did you mean ...?" suggestions.
+fn best_suggestion<'a>(target: &str, candidates: impl Iterator<Item = &'a str>) -> Option<String> {
+    let max_distance = (target.chars().count() / 3).clamp(1, 3);
+    candidates
+        .filter(|candidate| *candidate != target)
+        .map(|candidate| (levenshtein(target, candidate), candidate))
+        .filter(|(distance, _)| *distance <= max_distance)
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, candidate)| candidate.to_string())
+}
+
+/// All symbol names visible from the current scope, for typo suggestions.
+fn visible_symbol_names(state: &AnalyzerState) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut current_scope = state.scope_arena.current_scope();
+    loop {
+        let scope = state.scope_arena.get_scope(current_scope);
+        names.extend(scope.symbols.keys().cloned());
+        if current_scope == GLOBAL_SCOPE {
+            break;
+        }
+        current_scope = scope.parent;
+    }
+    names
+}
+
+/// A type is concrete when it contains no inference placeholders; mismatch
+/// errors are only reported between concrete types to avoid cascading noise
+/// after an earlier inference failure.
+fn is_concrete_type(data_type: &NailDataTypeDescriptor) -> bool {
+    match data_type {
+        NailDataTypeDescriptor::FailedToResolve | NailDataTypeDescriptor::Any | NailDataTypeDescriptor::TypeVar(_, _) | NailDataTypeDescriptor::OneOf(_) => false,
+        NailDataTypeDescriptor::Array(inner) | NailDataTypeDescriptor::Result(inner) => is_concrete_type(inner),
+        NailDataTypeDescriptor::HashMap(key, value) => is_concrete_type(key) && is_concrete_type(value),
+        NailDataTypeDescriptor::Fn(params, ret) => params.iter().all(is_concrete_type) && is_concrete_type(ret),
+        _ => true,
+    }
 }
 
 fn has_return_statement(node: &ASTNode) -> bool {
@@ -2180,6 +2512,7 @@ fn visit_lambda_declaration(params: &[(String, NailDataTypeDescriptor)], body: &
 fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     // First check the overall body type
     let _ = check_type(body, state);
+    let data_type = &resolve_custom_type(state, data_type);
 
     let last_statement = match body {
         ASTNode::Block { statements, .. } => statements.last(),
@@ -2190,27 +2523,22 @@ fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &
         Some(ASTNode::ReturnDeclaration { statement, .. }) => {
             let actual_return_type = check_type(statement, state);
 
-            // Check if the return type is compatible with the expected type
-            let types_compatible = match (data_type, &actual_return_type) {
-                // Exact match
-                (expected, actual) if expected == actual => true,
-                // Check if actual type is one of the types in OneOf
-                (NailDataTypeDescriptor::OneOf(expected_types), actual) => expected_types.contains(actual),
-                // For Result types, allow returning the inner type (will be wrapped in Ok())
-                (NailDataTypeDescriptor::Result(expected_inner), actual) => {
-                    // Check if it's returning an error (e() call)
-                    if let ASTNode::FunctionCall { name, .. } = statement.as_ref() {
-                        name == "e"
-                    } else {
-                        // Otherwise, check if the actual type matches the expected inner type
-                        **expected_inner == *actual
-                    }
+            // Compare with the same compatibility rules declarations use:
+            // type_compatible treats unresolvable actuals (Any,
+            // FailedToResolve — e.g. empty array literals — and OneOf
+            // sentinels) as wildcards instead of false mismatches
+            let types_compatible = match data_type {
+                // For Result types, allow returning the bare inner type
+                // (it will be wrapped in Ok()) or an e() error constructor
+                NailDataTypeDescriptor::Result(expected_inner) => {
+                    matches!(statement.as_ref(), ASTNode::FunctionCall { name, .. } if name == "e")
+                        || type_compatible(data_type, &actual_return_type)
+                        || type_compatible(expected_inner, &actual_return_type)
                 }
-                _ => false,
+                _ => type_compatible(data_type, &actual_return_type),
             };
 
-            // Skip type checking if we couldn't resolve the actual type
-            if !matches!(actual_return_type, NailDataTypeDescriptor::OneOf(ref v) if v.is_empty()) && !types_compatible {
+            if !types_compatible {
                 add_error(state, format!("Type mismatch in return statement of function '{}': expected {:?}, got {:?}", name, data_type, actual_return_type), code_span);
             }
         }

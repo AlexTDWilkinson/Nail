@@ -1,0 +1,6 @@
+// A variable may reuse a stdlib function's name; calls still resolve to the
+// stdlib function.
+string_from:i = 4;
+converted:s = string_from(42);
+print(string_from);
+print(converted);

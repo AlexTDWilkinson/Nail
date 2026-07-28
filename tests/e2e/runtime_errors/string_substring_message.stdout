@@ -1,0 +1,8 @@
+string_substring: indices cannot be negative, got -1 and 3
+none
+string_substring: start index 99 is beyond the string length 11
+none
+string_substring: end index 99 is beyond the string length 11
+none
+string_substring: start index 4 is greater than end index 2
+none

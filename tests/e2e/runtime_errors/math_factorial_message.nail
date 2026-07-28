@@ -1,0 +1,7 @@
+// E2E: math_factorial runtime errors echo the offending input
+f show_error(error_msg:e):i {
+    print(error_msg);
+    r -1;
+}
+print(safe(math_factorial(-1), show_error));
+print(safe(math_factorial(21), show_error));

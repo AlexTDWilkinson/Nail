@@ -9,16 +9,16 @@ pub async fn insert<K: Hash + Eq + Clone, V: Clone>(map: &DashMap<K, V>, key: K,
     map.insert(key, value)
 }
 
-pub async fn get<K: Hash + Eq + Clone, V: Clone>(map: &DashMap<K, V>, key: &K) -> Result<V, String> {
+pub async fn get<K: Hash + Eq + Clone + std::fmt::Debug, V: Clone>(map: &DashMap<K, V>, key: &K) -> Result<V, String> {
     map.get(key)
         .map(|v| v.clone())
-        .ok_or_else(|| "Key not found".to_string())
+        .ok_or_else(|| format!("hashmap_get: key {:?} not found in the hashmap", key))
 }
 
-pub async fn remove<K: Hash + Eq + Clone, V: Clone>(map: &DashMap<K, V>, key: &K) -> Result<V, String> {
+pub async fn remove<K: Hash + Eq + Clone + std::fmt::Debug, V: Clone>(map: &DashMap<K, V>, key: &K) -> Result<V, String> {
     map.remove(key)
         .map(|(_, v)| v)
-        .ok_or_else(|| "Key not found".to_string())
+        .ok_or_else(|| format!("hashmap_remove: key {:?} not found in the hashmap", key))
 }
 
 pub async fn contains_key<K: Hash + Eq + Clone, V: Clone>(map: &DashMap<K, V>, key: &K) -> bool {

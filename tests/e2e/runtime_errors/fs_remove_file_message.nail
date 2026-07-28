@@ -1,0 +1,6 @@
+// E2E: fs_remove_file runtime error names the function, the path, and the OS reason
+f show_error(error_msg:e):v {
+    print(error_msg);
+}
+safe(fs_remove_file(`missing.txt`), show_error);
+print(`done`);

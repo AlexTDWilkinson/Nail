@@ -1,0 +1,7 @@
+// E2E: int_pow runtime errors echo the base and exponent
+f show_error(error_msg:e):i {
+    print(error_msg);
+    r 0;
+}
+print(safe(int_pow(2, -3), show_error));
+print(safe(int_pow(10, 20), show_error));

@@ -38,11 +38,11 @@ end_time:i = time_now();
 duration:i = end_time - start_time;
 
 print(`Parallel computation results:`);
-print(`10! = ${fact10}`);
-print(`12! = ${fact12}`);
-print(`Sum to 1000 = ${sum1000}`);
-print(`Sum to 2000 = ${sum2000}`);
-print(`Time taken: ${duration}ms`);
+print(`10! =`, fact10);
+print(`12! =`, fact12);
+print(`Sum to 1000 =`, sum1000);
+print(`Sum to 2000 =`, sum2000);
+print(`Time taken ms:`, duration);
 
 // Test parallel block with just function calls (no assignments)
 print(`Testing parallel function calls without assignments...`);

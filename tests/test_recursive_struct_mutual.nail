@@ -1,0 +1,9 @@
+// Negative test: mutually recursive structs should FAIL type checking
+// because the generated Rust types would be infinitely sized.
+struct Alpha {
+    beta_field:Beta
+}
+struct Beta {
+    alpha_field:Alpha
+}
+print(`done`);

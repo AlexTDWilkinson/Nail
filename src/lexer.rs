@@ -236,13 +236,16 @@ pub struct LexerState {
 /// report every lex error eagerly instead of hitting them one at a time
 /// during parsing.
 pub fn collect_lexer_errors(tokens: &[Token]) -> Vec<crate::common::CodeError> {
-    tokens
-        .iter()
-        .filter_map(|token| match &token.token_type {
-            TokenType::LexerError(message) => Some(crate::common::CodeError { message: message.clone(), code_span: token.code_span.clone() }),
-            _ => None,
-        })
-        .collect()
+    let mut errors = Vec::new();
+    for token in tokens {
+        match &token.token_type {
+            TokenType::LexerError(message) => errors.push(crate::common::CodeError { help: None, message: message.clone(), code_span: token.code_span.clone() }),
+            // Compound tokens carry nested token streams whose errors must surface too
+            TokenType::FunctionSignature(inner) => errors.extend(collect_lexer_errors(inner)),
+            _ => {}
+        }
+    }
+    errors
 }
 
 pub fn lexer(input: &str) -> Vec<Token> {
@@ -628,7 +631,10 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
     tokens.push(Token {
         token_type: match function_name.token_type {
             TokenType::Identifier(s) => TokenType::FunctionName(s),
-            _ => TokenType::LexerError("Expected function name".to_string()),
+            // Reserved words and other keywords already lex to a specific error
+            // or token; surface that instead of a generic complaint
+            TokenType::LexerError(message) => TokenType::LexerError(message),
+            other => TokenType::LexerError(format!("Expected a function name here, but found {:?}", other)),
         },
         code_span: CodeSpan { start_line: function_name.start_line, end_line: function_name.end_line, start_column: function_name.start_column, end_column: function_name.end_column },
     });
@@ -1506,38 +1512,6 @@ fn lex_type_system_type(chars: &mut std::iter::Peekable<std::str::Chars>, state:
         } else {
             LexerOutput { token_type: TokenType::LexerError("Expected 'e' after '!' in result type".to_string()), start_line, start_column, end_line: state.line, end_column: state.column }
         }
-    } else if type_name == "oneof" {
-        // Handle 'oneof' type
-        if chars.peek() == Some(&'(') {
-            advance(chars, state); // advance past the '('
-
-            let mut types_in_oneof = Vec::new();
-            let mut any_string = String::new();
-
-            while let Some(&c) = chars.peek() {
-                if c == ')' {
-                    advance(chars, state);
-                    break;
-                }
-                any_string.push(c);
-                advance(chars, state);
-            }
-
-            let types = any_string.split("|").collect::<Vec<&str>>();
-
-            for t in types {
-                match parse_type(t) {
-                    Ok(type_desc) => {
-                        types_in_oneof.push(type_desc);
-                    }
-                    Err(e) => return LexerOutput { token_type: TokenType::LexerError(e), start_line, start_column, end_line: state.line, end_column: state.column },
-                }
-            }
-
-            LexerOutput { token_type: TokenType::TypeDeclaration(NailDataTypeDescriptor::OneOf(types_in_oneof)), start_line, start_column, end_line: state.line, end_column: state.column }
-        } else {
-            LexerOutput { token_type: TokenType::LexerError("Expected '(' after 'oneof'".to_string()), start_line, start_column, end_line: state.line, end_column: state.column }
-        }
     } else {
         // Handle other types
         // Special case: empty type name should not be an error, just skip
@@ -1595,13 +1569,15 @@ fn parse_type(t: &str) -> Result<NailDataTypeDescriptor, String> {
             }
         }
         t if t.starts_with("a:") => {
-            // Handle array of custom types like a:Point
+            // Handle array of custom types like a:Point, and nested arrays
+            // like a:a:i by recursing on the element type
             let type_name = t.strip_prefix("a:").unwrap_or("").to_string();
             // Assume it's a struct array if it starts with uppercase
             if type_name.chars().next().map_or(false, |c| c.is_uppercase()) {
                 Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct(type_name))))
             } else {
-                Err(format!("FailedToResolve array type: {}", t))
+                let element_type = parse_type(&type_name)?;
+                Ok(NailDataTypeDescriptor::Array(Box::new(element_type)))
             }
         }
         // If it starts with uppercase, assume it's a custom type (struct or enum)

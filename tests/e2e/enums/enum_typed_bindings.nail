@@ -1,0 +1,10 @@
+// Enum names work as variable, field, parameter, and return types.
+enum Rank { Gold, Silver }
+struct Medal { rank:Rank, year:i }
+f promote(current:Rank):Rank {
+    r current;
+}
+prize:Medal = Medal { rank = Rank::Gold, year = 2020 };
+chosen:Rank = promote(Rank::Silver);
+print(prize.year);
+print(chosen);

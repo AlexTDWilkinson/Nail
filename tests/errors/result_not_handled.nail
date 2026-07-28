@@ -1,0 +1,2 @@
+// Error test: assigning a result type (i!e) without safe/danger/expect
+parsed:i = int_from(`abc`);

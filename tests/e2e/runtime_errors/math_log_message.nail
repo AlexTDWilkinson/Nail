@@ -1,0 +1,8 @@
+// E2E: math_log family runtime errors echo the non-positive input
+f show_error(error_msg:e):f {
+    print(error_msg);
+    r 0.0;
+}
+print(safe(math_log(0.0), show_error));
+print(safe(math_log10(-1.0), show_error));
+print(safe(math_log2(0.0), show_error));

@@ -1,0 +1,7 @@
+// E2E: array_chunk runtime error echoes the invalid chunk size
+f show_error(error_msg:e):a:a:i {
+    print(error_msg);
+    r [];
+}
+nums:a:i = [1, 2, 3];
+print(safe(array_chunk(nums, 0), show_error));

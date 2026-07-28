@@ -1,0 +1,6 @@
+// Negative test: duplicate parameter names should FAIL type checking
+// because the generated Rust fn signature would repeat the binding.
+f add_pair(num:i, num:i):i {
+    r num + num;
+}
+print(add_pair(1, 2));

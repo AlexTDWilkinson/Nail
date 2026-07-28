@@ -1,0 +1,2 @@
+// Error test: calling a value-returning function as a bare statement
+math_sqrt(4.0);

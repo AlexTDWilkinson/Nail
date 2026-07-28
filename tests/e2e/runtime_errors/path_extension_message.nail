@@ -1,0 +1,6 @@
+// E2E: path_extension runtime error echoes the path
+f show_error(error_msg:e):s {
+    print(error_msg);
+    r `none`;
+}
+print(safe(path_extension(`Makefile`), show_error));

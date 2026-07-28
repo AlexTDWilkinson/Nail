@@ -22,7 +22,7 @@ pub struct HTTP_Route {
     pub path: String,
     pub content: String,
     pub content_type: String, // e.g., "text/html", "application/json"
-    pub status_code: u16,     // HTTP status code (200, 404, etc.)
+    pub status_code: i64,     // HTTP status code (200, 404, etc.); i64 to match Nail's integer type
 }
 
 /// Builds a response without panicking: if the header value is somehow
@@ -47,7 +47,7 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
                 let route = entry.value().clone();
                 let content = route.content.clone();
                 let content_type = route.content_type.clone();
-                let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
+                let status = StatusCode::from_u16(u16::try_from(route.status_code).unwrap_or(500)).unwrap_or(StatusCode::OK);
                 app = app.route("/", get(move || async move { build_response(status, &content_type, content) }));
             }
         }
@@ -90,7 +90,7 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
                         if let Some(route) = qmap.get(&query_string) {
                             let content = route.content.clone();
                             let content_type = route.content_type.clone();
-                            let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
+                            let status = StatusCode::from_u16(u16::try_from(route.status_code).unwrap_or(500)).unwrap_or(StatusCode::OK);
                             return build_response(status, &content_type, content);
                         }
 
@@ -98,7 +98,7 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
                         if let Some(route) = qmap.get("") {
                             let content = route.content.clone();
                             let content_type = route.content_type.clone();
-                            let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
+                            let status = StatusCode::from_u16(u16::try_from(route.status_code).unwrap_or(500)).unwrap_or(StatusCode::OK);
                             return build_response(status, &content_type, content);
                         }
 
@@ -112,9 +112,9 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
     let addr = SocketAddr::from(([0, 0, 0, 0], port as u16));
     println!("🔨 Nail HTTP server listening on http://{}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| format!("Failed to bind to port {}: {}", port, e))?;
+    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| format!("http_server: could not bind to port {}: {}", port, e))?;
 
-    axum::serve(listener, app).await.map_err(|e| format!("Server error: {}", e))?;
+    axum::serve(listener, app).await.map_err(|e| format!("http_server: server error: {}", e))?;
 
     Ok(())
 }
@@ -128,7 +128,7 @@ pub async fn http_request(method: String, url: String, headers: DashMap<String, 
         "PUT" => client.put(&url),
         "DELETE" => client.delete(&url),
         "PATCH" => client.patch(&url),
-        _ => return Err(format!("Unsupported HTTP method: {}", method)),
+        _ => return Err(format!("http_request: unsupported HTTP method '{}', expected GET, POST, PUT, DELETE, or PATCH", method)),
     };
 
     // Add headers
@@ -143,10 +143,10 @@ pub async fn http_request(method: String, url: String, headers: DashMap<String, 
         request = request.body(body);
     }
 
-    let response = request.send().await.map_err(|e| e.to_string())?;
+    let response = request.send().await.map_err(|e| format!("http_request: request to '{}' failed: {}", url, e))?;
 
     let status = response.status().as_u16() as i64;
-    let response_body = response.text().await.map_err(|e| e.to_string())?;
+    let response_body = response.text().await.map_err(|e| format!("http_request: could not read the response body from '{}': {}", url, e))?;
 
     Ok(HTTP_Response { status, body: response_body })
 }

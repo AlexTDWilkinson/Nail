@@ -1,0 +1,6 @@
+// E2E: fs_read runtime error names the function, the path, and the OS reason
+f show_error(error_msg:e):s {
+    print(error_msg);
+    r `none`;
+}
+print(safe(fs_read(`missing.txt`), show_error));

@@ -1,0 +1,7 @@
+error: The value returned by 'math_sqrt' is silently discarded here
+  --> tests/errors/unused_return_value.nail:2:14
+   |
+ 2 | math_sqrt(4.0);
+   |              ^
+help: assign it to a variable: result:<type> = math_sqrt(...); Nail has no bare expression statements for value-returning calls
+1 error found

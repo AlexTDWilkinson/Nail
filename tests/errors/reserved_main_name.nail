@@ -1,0 +1,4 @@
+// Error test: 'main' is reserved and cannot be used as a function name
+f main():i {
+    r 1;
+}

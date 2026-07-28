@@ -28,11 +28,24 @@ runs each executable in a fresh empty working directory with a timeout.
 - `tests/e2e/<category>/<name>.nail` — a small, focused, self-contained program
 - `tests/e2e/<category>/<name>.stdout` — its exact expected stdout (bytes)
 - `tests/e2e/<category>/<name>.exitcode` — optional expected exit code (default 0)
+- `tests/e2e/<category>/<name>.stderr` — optional expected stderr, compared
+  after Rust panic scaffolding is stripped (the `thread ... panicked at`
+  location line, the `RUST_BACKTRACE` note, and blank lines). This is how
+  `danger(...)` panic messages are pinned — see
+  `runtime_errors/danger_stderr_message`
 - Tests must be **deterministic**: same output on every run, on any machine
 - Each test runs with cwd set to a fresh empty directory: filesystem tests must
   first create anything they read, and may write freely
 - Keep tests small: one behavior, a handful of `print` calls. Hundreds of tiny
   programs beat dozens of huge ones — a failure should point at one feature
+
+The `runtime_errors/` category pins the exact text of stdlib runtime error
+messages (the style guide in `nail_language_spec.md` applies to them too:
+name the function, echo the offending input). Most of these tests route the
+error through a `safe(...)` handler that prints `error_msg`, so the message
+is enforced through the normal stdout comparison; the `danger` path is pinned
+via `.stderr` goldens. When changing a runtime message on purpose, update the
+golden in the same commit.
 
 ## Determinism rules (non-negotiable)
 

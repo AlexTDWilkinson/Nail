@@ -1,16 +1,16 @@
-// Concurrent I/O operations with c.../c blocks
-// These run concurrently using async/await (tokio::join!)
+// c.../c starts every statement at the same time and waits for all of them.
+// The compiler turns this block into Rust's tokio::join! — real async I/O.
 
-// Multiple I/O operations run concurrently
+// Three real file reads happen concurrently:
 c
-    api_data:s = danger(fs_read(`data.json`));      // File I/O
-    user_info:s = `User data from API`;             // Simulated API call
-    config:s = `Configuration loaded`;              // Another I/O operation
+    spec:s = danger(fs_read(`nail_language_spec.md`));
+    readme:s = danger(fs_read(`README.md`));
+    website_source:s = danger(fs_read(`examples/nail_website.nail`));
 /c
 
-// All operations complete before we continue
-print(`API Data:`, api_data);
-print(`User Info:`, user_info);
-print(`Config:`, config);
-
-print(`All concurrent I/O operations completed!`);
+// Past /c, every value is guaranteed loaded.
+// No callbacks, no .then() chains, no await keywords to forget.
+print(`Language spec chars:`, string_length(spec));
+print(`README chars:`, string_length(readme));
+print(`Website source chars:`, string_length(website_source));
+print(`All three files loaded concurrently!`);

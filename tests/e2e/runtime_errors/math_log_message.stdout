@@ -1,0 +1,6 @@
+math_log: input must be positive, got 0
+0.0
+math_log10: input must be positive, got -1
+0.0
+math_log2: input must be positive, got 0
+0.0

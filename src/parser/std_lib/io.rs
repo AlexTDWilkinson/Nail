@@ -16,7 +16,7 @@ pub async fn read_line() -> Result<String, String> {
             }
             Ok(line)
         }
-        Err(e) => Err(format!("Failed to read line: {}", e))
+        Err(e) => Err(format!("io_read_line: failed to read from stdin: {}", e))
     }
 }
 
@@ -32,7 +32,7 @@ pub async fn read_int() -> Result<i64, String> {
         Ok(line) => {
             match line.trim().parse::<i64>() {
                 Ok(n) => Ok(n),
-                Err(_) => Err(format!("Invalid integer: {}", line))
+                Err(_) => Err(format!("io_read_int: could not parse '{}' as an integer", line.trim()))
             }
         }
         Err(e) => Err(e)
@@ -51,7 +51,7 @@ pub async fn read_float() -> Result<f64, String> {
         Ok(line) => {
             match line.trim().parse::<f64>() {
                 Ok(n) => Ok(n),
-                Err(_) => Err(format!("Invalid float: {}", line))
+                Err(_) => Err(format!("io_read_float: could not parse '{}' as a float", line.trim()))
             }
         }
         Err(e) => Err(e)

@@ -1,0 +1,4 @@
+int_pow: exponent cannot be negative, got -3
+0
+int_pow: 10^20 overflows a 64-bit integer
+0

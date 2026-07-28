@@ -1,0 +1,7 @@
+// E2E: the find expression's runtime error message is friendly
+f show_error(error_msg:e):i {
+    print(error_msg);
+    r -1;
+}
+nums:a:i = [1, 2, 3];
+print(safe(find num in nums { y num > 10; }, show_error));

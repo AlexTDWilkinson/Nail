@@ -1,0 +1,9 @@
+// E2E: array_slice runtime errors echo the range and the array length
+f show_error(error_msg:e):a:i {
+    print(error_msg);
+    r [];
+}
+nums:a:i = [1, 2, 3];
+print(safe(array_slice(nums, -1, 2), show_error));
+print(safe(array_slice(nums, 0, 9), show_error));
+print(safe(array_slice(nums, 3, 1), show_error));

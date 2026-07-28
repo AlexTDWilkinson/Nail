@@ -34,7 +34,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "math_random" [Rand] => "std_lib::math::random", () -> f,
             "Returns a random float between 0.0 (inclusive) and 1.0 (exclusive).",
             "roll:f = math_random();";
-        "math_divide" => "std_lib::math::divide", (numerator: any, denominator: any) -> (any!e),
+        "math_divide" => "std_lib::math::divide", (numerator: (T: i|f), denominator: (T: i|f)) -> (T!e),
             "Divides two numbers, returning an error on division by zero.",
             "ratio:f = danger(math_divide(10.0, 4.0));";
         "math_gcd" => "std_lib::math::gcd", (first: i, second: i) -> i,

@@ -1,5 +1,3 @@
-#![feature(str_as_str)]
-
 pub mod common;
 pub mod checker;
 pub mod colorizer;
@@ -9,6 +7,7 @@ pub mod parser;
 pub mod transpiler;
 pub mod statics_for_tests;
 pub mod stdlib_registry;
+pub mod toolchain;
 
 pub use common::{CodeError, CodeSpan};
 

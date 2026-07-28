@@ -1955,7 +1955,15 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                 continue;
             }
 
-            let transpilation_toml = transpiler.generate_cargo_toml("nail_transpilation", "..");
+            // Installed bundles build with their own pinned toolchain and
+            // nail crate; development checkouts use the system cargo and the
+            // repo's nail crate at "..".
+            let bundle = nail::toolchain::BundledToolchain::detect();
+            let nail_crate_path = match &bundle {
+                Some(bundle) => bundle.nail_crate_path().display().to_string(),
+                None => "..".to_string(),
+            };
+            let transpilation_toml = transpiler.generate_cargo_toml("nail_transpilation", &nail_crate_path);
             let transpilation_toml_path = transpilation_dir.join("Cargo.toml");
             let toml_unchanged = fs::read_to_string(&transpilation_toml_path).map(|existing| existing == transpilation_toml).unwrap_or(false);
             if !toml_unchanged {
@@ -1983,19 +1991,21 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             let mut editor = editor_arc.lock().unwrap();
             editor.build_status = BuildStatus::Compiling;
             drop(editor); // Release the lock
-            let output = Command::new("cargo")
-                .arg("build")
-                .arg("--release")
-                // run rustfmt or something
-                .current_dir(transpilation_dir)
-                .output();
+            let mut cargo = match &bundle {
+                Some(bundle) => bundle.cargo_command(),
+                None => Command::new("cargo"),
+            };
+            let output = cargo.arg("build").arg("--release").current_dir(transpilation_dir).output();
 
             match output {
                 Ok(output) => {
                     if output.status.success() {
                         log::debug!("Compiler stdout: {}", String::from_utf8_lossy(&output.stdout));
 
-                        let binary_path = transpilation_dir.join("target/release/nail_transpilation");
+                        let binary_path = match &bundle {
+                            Some(bundle) => bundle.built_binary_path("nail_transpilation"),
+                            None => transpilation_dir.join("target/release/nail_transpilation"),
+                        };
                         let destination_path = Path::new("./build");
                         // Copy (not move) so cargo's target/ stays intact and the
                         // next build can skip even the final link when unchanged.

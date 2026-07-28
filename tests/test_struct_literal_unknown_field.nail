@@ -1,0 +1,5 @@
+// Negative test: naming a nonexistent field in a struct literal should FAIL type checking
+// because the generated Rust struct literal would reference an unknown field.
+struct Point { x_val:i, y_val:i }
+spot:Point = Point { x_val = 1, y_val = 2, z_val = 3 };
+print(spot.x_val);

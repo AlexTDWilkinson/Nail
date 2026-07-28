@@ -1,0 +1,11 @@
+// Positive test: enum names work everywhere a type annotation is allowed -
+// variable declarations, struct fields, function params, and return types.
+enum Rank { Gold, Silver }
+struct Medal { rank:Rank, year:i }
+f best_rank(current:Rank):Rank {
+    r current;
+}
+prize:Medal = Medal { rank = Rank::Gold, year = 2020 };
+chosen:Rank = best_rank(Rank::Silver);
+print(prize.year);
+print(chosen);

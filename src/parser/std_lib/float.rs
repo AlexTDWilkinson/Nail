@@ -5,5 +5,5 @@ use std::fmt::Display;
 
 // Convert a value to a float
 pub async fn from<T: Display>(v: T) -> Result<f64, String> {
-    v.to_string().parse::<f64>().map_err(|e| e.to_string())
+    v.to_string().parse::<f64>().map_err(|_| format!("float_from: could not parse '{}' as a float", v))
 }

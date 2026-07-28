@@ -1,0 +1,6 @@
+// Error test: function body referencing an outer variable
+outer_value:i = 10;
+
+f add_outer(amount:i):i {
+    r amount + outer_value;
+}

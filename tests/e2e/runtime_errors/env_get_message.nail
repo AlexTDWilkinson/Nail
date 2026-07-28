@@ -1,0 +1,6 @@
+// E2E: env_get runtime error echoes the missing variable name
+f show_error(error_msg:e):s {
+    print(error_msg);
+    r `unset`;
+}
+print(safe(env_get(`NAIL_E2E_DEFINITELY_NOT_SET`), show_error));

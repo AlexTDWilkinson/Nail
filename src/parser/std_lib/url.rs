@@ -10,7 +10,7 @@ pub async fn encode(text: String) -> String {
 pub async fn decode(text: String) -> Result<String, String> {
     urlencoding::decode(&text)
         .map(|s| s.to_string())
-        .map_err(|e| format!("Failed to decode URL: {}", e))
+        .map_err(|e| format!("url_decode: could not decode '{}': {}", text, e))
 }
 
 /// Parse a query string into a hashmap

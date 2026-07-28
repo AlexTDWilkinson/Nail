@@ -1,0 +1,6 @@
+array_slice: indices cannot be negative, got -1..2
+[]
+array_slice: range 0..9 is out of bounds for an array of length 3
+[]
+array_slice: start index 3 is greater than end index 1
+[]

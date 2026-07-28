@@ -1,0 +1,7 @@
+// Positive test: different structs may reuse the same field names.
+struct FirstBox { value_field:i, label:s }
+struct SecondBox { value_field:f, label:s }
+first_box:FirstBox = FirstBox { value_field = 1, label = `one` };
+second_box:SecondBox = SecondBox { value_field = 2.5, label = `two` };
+print(first_box.value_field);
+print(second_box.value_field);

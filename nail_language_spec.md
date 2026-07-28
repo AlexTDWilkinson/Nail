@@ -801,6 +801,41 @@ print(product); // Outputs: 16
 - Included files must contain valid Nail code
 - No conditional includes (includes always happen)
 
+## Error Message Style Guide
+
+Friendly, detailed errors are a core feature of Nail, and their quality is
+enforced by golden-file tests (`tests/errors/`, run via
+`./test_error_messages.sh`). Every diagnostic the compiler emits must answer
+four things:
+
+1. **What is wrong** — stated in plain language, never internal jargon.
+   Write "Expected '}' but the file ended first", not "Expected BlockClose".
+2. **Where** — the failing line of the user's own code is shown with a
+   caret underline pointing at the problem (rendered by `CodeError::render`).
+   A diagnostic with a missing span (line 0) is a bug.
+3. **Why, with the actual values involved** — name the real types, variables,
+   and functions, e.g. "'count' is declared as an integer (i) but its value
+   is a string (s)". Use `NailDataTypeDescriptor::describe()` for type names,
+   never `{:?}` Debug formatting.
+4. **How to fix it** — a concrete `help:` suggestion (the `help` field on
+   `CodeError`) whenever a fix is knowable: a "did you mean 'x'?" for typos,
+   a corrected code snippet, or the idiomatic alternative.
+
+Standard library runtime errors follow the same rule: always name the
+function and echo the offending input, e.g.
+"int_from: could not parse 'abc' as an integer".
+
+Example of the required shape:
+
+```
+error: 'count' is declared as an integer (i) but its value is a string (s)
+  --> tests/errors/type_mismatch_declaration.nail:2:18
+   |
+ 2 | count:i = `hello`;
+   |                  ^
+help: either change the declaration to 'count:s' or make the value an integer (i)
+```
+
 ## Versioning and Toolchain Pinning (Planned)
 
 **Status: design commitment — not yet implemented.** This section records the
@@ -839,6 +874,56 @@ nail 0.1
    rustup) resolves the pragma, downloads the archived compiler binary for
    that exact release, and delegates compilation to it. Deferred until there
    are real users spread across multiple releases.
+
+### Distribution: the bundle
+
+Nail ships as **one immutable bundle per release**, installed at `/opt/nail`.
+The promise: download, install, open — it works. Offline. No Rust
+installation, no C compiler, no crates.io, nothing else on the machine.
+
+The bundle contains everything a build touches:
+
+- `bin/` — the IDE (`nail`) and compiler (`nailc`)
+- `toolchain/` — a pinned Rust toolchain (rustc, cargo, rust-lld, std for
+  the host and for `x86_64-unknown-linux-musl`)
+- `cargo-home/` — `config.toml` (the single source of build configuration)
+  plus vendored sources for every crate the stdlib registry can emit
+- `nail/` — the nail crate source that generated programs depend on
+- `cache/` — a pre-warmed shared build cache, so the first build on a fresh
+  machine compiles only the user's program (seconds, not minutes)
+
+Design decisions and why:
+
+- **Fixed install path.** Cargo's build fingerprints embed absolute paths.
+  Building the bundle's warm cache at `/opt/nail` and installing to
+  `/opt/nail` is what lets the shipped cache stay valid on every machine.
+- **Static musl output.** User programs target `x86_64-unknown-linux-musl`,
+  linked by the bundled `rust-lld` with `link-self-contained=yes`. Linking
+  needs zero system files, and the produced binaries are fully static — they
+  run on any Linux distribution, including inside empty containers.
+- **Scrubbed build environment.** The IDE invokes the bundled cargo by
+  absolute path with a clean environment (`RUSTFLAGS`, `CARGO_*`, rustup
+  installs, and the user's `PATH` cannot leak in). All configuration lives in
+  the bundle's `cargo-home/config.toml`.
+- **Closed dependency set.** Nail programs can only ever require crates the
+  stdlib registry declares (`nailc --cargo-toml-superset` emits the full
+  set), which is why complete vendoring and cache pre-warming are possible
+  at all. Registry crates must be pure Rust or bundle their C source; crates
+  that require system libraries at build time are not accepted.
+- **Tools require a glibc distribution.** The bundled rustc is the official
+  glibc build; the IDE and toolchain therefore run on mainstream distros
+  (Ubuntu, Debian, Fedora, Arch, ...) but not musl-based ones like Alpine.
+  Output binaries, being static, run anywhere.
+- **Development checkouts are unaffected.** When no bundle is installed
+  (`NAIL_HOME` overrides the default location), the IDE falls back to the
+  system cargo — the workflow in this repository.
+
+Tooling in `bundle/`: `build_bundle.sh` assembles and warms the bundle (the
+only step that needs network and musl cross compilers — a build-machine
+concern), `install.sh` installs it, and `test_bundle.sh` is the release
+gate: on a machine with no Rust, no cc, and no network, compile and run a
+Nail program using only the bundle. A release that fails the gate does not
+ship.
 
 ## Standard Library
 
@@ -905,7 +990,6 @@ Nail includes a comprehensive standard library with functions organized by categ
 - `array_skip_while(arr:a:T, predicate:f(T):b):a:T` - Skip elements while predicate is true
 - `array_zip(arr1:a:T, arr2:a:U):a:Pair<T,U>` - Combine two arrays element-wise into pairs
 - `array_flatten(arr:a:a:T):a:T` - Flatten nested array by one level
-- `array_flatten_deep(arr:a:a:T):a:T` - Recursively flatten all nested arrays
 - `array_unique(arr:a:T):a:T` - Remove duplicate elements (alias for deduplicate)
 - `array_deduplicate(arr:a:T):a:T` - Remove duplicate elements
 - `array_find(arr:a:T, value:T):i!e` - Find index of first occurrence (can fail)
@@ -917,8 +1001,6 @@ Nail includes a comprehensive standard library with functions organized by categ
 - `array_union(arr1:a:T, arr2:a:T):a:T` - Get union of two arrays (unique elements from both)
 - `array_rotate_left(arr:a:T, positions:i):a:T` - Rotate array elements left by n positions
 - `array_rotate_right(arr:a:T, positions:i):a:T` - Rotate array elements right by n positions
-- `array_partition(arr:a:T, predicate:f(T):b):a:a:T` - Partition array into [matching, non-matching]
-- `array_group_by(arr:a:T, key_fn:f(T):K):h<K,a:T>` - Group elements by key function result
 
 ### HashMap Operations
 **Note**: HashMap keys and values must be concrete types (i, f, s, b, arrays, structs, enums). Void type cannot be used as a value.

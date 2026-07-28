@@ -1,0 +1,36 @@
+// Shadowing regression tests for binding-keyed move analysis.
+// Each shadowed name gets a distinct binding id, so move/clone decisions
+// never conflate two bindings that share a name.
+
+// Copy -> heap shadow: the heap binding's last use must still move.
+value:i = 5;
+before_shadow:i = value + 1;
+value:s = `hello`;
+after_shadow:s = string_concat([value, `!`]);
+print(before_shadow);
+print(after_shadow);
+
+// Heap -> Copy shadow: the Copy binding emits bare, heap binding still moves.
+label:s = `answer`;
+label_use:s = string_concat([label, `:`]);
+label:i = 42;
+label_sum:i = label + 1;
+print(label_use);
+print(label_sum);
+
+// Shadow inside a revisitable region: the inner binding must not pin the
+// outer one — the outer binding's last use after the loop still moves.
+message:s = `outer`;
+numbers:a:i = [1, 2, 3];
+labels:a:s = map num in numbers {
+    message:s = string_from(num);
+    y message;
+};
+final_message:s = string_concat([message, `!`]);
+print(final_message);
+print(labels);
+
+// Shadow whose value consumes the old binding.
+greeting:s = `hi`;
+greeting:s = string_concat([greeting, ` there`]);
+print(greeting);

@@ -1,0 +1,7 @@
+// E2E: math_asin and math_acos runtime errors echo the out-of-range input
+f show_error(error_msg:e):f {
+    print(error_msg);
+    r 0.0;
+}
+print(safe(math_asin(2.0), show_error));
+print(safe(math_acos(-2.0), show_error));

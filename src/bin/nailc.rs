@@ -23,14 +23,24 @@ fn main() {
         eprintln!("  --cargo-toml   Output a complete Cargo.toml for the transpiled program");
         eprintln!("                 (use --nail-path=<path> to set the nail crate path, default \"..\",");
         eprintln!("                  and --package-name=<name> to override the package name)");
+        eprintln!("  --cargo-toml-superset  Output a Cargo.toml requiring every stdlib crate");
+        eprintln!("                 (no input file; used by the bundle build to warm the dep cache)");
         eprintln!("  -o <path>      Write transpiled Rust to <path> instead of next to the source");
         eprintln!("  --stdout       Write transpiled Rust to stdout, don't touch the filesystem");
         process::exit(1);
     }
 
+    let nail_path = args.iter().find_map(|arg| arg.strip_prefix("--nail-path=")).unwrap_or("..").to_string();
+
+    // Superset manifest needs no input file - it is derived from the registry alone
+    if args[1] == "--cargo-toml-superset" {
+        let package_name = args.iter().find_map(|arg| arg.strip_prefix("--package-name=")).unwrap_or("nail_transpilation");
+        print!("{}", Transpiler::generate_cargo_toml_superset(package_name, &nail_path));
+        return;
+    }
+
     let filename = &args[1];
     let mut mode = args.get(2).map(|s| s.as_str()).unwrap_or("--transpile");
-    let nail_path = args.iter().find_map(|arg| arg.strip_prefix("--nail-path=")).unwrap_or("..").to_string();
     let skip_check = args.iter().any(|arg| arg == "--skip-check");
     let to_stdout = args.iter().any(|arg| arg == "--stdout");
     let output_path = args.iter().position(|arg| arg == "-o").and_then(|i| args.get(i + 1)).cloned();
@@ -66,7 +76,7 @@ fn main() {
     let lexer_errors = nail::lexer::collect_lexer_errors(&tokens);
     if !lexer_errors.is_empty() {
         for error in &lexer_errors {
-            eprintln!("Lexer error: {}", error);
+            eprint!("{}", error.render(filename, &input));
         }
         process::exit(1);
     }
@@ -91,7 +101,7 @@ fn main() {
             ast
         }
         Err(e) => {
-            eprintln!("Parse error: {:?}", e);
+            eprint!("{}", e.render(filename, &input));
             process::exit(1);
         }
     };
@@ -122,10 +132,11 @@ fn main() {
                 checked_ast
             }
             Err(errors) => {
-                eprintln!("Type check errors:");
-                for error in errors {
-                    eprintln!("  {}", error);
+                for error in &errors {
+                    eprint!("{}", error.render(filename, &input));
                 }
+                let count = errors.len();
+                eprintln!("{} error{} found", count, if count == 1 { "" } else { "s" });
                 if mode != "--check-only" {
                     eprintln!("\nUse --skip-check to transpile anyway");
                 }

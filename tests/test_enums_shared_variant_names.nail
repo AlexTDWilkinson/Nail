@@ -1,0 +1,7 @@
+// Positive test: different enums may reuse the same variant names.
+enum Coin { Heads, Tails }
+enum Vote { Heads, Nays }
+flip:Coin = Coin::Heads;
+ballot:Vote = Vote::Heads;
+print(flip);
+print(ballot);

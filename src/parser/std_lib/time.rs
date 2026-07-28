@@ -56,23 +56,23 @@ pub async fn parse(time_str: String, format: TimeFormat) -> Result<i64, String> 
     match format {
         TimeFormat::Unix => {
             time_str.parse::<i64>()
-                .map_err(|_| format!("Cannot parse '{}' as Unix timestamp", time_str))
+                .map_err(|_| format!("time_parse: could not parse '{}' as a Unix timestamp", time_str))
         },
         TimeFormat::UnixMillis => {
             time_str.parse::<i64>()
                 .map(|ms| ms / 1000)
-                .map_err(|_| format!("Cannot parse '{}' as Unix milliseconds", time_str))
+                .map_err(|_| format!("time_parse: could not parse '{}' as Unix milliseconds", time_str))
         },
         TimeFormat::ISO8601 | TimeFormat::RFC3339 | TimeFormat::RFC2822 => {
             // For now, try to parse as a number if it looks like one
             // In production, would use chrono to parse these formats properly
             time_str.parse::<i64>()
-                .map_err(|_| format!("Cannot parse '{}' with format {:?}", time_str, format))
+                .map_err(|_| format!("time_parse: could not parse '{}' with format {:?}", time_str, format))
         },
         TimeFormat::Custom(fmt) => {
             // Custom parsing logic would go here
             time_str.parse::<i64>()
-                .map_err(|_| format!("Cannot parse '{}' with custom format '{}'", time_str, fmt))
+                .map_err(|_| format!("time_parse: could not parse '{}' with custom format '{}'", time_str, fmt))
         }
     }
 }

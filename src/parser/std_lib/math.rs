@@ -115,10 +115,10 @@ pub async fn e() -> f64 {
 // Division with a divide-by-zero check
 pub async fn divide<T>(numerator: T, denominator: T) -> Result<T, String>
 where
-    T: std::ops::Div<Output = T> + Default + PartialEq,
+    T: std::ops::Div<Output = T> + Default + PartialEq + std::fmt::Display,
 {
     if denominator == T::default() {
-        return Err("Division by zero".to_string());
+        return Err(format!("math_divide: cannot divide {} by zero", numerator));
     }
     Ok(numerator / denominator)
 }
@@ -148,16 +148,16 @@ pub async fn lcm(a: i64, b: i64) -> i64 {
 // Factorial
 pub async fn factorial(n: i64) -> Result<i64, String> {
     if n < 0 {
-        return Err("Factorial is not defined for negative numbers".to_string());
+        return Err(format!("math_factorial: not defined for negative numbers, got {}", n));
     }
     if n > 20 {
-        return Err("Factorial too large, would overflow".to_string());
+        return Err(format!("math_factorial: {} is too large, factorials above 20 overflow a 64-bit integer", n));
     }
     
     let mut result = 1i64;
     for i in 2..=n {
         result = result.checked_mul(i)
-            .ok_or_else(|| "Factorial overflow".to_string())?;
+            .ok_or_else(|| format!("math_factorial: {} is too large, the result overflows a 64-bit integer", n))?;
     }
     Ok(result)
 }
@@ -209,14 +209,14 @@ pub async fn tan(x: f64) -> f64 {
 
 pub async fn asin(x: f64) -> Result<f64, String> {
     if x < -1.0 || x > 1.0 {
-        return Err("asin input must be between -1 and 1".to_string());
+        return Err(format!("math_asin: input must be between -1 and 1, got {}", x));
     }
     Ok(x.asin())
 }
 
 pub async fn acos(x: f64) -> Result<f64, String> {
     if x < -1.0 || x > 1.0 {
-        return Err("acos input must be between -1 and 1".to_string());
+        return Err(format!("math_acos: input must be between -1 and 1, got {}", x));
     }
     Ok(x.acos())
 }
@@ -228,21 +228,21 @@ pub async fn atan(x: f64) -> f64 {
 // Logarithmic functions
 pub async fn log(x: f64) -> Result<f64, String> {
     if x <= 0.0 {
-        return Err("log input must be positive".to_string());
+        return Err(format!("math_log: input must be positive, got {}", x));
     }
     Ok(x.ln())
 }
 
 pub async fn log10(x: f64) -> Result<f64, String> {
     if x <= 0.0 {
-        return Err("log10 input must be positive".to_string());
+        return Err(format!("math_log10: input must be positive, got {}", x));
     }
     Ok(x.log10())
 }
 
 pub async fn log2(x: f64) -> Result<f64, String> {
     if x <= 0.0 {
-        return Err("log2 input must be positive".to_string());
+        return Err(format!("math_log2: input must be positive, got {}", x));
     }
     Ok(x.log2())
 }

@@ -1,0 +1,8 @@
+// E2E: array_get runtime errors echo the index and the array length
+f show_error(error_msg:e):i {
+    print(error_msg);
+    r -1;
+}
+nums:a:i = [10, 20, 30];
+print(safe(array_get(nums, 9), show_error));
+print(safe(array_get(nums, -1), show_error));

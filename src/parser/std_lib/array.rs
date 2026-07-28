@@ -15,7 +15,7 @@ pub async fn push<T: Clone>(mut arr: Vec<T>, item: T) -> Vec<T> {
 // pop never mutates in place.
 pub async fn pop<T: Clone>(mut arr: Vec<T>) -> Result<Vec<T>, String> {
     if arr.pop().is_none() {
-        return Err("Cannot pop from empty array".to_string());
+        return Err("array_pop: cannot pop from an empty array".to_string());
     }
     Ok(arr)
 }
@@ -59,12 +59,12 @@ pub async fn concat<T: Clone>(mut first: Vec<T>, second: Vec<T>) -> Vec<T> {
 // Safe array indexing - returns Result
 pub async fn get<T: Clone>(arr: Vec<T>, index: i64) -> Result<T, String> {
     if index < 0 {
-        return Err(format!("Array index cannot be negative: {}", index));
+        return Err(format!("array_get: index cannot be negative, got {}", index));
     }
 
     let idx = index as usize;
     if idx >= arr.len() {
-        return Err(format!("Array index out of bounds: {} (array length: {})", index, arr.len()));
+        return Err(format!("array_get: index {} is out of bounds for an array of length {}", index, arr.len()));
     }
 
     Ok(arr[idx].clone())
@@ -72,29 +72,29 @@ pub async fn get<T: Clone>(arr: Vec<T>, index: i64) -> Result<T, String> {
 
 // Get first element
 pub async fn first<T: Clone>(arr: Vec<T>) -> Result<T, String> {
-    arr.first().cloned().ok_or_else(|| "Cannot get first element of empty array".to_string())
+    arr.first().cloned().ok_or_else(|| "array_first: cannot get the first element of an empty array".to_string())
 }
 
 // Get last element
 pub async fn last<T: Clone>(arr: Vec<T>) -> Result<T, String> {
-    arr.last().cloned().ok_or_else(|| "Cannot get last element of empty array".to_string())
+    arr.last().cloned().ok_or_else(|| "array_last: cannot get the last element of an empty array".to_string())
 }
 
 // Safe array slicing
 pub async fn slice<T: Clone>(arr: Vec<T>, start: i64, end: i64) -> Result<Vec<T>, String> {
     if start < 0 || end < 0 {
-        return Err("Slice indices cannot be negative".to_string());
+        return Err(format!("array_slice: indices cannot be negative, got {}..{}", start, end));
     }
 
     let start_idx = start as usize;
     let end_idx = end as usize;
 
     if start_idx > arr.len() || end_idx > arr.len() {
-        return Err(format!("Slice indices out of bounds: {}..{} (array length: {})", start, end, arr.len()));
+        return Err(format!("array_slice: range {}..{} is out of bounds for an array of length {}", start, end, arr.len()));
     }
 
     if start_idx > end_idx {
-        return Err(format!("Invalid slice range: {}..{}", start, end));
+        return Err(format!("array_slice: start index {} is greater than end index {}", start, end));
     }
 
     Ok(arr[start_idx..end_idx].to_vec())
@@ -134,7 +134,7 @@ where
     result
 }
 
-// Generic array flatten - flattens nested arrays by one level
+// Flatten a nested array by one level
 pub async fn flatten<T>(arr: Vec<Vec<T>>) -> Vec<T> {
     arr.into_iter().flatten().collect()
 }
@@ -151,7 +151,7 @@ where
     T: PartialOrd,
 {
     let mut iter = arr.into_iter();
-    let mut best = iter.next().ok_or_else(|| "Cannot get minimum of empty array".to_string())?;
+    let mut best = iter.next().ok_or_else(|| "array_min: cannot get the minimum of an empty array".to_string())?;
     for item in iter {
         if item < best {
             best = item;
@@ -165,7 +165,7 @@ where
     T: PartialOrd,
 {
     let mut iter = arr.into_iter();
-    let mut best = iter.next().ok_or_else(|| "Cannot get maximum of empty array".to_string())?;
+    let mut best = iter.next().ok_or_else(|| "array_max: cannot get the maximum of an empty array".to_string())?;
     for item in iter {
         if item > best {
             best = item;
@@ -208,23 +208,23 @@ pub async fn take_string(arr: Vec<String>, n: i64) -> Vec<String> {
 }
 
 // Find index of first occurrence of element
-pub async fn find<T: PartialEq>(arr: Vec<T>, value: T) -> Result<i64, String> {
+pub async fn find<T: PartialEq + std::fmt::Debug>(arr: Vec<T>, value: T) -> Result<i64, String> {
     for (idx, item) in arr.iter().enumerate() {
         if item == &value {
             return Ok(idx as i64);
         }
     }
-    Err(format!("Element not found in array"))
+    Err(format!("array_find: value {:?} not found in the array", value))
 }
 
 // Find index of last occurrence of element
-pub async fn find_last<T: PartialEq>(arr: Vec<T>, value: T) -> Result<i64, String> {
+pub async fn find_last<T: PartialEq + std::fmt::Debug>(arr: Vec<T>, value: T) -> Result<i64, String> {
     for (idx, item) in arr.iter().enumerate().rev() {
         if item == &value {
             return Ok(idx as i64);
         }
     }
-    Err(format!("Element not found in array"))
+    Err(format!("array_find_last: value {:?} not found in the array", value))
 }
 
 // Create array with value repeated count times
@@ -238,7 +238,7 @@ pub async fn repeat<T: Clone>(value: T, count: i64) -> Vec<T> {
 // Split array into chunks of specified size
 pub async fn chunk<T: Clone>(arr: Vec<T>, size: i64) -> Result<Vec<Vec<T>>, String> {
     if size <= 0 {
-        return Err("Chunk size must be positive".to_string());
+        return Err(format!("array_chunk: chunk size must be positive, got {}", size));
     }
     
     let chunk_size = size as usize;
@@ -252,28 +252,6 @@ pub async fn chunk<T: Clone>(arr: Vec<T>, size: i64) -> Result<Vec<Vec<T>>, Stri
     }
     
     Ok(result)
-}
-
-// Flatten nested arrays recursively (deep flatten)
-pub async fn flatten_deep<T: Clone>(arr: Vec<Vec<T>>) -> Vec<T> {
-    arr.into_iter().flatten().collect()
-}
-
-// Partition array into two based on predicate (returns [matching, non-matching])
-// Note: In Nail, use filter for this - keeping for completeness
-pub async fn partition<T: Clone + Send + Sync>(arr: Vec<T>, predicate: impl Fn(&T) -> bool + Send + Sync) -> (Vec<T>, Vec<T>) {
-    let mut matching = Vec::new();
-    let mut non_matching = Vec::new();
-    
-    for item in arr {
-        if predicate(&item) {
-            matching.push(item);
-        } else {
-            non_matching.push(item);
-        }
-    }
-    
-    (matching, non_matching)
 }
 
 // Remove consecutive duplicates

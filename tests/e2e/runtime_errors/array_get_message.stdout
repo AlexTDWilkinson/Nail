@@ -1,0 +1,4 @@
+array_get: index 9 is out of bounds for an array of length 3
+-1
+array_get: index cannot be negative, got -1
+-1

@@ -22,6 +22,10 @@
 # Test contract:
 #   - Each test is <name>.nail with expected stdout in <name>.stdout
 #   - Optional <name>.exitcode holds the expected exit code (default 0)
+#   - Optional <name>.stderr holds the expected stderr AFTER Rust panic
+#     scaffolding (the "thread ... panicked at" location line, the
+#     RUST_BACKTRACE note, and blank lines) is stripped — this pins
+#     runtime error messages
 #   - Tests must be deterministic (no raw time_now/math_random in output)
 #   - Each test runs with its cwd set to a fresh empty directory, so fs tests
 #     must create whatever files they read
@@ -234,7 +238,8 @@ for i in "${!RUNNABLE_NAMES[@]}"; do
     actual_out="$WORK_DIR/cwd/$bin_name.stdout"
     actual_err="$WORK_DIR/cwd/$bin_name.stderr"
 
-    (cd "$run_dir" && timeout "$RUN_TIMEOUT" "$WORK_DIR/target/debug/$bin_name" \
+    # LC_ALL=C keeps OS error text (strerror) stable for .stderr/.stdout goldens
+    (cd "$run_dir" && LC_ALL=C timeout "$RUN_TIMEOUT" "$WORK_DIR/target/debug/$bin_name" \
         >"$actual_out" 2>"$actual_err")
     actual_exit=$?
 
@@ -256,6 +261,22 @@ for i in "${!RUNNABLE_NAMES[@]}"; do
         diff "$expected_file" "$actual_out" | head -12 | sed 's/^/      /'
         fail "$nail_file" "output mismatch"
         continue
+    fi
+
+    # Runtime error message golden: compare stderr with Rust panic scaffolding
+    # stripped (the location line and backtrace note change with the
+    # transpiler's output layout; the message itself must not)
+    stderr_golden="${nail_file%.nail}.stderr"
+    if [ -f "$stderr_golden" ]; then
+        filtered_err="$WORK_DIR/cwd/$bin_name.stderr.filtered"
+        sed -E "/^$/d; /^thread '[^']*'( \([0-9]+\))? panicked at /d; /^note: run with \`RUST_BACKTRACE=1\`/d" \
+            "$actual_err" > "$filtered_err"
+        if ! diff -q "$stderr_golden" "$filtered_err" >/dev/null 2>&1; then
+            echo -e "  ${RED}✗ $nail_file — stderr mismatch${NC}"
+            diff "$stderr_golden" "$filtered_err" | head -12 | sed 's/^/      /'
+            fail "$nail_file" "stderr mismatch"
+            continue
+        fi
     fi
 
     PASSED=$((PASSED + 1))

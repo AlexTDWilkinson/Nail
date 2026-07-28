@@ -5,12 +5,12 @@ pub async fn get(index: i64) -> Result<String, String> {
     let args: Vec<String> = env::args().collect();
     
     if index < 0 {
-        return Err(format!("Invalid argument index: {}", index));
+        return Err(format!("args_get: argument index cannot be negative, got {}", index));
     }
     
     let idx = index as usize;
     if idx >= args.len() {
-        return Err(format!("Argument index {} out of bounds (have {} arguments)", index, args.len()));
+        return Err(format!("args_get: index {} is out of bounds, the program received {} argument(s)", index, args.len()));
     }
     
     Ok(args[idx].clone())
@@ -44,7 +44,7 @@ pub async fn value(name: String) -> Result<String, String> {
         if arg.starts_with(&flag_with_equals) {
             let value = arg[flag_with_equals.len()..].to_string();
             if value.is_empty() {
-                return Err(format!("Empty value for argument --{}", name));
+                return Err(format!("args_value: argument --{} has an empty value", name));
             }
             return Ok(value);
         }
@@ -58,11 +58,11 @@ pub async fn value(name: String) -> Result<String, String> {
                     return Ok(next_arg.clone());
                 }
             }
-            return Err(format!("No value provided for argument --{}", name));
+            return Err(format!("args_value: no value provided for argument --{}", name));
         }
     }
     
-    Err(format!("Argument --{} not found", name))
+    Err(format!("args_value: argument --{} was not passed to the program", name))
 }
 
 /// Get the number of command line arguments (including program name)

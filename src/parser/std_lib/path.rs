@@ -32,7 +32,7 @@ pub async fn extension(path: String) -> Result<String, String> {
         .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| format!("No extension found for path: {}", path))
+        .ok_or_else(|| format!("path_extension: no file extension in '{}'", path))
 }
 
 /// Check if a path is absolute

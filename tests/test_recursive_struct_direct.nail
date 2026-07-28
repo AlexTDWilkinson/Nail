@@ -1,0 +1,6 @@
+// Negative test: a struct containing itself directly should FAIL type checking
+// because the generated Rust type would be infinitely sized.
+struct Node {
+    next_node:Node
+}
+print(`done`);

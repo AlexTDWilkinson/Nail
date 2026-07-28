@@ -1,0 +1,9 @@
+// Negative test: duplicate function definitions should FAIL type checking
+// because the transpiler would emit two Rust fns with the same name.
+f greet():s {
+    r `first`;
+}
+f greet():s {
+    r `second`;
+}
+print(greet());

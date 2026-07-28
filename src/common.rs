@@ -21,7 +21,7 @@ pub enum NailDataTypeDescriptor {
     HashMap(Box<NailDataTypeDescriptor>, Box<NailDataTypeDescriptor>), // For types like h<s,s>
     Any,                                                               // Any type accepts any concrete type
     FailedToResolve,                                                   // Only used internally during type resolution
-    TypeVar(String),                                                   // Type variable in stdlib signatures (e.g. T); resolved by unification at call sites
+    TypeVar(String, Vec<NailDataTypeDescriptor>),                      // Type variable in stdlib signatures (e.g. T); resolved by unification at call sites. An empty bounds list accepts any type; a non-empty list restricts the variable to those types (e.g. T: i|f)
 }
 
 impl fmt::Display for NailDataTypeDescriptor {
@@ -38,7 +38,19 @@ impl fmt::Display for NailDataTypeDescriptor {
             NailDataTypeDescriptor::Never => write!(f, "!"),
             NailDataTypeDescriptor::Error => write!(f, "e"),
             NailDataTypeDescriptor::Result(inner) => write!(f, "{}!e", inner),
-            NailDataTypeDescriptor::TypeVar(name) => write!(f, "{}", name),
+            NailDataTypeDescriptor::TypeVar(name, bounds) => {
+                write!(f, "{}", name)?;
+                if !bounds.is_empty() {
+                    write!(f, ": ")?;
+                    for (i, b) in bounds.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, "|")?;
+                        }
+                        write!(f, "{}", b)?;
+                    }
+                }
+                Ok(())
+            }
             NailDataTypeDescriptor::HashMap(key, value) => write!(f, "h<{},{}>", key, value),
             NailDataTypeDescriptor::OneOf(types) => {
                 write!(f, "OneOf<")?;
@@ -66,30 +78,96 @@ impl fmt::Display for NailDataTypeDescriptor {
     }
 }
 
+impl NailDataTypeDescriptor {
+    /// Human-friendly name used in error messages: the plain-English word
+    /// followed by the Nail type syntax, e.g. "an integer (i)".
+    pub fn describe(&self) -> String {
+        match self {
+            NailDataTypeDescriptor::Int => "an integer (i)".to_string(),
+            NailDataTypeDescriptor::Float => "a float (f)".to_string(),
+            NailDataTypeDescriptor::String => "a string (s)".to_string(),
+            NailDataTypeDescriptor::Boolean => "a boolean (b)".to_string(),
+            NailDataTypeDescriptor::Void => "void (v)".to_string(),
+            NailDataTypeDescriptor::Error => "an error (e)".to_string(),
+            NailDataTypeDescriptor::Result(inner) => format!("a result ({}!e) that may contain an error", inner),
+            NailDataTypeDescriptor::Array(_) => format!("an array ({})", self),
+            NailDataTypeDescriptor::HashMap(_, _) => format!("a hashmap ({})", self),
+            NailDataTypeDescriptor::Struct(name) => format!("the struct '{}'", name),
+            NailDataTypeDescriptor::Enum(name) => format!("the enum '{}'", name),
+            NailDataTypeDescriptor::Fn(_, _) => format!("a function ({})", self),
+            NailDataTypeDescriptor::TypeVar(_, bounds) if !bounds.is_empty() => bounds.iter().map(|b| b.describe()).collect::<Vec<_>>().join(" or "),
+            other => other.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodeError {
     pub message: String,
     pub code_span: CodeSpan,
+    /// Optional actionable fix suggestion, rendered as a `help:` line under the snippet.
+    pub help: Option<String>,
 }
 
 // Writing into a String cannot actually fail; this conversion exists so `write!`
 // can be used with `?` inside functions that report real CodeErrors.
 impl From<fmt::Error> for CodeError {
     fn from(_: fmt::Error) -> Self {
-        CodeError { message: "internal transpiler error: output formatting failed".to_string(), code_span: CodeSpan::default() }
+        CodeError { help: None, message: "internal transpiler error: output formatting failed".to_string(), code_span: CodeSpan::default() }
     }
 }
 
 impl fmt::Display for CodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error at line {}, column {}: {}", 
-               self.code_span.start_line, 
-               self.code_span.start_column, 
+        write!(f, "Error at line {}, column {}: {}",
+               self.code_span.start_line,
+               self.code_span.start_column,
                self.message)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl CodeError {
+    /// Render this error Rust-style: the message, a file:line:column pointer, the
+    /// offending source line with a caret underline, and an optional help line.
+    /// Lines and columns in CodeSpan are 1-based; a 0 line means the span is
+    /// unknown and the snippet is omitted.
+    pub fn render(&self, filename: &str, source: &str) -> String {
+        let mut out = String::new();
+        out.push_str(&format!("error: {}\n", self.message));
+
+        let line_no = self.code_span.start_line;
+        let source_line = if line_no >= 1 { source.lines().nth(line_no - 1) } else { None };
+
+        match source_line {
+            Some(text) => {
+                out.push_str(&format!("  --> {}:{}:{}\n", filename, line_no, self.code_span.start_column));
+                let gutter = line_no.to_string().len().max(2);
+                out.push_str(&format!("{:>width$} |\n", "", width = gutter));
+                out.push_str(&format!("{:>width$} | {}\n", line_no, text, width = gutter));
+
+                let col = self.code_span.start_column.max(1);
+                let underline_len = if self.code_span.end_line == line_no && self.code_span.end_column > self.code_span.start_column {
+                    self.code_span.end_column - self.code_span.start_column
+                } else {
+                    1
+                };
+                // Pad to the caret start honoring tabs so the underline stays aligned
+                let pad: String = text.chars().take(col - 1).map(|c| if c == '\t' { '\t' } else { ' ' }).collect();
+                out.push_str(&format!("{:>width$} | {}{}\n", "", pad, "^".repeat(underline_len), width = gutter));
+            }
+            None => {
+                out.push_str(&format!("  --> {}\n", filename));
+            }
+        }
+
+        if let Some(help) = &self.help {
+            out.push_str(&format!("help: {}\n", help));
+        }
+        out
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CodeSpan {
     pub start_line: usize,
     pub start_column: usize,

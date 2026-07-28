@@ -1,0 +1,5 @@
+error: 'main' is a reserved keyword and cannot be used as an identifier
+  --> tests/errors/reserved_main_name.nail:2:3
+   |
+ 2 | f main():i {
+   |   ^^^^

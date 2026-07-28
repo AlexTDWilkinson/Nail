@@ -1,0 +1,4 @@
+array_find: value 42 not found in the array
+-1
+array_find_last: value 42 not found in the array
+-1

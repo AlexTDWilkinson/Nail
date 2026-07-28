@@ -1,0 +1,4 @@
+// E2E: danger on a failing result prints the runtime error message to stderr
+print(`before`);
+bad_num:i = danger(int_from(`nope`));
+print(bad_num);

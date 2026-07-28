@@ -5,7 +5,7 @@ use super::*;
 
 pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Int:
-        "int_from" => "std_lib::int::from", (value: any) -> (i!e),
+        "int_from" => "std_lib::int::from", (value: (T: i|f|s|b)) -> (i!e),
             "Converts a value (string, float, etc.) to an integer; errors if it cannot be parsed.",
             "age:i = danger(int_from(`42`));";
         "int_pow" => "std_lib::int::pow", (base: i, exponent: i) -> (i!e),

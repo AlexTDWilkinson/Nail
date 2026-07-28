@@ -57,7 +57,7 @@ m.insert("db_sqlite_query", StdlibFunction {
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
         ],
-        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string()))))),
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))))),
         diverging: false,
         description: "Query database and return results as typed structs",
         example: "rows:a:Person = danger(db_sqlite_query(db, `SELECT name, age FROM people`));",
@@ -73,7 +73,7 @@ m.insert("db_sqlite_query_single", StdlibFunction {
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
         ],
-        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string()))),
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))),
         diverging: false,
         description: "Query database and return single result as typed struct",
         example: "person:Person = danger(db_sqlite_query_single(db, `SELECT name, age FROM people LIMIT 1`));",

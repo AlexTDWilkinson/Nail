@@ -1,0 +1,7 @@
+// Negative test: a struct named after a Rust built-in type should FAIL type checking
+// because it would shadow the real type inside generated code.
+struct String {
+    value_text:s
+}
+wrapper:String = String { value_text = `hi` };
+print(wrapper.value_text);

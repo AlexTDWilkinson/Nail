@@ -1,0 +1,2 @@
+// Error test: character that is not part of the Nail language
+count:i = 5 @ 3;

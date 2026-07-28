@@ -1,0 +1,2 @@
+// Error test: declaring an integer but assigning a string
+count:i = `hello`;

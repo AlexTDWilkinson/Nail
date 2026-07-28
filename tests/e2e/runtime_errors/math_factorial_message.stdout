@@ -1,0 +1,4 @@
+math_factorial: not defined for negative numbers, got -1
+-1
+math_factorial: 21 is too large, factorials above 20 overflow a 64-bit integer
+-1

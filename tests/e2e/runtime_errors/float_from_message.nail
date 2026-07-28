@@ -1,0 +1,6 @@
+// E2E: float_from runtime error names the function and echoes the input
+f show_error(error_msg:e):f {
+    print(error_msg);
+    r 0.0;
+}
+print(safe(float_from(`xyz`), show_error));

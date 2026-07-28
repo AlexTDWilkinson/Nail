@@ -69,7 +69,7 @@ pub async fn ends_with(s: String, suffix: String) -> bool {
 pub async fn index_of(s: String, substring: String) -> Result<i64, String> {
     match s.find(&substring) {
         Some(idx) => Ok(idx as i64),
-        None => Err(format!("Substring '{}' not found", substring))
+        None => Err(format!("string_index_of: substring '{}' not found in the string", substring))
     }
 }
 
@@ -77,14 +77,14 @@ pub async fn index_of(s: String, substring: String) -> Result<i64, String> {
 pub async fn last_index_of(s: String, substring: String) -> Result<i64, String> {
     match s.rfind(&substring) {
         Some(idx) => Ok(idx as i64),
-        None => Err(format!("Substring '{}' not found", substring))
+        None => Err(format!("string_last_index_of: substring '{}' not found in the string", substring))
     }
 }
 
 // Extract substring from start to end index
 pub async fn substring(s: String, start: i64, end: i64) -> Result<String, String> {
     if start < 0 || end < 0 {
-        return Err("Substring indices cannot be negative".to_string());
+        return Err(format!("string_substring: indices cannot be negative, got {} and {}", start, end));
     }
     
     let start_idx = start as usize;
@@ -92,21 +92,21 @@ pub async fn substring(s: String, start: i64, end: i64) -> Result<String, String
     let len = s.len();
     
     if start_idx > len {
-        return Err(format!("Start index {} is beyond string length {}", start, len));
+        return Err(format!("string_substring: start index {} is beyond the string length {}", start, len));
     }
     
     if end_idx > len {
-        return Err(format!("End index {} is beyond string length {}", end, len));
+        return Err(format!("string_substring: end index {} is beyond the string length {}", end, len));
     }
     
     if start_idx > end_idx {
-        return Err(format!("Start index {} is greater than end index {}", start, end));
+        return Err(format!("string_substring: start index {} is greater than end index {}", start, end));
     }
     
     // Handle UTF-8 properly
     let chars: Vec<char> = s.chars().collect();
     if start_idx > chars.len() || end_idx > chars.len() {
-        return Err("Index out of bounds for UTF-8 string".to_string());
+        return Err(format!("string_substring: range {}..{} is out of bounds for the string's {} characters", start, end, chars.len()));
     }
     
     Ok(chars[start_idx..end_idx].iter().collect())
@@ -353,7 +353,7 @@ pub async fn slice(s: String, start: i64, end: i64) -> Result<String, String> {
     };
     
     if actual_start > actual_end {
-        return Err(format!("Invalid slice range: {} to {}", start, end));
+        return Err(format!("string_slice: start index {} is greater than end index {}", start, end));
     }
     
     Ok(chars[actual_start..actual_end].iter().collect())

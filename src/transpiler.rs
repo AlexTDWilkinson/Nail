@@ -5,24 +5,170 @@ use crate::stdlib_registry::{self, CrateDependency, StructDerive};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
+/// Identifies one binding site (declaration, param, or binder) within a single
+/// MoveContext. Shadowing declarations that reuse a name get distinct ids, so
+/// move analysis never conflates two bindings that share a name.
+type BindingId = usize;
+
 /// Per-function (or per-program) bookkeeping that lets identifier references
 /// transpile to moves instead of clones. Nail is fully immutable, so replacing
 /// a clone with a move can never change behavior — a wrong decision here fails
 /// Rust compilation loudly rather than miscompiling silently.
 struct MoveContext {
-    /// Remaining syntactic uses of each variable, in emission order. A use that
+    /// Remaining syntactic uses of each binding, in emission order. A use that
     /// is emitted outside the Identifier arm (struct field access, assignment
     /// target) is counted but never decremented, which pins the count above
-    /// zero and keeps the variable clone-only.
-    remaining: HashMap<String, usize>,
-    /// Variables declared in THIS context (declarations and params). Only
-    /// activated variables may be moved.
-    activated: HashSet<String>,
-    /// Variables referenced anywhere execution can revisit the reference
+    /// zero and keeps the binding clone-only.
+    remaining: HashMap<BindingId, usize>,
+    /// Bindings declared in THIS context (declarations and params). Only
+    /// activated bindings may be moved.
+    activated: HashSet<BindingId>,
+    /// Bindings referenced anywhere execution can revisit the reference
     /// (loop bodies, closure bodies, parallel blocks) — never moved.
-    never_move: HashSet<String>,
-    /// Declared types, used to emit Copy types (i/f/b) bare with no clone.
+    never_move: HashSet<BindingId>,
+    /// Declared type of each activated binding, used to emit Copy types
+    /// (i/f/b) bare with no clone. Exact even when a name is shadowed by a
+    /// differently-typed binding.
+    binding_types: HashMap<BindingId, NailDataTypeDescriptor>,
+    /// Name-keyed types for binders (iterators, indexes) recorded mid-emission,
+    /// and the fallback when a reference has no resolved binding. Updated in
+    /// emission order, so it tracks the binding currently in scope.
     types: HashMap<String, NailDataTypeDescriptor>,
+    /// Maps each identifier reference and declaration site, keyed by
+    /// (code span, name), to the binding it names. Built by BindingResolver
+    /// before emission starts.
+    resolution: HashMap<(CodeSpan, String), BindingId>,
+    /// Binding ids of this context's params, which have no declaration node.
+    param_bindings: HashMap<String, BindingId>,
+}
+
+/// Assigns a distinct BindingId to every binding site inside one move context
+/// and resolves every identifier reference to the binding it names. Mirrors
+/// the emitter's scoping: blocks and binder constructs open scopes, shadowing
+/// declarations get fresh ids, and parallel/concurrent block declarations bind
+/// in the enclosing scope (the emitter hoists them into a tuple `let`).
+/// A reference that resolves to nothing simply gets no map entry, which the
+/// move analysis treats as clone-only — the safe default.
+struct BindingResolver {
+    scopes: Vec<HashMap<String, BindingId>>,
+    next_id: BindingId,
+    resolution: HashMap<(CodeSpan, String), BindingId>,
+}
+
+impl BindingResolver {
+    fn new() -> Self {
+        BindingResolver { scopes: vec![HashMap::new()], next_id: 0, resolution: HashMap::new() }
+    }
+
+    fn bind(&mut self, name: &str) -> BindingId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.scopes.last_mut().expect("resolver always has a root scope").insert(name.to_string(), id);
+        id
+    }
+
+    fn resolve(&self, name: &str) -> Option<BindingId> {
+        self.scopes.iter().rev().find_map(|scope| scope.get(name)).copied()
+    }
+
+    fn record(&mut self, code_span: &CodeSpan, name: &str) {
+        if let Some(id) = self.resolve(name) {
+            self.resolution.insert((code_span.clone(), name.to_string()), id);
+        }
+    }
+
+    fn scoped(&mut self, walk_inner: impl FnOnce(&mut Self)) {
+        self.scopes.push(HashMap::new());
+        walk_inner(self);
+        self.scopes.pop();
+    }
+
+    fn walk(&mut self, node: &ASTNode) {
+        match node {
+            ASTNode::Identifier { name, code_span, .. } => self.record(code_span, name),
+            ASTNode::StructFieldAccess { struct_name, code_span, .. } => self.record(code_span, struct_name),
+            ASTNode::ConstDeclaration { name, value, code_span, .. } => {
+                // The value refers to the previous binding of the name; the new
+                // binding exists only after it.
+                self.walk(value);
+                let id = self.bind(name);
+                self.resolution.insert((code_span.clone(), name.clone()), id);
+            }
+            // Function bodies get their own move context and resolver.
+            ASTNode::FunctionDeclaration { .. } => {}
+            // Lambda bodies also get their own context, but this walk still
+            // resolves their free references so collect_never_move can pin the
+            // captured outer bindings. Params shadow outer names.
+            ASTNode::LambdaDeclaration { params, body, .. } => {
+                self.scoped(|resolver| {
+                    for (param_name, _) in params {
+                        resolver.bind(param_name);
+                    }
+                    resolver.walk(body);
+                });
+            }
+            ASTNode::Block { statements, .. } => {
+                self.scoped(|resolver| {
+                    for statement in statements {
+                        resolver.walk(statement);
+                    }
+                });
+            }
+            ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, .. } => {
+                self.walk(iterable);
+                if let Some(initial_value) = initial_value {
+                    self.walk(initial_value);
+                }
+                self.scoped(|resolver| {
+                    resolver.bind(iterator);
+                    if let Some(filter) = filter {
+                        resolver.walk(filter);
+                    }
+                    resolver.walk(body);
+                });
+            }
+            ASTNode::MapExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::FilterExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::EachExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::FindExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::AllExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::AnyExpression { iterator, index_iterator, iterable, body, .. } => {
+                self.walk(iterable);
+                self.scoped(|resolver| {
+                    resolver.bind(iterator);
+                    if let Some(index_iterator) = index_iterator {
+                        resolver.bind(index_iterator);
+                    }
+                    resolver.walk(body);
+                });
+            }
+            ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, .. } => {
+                self.walk(iterable);
+                self.walk(initial_value);
+                self.scoped(|resolver| {
+                    resolver.bind(accumulator);
+                    resolver.bind(iterator);
+                    if let Some(index_iterator) = index_iterator {
+                        resolver.bind(index_iterator);
+                    }
+                    resolver.walk(body);
+                });
+            }
+            ASTNode::Loop { index_iterator, body, .. } => {
+                self.scoped(|resolver| {
+                    if let Some(index_iterator) = index_iterator {
+                        resolver.bind(index_iterator);
+                    }
+                    resolver.walk(body);
+                });
+            }
+            _ => {
+                for child in Transpiler::ast_children(node) {
+                    self.walk(child);
+                }
+            }
+        }
+    }
 }
 
 pub struct Transpiler {
@@ -34,6 +180,10 @@ pub struct Transpiler {
     in_collection_operation: bool,
     stdlib_types: HashMap<String, String>,  // Maps stdlib type names to their full paths
     move_contexts: Vec<MoveContext>,
+    // Names that appear as assignment targets anywhere in the program; their
+    // declarations need `let mut`. Name-based, so a same-named variable in
+    // another scope gets a harmless unused_mut at worst.
+    reassigned_variables: HashSet<String>,
 }
 
 impl Transpiler {
@@ -47,6 +197,20 @@ impl Transpiler {
             in_collection_operation: false,
             stdlib_types: HashMap::new(),
             move_contexts: Vec::new(),
+            reassigned_variables: HashSet::new(),
+        }
+    }
+
+    /// Collects every name used as an assignment target so declarations can
+    /// be emitted with `let mut`.
+    fn collect_reassigned_variables(node: &ASTNode, out: &mut HashSet<String>) {
+        if let ASTNode::Assignment { left, .. } = node {
+            if let ASTNode::Identifier { name, .. } = left.as_ref() {
+                out.insert(name.clone());
+            }
+        }
+        for child in Self::ast_children(node) {
+            Self::collect_reassigned_variables(child, out);
         }
     }
 
@@ -93,6 +257,17 @@ impl Transpiler {
     /// are delivered through the nail crate's feature flags rather than as
     /// direct dependencies.
     pub fn generate_cargo_toml(&self, package_name: &str, nail_path: &str) -> String {
+        Self::render_cargo_toml(package_name, nail_path, self.get_required_dependencies())
+    }
+
+    /// Generate a Cargo.toml requiring every crate the stdlib registry can
+    /// ever emit, with all nail features enabled. The bundle build compiles
+    /// this once so every real program's dependencies are already cached.
+    pub fn generate_cargo_toml_superset(package_name: &str, nail_path: &str) -> String {
+        Self::render_cargo_toml(package_name, nail_path, CrateDependency::all().into_iter().collect())
+    }
+
+    fn render_cargo_toml(package_name: &str, nail_path: &str, required: HashSet<CrateDependency>) -> String {
         use std::collections::BTreeSet;
 
         // Crates the generated code references unconditionally (see transpile() header)
@@ -104,7 +279,7 @@ impl Transpiler {
         dep_lines.insert(CrateDependency::Serde.to_cargo_dep().to_string());
 
         let mut nail_features: BTreeSet<&'static str> = BTreeSet::new();
-        for dep in self.get_required_dependencies() {
+        for dep in required {
             match dep.nail_feature() {
                 Some(feature) => {
                     nail_features.insert(feature);
@@ -516,59 +691,68 @@ impl Transpiler {
         }
     }
 
-    /// Count how many times each variable is referenced, in the same shape the
+    /// Count how many times each binding is referenced, in the same shape the
     /// emitter walks the tree. Nested functions and lambdas get their own
     /// MoveContext, so their bodies are skipped. References that emit outside
     /// the Identifier arm (struct field access bases, assignment targets) are
     /// counted here but never decremented during emission, which permanently
-    /// pins those variables to clone-only.
-    fn count_variable_uses(node: &ASTNode, counts: &mut HashMap<String, usize>) {
-        match node {
-            ASTNode::Identifier { name, .. } => {
-                *counts.entry(name.clone()).or_insert(0) += 1;
+    /// pins those bindings to clone-only.
+    fn count_variable_uses(node: &ASTNode, resolution: &HashMap<(CodeSpan, String), BindingId>, counts: &mut HashMap<BindingId, usize>) {
+        let count = |code_span: &CodeSpan, name: &str, counts: &mut HashMap<BindingId, usize>| {
+            if let Some(id) = resolution.get(&(code_span.clone(), name.to_string())) {
+                *counts.entry(*id).or_insert(0) += 1;
             }
-            ASTNode::StructFieldAccess { struct_name, .. } => {
+        };
+        match node {
+            ASTNode::Identifier { name, code_span, .. } => count(code_span, name, counts),
+            ASTNode::StructFieldAccess { struct_name, code_span, .. } => {
                 // Emitted as a raw name outside the Identifier arm: pin it.
-                *counts.entry(struct_name.clone()).or_insert(0) += 1;
+                count(code_span, struct_name, counts);
             }
             ASTNode::Assignment { left, right, .. } => {
                 // The assignment target is emitted bare and must stay valid: pin it.
-                if let ASTNode::Identifier { name, .. } = left.as_ref() {
-                    *counts.entry(name.clone()).or_insert(0) += 1;
+                if let ASTNode::Identifier { name, code_span, .. } = left.as_ref() {
+                    count(code_span, name, counts);
                 } else {
-                    Self::count_variable_uses(left, counts);
+                    Self::count_variable_uses(left, resolution, counts);
                 }
-                Self::count_variable_uses(right, counts);
+                Self::count_variable_uses(right, resolution, counts);
             }
             ASTNode::FunctionDeclaration { .. } | ASTNode::LambdaDeclaration { .. } => {}
             _ => {
                 for child in Self::ast_children(node) {
-                    Self::count_variable_uses(child, counts);
+                    Self::count_variable_uses(child, resolution, counts);
                 }
             }
         }
     }
 
-    /// Collect every variable name referenced in a region that execution can
+    /// Collect every binding referenced in a region that execution can
     /// revisit (loop bodies, closure bodies, parallel/spawn blocks) or that is
-    /// captured by a lambda. Those variables are never moved. Expressions a
+    /// captured by a lambda. Those bindings are never moved. Expressions a
     /// construct evaluates exactly once in the enclosing flow (a loop's
     /// iterable, a reduce's initial value) are NOT part of the region.
-    fn collect_never_move(node: &ASTNode, revisitable: bool, out: &mut HashSet<String>) {
-        let mark_all = |subtrees: &[&ASTNode], out: &mut HashSet<String>| {
+    /// Binding-keyed, so an inner binder that shadows an outer name does not
+    /// pin the outer binding.
+    fn collect_never_move(node: &ASTNode, revisitable: bool, resolution: &HashMap<(CodeSpan, String), BindingId>, out: &mut HashSet<BindingId>) {
+        let mark_all = |subtrees: &[&ASTNode], out: &mut HashSet<BindingId>| {
             for subtree in subtrees {
-                Self::collect_never_move(subtree, true, out);
+                Self::collect_never_move(subtree, true, resolution, out);
             }
         };
         match node {
-            ASTNode::Identifier { name, .. } => {
+            ASTNode::Identifier { name, code_span, .. } => {
                 if revisitable {
-                    out.insert(name.clone());
+                    if let Some(id) = resolution.get(&(code_span.clone(), name.clone())) {
+                        out.insert(*id);
+                    }
                 }
             }
-            ASTNode::StructFieldAccess { struct_name, .. } => {
+            ASTNode::StructFieldAccess { struct_name, code_span, .. } => {
                 if revisitable {
-                    out.insert(struct_name.clone());
+                    if let Some(id) = resolution.get(&(code_span.clone(), struct_name.clone())) {
+                        out.insert(*id);
+                    }
                 }
             }
             ASTNode::FunctionDeclaration { .. } => {} // own context, cannot capture
@@ -579,18 +763,18 @@ impl Transpiler {
             | ASTNode::FindExpression { iterable, body, .. }
             | ASTNode::AllExpression { iterable, body, .. }
             | ASTNode::AnyExpression { iterable, body, .. } => {
-                Self::collect_never_move(iterable, revisitable, out);
+                Self::collect_never_move(iterable, revisitable, resolution, out);
                 mark_all(&[body.as_ref()], out);
             }
             ASTNode::ReduceExpression { iterable, initial_value, body, .. } => {
-                Self::collect_never_move(iterable, revisitable, out);
-                Self::collect_never_move(initial_value, revisitable, out);
+                Self::collect_never_move(iterable, revisitable, resolution, out);
+                Self::collect_never_move(initial_value, revisitable, resolution, out);
                 mark_all(&[body.as_ref()], out);
             }
             ASTNode::ForLoop { iterable, initial_value, filter, body, .. } => {
-                Self::collect_never_move(iterable, revisitable, out);
+                Self::collect_never_move(iterable, revisitable, resolution, out);
                 if let Some(initial_value) = initial_value {
-                    Self::collect_never_move(initial_value, revisitable, out);
+                    Self::collect_never_move(initial_value, revisitable, resolution, out);
                 }
                 if let Some(filter) = filter {
                     mark_all(&[filter.as_ref()], out);
@@ -599,44 +783,75 @@ impl Transpiler {
             }
             ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
                 if let Some(initial_value) = initial_value {
-                    Self::collect_never_move(initial_value, revisitable, out);
+                    Self::collect_never_move(initial_value, revisitable, resolution, out);
                 }
                 if let Some(max_iterations) = max_iterations {
-                    Self::collect_never_move(max_iterations, revisitable, out);
+                    Self::collect_never_move(max_iterations, revisitable, resolution, out);
                 }
                 mark_all(&[condition.as_ref(), body.as_ref()], out);
             }
             ASTNode::Loop { body, .. } => mark_all(&[body.as_ref()], out),
             ASTNode::ParallelBlock { statements, .. } | ASTNode::ConcurrentBlock { statements, .. } => {
                 for statement in statements {
-                    Self::collect_never_move(statement, true, out);
+                    Self::collect_never_move(statement, true, resolution, out);
                 }
             }
             ASTNode::SpawnBlock { body, .. } => mark_all(&[body.as_ref()], out),
             _ => {
                 for child in Self::ast_children(node) {
-                    Self::collect_never_move(child, revisitable, out);
+                    Self::collect_never_move(child, revisitable, resolution, out);
                 }
             }
         }
     }
 
-    fn push_move_context(&mut self, root: &ASTNode) {
+    /// Params have no declaration node in `root`, so they are bound here into
+    /// the resolver's root scope before the walk.
+    fn push_move_context(&mut self, root: &ASTNode, params: &[String]) {
+        let mut resolver = BindingResolver::new();
+        let mut param_bindings = HashMap::new();
+        for param in params {
+            param_bindings.insert(param.clone(), resolver.bind(param));
+        }
+        resolver.walk(root);
         let mut remaining = HashMap::new();
-        Self::count_variable_uses(root, &mut remaining);
+        Self::count_variable_uses(root, &resolver.resolution, &mut remaining);
         let mut never_move = HashSet::new();
-        Self::collect_never_move(root, false, &mut never_move);
-        self.move_contexts.push(MoveContext { remaining, activated: HashSet::new(), never_move, types: HashMap::new() });
+        Self::collect_never_move(root, false, &resolver.resolution, &mut never_move);
+        self.move_contexts.push(MoveContext {
+            remaining,
+            activated: HashSet::new(),
+            never_move,
+            binding_types: HashMap::new(),
+            types: HashMap::new(),
+            resolution: resolver.resolution,
+            param_bindings,
+        });
     }
 
     fn pop_move_context(&mut self) {
         self.move_contexts.pop();
     }
 
-    /// Record a variable declared in the current context as move-eligible.
-    fn activate_variable(&mut self, name: &str, data_type: &NailDataTypeDescriptor) {
+    /// Record a declaration in the current context as move-eligible, resolved
+    /// to its binding via the declaration node's span.
+    fn activate_declaration(&mut self, name: &str, data_type: &NailDataTypeDescriptor, code_span: &CodeSpan) {
         if let Some(context) = self.move_contexts.last_mut() {
-            context.activated.insert(name.to_string());
+            if let Some(id) = context.resolution.get(&(code_span.clone(), name.to_string())).copied() {
+                context.activated.insert(id);
+                context.binding_types.insert(id, data_type.clone());
+            }
+            context.types.insert(name.to_string(), data_type.clone());
+        }
+    }
+
+    /// Record a param of the current context as move-eligible.
+    fn activate_param(&mut self, name: &str, data_type: &NailDataTypeDescriptor) {
+        if let Some(context) = self.move_contexts.last_mut() {
+            if let Some(id) = context.param_bindings.get(name).copied() {
+                context.activated.insert(id);
+                context.binding_types.insert(id, data_type.clone());
+            }
             context.types.insert(name.to_string(), data_type.clone());
         }
     }
@@ -652,11 +867,25 @@ impl Transpiler {
         self.move_contexts.iter().rev().find_map(|context| context.types.get(name))
     }
 
+    /// Resolve a reference in the CURRENT context to its binding, if the
+    /// resolver mapped it.
+    fn resolve_binding(&self, name: &str, code_span: &CodeSpan) -> Option<BindingId> {
+        self.move_contexts.last().and_then(|context| context.resolution.get(&(code_span.clone(), name.to_string())).copied())
+    }
+
+    /// The declared type of a reference: exact per-binding type when resolved,
+    /// otherwise the name-keyed fallback (binders, cross-context references).
+    fn reference_type(&self, name: &str, code_span: &CodeSpan) -> Option<&NailDataTypeDescriptor> {
+        self.resolve_binding(name, code_span)
+            .and_then(|id| self.move_contexts.last().and_then(|context| context.binding_types.get(&id)))
+            .or_else(|| self.lookup_variable_type(name))
+    }
+
     /// The element type of an iterable, when statically known from a declared
     /// array variable.
     fn iterable_element_type(&self, iterable: &ASTNode) -> Option<NailDataTypeDescriptor> {
-        if let ASTNode::Identifier { name, .. } = iterable {
-            if let Some(NailDataTypeDescriptor::Array(inner)) = self.lookup_variable_type(name) {
+        if let ASTNode::Identifier { name, code_span, .. } = iterable {
+            if let Some(NailDataTypeDescriptor::Array(inner)) = self.reference_type(name, code_span) {
                 return Some((**inner).clone());
             }
         }
@@ -664,52 +893,86 @@ impl Transpiler {
     }
 
     /// How a variable reference is emitted. Copy types (i/f/b) are always bare.
-    /// A heap-typed variable moves at its last syntactic use when execution
+    /// A heap-typed binding moves at its last syntactic use when execution
     /// cannot revisit the reference; otherwise it clones.
-    fn identifier_expression(&mut self, name: &str) -> String {
-        if matches!(self.lookup_variable_type(name), Some(NailDataTypeDescriptor::Int | NailDataTypeDescriptor::Float | NailDataTypeDescriptor::Boolean)) {
+    fn identifier_expression(&mut self, name: &str, code_span: &CodeSpan) -> String {
+        if matches!(self.reference_type(name, code_span), Some(NailDataTypeDescriptor::Int | NailDataTypeDescriptor::Float | NailDataTypeDescriptor::Boolean)) {
             return name.to_string();
         }
-        if let Some(context) = self.move_contexts.last_mut() {
-            if let Some(remaining) = context.remaining.get_mut(name) {
-                if *remaining > 0 {
-                    *remaining -= 1;
-                }
-                if *remaining == 0 && context.activated.contains(name) && !context.never_move.contains(name) {
-                    return name.to_string();
+        if let Some(id) = self.resolve_binding(name, code_span) {
+            if let Some(context) = self.move_contexts.last_mut() {
+                if let Some(remaining) = context.remaining.get_mut(&id) {
+                    if *remaining > 0 {
+                        *remaining -= 1;
+                    }
+                    if *remaining == 0 && context.activated.contains(&id) && !context.never_move.contains(&id) {
+                        return name.to_string();
+                    }
                 }
             }
         }
         format!("{}.clone()", name)
     }
 
-    /// Shared opening of a parallel collection operation (map/filter): rayon
-    /// par_iter with enumerate, per-capture clones so the async move block
-    /// doesn't move outer variables (E0507), then the async block and the
-    /// optional index binding. Leaves indent_level two deeper; callers emit
-    /// the body and the matching closes.
-    fn write_parallel_iter_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, body: &ASTNode, output: &mut String) -> Result<(), CodeError> {
+    /// Shared opening of a parallel collection operation (map/filter). The
+    /// iterable is evaluated first in async context (it may await), then the
+    /// whole rayon chain runs inside spawn_blocking so worker closures can
+    /// block_on async bodies without blocking a tokio core thread. Per-capture
+    /// clones keep the closures from moving outer variables (E0507). Leaves
+    /// indent_level three deeper; callers emit the body and matching closes
+    /// via write_parallel_iter_close.
+    fn write_parallel_iter_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, body: &ASTNode, rayon_method: &str, output: &mut String) -> Result<(), CodeError> {
         if let Some(element_type) = self.iterable_element_type(iterable) {
             self.record_variable_type(iterator, element_type);
         }
         if let Some(idx) = index_iterator {
             self.record_variable_type(idx, NailDataTypeDescriptor::Int);
         }
-        write!(output, "{}let __futures: Vec<_> = ", self.indent())?;
-        self.transpile_node_internal(iterable, output, false)?;
-        writeln!(output, ".into_par_iter().enumerate().map(|(_idx, {})| {{", iterator)?;
-        self.indent_level += 1;
+        writeln!(output, "{}let __rt_handle = tokio::runtime::Handle::current();", self.indent())?;
+        write!(output, "{}let __iter = ", self.indent())?;
+        // Lazy iterator forms (ranges) are only IndexedParallelIterator for
+        // small integer types in rayon, so enumerate() is unavailable on them;
+        // use the lazy form only when no index binding is needed.
+        let use_index = index_iterator.is_some();
+        self.transpile_iterable(iterable, !use_index, output)?;
+        writeln!(output, ";")?;
 
-        for var in Self::closure_captured_variables(body, iterator, index_iterator) {
+        let captured = Self::closure_captured_variables(body, iterator, index_iterator);
+        for var in &captured {
             writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
         }
 
-        writeln!(output, "{}async move {{", self.indent())?;
+        writeln!(output, "{}let __result: Vec<_> = tokio::task::spawn_blocking(move || {{", self.indent())?;
+        self.indent_level += 1;
+        if use_index {
+            writeln!(output, "{}__iter.into_par_iter().enumerate().{}(|(_idx, {})| {{", self.indent(), rayon_method, iterator)?;
+        } else {
+            writeln!(output, "{}__iter.into_par_iter().{}(|{}| {{", self.indent(), rayon_method, iterator)?;
+        }
+        self.indent_level += 1;
+
+        for var in &captured {
+            writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
+        }
+
+        writeln!(output, "{}__rt_handle.block_on(async move {{", self.indent())?;
         self.indent_level += 1;
 
         if let Some(idx) = index_iterator {
             writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
         }
+        Ok(())
+    }
+
+    /// Closes the structure opened by write_parallel_iter_open: the block_on
+    /// async block, the rayon closure with collect, and the spawn_blocking.
+    fn write_parallel_iter_close(&mut self, output: &mut String) -> Result<(), CodeError> {
+        self.indent_level -= 1;
+        writeln!(output, "{}}})", self.indent())?;
+        self.indent_level -= 1;
+        writeln!(output, "{}}}).collect()", self.indent())?;
+        self.indent_level -= 1;
+        writeln!(output, "{}}}).await.unwrap();", self.indent())?;
         Ok(())
     }
 
@@ -724,7 +987,7 @@ impl Transpiler {
             self.record_variable_type(idx, NailDataTypeDescriptor::Int);
         }
         write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
-        self.transpile_node_internal(iterable, output, false)?;
+        self.transpile_iterable(iterable, true, output)?;
         writeln!(output, ".into_iter().enumerate() {{")?;
         self.indent_level += 1;
 
@@ -732,6 +995,27 @@ impl Transpiler {
             writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
         }
         Ok(())
+    }
+
+    /// Emit an iterable expression. When `allow_lazy` is set and the iterable
+    /// is a stdlib call the registry knows a native iterator form for (like
+    /// array_range -> a..b), emit that form instead of materializing a Vec.
+    fn transpile_iterable(&mut self, iterable: &ASTNode, allow_lazy: bool, output: &mut String) -> Result<(), CodeError> {
+        if allow_lazy {
+            if let ASTNode::FunctionCall { name, args, .. } = iterable {
+                if let Some(template) = stdlib_registry::get_iterator_form(name) {
+                    let mut rendered = template.to_string();
+                    for (i, arg) in args.iter().enumerate() {
+                        let mut arg_out = String::new();
+                        self.transpile_node_internal(arg, &mut arg_out, false)?;
+                        rendered = rendered.replace(&format!("{{{}}}", i), &arg_out);
+                    }
+                    write!(output, "{}", rendered)?;
+                    return Ok(());
+                }
+            }
+        }
+        self.transpile_node_internal(iterable, output, false)
     }
 
     /// Emit `let condition_result = { <body> };` with the collection-operation
@@ -742,8 +1026,12 @@ impl Transpiler {
 
         let prev_context = self.in_collection_operation;
         self.in_collection_operation = true;
+        write!(output, "{}", self.indent())?;
         self.transpile_node_internal(body, output, false)?;
         self.in_collection_operation = prev_context;
+        if !output.ends_with('\n') {
+            writeln!(output)?;
+        }
 
         self.indent_level -= 1;
         writeln!(output, "{}}};", self.indent())?;
@@ -796,6 +1084,9 @@ impl Transpiler {
     pub fn transpile(&mut self, node: &ASTNode) -> Result<String, CodeError> {
         // First pass: collect all used functions by traversing the AST
         self.collect_used_functions(node);
+        let mut reassigned = HashSet::new();
+        Self::collect_reassigned_variables(node, &mut reassigned);
+        self.reassigned_variables = reassigned;
         
         let mut output = String::new();
         writeln!(output, "use tokio;")?;
@@ -884,7 +1175,7 @@ impl Transpiler {
                 // This is handled in StructInstantiation
             }
             ASTNode::Program { statements, .. } => {
-                self.push_move_context(node);
+                self.push_move_context(node, &[]);
                 for stmt in statements {
                     self.transpile_node_internal(stmt, output, add_semicolons)?;
                     if !add_semicolons {
@@ -909,9 +1200,10 @@ impl Transpiler {
                 self.current_function_return_type = Some(data_type.clone());
                 self.current_function_name = Some(name.clone());
 
-                self.push_move_context(body);
+                let param_names: Vec<String> = params.iter().map(|(param_name, _)| param_name.clone()).collect();
+                self.push_move_context(body, &param_names);
                 for (param_name, param_type) in params {
-                    self.activate_variable(param_name, param_type);
+                    self.activate_param(param_name, param_type);
                 }
 
                 self.indent_level += 1;
@@ -932,15 +1224,16 @@ impl Transpiler {
                     self.transpile_function_call(name, args, output, false)?;
                 }
             }
-            ASTNode::ConstDeclaration { name, data_type, value, .. } => {
+            ASTNode::ConstDeclaration { name, data_type, value, code_span, .. } => {
+                let mutability = if self.reassigned_variables.contains(name) { "mut " } else { "" };
                 if add_semicolons {
-                    write!(output, "{}let {}: {} = ", self.indent(), name, self.rust_type(data_type, name))?;
+                    write!(output, "{}let {}{}: {} = ", self.indent(), mutability, name, self.rust_type(data_type, name))?;
                 } else {
                     // Inside expression context (like lambdas), don't add indent
-                    write!(output, "let {}: {} = ", name, self.rust_type(data_type, name))?;
+                    write!(output, "let {}{}: {} = ", mutability, name, self.rust_type(data_type, name))?;
                 }
                 self.transpile_node_internal(value, output, false)?;
-                self.activate_variable(name, data_type);
+                self.activate_declaration(name, data_type, code_span);
                 if add_semicolons {
                     writeln!(output, ";")?;
                 }
@@ -1053,8 +1346,9 @@ impl Transpiler {
             ASTNode::Block { statements, .. } => {
                 for (i, stmt) in statements.iter().enumerate() {
                     self.transpile_node_internal(stmt, output, add_semicolons)?;
-                    if i < statements.len() - 1 {
-                        // Add semicolon and newline between statements
+                    // In statement context every statement terminates itself;
+                    // a separator is only needed between expression-context statements
+                    if !add_semicolons && i < statements.len() - 1 {
                         writeln!(output, ";")?;
                         write!(output, "{}", self.indent())?;
                     }
@@ -1077,10 +1371,17 @@ impl Transpiler {
                     self.indent_level += 1;
                     writeln!(output, "{}let mut __result = Vec::new();", self.indent())?;
                     write!(output, "{}for {} in ", self.indent(), iterator)?;
-                    self.transpile_node_internal(iterable, output, false)?;
+                    self.transpile_iterable(iterable, true, output)?;
                     writeln!(output, " {{")?;
                     self.indent_level += 1;
-                    
+
+                    // The when clause skips elements that don't match
+                    if let Some(filter_condition) = filter {
+                        write!(output, "{}if !(", self.indent())?;
+                        self.transpile_node_internal(filter_condition, output, false)?;
+                        writeln!(output, ") {{ continue; }}")?;
+                    }
+
                     // Extract and transpile the yield expression
                     if let ASTNode::Block { statements, .. } = body.as_ref() {
                         for stmt in statements {
@@ -1119,9 +1420,15 @@ impl Transpiler {
                     } else {
                         write!(output, " for {} in ", iterator)?;
                     }
-                    self.transpile_node_internal(iterable, output, false)?;
+                    self.transpile_iterable(iterable, true, output)?;
                     writeln!(output, " {{")?;
                     self.indent_level += 1;
+                    // The when clause skips elements that don't match
+                    if let Some(filter_condition) = filter {
+                        write!(output, "{}if !(", self.indent())?;
+                        self.transpile_node_internal(filter_condition, output, false)?;
+                        writeln!(output, ") {{ continue; }}")?;
+                    }
                     self.transpile_node_internal(body, output, true)?;
                     self.indent_level -= 1;
                     if add_semicolons {
@@ -1140,7 +1447,7 @@ impl Transpiler {
                 writeln!(output)?;
                 self.indent_level += 1;
 
-                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, output)?;
+                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, "map", output)?;
 
                 // Transpile the body statements and collect result
                 if let ASTNode::Block { statements, .. } = body.as_ref() {
@@ -1149,6 +1456,7 @@ impl Transpiler {
                         match stmt {
                             // Yield/return statements are the produced value
                             ASTNode::YieldDeclaration { statement, .. } | ASTNode::ReturnDeclaration { statement, .. } => {
+                                write!(output, "{}", self.indent())?;
                                 self.transpile_node_internal(statement, output, false)?;
                             }
                             _ => {
@@ -1160,15 +1468,11 @@ impl Transpiler {
                         }
                     }
                 }
+                if !output.ends_with('\n') {
+                    writeln!(output)?;
+                }
 
-                self.indent_level -= 1;
-                writeln!(output)?;
-                writeln!(output, "{}}}", self.indent())?;
-
-                self.indent_level -= 1;
-                writeln!(output, "{}}}).collect();", self.indent())?;
-
-                writeln!(output, "{}let __result = future::join_all(__futures).await;", self.indent())?;
+                self.write_parallel_iter_close(output)?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
@@ -1182,7 +1486,7 @@ impl Transpiler {
                 writeln!(output)?;
                 self.indent_level += 1;
 
-                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, output)?;
+                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, "filter_map", output)?;
                 self.write_condition_result(body, output)?;
 
                 // Return Some(value) if condition is true, None otherwise
@@ -1196,12 +1500,7 @@ impl Transpiler {
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
 
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
-                self.indent_level -= 1;
-                writeln!(output, "{}}}).collect();", self.indent())?;
-                writeln!(output, "{}let __results = future::join_all(__futures).await;", self.indent())?;
-                writeln!(output, "{}let __result: Vec<_> = __results.into_iter().filter_map(|x| x).collect();", self.indent())?;
+                self.write_parallel_iter_close(output)?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
@@ -1279,7 +1578,7 @@ impl Transpiler {
                     "let mut __found = None;",
                     false,
                     &on_match,
-                    "__found.ok_or_else(|| \"Element not found\".to_string())",
+                    "__found.ok_or_else(|| \"find: no element matched the condition\".to_string())",
                 )?;
             }
             ASTNode::AllExpression { iterator, index_iterator, iterable, body, .. } => {
@@ -1440,12 +1739,18 @@ impl Transpiler {
                 write!(output, "{}", self.rust_operator(operator))?;
                 self.transpile_operand(operand, output)?;
             }
-            ASTNode::Identifier { name, .. } => {
-                let expression = self.identifier_expression(name);
+            ASTNode::Identifier { name, code_span, .. } => {
+                let expression = self.identifier_expression(name, code_span);
                 write!(output, "{}", expression)?;
             }
-            ASTNode::NumberLiteral { value, .. } => {
-                write!(output, "{}", value)?;
+            ASTNode::NumberLiteral { value, data_type, .. } => {
+                // Suffix the literal so untyped contexts (like macro arguments)
+                // don't fall back to Rust's i32 default and overflow on large values
+                match data_type {
+                    NailDataTypeDescriptor::Int => write!(output, "{}i64", value)?,
+                    NailDataTypeDescriptor::Float => write!(output, "{}f64", value)?,
+                    _ => write!(output, "{}", value)?,
+                }
             }
             ASTNode::StringLiteral { value, .. } => {
                 // For multiline strings or strings with backslashes, use raw strings
@@ -1552,7 +1857,7 @@ impl Transpiler {
                         ASTNode::StructDeclarationField { name: field_name, data_type, .. } => {
                             writeln!(output, "{}{}: {},", self.indent(), field_name, self.rust_type(data_type, field_name))?;
                         }
-                        other => return Err(CodeError { message: format!("Struct declaration '{}' contains a non-field node", name), code_span: other.code_span() }),
+                        other => return Err(CodeError { help: None, message: format!("Struct declaration '{}' contains a non-field node", name), code_span: other.code_span() }),
                     }
                 }
                 self.indent_level -= 1;
@@ -1567,7 +1872,7 @@ impl Transpiler {
                         ASTNode::EnumVariant { variant, .. } => {
                             writeln!(output, "{}{},", self.indent(), variant)?;
                         }
-                        other => return Err(CodeError { message: format!("Enum declaration '{}' contains a non-variant node", name), code_span: other.code_span() }),
+                        other => return Err(CodeError { help: None, message: format!("Enum declaration '{}' contains a non-variant node", name), code_span: other.code_span() }),
                     }
                 }
                 self.indent_level -= 1;
@@ -1584,9 +1889,10 @@ impl Transpiler {
                 }
                 write!(output, "| {{ async move {{ ")?;
 
-                self.push_move_context(body);
+                let param_names: Vec<String> = params.iter().map(|(param_name, _)| param_name.clone()).collect();
+                self.push_move_context(body, &param_names);
                 for (param_name, param_type) in params {
-                    self.activate_variable(param_name, param_type);
+                    self.activate_param(param_name, param_type);
                 }
 
                 // Transpile the body inline
@@ -1619,7 +1925,7 @@ impl Transpiler {
                             write!(output, " {}: ", field_name)?;
                             self.transpile_node_internal(value, output, false)?;
                         }
-                        other => return Err(CodeError { message: "Struct instantiation contains a non-field node".to_string(), code_span: other.code_span() }),
+                        other => return Err(CodeError { help: None, message: "Struct instantiation contains a non-field node".to_string(), code_span: other.code_span() }),
                     }
                 }
                 write!(output, " }}")?;
@@ -1643,6 +1949,9 @@ impl Transpiler {
             ASTNode::Assignment { left, right, .. } => {
                 // Transpile assignment: left = right
                 // For assignment left-hand side, don't clone - just use the variable name
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
                 if let ASTNode::Identifier { name, .. } = left.as_ref() {
                     write!(output, "{}", name)?;
                 } else {
@@ -1650,6 +1959,9 @@ impl Transpiler {
                 }
                 write!(output, " = ")?;
                 self.transpile_node_internal(right, output, false)?;
+                if add_semicolons {
+                    writeln!(output, ";")?;
+                }
             }
         }
         Ok(())
@@ -1677,7 +1989,7 @@ impl Transpiler {
                 format!("DashMap<{}, {}>", self.rust_type(key_type, _name), self.rust_type(value_type, _name))
             }
             NailDataTypeDescriptor::FailedToResolve => panic!("NailDataTypeDescriptor::FailedToResolve found during transpilation. This should not happen."),
-            NailDataTypeDescriptor::TypeVar(name) => panic!("NailDataTypeDescriptor::TypeVar({}) found during transpilation. Type variables must be resolved by the checker.", name),
+            NailDataTypeDescriptor::TypeVar(name, _) => panic!("NailDataTypeDescriptor::TypeVar({}) found during transpilation. Type variables must be resolved by the checker.", name),
         }
     }
 
@@ -1715,15 +2027,16 @@ impl Transpiler {
         if name == "e" {
             // e(message) - create an error with context
             if args.len() != 1 {
-                return Err(CodeError { message: format!("e expects 1 argument, got {}", args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
+                return Err(CodeError { help: None, message: format!("e expects 1 argument, got {}", args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
             }
 
             if add_indent {
                 write!(output, "{}", self.indent())?;
             }
 
-            // Add function context to error messages
-            write!(output, "Err(format!(\"[{}] {{}}\", ", self.current_function_name.as_ref().unwrap_or(&"unknown".to_string()))?;
+            // Add function context to error messages, matching the stdlib
+            // runtime error convention: "function_name: message"
+            write!(output, "Err(format!(\"{}: {{}}\", ", self.current_function_name.as_ref().unwrap_or(&"unknown".to_string()))?;
             self.transpile_node_internal(&args[0], output, false)?;
             write!(output, "))")?;
 
@@ -1734,7 +2047,7 @@ impl Transpiler {
         } else if name == "safe" {
             // safe(expression, |e|:T { handler })
             if args.len() != 2 {
-                return Err(CodeError { message: format!("safe expects 2 arguments, got {}", args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
+                return Err(CodeError { help: None, message: format!("safe expects 2 arguments, got {}", args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
             }
 
             if add_indent {
@@ -1758,7 +2071,7 @@ impl Transpiler {
             // danger/expect(expression) - unwrap with a custom panic message
             // (semantically identical; they differ only in programmer intent)
             if args.len() != 1 {
-                return Err(CodeError { message: format!("{} expects 1 argument, got {}", name, args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
+                return Err(CodeError { help: None, message: format!("{} expects 1 argument, got {}", name, args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
             }
 
             if add_indent {
@@ -1850,30 +2163,20 @@ impl Transpiler {
                 write!(output, "{}", self.indent())?;
             }
             
-            // Check if this is a recursive call
-            let is_recursive = self.current_function_name.as_ref()
-                .map(|current| current == name)
-                .unwrap_or(false);
-            
-            if is_recursive {
-                // Wrap recursive calls in Box::pin to avoid infinite-sized futures
-                write!(output, "Box::pin({}(", name)?;
-            } else {
-                write!(output, "{}(", name)?;
-            }
-            
+            // Every user function is async, so any call cycle (direct or mutual
+            // recursion) would make the future type infinitely sized. Boxing
+            // every user-function call breaks all possible cycles uniformly,
+            // with no call-graph analysis or per-function special cases.
+            write!(output, "Box::pin({}(", name)?;
+
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     write!(output, ", ")?;
                 }
                 self.transpile_node_internal(arg, output, false)?;
             }
-            
-            if is_recursive {
-                write!(output, ")).await")?;
-            } else {
-                write!(output, ").await")?;
-            }
+
+            write!(output, ")).await")?;
             
             if add_indent {
                 writeln!(output, ";")?;
@@ -1891,12 +2194,14 @@ impl Transpiler {
         // Extract variable names from const declarations and generate expressions
         let mut var_names = Vec::new();
         let mut expressions = Vec::new();
+        let mut declarations = Vec::new();
 
         for stmt in statements.iter() {
             match stmt {
-                ASTNode::ConstDeclaration { name, value, .. } => {
+                ASTNode::ConstDeclaration { name, data_type, value, code_span, .. } => {
                     var_names.push(name.clone());
                     expressions.push(value.as_ref());
+                    declarations.push((name.clone(), data_type.clone(), code_span.clone()));
                 }
                 ASTNode::FunctionCall { .. } => {
                     // Function calls that don't assign to variables get a placeholder name
@@ -1939,6 +2244,12 @@ impl Transpiler {
         writeln!(output)?;
         writeln!(output, "{});", self.indent())?;
 
+        // The tuple destructure brings the declared names into scope; register
+        // them so later references know their types (Copy types stay bare).
+        for (name, data_type, code_span) in &declarations {
+            self.activate_declaration(name, data_type, code_span);
+        }
+
         Ok(())
     }
 
@@ -1950,12 +2261,14 @@ impl Transpiler {
         // Extract variable names from const declarations and generate expressions
         let mut var_names = Vec::new();
         let mut expressions = Vec::new();
+        let mut declarations = Vec::new();
 
         for stmt in statements.iter() {
             match stmt {
-                ASTNode::ConstDeclaration { name, value, .. } => {
+                ASTNode::ConstDeclaration { name, data_type, value, code_span, .. } => {
                     var_names.push(name.clone());
                     expressions.push(value.as_ref());
+                    declarations.push((name.clone(), data_type.clone(), code_span.clone()));
                 }
                 ASTNode::FunctionCall { .. } => {
                     // Function calls that don't assign to variables get a placeholder name
@@ -2009,9 +2322,15 @@ impl Transpiler {
             write!(output, "handle{}.join().unwrap()", i)?;
         }
         writeln!(output, ")")?;
-        
+
         self.indent_level -= 1;
         writeln!(output, "{}}};", self.indent())?;
+
+        // The tuple destructure brings the declared names into scope; register
+        // them so later references know their types (Copy types stay bare).
+        for (name, data_type, code_span) in &declarations {
+            self.activate_declaration(name, data_type, code_span);
+        }
 
         Ok(())
     }

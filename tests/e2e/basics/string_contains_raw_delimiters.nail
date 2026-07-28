@@ -1,0 +1,6 @@
+// Strings containing quotes, hash-quote sequences, and backslashes must
+// survive transpilation into Rust string literals.
+quoted:s = `he said "hi" and used \ backslash`;
+hashed:s = `contains "# raw string terminator`;
+print(quoted);
+print(hashed);

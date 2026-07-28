@@ -1,0 +1,4 @@
+math_asin: input must be between -1 and 1, got 2
+0.0
+math_acos: input must be between -1 and 1, got -2
+0.0

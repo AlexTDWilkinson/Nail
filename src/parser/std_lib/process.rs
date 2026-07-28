@@ -7,15 +7,15 @@ pub async fn exit(code: i64) -> ! {
 }
 
 pub async fn run(command: String, args: Vec<String>) -> Result<String, String> {
-    let output = TokioCommand::new(command)
+    let output = TokioCommand::new(&command)
         .args(args)
         .output()
         .await
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(|e| format!("process_run: could not run '{}': {}", command, e))?;
+
     if output.status.success() {
         String::from_utf8(output.stdout)
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("process_run: output of '{}' is not valid UTF-8: {}", command, e))
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }

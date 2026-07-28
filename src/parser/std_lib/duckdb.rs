@@ -25,7 +25,7 @@ pub struct DB_DuckDB_Result {
 
 /// Look up the shared connection for a database handle
 fn get_connection(handle: &str) -> Result<Arc<Mutex<Connection>>, String> {
-    CONNECTIONS.get(handle).map(|entry| entry.value().clone()).ok_or_else(|| format!("DuckDB handle '{}' not found", handle))
+    CONNECTIONS.get(handle).map(|entry| entry.value().clone()).ok_or_else(|| format!("db_duckdb: unknown database handle '{}' (was the connection already closed?)", handle))
 }
 
 /// Run blocking DuckDB work on the blocking thread pool so it doesn't
@@ -35,13 +35,13 @@ where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
-    tokio::task::spawn_blocking(work).await.map_err(|e| format!("DuckDB task failed: {}", e))?
+    tokio::task::spawn_blocking(work).await.map_err(|e| format!("db_duckdb: background database task failed: {}", e))?
 }
 
 /// Open or create a DuckDB database file
 pub async fn duckdb_open(path: String) -> Result<DB_DuckDB, String> {
     run_blocking(move || {
-        let conn = Connection::open(&path).map_err(|e| format!("Failed to open DuckDB database '{}': {}", path, e))?;
+        let conn = Connection::open(&path).map_err(|e| format!("db_duckdb_open: could not open database '{}': {}", path, e))?;
 
         let handle = format!("duckdb_{}", uuid::Uuid::new_v4().to_string());
 
@@ -55,7 +55,7 @@ pub async fn duckdb_open(path: String) -> Result<DB_DuckDB, String> {
 /// Open an in-memory DuckDB database
 pub async fn duckdb_memory() -> Result<DB_DuckDB, String> {
     run_blocking(move || {
-        let conn = Connection::open_in_memory().map_err(|e| format!("Failed to open in-memory DuckDB database: {}", e))?;
+        let conn = Connection::open_in_memory().map_err(|e| format!("db_duckdb_memory: could not open an in-memory database: {}", e))?;
 
         let handle = format!("duckdb_mem_{}", uuid::Uuid::new_v4().to_string());
 
@@ -71,9 +71,9 @@ pub async fn duckdb_execute(db: &DB_DuckDB, sql: String) -> Result<DB_DuckDB_Res
     let conn_arc = get_connection(&db.handle)?;
 
     run_blocking(move || {
-        let conn = conn_arc.lock().map_err(|e| format!("Failed to lock DuckDB connection: {}", e))?;
+        let conn = conn_arc.lock().map_err(|e| format!("db_duckdb_execute: could not lock the database connection: {}", e))?;
 
-        let affected = conn.execute(&sql, []).map_err(|e| format!("Failed to execute SQL: {}", e))?;
+        let affected = conn.execute(&sql, []).map_err(|e| format!("db_duckdb_execute: failed to execute SQL '{}': {}", sql, e))?;
 
         Ok(DB_DuckDB_Result { rows_affected: affected as i64 })
     })
@@ -92,7 +92,7 @@ fn value_ref_to_json(value: ValueRef) -> Result<serde_json::Value, String> {
         ValueRef::Int(i) => Value::Number(Number::from(i)),
         ValueRef::BigInt(i) => Value::Number(Number::from(i)),
         ValueRef::HugeInt(i) => {
-            let as_i64 = i64::try_from(i).map_err(|_| format!("HUGEINT value {} does not fit in a 64-bit integer", i))?;
+            let as_i64 = i64::try_from(i).map_err(|_| format!("db_duckdb_query: HUGEINT value {} does not fit in a 64-bit integer", i))?;
             Value::Number(Number::from(as_i64))
         }
         ValueRef::UTinyInt(i) => Value::Number(Number::from(i)),
@@ -110,10 +110,10 @@ fn value_ref_to_json(value: ValueRef) -> Result<serde_json::Value, String> {
 fn rows_to_json<'a>(mut rows: duckdb::Rows<'a>, column_names: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
     let mut json_rows = Vec::new();
 
-    while let Some(row) = rows.next().map_err(|e| format!("Failed to get row: {}", e))? {
+    while let Some(row) = rows.next().map_err(|e| format!("db_duckdb_query: could not read a result row: {}", e))? {
         let mut object = serde_json::Map::new();
         for (index, name) in column_names.iter().enumerate() {
-            let value = row.get_ref(index).map_err(|e| format!("Failed to read column '{}': {}", name, e))?;
+            let value = row.get_ref(index).map_err(|e| format!("db_duckdb_query: could not read column '{}': {}", name, e))?;
             object.insert(name.clone(), value_ref_to_json(value)?);
         }
         json_rows.push(serde_json::Value::Object(object));
@@ -130,16 +130,16 @@ where
     let conn_arc = get_connection(&db.handle)?;
 
     run_blocking(move || {
-        let conn = conn_arc.lock().map_err(|e| format!("Failed to lock DuckDB connection: {}", e))?;
+        let conn = conn_arc.lock().map_err(|e| format!("db_duckdb_query: could not lock the database connection: {}", e))?;
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| format!("Failed to prepare SQL statement: {}", e))?;
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("db_duckdb_query: could not prepare SQL '{}': {}", sql, e))?;
 
-        let rows = stmt.query([]).map_err(|e| format!("Failed to execute query: {}", e))?;
+        let rows = stmt.query([]).map_err(|e| format!("db_duckdb_query: failed to execute SQL '{}': {}", sql, e))?;
         let column_names: Vec<String> = rows.as_ref().map(|statement| statement.column_names()).unwrap_or_default();
 
         let json_rows = rows_to_json(rows, column_names)?;
 
-        json_rows.into_iter().map(|row| serde_json::from_value::<T>(row).map_err(|e| format!("Failed to deserialize row: {}", e))).collect()
+        json_rows.into_iter().map(|row| serde_json::from_value::<T>(row).map_err(|e| format!("db_duckdb_query: could not deserialize a result row into the target struct: {}", e))).collect()
     })
     .await
 }
@@ -151,7 +151,7 @@ where
 {
     let results: Vec<T> = duckdb_query(db, sql).await?;
 
-    results.into_iter().next().ok_or_else(|| "No results found".to_string())
+    results.into_iter().next().ok_or_else(|| "db_duckdb_query_single: the query returned no rows".to_string())
 }
 
 /// Close a DuckDB connection
@@ -160,7 +160,7 @@ pub async fn duckdb_close(db: &DB_DuckDB) -> Result<(), String> {
 
     run_blocking(move || {
         // Dropping the connection closes the database, which can block
-        CONNECTIONS.remove(&handle).ok_or_else(|| format!("DuckDB handle '{}' not found", handle))?;
+        CONNECTIONS.remove(&handle).ok_or_else(|| format!("db_duckdb_close: unknown database handle '{}' (was the connection already closed?)", handle))?;
 
         Ok(())
     })
@@ -173,9 +173,9 @@ pub async fn duckdb_execute_batch(db: &DB_DuckDB, statements: Vec<String>) -> Re
     let conn_arc = get_connection(&db.handle)?;
 
     run_blocking(move || {
-        let conn = conn_arc.lock().map_err(|e| format!("Failed to lock DuckDB connection: {}", e))?;
+        let conn = conn_arc.lock().map_err(|e| format!("db_duckdb_execute_batch: could not lock the database connection: {}", e))?;
 
-        conn.execute("BEGIN TRANSACTION", []).map_err(|e| format!("Failed to begin transaction: {}", e))?;
+        conn.execute("BEGIN TRANSACTION", []).map_err(|e| format!("db_duckdb_execute_batch: could not begin the transaction: {}", e))?;
 
         let mut total_affected = 0i64;
 
@@ -186,14 +186,14 @@ pub async fn duckdb_execute_batch(db: &DB_DuckDB, statements: Vec<String>) -> Re
                 }
                 Err(e) => {
                     let _ = conn.execute("ROLLBACK", []);
-                    return Err(format!("Failed to execute SQL '{}': {}", sql, e));
+                    return Err(format!("db_duckdb_execute_batch: failed to execute SQL '{}': {} (the transaction was rolled back)", sql, e));
                 }
             }
         }
 
         conn.execute("COMMIT", []).map_err(|e| {
             let _ = conn.execute("ROLLBACK", []);
-            format!("Failed to commit transaction: {}", e)
+            format!("db_duckdb_execute_batch: could not commit the transaction: {} (the transaction was rolled back)", e)
         })?;
 
         Ok(DB_DuckDB_Result { rows_affected: total_affected })

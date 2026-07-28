@@ -1,0 +1,7 @@
+error: 'count' is declared as an integer (i) but its value is a string (s)
+  --> tests/errors/type_mismatch_declaration.nail:2:18
+   |
+ 2 | count:i = `hello`;
+   |                  ^
+help: either change the declaration to 'count:s' or make the value an integer (i)
+1 error found

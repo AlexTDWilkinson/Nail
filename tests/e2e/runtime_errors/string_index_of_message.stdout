@@ -1,0 +1,4 @@
+string_index_of: substring 'zzz' not found in the string
+-1
+string_last_index_of: substring 'zzz' not found in the string
+-1

@@ -1,0 +1,7 @@
+// E2E: array_pop runtime error names the function
+f show_error(error_msg:e):a:i {
+    print(error_msg);
+    r [];
+}
+empty_nums:a:i = [];
+print(safe(array_pop(empty_nums), show_error));

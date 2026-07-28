@@ -1,0 +1,8 @@
+// E2E: array_find and array_find_last runtime errors echo the missing value
+f show_error(error_msg:e):i {
+    print(error_msg);
+    r -1;
+}
+nums:a:i = [1, 2, 3];
+print(safe(array_find(nums, 42), show_error));
+print(safe(array_find_last(nums, 42), show_error));

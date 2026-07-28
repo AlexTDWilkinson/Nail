@@ -1,0 +1,8 @@
+// Positive test: only exact Rust built-in type names are reserved; names that
+// merely resemble them are fine.
+struct Strings { first_text:s }
+enum OptionKind { Real, Fake }
+holder:Strings = Strings { first_text = `ok` };
+kind:OptionKind = OptionKind::Real;
+print(holder.first_text);
+print(kind);

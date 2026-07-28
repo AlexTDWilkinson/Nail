@@ -1,0 +1,5 @@
+error: Unrecognized character: @
+  --> tests/errors/lexer_invalid_character.nail:2:13
+   |
+ 2 | count:i = 5 @ 3;
+   |             ^

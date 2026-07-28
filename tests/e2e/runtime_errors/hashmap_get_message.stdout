@@ -1,0 +1,4 @@
+hashmap_get: key "bob" not found in the hashmap
+0
+hashmap_remove: key "bob" not found in the hashmap
+0
