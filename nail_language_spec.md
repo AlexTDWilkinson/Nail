@@ -801,6 +801,45 @@ print(product); // Outputs: 16
 - Included files must contain valid Nail code
 - No conditional includes (includes always happen)
 
+## Versioning and Toolchain Pinning (Planned)
+
+**Status: design commitment — not yet implemented.** This section records the
+long-term plan so syntax and file formats evolve toward it.
+
+### End goal
+
+A Nail file records which compiler version it was written for, and the
+toolchain automatically obtains and runs that **exact** version to compile it.
+A Nail program that compiled once compiles forever — there are no dependency
+mismatches, no "works on my machine", and no bit rot from language changes.
+Old code never needs migration to keep working; migration is a choice, not a
+requirement.
+
+### Version pragma
+
+Files will declare their language version with an optional header pragma on
+the first line:
+
+```nail
+nail 0.1
+```
+
+- Files without a pragma are compiled with the current toolchain as today.
+- The pragma syntax is reserved now so that files carrying it remain
+  parseable by every future compiler version.
+
+### Rollout phases
+
+1. **Tag releases** — semantic version tags (`v0.1.0`) and a changelog, so
+   there is something concrete to pin to.
+2. **Parse and warn** — the compiler parses the pragma and warns when the
+   file's declared version does not match the running compiler, but compiles
+   anyway.
+3. **Exact-version execution** — a toolchain manager (in the spirit of
+   rustup) resolves the pragma, downloads the archived compiler binary for
+   that exact release, and delegates compilation to it. Deferred until there
+   are real users spread across multiple releases.
+
 ## Standard Library
 
 Nail includes a comprehensive standard library with functions organized by category:
