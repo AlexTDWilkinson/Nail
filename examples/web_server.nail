@@ -1,7 +1,7 @@
 // Simple web server example in Nail
 
 port:i = 3000;
-port_string:s = expect(string_from(port));
+port_string:s = string_from(port);
 
 html_content:s = array_join([`
 <!DOCTYPE html>

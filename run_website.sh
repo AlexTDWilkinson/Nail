@@ -11,27 +11,15 @@ echo "Transpiling Nail website to Rust..."
 # Create the nail_website_server directory if it doesn't exist
 mkdir -p nail_website_server/src
 
-# Transpile the Nail code to Rust
-cargo run --bin nailc examples/nail_website.nail --transpile 2>&1 | awk '/^use nail::std_lib;/,/^Rust code saved to:/' | head -n -1 > nail_website_server/src/main.rs
-
-if [ ${PIPESTATUS[0]} -eq 0 ] && [ -s nail_website_server/src/main.rs ]; then
+# Transpile the Nail code to Rust (writes examples/nail_website.rs)
+if cargo run --bin nailc examples/nail_website.nail --transpile && [ -s examples/nail_website.rs ]; then
+    mv examples/nail_website.rs nail_website_server/src/main.rs
     echo "Transpilation successful!"
-    
-    # Create Cargo.toml if it doesn't exist
-    if [ ! -f nail_website_server/Cargo.toml ]; then
-        cat > nail_website_server/Cargo.toml << 'EOF'
-[package]
-name = "nail_website_server"
-version = "0.1.0"
-edition = "2021"
 
-[dependencies]
-tokio = { version = "1", features = ["full"] }
-nail = { path = ".." }
-dashmap = "6"
-EOF
-    fi
-    
+    # Regenerate Cargo.toml with usage-driven dependencies from the stdlib registry
+    cargo run --bin nailc examples/nail_website.nail --cargo-toml "--nail-path=.." --package-name=nail_website_server > nail_website_server/Cargo.toml
+
+
     echo "Building Nail website server..."
     
     # Build the server
