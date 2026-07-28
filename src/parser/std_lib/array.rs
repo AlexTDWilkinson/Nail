@@ -1,11 +1,11 @@
 use rayon::prelude::*;
 use std::cmp::Ordering;
 
-pub async fn len<T>(arr: Vec<T>) -> i64 {
+pub fn len<T>(arr: &Vec<T>) -> i64 {
     arr.len() as i64
 }
 
-pub async fn push<T: Clone>(mut arr: Vec<T>, item: T) -> Vec<T> {
+pub fn push<T: Clone>(mut arr: Vec<T>, item: T) -> Vec<T> {
     arr.push(item);
     arr
 }
@@ -13,14 +13,14 @@ pub async fn push<T: Clone>(mut arr: Vec<T>, item: T) -> Vec<T> {
 // Returns a new array with the last element removed; errors on empty arrays.
 // Use array_last to read the final element - Nail arrays are immutable, so
 // pop never mutates in place.
-pub async fn pop<T: Clone>(mut arr: Vec<T>) -> Result<Vec<T>, String> {
+pub fn pop<T: Clone>(mut arr: Vec<T>) -> Result<Vec<T>, String> {
     if arr.pop().is_none() {
         return Err("array_pop: cannot pop from an empty array".to_string());
     }
     Ok(arr)
 }
 
-pub async fn contains<T: PartialEq + Sync + Send>(arr: Vec<T>, item: T) -> bool 
+pub fn contains<T: PartialEq + Sync + Send>(arr: &Vec<T>, item: T) -> bool 
 where T: Sync + Send
 {
     use rayon::prelude::*;
@@ -28,7 +28,7 @@ where T: Sync + Send
     arr.par_iter().any(|x| x == &item)
 }
 
-pub async fn join<T: std::fmt::Display + Send + Sync>(arr: Vec<T>, separator: String) -> String {
+pub fn join<T: std::fmt::Display + Send + Sync>(arr: &Vec<T>, separator: String) -> String {
     use rayon::prelude::*;
     use rayon::iter::IntoParallelIterator;
     
@@ -38,26 +38,26 @@ pub async fn join<T: std::fmt::Display + Send + Sync>(arr: Vec<T>, separator: St
         .join(&separator)
 }
 
-pub async fn sort<T: Ord + Clone + Send>(mut arr: Vec<T>) -> Vec<T> {
+pub fn sort<T: Ord + Clone + Send>(mut arr: Vec<T>) -> Vec<T> {
     use rayon::prelude::*;
     use rayon::iter::IntoParallelIterator;
     arr.par_sort();
     arr
 }
 
-pub async fn reverse<T: Clone>(mut arr: Vec<T>) -> Vec<T> {
+pub fn reverse<T: Clone>(mut arr: Vec<T>) -> Vec<T> {
     arr.reverse();
     arr
 }
 
 // Concatenate two arrays
-pub async fn concat<T: Clone>(mut first: Vec<T>, second: Vec<T>) -> Vec<T> {
+pub fn concat<T: Clone>(mut first: Vec<T>, second: Vec<T>) -> Vec<T> {
     first.extend(second);
     first
 }
 
 // Safe array indexing - returns Result
-pub async fn get<T: Clone>(arr: Vec<T>, index: i64) -> Result<T, String> {
+pub fn get<T: Clone>(arr: &Vec<T>, index: i64) -> Result<T, String> {
     if index < 0 {
         return Err(format!("array_get: index cannot be negative, got {}", index));
     }
@@ -71,17 +71,17 @@ pub async fn get<T: Clone>(arr: Vec<T>, index: i64) -> Result<T, String> {
 }
 
 // Get first element
-pub async fn first<T: Clone>(arr: Vec<T>) -> Result<T, String> {
+pub fn first<T: Clone>(arr: &Vec<T>) -> Result<T, String> {
     arr.first().cloned().ok_or_else(|| "array_first: cannot get the first element of an empty array".to_string())
 }
 
 // Get last element
-pub async fn last<T: Clone>(arr: Vec<T>) -> Result<T, String> {
+pub fn last<T: Clone>(arr: &Vec<T>) -> Result<T, String> {
     arr.last().cloned().ok_or_else(|| "array_last: cannot get the last element of an empty array".to_string())
 }
 
 // Safe array slicing
-pub async fn slice<T: Clone>(arr: Vec<T>, start: i64, end: i64) -> Result<Vec<T>, String> {
+pub fn slice<T: Clone>(arr: &Vec<T>, start: i64, end: i64) -> Result<Vec<T>, String> {
     if start < 0 || end < 0 {
         return Err(format!("array_slice: indices cannot be negative, got {}..{}", start, end));
     }
@@ -101,7 +101,7 @@ pub async fn slice<T: Clone>(arr: Vec<T>, start: i64, end: i64) -> Result<Vec<T>
 }
 
 // Take first n elements
-pub async fn take<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
+pub fn take<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
     if n <= 0 {
         return Vec::new();
     }
@@ -111,7 +111,7 @@ pub async fn take<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
 }
 
 // Skip first n elements
-pub async fn skip<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
+pub fn skip<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
     if n <= 0 {
         return arr.clone();
     }
@@ -121,7 +121,7 @@ pub async fn skip<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
 }
 
 // Generic array unique - returns array with unique elements only
-pub async fn unique<T>(arr: Vec<T>) -> Vec<T>
+pub fn unique<T>(arr: Vec<T>) -> Vec<T>
 where
     T: PartialEq + Clone,
 {
@@ -135,80 +135,80 @@ where
 }
 
 // Flatten a nested array by one level
-pub async fn flatten<T>(arr: Vec<Vec<T>>) -> Vec<T> {
+pub fn flatten<T>(arr: Vec<Vec<T>>) -> Vec<T> {
     arr.into_iter().flatten().collect()
 }
 
 // Generic array zip - combines two arrays into array of tuples
-pub async fn zip<T, U>(arr1: Vec<T>, arr2: Vec<U>) -> Vec<(T, U)> {
+pub fn zip<T, U>(arr1: Vec<T>, arr2: Vec<U>) -> Vec<(T, U)> {
     arr1.into_iter().zip(arr2).collect()
 }
 
 
 // Generic min/max functions for arrays (PartialOrd so they work for floats)
-pub async fn min<T>(arr: Vec<T>) -> Result<T, String>
+pub fn min<T: Clone>(arr: &Vec<T>) -> Result<T, String>
 where
     T: PartialOrd,
 {
-    let mut iter = arr.into_iter();
+    let mut iter = arr.iter();
     let mut best = iter.next().ok_or_else(|| "array_min: cannot get the minimum of an empty array".to_string())?;
     for item in iter {
         if item < best {
             best = item;
         }
     }
-    Ok(best)
+    Ok(best.clone())
 }
 
-pub async fn max<T>(arr: Vec<T>) -> Result<T, String>
+pub fn max<T: Clone>(arr: &Vec<T>) -> Result<T, String>
 where
     T: PartialOrd,
 {
-    let mut iter = arr.into_iter();
+    let mut iter = arr.iter();
     let mut best = iter.next().ok_or_else(|| "array_max: cannot get the maximum of an empty array".to_string())?;
     for item in iter {
         if item > best {
             best = item;
         }
     }
-    Ok(best)
+    Ok(best.clone())
 }
 
 // Sum of all elements (0 for an empty array)
-pub async fn sum<T>(arr: Vec<T>) -> T
+pub fn sum<T: Clone>(arr: &Vec<T>) -> T
 where
     T: std::iter::Sum<T>,
 {
-    arr.into_iter().sum()
+    arr.iter().cloned().sum()
 }
 
 
 // Range function - generates a range of integers (exclusive end, like Python)
-pub async fn array_range(start: i64, end: i64) -> Vec<i64> {
+pub fn array_range(start: i64, end: i64) -> Vec<i64> {
     (start..end).collect()
 }
 
 // Range inclusive 
-pub async fn array_range_inclusive(start: i64, end: i64) -> Vec<i64> {
+pub fn array_range_inclusive(start: i64, end: i64) -> Vec<i64> {
     (start..=end).collect()
 }
 
 
 // Array take functions - returns first n elements
-pub async fn take_int(arr: Vec<i64>, n: i64) -> Vec<i64> {
+pub fn take_int(arr: Vec<i64>, n: i64) -> Vec<i64> {
     arr.into_iter().take(n as usize).collect()
 }
 
-pub async fn take_float(arr: Vec<f64>, n: i64) -> Vec<f64> {
+pub fn take_float(arr: Vec<f64>, n: i64) -> Vec<f64> {
     arr.into_iter().take(n as usize).collect()
 }
 
-pub async fn take_string(arr: Vec<String>, n: i64) -> Vec<String> {
+pub fn take_string(arr: Vec<String>, n: i64) -> Vec<String> {
     arr.into_iter().take(n as usize).collect()
 }
 
 // Find index of first occurrence of element
-pub async fn find<T: PartialEq + std::fmt::Debug>(arr: Vec<T>, value: T) -> Result<i64, String> {
+pub fn find<T: PartialEq + std::fmt::Debug>(arr: &Vec<T>, value: T) -> Result<i64, String> {
     for (idx, item) in arr.iter().enumerate() {
         if item == &value {
             return Ok(idx as i64);
@@ -218,7 +218,7 @@ pub async fn find<T: PartialEq + std::fmt::Debug>(arr: Vec<T>, value: T) -> Resu
 }
 
 // Find index of last occurrence of element
-pub async fn find_last<T: PartialEq + std::fmt::Debug>(arr: Vec<T>, value: T) -> Result<i64, String> {
+pub fn find_last<T: PartialEq + std::fmt::Debug>(arr: &Vec<T>, value: T) -> Result<i64, String> {
     for (idx, item) in arr.iter().enumerate().rev() {
         if item == &value {
             return Ok(idx as i64);
@@ -228,7 +228,7 @@ pub async fn find_last<T: PartialEq + std::fmt::Debug>(arr: Vec<T>, value: T) ->
 }
 
 // Create array with value repeated count times
-pub async fn repeat<T: Clone>(value: T, count: i64) -> Vec<T> {
+pub fn repeat<T: Clone>(value: T, count: i64) -> Vec<T> {
     if count <= 0 {
         return Vec::new();
     }
@@ -236,7 +236,7 @@ pub async fn repeat<T: Clone>(value: T, count: i64) -> Vec<T> {
 }
 
 // Split array into chunks of specified size
-pub async fn chunk<T: Clone>(arr: Vec<T>, size: i64) -> Result<Vec<Vec<T>>, String> {
+pub fn chunk<T: Clone>(arr: &Vec<T>, size: i64) -> Result<Vec<Vec<T>>, String> {
     if size <= 0 {
         return Err(format!("array_chunk: chunk size must be positive, got {}", size));
     }
@@ -255,7 +255,7 @@ pub async fn chunk<T: Clone>(arr: Vec<T>, size: i64) -> Result<Vec<Vec<T>>, Stri
 }
 
 // Remove consecutive duplicates
-pub async fn deduplicate<T: PartialEq + Clone>(arr: Vec<T>) -> Vec<T> {
+pub fn deduplicate<T: PartialEq + Clone>(arr: Vec<T>) -> Vec<T> {
     if arr.is_empty() {
         return Vec::new();
     }
@@ -270,7 +270,7 @@ pub async fn deduplicate<T: PartialEq + Clone>(arr: Vec<T>) -> Vec<T> {
 }
 
 // Intersection of two arrays (common elements)
-pub async fn intersect<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
+pub fn intersect<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
     let mut result = Vec::new();
     for item in &arr1 {
         if arr2.contains(item) && !result.contains(item) {
@@ -281,7 +281,7 @@ pub async fn intersect<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<
 }
 
 // Difference of two arrays (elements in arr1 not in arr2)
-pub async fn difference<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
+pub fn difference<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
     let mut result = Vec::new();
     for item in arr1 {
         if !arr2.contains(&item) {
@@ -292,7 +292,7 @@ pub async fn difference<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec
 }
 
 // Union of two arrays (all unique elements from both)
-pub async fn union<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
+pub fn union<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
     let mut result = arr1.clone();
     for item in arr2 {
         if !result.contains(&item) {
@@ -303,7 +303,7 @@ pub async fn union<T: PartialEq + Clone>(arr1: Vec<T>, arr2: Vec<T>) -> Vec<T> {
 }
 
 // Rotate array elements by n positions (positive = right, negative = left)
-pub async fn rotate<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
+pub fn rotate<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
     if arr.is_empty() {
         return Vec::new();
     }
@@ -319,7 +319,7 @@ pub async fn rotate<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
 }
 
 // Shuffle array randomly
-pub async fn shuffle<T: Clone>(mut arr: Vec<T>) -> Vec<T> {
+pub fn shuffle<T: Clone>(mut arr: Vec<T>) -> Vec<T> {
     use rand::seq::SliceRandom;
     use rand::thread_rng;
     

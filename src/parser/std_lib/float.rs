@@ -4,6 +4,6 @@ use std::fmt::Display;
 // in std_lib::math - there is exactly one way to do each operation.
 
 // Convert a value to a float
-pub async fn from<T: Display>(v: T) -> Result<f64, String> {
+pub fn from<T: Display>(v: T) -> Result<f64, String> {
     v.to_string().parse::<f64>().map_err(|_| format!("float_from: could not parse '{}' as a float", v))
 }

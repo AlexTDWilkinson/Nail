@@ -3,7 +3,7 @@ use flate2::Compression;
 use std::io::Write;
 
 /// Compress a string using gzip
-pub async fn gzip_compress(data: String) -> Result<String, String> {
+pub fn gzip_compress(data: String) -> Result<String, String> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(data.as_bytes())
         .map_err(|e| format!("compress_gzip: could not compress the data: {}", e))?;
@@ -16,7 +16,7 @@ pub async fn gzip_compress(data: String) -> Result<String, String> {
 }
 
 /// Decompress a gzipped string
-pub async fn gzip_decompress(data: String) -> Result<String, String> {
+pub fn gzip_decompress(data: String) -> Result<String, String> {
     // Decode from base64
     let compressed = base64::decode(&data)
         .map_err(|e| format!("compress_gunzip: the input is not valid base64: {}", e))?;

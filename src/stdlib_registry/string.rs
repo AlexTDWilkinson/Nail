@@ -28,13 +28,13 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_trim" => "std_lib::string::trim", (input: s) -> s,
             "Removes leading and trailing whitespace.",
             "trimmed:s = string_trim(`  hi  `);";
-        "string_contains" => "std_lib::string::contains", (input: s, pattern: s) -> b,
+        "string_contains" => "std_lib::string::contains", (input: (&s), pattern: s) -> b,
             "Returns true if the string contains the given substring.",
             "found:b = string_contains(`hello`, `ell`);";
         "string_replace" => "std_lib::string::replace", (input: s, from: s, to: s) -> s,
             "Replaces every occurrence of a substring with another string.",
             "fixed:s = string_replace(`a-b-c`, `-`, `_`);";
-        "string_length" => "std_lib::string::len", (input: s) -> i,
+        "string_length" => "std_lib::string::len", (input: (&s)) -> i,
             "Returns the number of characters in the string.",
             "length:i = string_length(`hello`);";
         "string_to_uppercase" => "std_lib::string::to_uppercase", (input: s) -> s,
@@ -43,16 +43,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_to_lowercase" => "std_lib::string::to_lowercase", (input: s) -> s,
             "Converts all characters to lowercase.",
             "quiet:s = string_to_lowercase(`HI`);";
-        "string_starts_with" => "std_lib::string::starts_with", (input: s, prefix: s) -> b,
+        "string_starts_with" => "std_lib::string::starts_with", (input: (&s), prefix: s) -> b,
             "Returns true if the string starts with the given prefix.",
             "yes:b = string_starts_with(`hello`, `he`);";
-        "string_ends_with" => "std_lib::string::ends_with", (input: s, suffix: s) -> b,
+        "string_ends_with" => "std_lib::string::ends_with", (input: (&s), suffix: s) -> b,
             "Returns true if the string ends with the given suffix.",
             "yes:b = string_ends_with(`hello`, `lo`);";
-        "string_index_of" => "std_lib::string::index_of", (input: s, substring: s) -> (i!e),
+        "string_index_of" => "std_lib::string::index_of", (input: (&s), substring: s) -> (i!e),
             "Returns the index of the first occurrence of a substring, or an error if not found.",
             "index:i = danger(string_index_of(`hello`, `ll`));";
-        "string_last_index_of" => "std_lib::string::last_index_of", (input: s, substring: s) -> (i!e),
+        "string_last_index_of" => "std_lib::string::last_index_of", (input: (&s), substring: s) -> (i!e),
             "Returns the index of the last occurrence of a substring, or an error if not found.",
             "index:i = danger(string_last_index_of(`aXbX`, `X`));";
         "string_substring" => "std_lib::string::substring", (input: s, start: i, end: i) -> (s!e),
@@ -73,7 +73,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_chars" => "std_lib::string::chars", (input: s) -> [s],
             "Splits a string into an array of single-character strings.",
             "letters:a:s = string_chars(`abc`);";
-        "string_is_empty" => "std_lib::string::is_empty", (input: s) -> b,
+        "string_is_empty" => "std_lib::string::is_empty", (input: (&s)) -> b,
             "Returns true if the string has no characters.",
             "empty:b = string_is_empty(``);";
         "string_pad_start" => "std_lib::string::pad_start", (input: s, target_length: i, pad_str: s) -> s,
@@ -109,7 +109,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_split_whitespace" => "std_lib::string::split_whitespace", (input: s) -> [s],
             "Splits a string on runs of whitespace, dropping empty entries.",
             "words:a:s = string_split_whitespace(`a  b c`);";
-        "string_count" => "std_lib::string::count", (input: s, substring: s) -> i,
+        "string_count" => "std_lib::string::count", (input: (&s), substring: s) -> i,
             "Counts non-overlapping occurrences of a substring.",
             "hits:i = string_count(`banana`, `an`);";
         "string_capitalize" => "std_lib::string::capitalize", (input: s) -> s,
@@ -118,16 +118,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_slice" => "std_lib::string::slice", (input: s, start: i, end: i) -> (s!e),
             "Returns the substring from start (inclusive) to end (exclusive), or an error if out of bounds.",
             "part:s = danger(string_slice(`hello`, 0, 2));";
-        "string_is_alphabetic" => "std_lib::string::is_alphabetic", (input: s) -> b,
+        "string_is_alphabetic" => "std_lib::string::is_alphabetic", (input: (&s)) -> b,
             "Returns true if the string is non-empty and contains only alphabetic characters.",
             "alpha:b = string_is_alphabetic(`abc`);";
-        "string_is_digits_only" => "std_lib::string::is_digits_only", (input: s) -> b,
+        "string_is_digits_only" => "std_lib::string::is_digits_only", (input: (&s)) -> b,
             "Returns true if the string is non-empty and contains only digits 0-9.",
             "digits:b = string_is_digits_only(`123`);";
-        "string_is_alphanumeric" => "std_lib::string::is_alphanumeric", (input: s) -> b,
+        "string_is_alphanumeric" => "std_lib::string::is_alphanumeric", (input: (&s)) -> b,
             "Returns true if the string is non-empty and contains only letters and digits.",
             "alnum:b = string_is_alphanumeric(`abc123`);";
-        "string_is_numeric" => "std_lib::string::is_numeric", (input: s) -> b,
+        "string_is_numeric" => "std_lib::string::is_numeric", (input: (&s)) -> b,
             "Returns true if the string parses as a number (including floats and negatives).",
             "numeric:b = string_is_numeric(`-1.5`);";
     }

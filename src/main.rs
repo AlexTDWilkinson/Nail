@@ -270,7 +270,7 @@ struct Editor {
     tab_index: usize,
     // Global state
     build_status: BuildStatus,
-    code_error: Option<CodeError>,
+    code_errors: Vec<CodeError>,
     scroll_state: ScrollbarState,
     max_undo_history: usize,
     // Intellisense fields (shared across tabs)
@@ -388,7 +388,7 @@ impl Editor {
             tabs: vec![welcome_tab],
             tab_index: 0,
             build_status: BuildStatus::Idle,
-            code_error: None,
+            code_errors: Vec::new(),
             scroll_state: ScrollbarState::default(),
             max_undo_history: 1000,
             completions: Vec::new(),

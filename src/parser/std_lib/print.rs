@@ -67,7 +67,7 @@ macro_rules! print_macro {
 }
 
 /// Print with newline (aliased as "print" for convenience)
-pub async fn print<T>(value: T)
+pub fn print<T>(value: T)
 where
     T: Debug
 {
@@ -83,19 +83,19 @@ where
 }
 
 /// Print without newline
-pub async fn print_no_newline<T: Display>(value: T) {
+pub fn print_no_newline<T: Display>(value: T) {
     print!("{}", value);
     // Flush to ensure output appears immediately
     let _ = io::stdout().flush();
 }
 
 /// Print with debug format for complex types
-pub async fn print_debug<T: std::fmt::Debug>(value: T) {
+pub fn print_debug<T: std::fmt::Debug>(value: T) {
     println!("{:#?}", value);
 }
 
 /// Clear the terminal screen
-pub async fn print_clear_screen() {
+pub fn print_clear_screen() {
     print!("\x1B[2J\x1B[1;1H");
     let _ = io::stdout().flush();
 }

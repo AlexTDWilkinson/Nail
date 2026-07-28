@@ -171,6 +171,13 @@ impl BindingResolver {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum ParallelIterMode {
+    Sync,
+    AsyncPure,
+    AsyncBlockOn,
+}
+
 pub struct Transpiler {
     indent_level: usize,
     scope_level: usize,
@@ -184,6 +191,15 @@ pub struct Transpiler {
     // declarations need `let mut`. Name-based, so a same-named variable in
     // another scope gets a harmless unused_mut at worst.
     reassigned_variables: HashSet<String>,
+    // User functions whose bodies (transitively) perform no async work. These
+    // emit as plain sync Rust fns: no .await at call sites, no Box::pin for
+    // recursion, and collection operations over them use plain rayon closures.
+    pure_functions: HashSet<String>,
+    // True while emitting the body of a pure (sync) function.
+    in_sync_function: bool,
+    // struct name -> field name -> declared type, from struct declarations;
+    // used to skip .clone() on Copy-typed field access.
+    struct_field_types: HashMap<String, HashMap<String, NailDataTypeDescriptor>>,
 }
 
 impl Transpiler {
@@ -198,6 +214,83 @@ impl Transpiler {
             stdlib_types: HashMap::new(),
             move_contexts: Vec::new(),
             reassigned_variables: HashSet::new(),
+            pure_functions: HashSet::new(),
+            in_sync_function: false,
+            struct_field_types: HashMap::new(),
+        }
+    }
+
+    /// Collect field types of every struct declaration in the program.
+    fn collect_struct_field_types(node: &ASTNode, out: &mut HashMap<String, HashMap<String, NailDataTypeDescriptor>>) {
+        if let ASTNode::StructDeclaration { name, fields, .. } = node {
+            let mut field_map = HashMap::new();
+            for field in fields {
+                if let ASTNode::StructDeclarationField { name: field_name, data_type, .. } = field {
+                    field_map.insert(field_name.clone(), data_type.clone());
+                }
+            }
+            out.insert(name.clone(), field_map);
+        }
+        for child in Self::ast_children(node) {
+            Self::collect_struct_field_types(child, out);
+        }
+    }
+
+    /// Whether evaluating this node requires an async context, given the
+    /// current optimistic set of pure user functions. Function and lambda
+    /// declarations don't propagate: their bodies run in their own context.
+    fn node_needs_async(node: &ASTNode, pure: &HashSet<String>) -> bool {
+        match node {
+            ASTNode::ParallelBlock { .. } | ASTNode::ConcurrentBlock { .. } | ASTNode::SpawnBlock { .. } => true,
+            ASTNode::FunctionDeclaration { .. } | ASTNode::LambdaDeclaration { .. } => false,
+            ASTNode::FunctionCall { name, args, .. } => {
+                let callee_async = if name == "safe" {
+                    // safe(expr, handler): the handler is invoked at the call
+                    // site — a lambda handler is an async closure, a named
+                    // handler follows its own purity.
+                    match args.get(1) {
+                        Some(ASTNode::Identifier { name: handler, .. }) => !pure.contains(handler),
+                        _ => true,
+                    }
+                } else if let Some(stdlib_fn) = stdlib_registry::get_stdlib_function(name) {
+                    !stdlib_fn.rust_path.ends_with('!') && stdlib_registry::is_stdlib_fn_async(name)
+                } else {
+                    !pure.contains(name)
+                };
+                callee_async || args.iter().any(|arg| Self::node_needs_async(arg, pure))
+            }
+            _ => Self::ast_children(node).into_iter().any(|child| Self::node_needs_async(child, pure)),
+        }
+    }
+
+    /// Collect every function declaration (at any nesting level) as (name, body).
+    fn collect_function_declarations<'a>(node: &'a ASTNode, out: &mut Vec<(String, &'a ASTNode)>) {
+        if let ASTNode::FunctionDeclaration { name, body, .. } = node {
+            out.push((name.clone(), body.as_ref()));
+        }
+        for child in Self::ast_children(node) {
+            Self::collect_function_declarations(child, out);
+        }
+    }
+
+    /// Fixpoint purity analysis: start assuming every user function is pure,
+    /// then repeatedly demote any whose body needs async under the current
+    /// assumption, until stable.
+    fn compute_pure_functions(program: &ASTNode) -> HashSet<String> {
+        let mut declarations = Vec::new();
+        Self::collect_function_declarations(program, &mut declarations);
+        let mut pure: HashSet<String> = declarations.iter().map(|(name, _)| name.clone()).collect();
+        loop {
+            let mut changed = false;
+            for (name, body) in &declarations {
+                if pure.contains(name) && Self::node_needs_async(body, &pure) {
+                    pure.remove(name);
+                    changed = true;
+                }
+            }
+            if !changed {
+                return pure;
+            }
         }
     }
 
@@ -914,21 +1007,38 @@ impl Transpiler {
         format!("{}.clone()", name)
     }
 
+    /// How a parallel collection operation (map/filter/all/any/find) is
+    /// emitted, decided by context and body purity:
+    /// - Sync: inside a pure fn — plain rayon chain, no runtime involved.
+    /// - AsyncPure: async context, pure body — rayon inside spawn_blocking so
+    ///   tokio core threads aren't blocked, but plain closures (no block_on).
+    /// - AsyncBlockOn: async context, body does async work — rayon inside
+    ///   spawn_blocking with a per-element block_on.
+    fn parallel_iter_mode(&self, body: &ASTNode) -> ParallelIterMode {
+        if self.in_sync_function {
+            ParallelIterMode::Sync
+        } else if !Self::node_needs_async(body, &self.pure_functions) {
+            ParallelIterMode::AsyncPure
+        } else {
+            ParallelIterMode::AsyncBlockOn
+        }
+    }
+
     /// Shared opening of a parallel collection operation (map/filter). The
-    /// iterable is evaluated first in async context (it may await), then the
-    /// whole rayon chain runs inside spawn_blocking so worker closures can
-    /// block_on async bodies without blocking a tokio core thread. Per-capture
-    /// clones keep the closures from moving outer variables (E0507). Leaves
-    /// indent_level three deeper; callers emit the body and matching closes
-    /// via write_parallel_iter_close.
-    fn write_parallel_iter_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, body: &ASTNode, rayon_method: &str, output: &mut String) -> Result<(), CodeError> {
+    /// iterable is evaluated first (it may await in async context), then the
+    /// rayon chain runs — wrapped in spawn_blocking in async contexts.
+    /// Per-capture clones keep the closures from moving outer variables
+    /// (E0507). Callers emit the body then write_parallel_iter_close.
+    fn write_parallel_iter_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, body: &ASTNode, rayon_method: &str, mode: ParallelIterMode, output: &mut String) -> Result<(), CodeError> {
         if let Some(element_type) = self.iterable_element_type(iterable) {
             self.record_variable_type(iterator, element_type);
         }
         if let Some(idx) = index_iterator {
             self.record_variable_type(idx, NailDataTypeDescriptor::Int);
         }
-        writeln!(output, "{}let __rt_handle = tokio::runtime::Handle::current();", self.indent())?;
+        if mode == ParallelIterMode::AsyncBlockOn {
+            writeln!(output, "{}let __rt_handle = tokio::runtime::Handle::current();", self.indent())?;
+        }
         write!(output, "{}let __iter = ", self.indent())?;
         // Lazy iterator forms (ranges) are only IndexedParallelIterator for
         // small integer types in rayon, so enumerate() is unavailable on them;
@@ -942,12 +1052,17 @@ impl Transpiler {
             writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
         }
 
-        writeln!(output, "{}let __result: Vec<_> = tokio::task::spawn_blocking(move || {{", self.indent())?;
-        self.indent_level += 1;
-        if use_index {
-            writeln!(output, "{}__iter.into_par_iter().enumerate().{}(|(_idx, {})| {{", self.indent(), rayon_method, iterator)?;
+        if mode == ParallelIterMode::Sync {
+            write!(output, "{}let __result: Vec<_> = ", self.indent())?;
         } else {
-            writeln!(output, "{}__iter.into_par_iter().{}(|{}| {{", self.indent(), rayon_method, iterator)?;
+            writeln!(output, "{}let __result: Vec<_> = tokio::task::spawn_blocking(move || {{", self.indent())?;
+            self.indent_level += 1;
+            write!(output, "{}", self.indent())?;
+        }
+        if use_index {
+            writeln!(output, "__iter.into_par_iter().enumerate().{}(|(_idx, {})| {{", rayon_method, iterator)?;
+        } else {
+            writeln!(output, "__iter.into_par_iter().{}(|{}| {{", rayon_method, iterator)?;
         }
         self.indent_level += 1;
 
@@ -955,8 +1070,10 @@ impl Transpiler {
             writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
         }
 
-        writeln!(output, "{}__rt_handle.block_on(async move {{", self.indent())?;
-        self.indent_level += 1;
+        if mode == ParallelIterMode::AsyncBlockOn {
+            writeln!(output, "{}__rt_handle.block_on(async move {{", self.indent())?;
+            self.indent_level += 1;
+        }
 
         if let Some(idx) = index_iterator {
             writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
@@ -964,15 +1081,23 @@ impl Transpiler {
         Ok(())
     }
 
-    /// Closes the structure opened by write_parallel_iter_open: the block_on
-    /// async block, the rayon closure with collect, and the spawn_blocking.
-    fn write_parallel_iter_close(&mut self, output: &mut String) -> Result<(), CodeError> {
+    /// Closes the structure opened by write_parallel_iter_open.
+    fn write_parallel_iter_close(&mut self, mode: ParallelIterMode, output: &mut String) -> Result<(), CodeError> {
+        if mode == ParallelIterMode::AsyncBlockOn {
+            self.indent_level -= 1;
+            writeln!(output, "{}}})", self.indent())?;
+        }
         self.indent_level -= 1;
-        writeln!(output, "{}}})", self.indent())?;
-        self.indent_level -= 1;
-        writeln!(output, "{}}}).collect()", self.indent())?;
-        self.indent_level -= 1;
-        writeln!(output, "{}}}).await.unwrap();", self.indent())?;
+        match mode {
+            ParallelIterMode::Sync => {
+                writeln!(output, "{}}}).collect();", self.indent())?;
+            }
+            _ => {
+                writeln!(output, "{}}}).collect()", self.indent())?;
+                self.indent_level -= 1;
+                writeln!(output, "{}}}).await.unwrap();", self.indent())?;
+            }
+        }
         Ok(())
     }
 
@@ -1041,7 +1166,12 @@ impl Transpiler {
     /// Shared shape of the short-circuiting search operations (find/all/any):
     /// an init statement, a sequential loop evaluating the body as a condition,
     /// on-match statements ending in break, and a result expression.
-    fn write_search_loop(
+    /// Shared shape of the short-circuiting search operations (find/all/any),
+    /// emitted as rayon's parallel short-circuiting find_first/all/any. The
+    /// same three modes as map/filter apply (sync, async + pure body, async +
+    /// block_on). find_first's predicate receives &Item, so `by_ref_param`
+    /// clones the binding to an owned value first.
+    fn write_parallel_search(
         &mut self,
         iterator: &str,
         index_iterator: &Option<String>,
@@ -1049,9 +1179,8 @@ impl Transpiler {
         body: &ASTNode,
         output: &mut String,
         add_semicolons: bool,
-        init: &str,
-        negate_condition: bool,
-        on_match: &[String],
+        rayon_method: &str,
+        by_ref_param: bool,
         result_expr: &str,
     ) -> Result<(), CodeError> {
         if add_semicolons {
@@ -1060,21 +1189,80 @@ impl Transpiler {
         write!(output, "{{")?;
         writeln!(output)?;
         self.indent_level += 1;
-        writeln!(output, "{}{}", self.indent(), init)?;
 
-        self.write_sequential_for_open(iterator, index_iterator, iterable, output)?;
-        self.write_condition_result(body, output)?;
+        if let Some(element_type) = self.iterable_element_type(iterable) {
+            self.record_variable_type(iterator, element_type);
+        }
+        if let Some(idx) = index_iterator {
+            self.record_variable_type(idx, NailDataTypeDescriptor::Int);
+        }
 
-        writeln!(output, "{}if {}condition_result {{", self.indent(), if negate_condition { "!" } else { "" })?;
+        let mode = self.parallel_iter_mode(body);
+        let use_index = index_iterator.is_some();
+
+        if mode == ParallelIterMode::AsyncBlockOn {
+            writeln!(output, "{}let __rt_handle = tokio::runtime::Handle::current();", self.indent())?;
+        }
+        write!(output, "{}let __iter = ", self.indent())?;
+        self.transpile_iterable(iterable, !use_index, output)?;
+        writeln!(output, ";")?;
+
+        let captured = Self::closure_captured_variables(body, iterator, index_iterator);
+        for var in &captured {
+            writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
+        }
+
+        if mode == ParallelIterMode::Sync {
+            write!(output, "{}let __search_result = ", self.indent())?;
+        } else {
+            writeln!(output, "{}let __search_result = tokio::task::spawn_blocking(move || {{", self.indent())?;
+            self.indent_level += 1;
+            write!(output, "{}", self.indent())?;
+        }
+        match (use_index, by_ref_param) {
+            (false, false) => writeln!(output, "__iter.into_par_iter().{}(|{}| {{", rayon_method, iterator)?,
+            (false, true) => writeln!(output, "__iter.into_par_iter().{}(|__item| {{", rayon_method)?,
+            (true, false) => writeln!(output, "__iter.into_par_iter().enumerate().{}(|(_idx, {})| {{", rayon_method, iterator)?,
+            (true, true) => writeln!(output, "__iter.into_par_iter().enumerate().{}(|__pair| {{", rayon_method)?,
+        }
         self.indent_level += 1;
-        for line in on_match {
-            writeln!(output, "{}{}", self.indent(), line)?;
+        if by_ref_param {
+            if use_index {
+                writeln!(output, "{}let (_idx, {}) = __pair.clone();", self.indent(), iterator)?;
+            } else {
+                writeln!(output, "{}let {} = __item.clone();", self.indent(), iterator)?;
+            }
+        }
+
+        for var in &captured {
+            writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
+        }
+
+        if mode == ParallelIterMode::AsyncBlockOn {
+            writeln!(output, "{}__rt_handle.block_on(async move {{", self.indent())?;
+            self.indent_level += 1;
+        }
+        if let Some(idx) = index_iterator {
+            writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+        }
+
+        self.write_condition_result(body, output)?;
+        writeln!(output, "{}condition_result", self.indent())?;
+
+        if mode == ParallelIterMode::AsyncBlockOn {
+            self.indent_level -= 1;
+            writeln!(output, "{}}})", self.indent())?;
         }
         self.indent_level -= 1;
-        writeln!(output, "{}}}", self.indent())?;
+        match mode {
+            ParallelIterMode::Sync => writeln!(output, "{}}});", self.indent())?,
+            _ => {
+                writeln!(output, "{}}})", self.indent())?;
+                self.indent_level -= 1;
+                writeln!(output, "{}}}).await.unwrap();", self.indent())?;
+            }
+        }
 
-        self.indent_level -= 1;
-        writeln!(output, "{}}}", self.indent())?;
         writeln!(output, "{}{}", self.indent(), result_expr)?;
         self.indent_level -= 1;
         write!(output, "{}}}", self.indent())?;
@@ -1087,6 +1275,10 @@ impl Transpiler {
         let mut reassigned = HashSet::new();
         Self::collect_reassigned_variables(node, &mut reassigned);
         self.reassigned_variables = reassigned;
+        self.pure_functions = Self::compute_pure_functions(node);
+        let mut struct_fields = HashMap::new();
+        Self::collect_struct_field_types(node, &mut struct_fields);
+        self.struct_field_types = struct_fields;
         
         let mut output = String::new();
         writeln!(output, "use tokio;")?;
@@ -1185,7 +1377,8 @@ impl Transpiler {
                 self.pop_move_context();
             }
             ASTNode::FunctionDeclaration { name, params, data_type, body, .. } => {
-                write!(output, "{}async fn {}(", self.indent(), name)?;
+                let is_sync = self.pure_functions.contains(name);
+                write!(output, "{}{}fn {}(", self.indent(), if is_sync { "" } else { "async " }, name)?;
                 for (i, (param_name, param_type)) in params.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
@@ -1197,8 +1390,10 @@ impl Transpiler {
                 // Store the current function's context
                 let prev_return_type = self.current_function_return_type.clone();
                 let prev_name = self.current_function_name.clone();
+                let prev_sync = self.in_sync_function;
                 self.current_function_return_type = Some(data_type.clone());
                 self.current_function_name = Some(name.clone());
+                self.in_sync_function = is_sync;
 
                 let param_names: Vec<String> = params.iter().map(|(param_name, _)| param_name.clone()).collect();
                 self.push_move_context(body, &param_names);
@@ -1216,6 +1411,7 @@ impl Transpiler {
                 // Restore previous function context
                 self.current_function_return_type = prev_return_type;
                 self.current_function_name = prev_name;
+                self.in_sync_function = prev_sync;
             }
             ASTNode::FunctionCall { name, args, .. } => {
                 if add_semicolons {
@@ -1447,7 +1643,8 @@ impl Transpiler {
                 writeln!(output)?;
                 self.indent_level += 1;
 
-                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, "map", output)?;
+                let mode = self.parallel_iter_mode(body);
+                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, "map", mode, output)?;
 
                 // Transpile the body statements and collect result
                 if let ASTNode::Block { statements, .. } = body.as_ref() {
@@ -1472,7 +1669,7 @@ impl Transpiler {
                     writeln!(output)?;
                 }
 
-                self.write_parallel_iter_close(output)?;
+                self.write_parallel_iter_close(mode, output)?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
@@ -1486,7 +1683,8 @@ impl Transpiler {
                 writeln!(output)?;
                 self.indent_level += 1;
 
-                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, "filter_map", output)?;
+                let mode = self.parallel_iter_mode(body);
+                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, "filter_map", mode, output)?;
                 self.write_condition_result(body, output)?;
 
                 // Return Some(value) if condition is true, None otherwise
@@ -1500,7 +1698,7 @@ impl Transpiler {
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
 
-                self.write_parallel_iter_close(output)?;
+                self.write_parallel_iter_close(mode, output)?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
@@ -1515,7 +1713,14 @@ impl Transpiler {
                 writeln!(output)?;
                 self.indent_level += 1;
 
-                // Initialize accumulator
+                // Initialize accumulator; record its type when the initial
+                // value makes it obvious so Copy accumulators stay bare
+                match initial_value.as_ref() {
+                    ASTNode::NumberLiteral { data_type, .. } => self.record_variable_type(accumulator, data_type.clone()),
+                    ASTNode::StringLiteral { .. } => self.record_variable_type(accumulator, NailDataTypeDescriptor::String),
+                    ASTNode::BooleanLiteral { .. } => self.record_variable_type(accumulator, NailDataTypeDescriptor::Boolean),
+                    _ => {}
+                }
                 write!(output, "{}let mut {} = ", self.indent(), accumulator)?;
                 self.transpile_node_internal(initial_value, output, false)?;
                 writeln!(output, ";")?;
@@ -1566,30 +1771,22 @@ impl Transpiler {
                 write!(output, "{}}}", self.indent())?;
             }
             ASTNode::FindExpression { iterator, index_iterator, iterable, body, .. } => {
-                // Find expressions return Result<T>: first matching element or error
-                let on_match = [format!("__found = Some({}.clone());", iterator), "break;".to_string()];
-                self.write_search_loop(
-                    iterator,
-                    index_iterator,
-                    iterable,
-                    body,
-                    output,
-                    add_semicolons,
-                    "let mut __found = None;",
-                    false,
-                    &on_match,
-                    "__found.ok_or_else(|| \"find: no element matched the condition\".to_string())",
-                )?;
+                // Find: first matching element (by original order — rayon's
+                // find_first) or an error. Parallel with short-circuit.
+                let result_expr = if index_iterator.is_some() {
+                    "__search_result.map(|__pair| __pair.1).ok_or_else(|| \"find: no element matched the condition\".to_string())"
+                } else {
+                    "__search_result.ok_or_else(|| \"find: no element matched the condition\".to_string())"
+                };
+                self.write_parallel_search(iterator, index_iterator, iterable, body, output, add_semicolons, "find_first", true, result_expr)?;
             }
             ASTNode::AllExpression { iterator, index_iterator, iterable, body, .. } => {
-                // All expressions check if all elements match a condition (short-circuits on first miss)
-                let on_match = ["__all_match = false;".to_string(), "break;".to_string()];
-                self.write_search_loop(iterator, index_iterator, iterable, body, output, add_semicolons, "let mut __all_match = true;", true, &on_match, "__all_match")?;
+                // All: parallel with short-circuit on the first miss
+                self.write_parallel_search(iterator, index_iterator, iterable, body, output, add_semicolons, "all", false, "__search_result")?;
             }
             ASTNode::AnyExpression { iterator, index_iterator, iterable, body, .. } => {
-                // Any expressions check if any element matches a condition (short-circuits on first hit)
-                let on_match = ["__any_match = true;".to_string(), "break;".to_string()];
-                self.write_search_loop(iterator, index_iterator, iterable, body, output, add_semicolons, "let mut __any_match = false;", false, &on_match, "__any_match")?;
+                // Any: parallel with short-circuit on the first hit
+                self.write_parallel_search(iterator, index_iterator, iterable, body, output, add_semicolons, "any", false, "__search_result")?;
             }
             ASTNode::WhileLoop { condition, max_iterations, body, .. } => {
                 if let Some(max_iter) = max_iterations {
@@ -1930,8 +2127,20 @@ impl Transpiler {
                 }
                 write!(output, " }}")?;
             }
-            ASTNode::StructFieldAccess { struct_name, field_name, .. } => {
-                write!(output, "{}.{}.clone()", struct_name, field_name)?;
+            ASTNode::StructFieldAccess { struct_name, field_name, code_span, .. } => {
+                // Copy-typed fields (i/f/b) don't need a clone
+                let field_is_copy = match self.reference_type(struct_name, code_span) {
+                    Some(NailDataTypeDescriptor::Struct(type_name)) => matches!(
+                        self.struct_field_types.get(type_name).and_then(|fields| fields.get(field_name)),
+                        Some(NailDataTypeDescriptor::Int | NailDataTypeDescriptor::Float | NailDataTypeDescriptor::Boolean)
+                    ),
+                    _ => false,
+                };
+                if field_is_copy {
+                    write!(output, "{}.{}", struct_name, field_name)?;
+                } else {
+                    write!(output, "{}.{}.clone()", struct_name, field_name)?;
+                }
             }
             ASTNode::EnumVariant { name, variant, .. } => {
                 write!(output, "{}{}::{}", self.indent(), name, variant)?;
@@ -2054,14 +2263,20 @@ impl Transpiler {
                 write!(output, "{}", self.indent())?;
             }
 
-            // Generate: match expression { Ok(v) => v, Err(e) => (handler)(e).await }
+            // Generate: match expression { Ok(v) => v, Err(e) => (handler)(e) }
+            // awaiting the handler only when it is actually async
+            let handler_is_sync = matches!(&args[1], ASTNode::Identifier { name: handler, .. } if self.pure_functions.contains(handler));
             write!(output, "match ")?;
             self.transpile_node_internal(&args[0], output, false)?;
             write!(output, " {{ Ok(v) => v, Err(e) => (")?;
 
-            // The second argument should be a lambda
+            // The second argument is a handler function name or lambda
             self.transpile_node_internal(&args[1], output, false)?;
-            write!(output, ")(e).await }}")?;
+            if handler_is_sync {
+                write!(output, ")(e) }}")?;
+            } else {
+                write!(output, ")(e).await }}")?;
+            }
 
             if add_indent {
                 writeln!(output, ";")?;
@@ -2145,8 +2360,9 @@ impl Transpiler {
 
                 write!(output, ")")?;
                 
-                // Add .await for all non-macro functions (everything is async in Nail)
-                if stdlib_registry::get_stdlib_function(name).map(|f| !f.rust_path.ends_with("!")).unwrap_or(false) {
+                // Await only the stdlib functions whose Rust implementations
+                // are async (I/O); pure computation functions are plain sync
+                if !stdlib_fn.rust_path.ends_with('!') && stdlib_registry::is_stdlib_fn_async(name) {
                     write!(output, ".await")?;
                 }
 
@@ -2158,16 +2374,23 @@ impl Transpiler {
                 writeln!(output, ";")?;
             }
         } else {
-            // User-defined function - ALL Nail functions are async
+            // User-defined function
             if add_indent {
                 write!(output, "{}", self.indent())?;
             }
-            
-            // Every user function is async, so any call cycle (direct or mutual
-            // recursion) would make the future type infinitely sized. Boxing
-            // every user-function call breaks all possible cycles uniformly,
-            // with no call-graph analysis or per-function special cases.
-            write!(output, "Box::pin({}(", name)?;
+
+            let is_pure = self.pure_functions.contains(name);
+            if is_pure {
+                // Pure functions are plain sync fns: direct call, plain
+                // recursion, no future involved.
+                write!(output, "{}(", name)?;
+            } else {
+                // Async user functions: any call cycle (direct or mutual
+                // recursion) would make the future type infinitely sized.
+                // Boxing every async user-function call breaks all possible
+                // cycles uniformly, with no per-function special cases.
+                write!(output, "Box::pin({}(", name)?;
+            }
 
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
@@ -2176,8 +2399,12 @@ impl Transpiler {
                 self.transpile_node_internal(arg, output, false)?;
             }
 
-            write!(output, ")).await")?;
-            
+            if is_pure {
+                write!(output, ")")?;
+            } else {
+                write!(output, ")).await")?;
+            }
+
             if add_indent {
                 writeln!(output, ";")?;
             }

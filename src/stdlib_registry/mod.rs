@@ -93,7 +93,7 @@ mod code;
 mod compress;
 mod crypto;
 mod database;
-mod duckdb;
+mod datafusion;
 mod env;
 mod error;
 mod float;
@@ -174,7 +174,7 @@ crate_dependencies! {
     Flate2 => { cargo: "flate2 = \"1.0\"", name: "flate2", import: "use flate2;" },
     Base64 => { cargo: "base64 = \"0.21\"", name: "base64", import: "use base64;" },
     Rusqlite => { cargo: "rusqlite = { version = \"0.31\", features = [\"bundled\"] }", name: "rusqlite", import: "use rusqlite;" },
-    Duckdb => { cargo: "duckdb = { version = \"1.10504.0\", features = [\"bundled\"] }", name: "duckdb", import: "use duckdb;", feature: "duckdb" },
+    DataFusion => { cargo: "datafusion = \"50\"", name: "datafusion", import: "use datafusion;", feature: "datafusion" },
 }
 
 /// Defines the StdlibModule enum and its runtime module path from one table.
@@ -219,7 +219,7 @@ stdlib_modules! {
     Url => "std_lib::url",
     Compress => "std_lib::compress",
     Database => "std_lib::database",
-    Duckdb => "std_lib::duckdb",
+    DataFusion => "std_lib::datafusion",
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -287,7 +287,7 @@ lazy_static! {
         compress::register(&mut m);
         crypto::register(&mut m);
         database::register(&mut m);
-        duckdb::register(&mut m);
+        datafusion::register(&mut m);
         env::register(&mut m);
         error::register(&mut m);
         float::register(&mut m);
@@ -367,6 +367,22 @@ pub fn get_iterator_form(name: &str) -> Option<&'static str> {
     ITERATOR_FORMS.get(name).copied()
 }
 
+/// Whether a stdlib function is async in its Rust implementation (its call
+/// sites need `.await` and callers must be async). I/O-performing modules are
+/// async; pure computation modules are plain sync functions. Per-function
+/// exceptions to a module's default live here too, so the transpiler stays
+/// completely generic.
+pub fn is_stdlib_fn_async(name: &str) -> bool {
+    // Per-function overrides of the module default
+    if name == "time_sleep" {
+        return true;
+    }
+    matches!(
+        get_stdlib_function(name).map(|f| &f.module),
+        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process)
+    )
+}
+
 /// Information about a stdlib struct/type
 #[derive(Clone, Debug)]
 pub struct StdlibTypeInfo {
@@ -425,20 +441,19 @@ lazy_static! {
             }
         });
 
-        // DB_DuckDB struct
-        m.insert("DB_DuckDB", StdlibTypeInfo {
-            name: "DB_DuckDB".to_string(),
+        // DB_DataFusion struct
+        m.insert("DB_DataFusion", StdlibTypeInfo {
+            name: "DB_DataFusion".to_string(),
             fields: {
                 let mut fields = HashMap::new();
                 fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
-                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
                 fields
             }
         });
 
-        // DB_DuckDB_Result struct (DuckDB has no rowids, so no last_insert_id)
-        m.insert("DB_DuckDB_Result", StdlibTypeInfo {
-            name: "DB_DuckDB_Result".to_string(),
+        // DB_DataFusion_Result struct (DataFusion has no rowids, so no last_insert_id)
+        m.insert("DB_DataFusion_Result", StdlibTypeInfo {
+            name: "DB_DataFusion_Result".to_string(),
             fields: {
                 let mut fields = HashMap::new();
                 fields.insert("rows_affected".to_string(), NailDataTypeDescriptor::Int);
@@ -520,10 +535,10 @@ mod stdlib_types_drift_tests {
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Response>("HTTP_Response");
         assert_matches_registry::<crate::parser::std_lib::database::DB_SQLite>("DB_SQLite");
         assert_matches_registry::<crate::parser::std_lib::database::DB_Result>("DB_Result");
-        #[cfg(feature = "duckdb")]
+        #[cfg(feature = "datafusion")]
         {
-            assert_matches_registry::<crate::parser::std_lib::duckdb::DB_DuckDB>("DB_DuckDB");
-            assert_matches_registry::<crate::parser::std_lib::duckdb::DB_DuckDB_Result>("DB_DuckDB_Result");
+            assert_matches_registry::<crate::parser::std_lib::datafusion::DB_DataFusion>("DB_DataFusion");
+            assert_matches_registry::<crate::parser::std_lib::datafusion::DB_DataFusion_Result>("DB_DataFusion_Result");
         }
     }
 
@@ -532,7 +547,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["HTTP_Route", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DuckDB", "DB_DuckDB_Result"];
+        let covered = ["HTTP_Route", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

@@ -1,7 +1,7 @@
 use regex::Regex;
 
 /// Check if a regex pattern matches the text
-pub async fn match_pattern(pattern: String, text: String) -> Result<bool, String> {
+pub fn match_pattern(pattern: String, text: String) -> Result<bool, String> {
     match Regex::new(&pattern) {
         Ok(re) => Ok(re.is_match(&text)),
         Err(e) => Err(format!("regex_match: invalid pattern '{}': {}", pattern, e))
@@ -9,7 +9,7 @@ pub async fn match_pattern(pattern: String, text: String) -> Result<bool, String
 }
 
 /// Find the first match of a pattern in text
-pub async fn find(pattern: String, text: String) -> Result<String, String> {
+pub fn find(pattern: String, text: String) -> Result<String, String> {
     let re = Regex::new(&pattern)
         .map_err(|e| format!("regex_find: invalid pattern '{}': {}", pattern, e))?;
 
@@ -20,7 +20,7 @@ pub async fn find(pattern: String, text: String) -> Result<String, String> {
 }
 
 /// Find all matches of a pattern in text
-pub async fn find_all(pattern: String, text: String) -> Result<Vec<String>, String> {
+pub fn find_all(pattern: String, text: String) -> Result<Vec<String>, String> {
     let re = Regex::new(&pattern)
         .map_err(|e| format!("regex_find_all: invalid pattern '{}': {}", pattern, e))?;
 
@@ -36,7 +36,7 @@ pub async fn find_all(pattern: String, text: String) -> Result<Vec<String>, Stri
 }
 
 /// Replace all matches of a pattern with replacement text
-pub async fn replace(pattern: String, text: String, replacement: String) -> Result<String, String> {
+pub fn replace(pattern: String, text: String, replacement: String) -> Result<String, String> {
     let re = Regex::new(&pattern)
         .map_err(|e| format!("regex_replace: invalid pattern '{}': {}", pattern, e))?;
     
@@ -44,7 +44,7 @@ pub async fn replace(pattern: String, text: String, replacement: String) -> Resu
 }
 
 /// Split text by a regex pattern
-pub async fn split(pattern: String, text: String) -> Result<Vec<String>, String> {
+pub fn split(pattern: String, text: String) -> Result<Vec<String>, String> {
     let re = Regex::new(&pattern)
         .map_err(|e| format!("regex_split: invalid pattern '{}': {}", pattern, e))?;
     

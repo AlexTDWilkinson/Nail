@@ -1457,7 +1457,7 @@ mod tests {
     #[test]
     fn test_function_declaration() {
         let input = "f add(yay:i, bah:i):i { r yay + bah; }";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         let what_the_ast_should_be = r#"Program(
     [
@@ -1500,7 +1500,7 @@ mod tests {
     #[test]
     fn test_if_statement() {
         let input = "if { a > 5 => {} };";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         let expected = r#"
       Program([
     IfStatement {
@@ -1522,7 +1522,7 @@ mod tests {
     #[test]
     fn test_struct_declaration() {
         let input = "struct Point { x:i, y:i }";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         let expected = r#"
        Program([StructDeclaration{name:"Point",fields:[StructDeclarationField{name:"x",data_type:Int,},StructDeclarationField{name:"y",data_type:Int,},],},],)
         "#;
@@ -1534,7 +1534,7 @@ mod tests {
     fn test_enum_declaration() {
         let input = "enum Color { Red, Green, Blue }";
         let lexer = lexer(input);
-        let (result, _) = parse(lexer).unwrap();
+        let result = parse(lexer).unwrap();
         let expected = r#"
        Program([EnumDeclaration{name:"Color",variants:[EnumVariant{name:"Color",variant:"Red",},EnumVariant{name:"Color",variant:"Green",},EnumVariant{name:"Color",variant:"Blue",},],},],)
         "#;
@@ -1545,7 +1545,7 @@ mod tests {
     #[test]
     fn test_function_call() {
         let input = "fun(param);";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         let expected = r#"
         Program(
             [
@@ -1567,7 +1567,7 @@ mod tests {
     #[test]
     fn test_function_nested_call() {
         let input = "fun(times(param));";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         let expected = r#"
         Program(
             [
@@ -1594,7 +1594,7 @@ mod tests {
     #[test]
     fn test_if_else_statement() {
         let input = "if { a > 5 => {}, else => {} };";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         let expected = r#"
         Program([IfStatement{condition_branches:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
         "#;
@@ -1605,7 +1605,7 @@ mod tests {
     #[test]
     fn test_if_else_if_else_statement() {
         let input = "if { a > 5 => {}, b < 5 => {}, else => {} };";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         let expected = r#"
         Program([IfStatement{condition_branches:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),(BinaryOperation{left:Identifier("b",),operator:Lt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
         "#;
@@ -1618,7 +1618,7 @@ mod tests {
         let input = "test_array:a:i = [1, 2, 3];";
         let lexer = lexer(input);
 
-        let (result, _) = parse(lexer).unwrap();
+        let result = parse(lexer).unwrap();
         let expected = r#"
      Program([ConstDeclaration{name:"test_array",data_type:Array(Int),value:ArrayLiteral([NumberLiteral("1",),NumberLiteral("2",),NumberLiteral("3",),],),},],)
         "#;
@@ -1632,7 +1632,7 @@ mod tests {
         let input = "test_array:a:i = 1;";
         let lexer = lexer(input);
 
-        let (result, _) = parse(lexer).unwrap();
+        let result = parse(lexer).unwrap();
         let expected = r#"
      Program([ConstDeclaration{name:"test_array",data_type:Array(Int),value:NumberLiteral("1",),},],)
         "#;
@@ -1645,7 +1645,7 @@ mod tests {
         let input = "test_array:a:i = [1, 2, 3];";
         let lexer = lexer(input);
 
-        let (result, _) = parse(lexer).unwrap();
+        let result = parse(lexer).unwrap();
         let expected = r#"
         Program(
             [
@@ -1676,7 +1676,7 @@ mod tests {
     #[test]
     fn test_function_declaration_multiple_params() {
         let input = r#"f random(x:i, y:f):s { result:s = `test`; r result; }"#;
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
 
         let expected = r#"
@@ -1724,7 +1724,7 @@ mod tests {
         // Enum-typed constants now use a bare type name annotation (`:Color`),
         // not the old `:enum:Color` form.
         let input = "enum Color { Red, Green, Blue } my_color:Color = Color::Red;";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         if let ASTNode::Program { statements, .. } = result {
             assert!(matches!(statements.get(0), Some(ASTNode::EnumDeclaration { .. })), "First statement should be the enum declaration");
@@ -1748,7 +1748,7 @@ mod tests {
     #[test]
     fn test_const_declaration() {
         let input = "counter:i = 10;";
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         // Add assertion here
     }
@@ -1771,7 +1771,7 @@ mod tests {
             struct Point { x_coord:i, y_coord:i }
             points:a:Point = [Point { x_coord = 1, y_coord = 5 }, Point { x_coord = 3, y_coord = 4 }];
             "#;
-        let (result, _) = parse(lexer(input)).unwrap();
+        let result = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
         if let ASTNode::Program { statements, .. } = result {
             assert!(matches!(statements.get(0), Some(ASTNode::StructDeclaration { .. })), "First statement should be the struct declaration");

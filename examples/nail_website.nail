@@ -728,16 +728,28 @@ f generate_performance():s {
         <p>
             Most real-world code — in any language — is sequential, because parallelism is painful:
             threads, locks, work queues, race conditions. Nail's compiler applies the big painful
-            optimizations automatically: <strong>map and filter run on all CPU cores via rayon</strong>,
-            <strong>p blocks get real OS threads</strong>, and <strong>c blocks run I/O concurrently</strong>
-            with async Rust. You write the obvious code; the compiler writes the fast version.
+            optimizations automatically. You write the obvious code; the compiler writes the fast version.
         </p>
+        <div style="background: var(--bg-primary); border-radius: 0.75rem; padding: 1.5rem 2rem; margin: 2rem 0;">
+            <p style="margin-bottom: 0.75rem;"><strong>Parallel or concurrent automatically:</strong></p>
+            <ul style="margin: 0 0 1rem 1.5rem;">
+                <li><strong>map</strong> and <strong>filter</strong> — the workhorses of iteration — run on every CPU core via rayon</li>
+                <li><strong>find</strong>, <strong>all</strong> and <strong>any</strong> — parallel short-circuiting search:
+                    all cores hunt at once and stop early (find still returns the first match in order)</li>
+                <li><strong>p blocks</strong> — each statement gets a real OS thread, joined at /p</li>
+                <li><strong>c blocks</strong> — I/O runs concurrently with async Rust (tokio::join!)</li>
+                <li>All I/O is async under the hood — no blocked threads, ever</li>
+            </ul>
+            <p style="margin: 0;"><strong>Sequential — because parallelism would change what your code means:</strong>
+                <strong> reduce</strong> folds in order (parallel folding is only valid for operations the compiler
+                can't verify), and <strong>each</strong> runs side effects in the order you wrote them.</p>
+        </div>
         <div style="overflow-x: auto; margin: 2rem 0;">
             <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
                 <tr style="border-bottom: 2px solid var(--border);">
                     <th style="text-align: left; padding: 1rem;">Workload</th>
-                    <th style="text-align: right; padding: 1rem;">Idiomatic sequential Rust</th>
-                    <th style="text-align: right; padding: 1rem;">Nail (automatic parallelism)</th>
+                    <th style="text-align: right; padding: 1rem;">Hand-written sequential Rust</th>
+                    <th style="text-align: right; padding: 1rem;">Nail</th>
                 </tr>
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 1rem;">Primes below 50,000 by trial division (CPU-heavy filter)</td>
@@ -746,17 +758,17 @@ f generate_performance():s {
                 </tr>
                 <tr>
                     <td style="padding: 1rem;">Doubling 1,000,000 integers (trivial per-element work)</td>
-                    <td style="text-align: right; padding: 1rem; color: var(--success); font-weight: 700;">&lt;1 ms</td>
-                    <td style="text-align: right; padding: 1rem;">105 ms</td>
+                    <td style="text-align: right; padding: 1rem;">&lt;1 ms</td>
+                    <td style="text-align: right; padding: 1rem;">1 ms — same</td>
                 </tr>
             </table>
         </div>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            Measured on a 24-core Linux machine, both programs compiled with --release.
-            Yes, we published the row we lose. When per-element work is trivial, Nail's async
-            plumbing currently costs more than the work itself — sequential code wins there, and we
-            would rather show you that than hide it. Closing that gap is on the compiler roadmap.
-            The pattern to remember: the heavier your real work, the more Nail's free parallelism pays.
+            Measured on a 24-core Linux machine, both compiled with --release. The gist: unless you
+            personally do the work of parallelizing your code — threads, channels, rayon, locks —
+            your code runs on one core. Nail parallelizes automatically, so real CPU work gets the
+            other 23 cores for free. And when there's nothing to parallelize, Nail compiles to the
+            same plain Rust you'd write by hand, so you don't pay anything for the magic.
         </p>
     </div>
 </section>`;

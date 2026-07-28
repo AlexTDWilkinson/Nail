@@ -919,7 +919,7 @@ Design decisions and why:
   system cargo — the workflow in this repository.
 
 Tooling in `bundle/`: `build_bundle.sh` assembles and warms the bundle (the
-only step that needs network and musl cross compilers — a build-machine
+only step that needs network and a musl C compiler — a build-machine
 concern), `install.sh` installs it, and `test_bundle.sh` is the release
 gate: on a machine with no Rust, no cc, and no network, compile and run a
 Nail program using only the bundle. A release that fails the gate does not

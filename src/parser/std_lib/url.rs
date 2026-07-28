@@ -2,19 +2,19 @@ use dashmap::DashMap;
 use std::sync::Arc;
 
 /// URL encode a string
-pub async fn encode(text: String) -> String {
+pub fn encode(text: String) -> String {
     urlencoding::encode(&text).to_string()
 }
 
 /// URL decode a string
-pub async fn decode(text: String) -> Result<String, String> {
+pub fn decode(text: String) -> Result<String, String> {
     urlencoding::decode(&text)
         .map(|s| s.to_string())
         .map_err(|e| format!("url_decode: could not decode '{}': {}", text, e))
 }
 
 /// Parse a query string into a hashmap
-pub async fn parse_query(query: String) -> Arc<DashMap<String, String>> {
+pub fn parse_query(query: String) -> Arc<DashMap<String, String>> {
     let map = Arc::new(DashMap::new());
     
     // Remove leading ? if present
@@ -41,7 +41,7 @@ pub async fn parse_query(query: String) -> Arc<DashMap<String, String>> {
 }
 
 /// Build a query string from a hashmap
-pub async fn build_query(params: Arc<DashMap<String, String>>) -> String {
+pub fn build_query(params: Arc<DashMap<String, String>>) -> String {
     let mut parts = Vec::new();
     
     for entry in params.iter() {

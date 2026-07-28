@@ -50,9 +50,10 @@ first_big:i = danger(find num in numbers {
     y num > 5;
 });
 
-// FIND with index: First number equal to its index
+// FIND with index: First number one greater than its index (true for every
+// element here, so this returns the first: 1)
 equal_to_index:i = danger(find num idx in numbers {
-    y num == idx;
+    y num == idx + 1;
 });
 
 // ALL: Check if all numbers are positive

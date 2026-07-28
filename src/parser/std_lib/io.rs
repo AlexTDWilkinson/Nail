@@ -22,7 +22,7 @@ pub async fn read_line() -> Result<String, String> {
 
 /// Read a line with a prompt
 pub async fn read_line_prompt(prompt: String) -> Result<String, String> {
-    print_no_newline(prompt).await;
+    print_no_newline(prompt);
     read_line().await
 }
 
@@ -41,7 +41,7 @@ pub async fn read_int() -> Result<i64, String> {
 
 /// Read an integer with a prompt
 pub async fn read_int_prompt(prompt: String) -> Result<i64, String> {
-    print_no_newline(prompt).await;
+    print_no_newline(prompt);
     read_int().await
 }
 
@@ -60,7 +60,7 @@ pub async fn read_float() -> Result<f64, String> {
 
 /// Read a float with a prompt
 pub async fn read_float_prompt(prompt: String) -> Result<f64, String> {
-    print_no_newline(prompt).await;
+    print_no_newline(prompt);
     read_float().await
 }
 

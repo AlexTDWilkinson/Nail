@@ -15,7 +15,7 @@ pub enum TimeFormat {
 
 // Current Unix timestamp in seconds. Total (never panics): a system clock set
 // before 1970 yields a negative timestamp instead of crashing the program.
-pub async fn now() -> i64 {
+pub fn now() -> i64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(duration) => duration.as_secs() as i64,
         Err(e) => -(e.duration().as_secs() as i64),
@@ -29,7 +29,7 @@ pub async fn sleep(seconds: f64) {
 }
 
 // time_format is already correct in the registry
-pub async fn format(timestamp: i64, format: TimeFormat) -> String {
+pub fn format(timestamp: i64, format: TimeFormat) -> String {
     match format {
         TimeFormat::Unix => timestamp.to_string(),
         TimeFormat::UnixMillis => (timestamp * 1000).to_string(),
@@ -52,7 +52,7 @@ pub async fn format(timestamp: i64, format: TimeFormat) -> String {
 }
 
 // These new functions need time_ prefix in the registry
-pub async fn parse(time_str: String, format: TimeFormat) -> Result<i64, String> {
+pub fn parse(time_str: String, format: TimeFormat) -> Result<i64, String> {
     match format {
         TimeFormat::Unix => {
             time_str.parse::<i64>()
@@ -77,16 +77,16 @@ pub async fn parse(time_str: String, format: TimeFormat) -> Result<i64, String> 
     }
 }
 
-pub async fn add_seconds(timestamp: i64, seconds: i64) -> i64 {
+pub fn add_seconds(timestamp: i64, seconds: i64) -> i64 {
     timestamp + seconds
 }
 
-pub async fn diff(t1: i64, t2: i64) -> i64 {
+pub fn diff(t1: i64, t2: i64) -> i64 {
     (t1 - t2).abs()
 }
 
 // Current Unix timestamp in milliseconds. Total like now() above.
-pub async fn now_millis() -> i64 {
+pub fn now_millis() -> i64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(duration) => duration.as_millis() as i64,
         Err(e) => -(e.duration().as_millis() as i64),
@@ -100,21 +100,21 @@ mod tests {
     #[tokio::test]
     async fn test_time_format_unix() {
         let timestamp = 1234567890;
-        let formatted = format(timestamp, TimeFormat::Unix).await;
+        let formatted = format(timestamp, TimeFormat::Unix);
         assert_eq!(formatted, "1234567890");
     }
     
     #[tokio::test]
     async fn test_time_format_unix_millis() {
         let timestamp = 1234567890;
-        let formatted = format(timestamp, TimeFormat::UnixMillis).await;
+        let formatted = format(timestamp, TimeFormat::UnixMillis);
         assert_eq!(formatted, "1234567890000");
     }
     
     #[tokio::test]
     async fn test_time_format_iso8601() {
         let timestamp = 1234567890;
-        let formatted = format(timestamp, TimeFormat::ISO8601).await;
+        let formatted = format(timestamp, TimeFormat::ISO8601);
         assert!(formatted.ends_with("Z"));
         assert!(formatted.contains("1234567890"));
     }
@@ -122,39 +122,39 @@ mod tests {
     #[tokio::test]
     async fn test_time_format_custom() {
         let timestamp = 1234567890;
-        let formatted = format(timestamp, TimeFormat::Custom("MyFormat".to_string())).await;
+        let formatted = format(timestamp, TimeFormat::Custom("MyFormat".to_string()));
         assert!(formatted.contains("1234567890"));
         assert!(formatted.contains("MyFormat"));
     }
     
     #[tokio::test]
     async fn test_time_parse_unix() {
-        let result = parse("1234567890".to_string(), TimeFormat::Unix).await;
+        let result = parse("1234567890".to_string(), TimeFormat::Unix);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1234567890);
     }
     
     #[tokio::test]
     async fn test_time_parse_unix_invalid() {
-        let result = parse("not_a_number".to_string(), TimeFormat::Unix).await;
+        let result = parse("not_a_number".to_string(), TimeFormat::Unix);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Cannot parse"));
+        assert!(result.unwrap_err().contains("could not parse"));
     }
     
     #[tokio::test]
     async fn test_time_parse_unix_millis() {
-        let result = parse("1234567890000".to_string(), TimeFormat::UnixMillis).await;
+        let result = parse("1234567890000".to_string(), TimeFormat::UnixMillis);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1234567890); // Should convert from millis to seconds
     }
     
     #[tokio::test]
     async fn test_time_parse_custom() {
-        let result = parse("1234567890".to_string(), TimeFormat::Custom("MyFormat".to_string())).await;
+        let result = parse("1234567890".to_string(), TimeFormat::Custom("MyFormat".to_string()));
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1234567890);
         
-        let result_err = parse("invalid".to_string(), TimeFormat::Custom("MyFormat".to_string())).await;
+        let result_err = parse("invalid".to_string(), TimeFormat::Custom("MyFormat".to_string()));
         assert!(result_err.is_err());
         let error_message = result_err.unwrap_err();
         assert!(error_message.contains("custom format"));
@@ -164,10 +164,10 @@ mod tests {
     #[tokio::test]
     async fn test_time_add_seconds() {
         let base = 1000;
-        let added = add_seconds(base, 3600).await;
+        let added = add_seconds(base, 3600);
         assert_eq!(added, 4600);
         
-        let subtracted = add_seconds(base, -500).await;
+        let subtracted = add_seconds(base, -500);
         assert_eq!(subtracted, 500);
     }
     
@@ -175,8 +175,8 @@ mod tests {
     async fn test_time_diff() {
         let t1 = 1000;
         let t2 = 2000;
-        assert_eq!(diff(t1, t2).await, 1000);
-        assert_eq!(diff(t2, t1).await, 1000); // Should be absolute difference
-        assert_eq!(diff(t1, t1).await, 0);
+        assert_eq!(diff(t1, t2), 1000);
+        assert_eq!(diff(t2, t1), 1000); // Should be absolute difference
+        assert_eq!(diff(t1, t1), 0);
     }
 }

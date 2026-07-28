@@ -327,11 +327,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 
                 // Check if this line has an error
                 // Error lines are 1-based, actual_line_idx is 0-based
-                let has_error_line = if let Some(error) = &editor.code_error {
-                    actual_line_idx + 1 == error.code_span.start_line  // Convert 0-based index to 1-based for comparison
-                } else {
-                    false
-                };
+                let has_error_line = editor.code_errors.iter().any(|error| actual_line_idx + 1 == error.code_span.start_line);
                 
                 for span in line.spans.iter() {
                     let text = span.content.to_string();
@@ -396,6 +392,26 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                             }
                         }
                         
+                        // Underline the exact error spans so the message can live at
+                        // the end of the line without a caret overlay covering code
+                        if has_error_line {
+                            for error in &editor.code_errors {
+                                if error.code_span.start_line != actual_line_idx + 1 {
+                                    continue;
+                                }
+                                let span_start = error.code_span.start_column.saturating_sub(1);
+                                let span_end = if error.code_span.end_line == error.code_span.start_line {
+                                    error.code_span.end_column.saturating_sub(1).max(span_start + 1)
+                                } else {
+                                    usize::MAX
+                                };
+                                if char_pos >= span_start && char_pos < span_end {
+                                    style = style.fg(editor.theme.error).add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
+                                    break;
+                                }
+                            }
+                        }
+
                         // Check if this character is within a search result (highlight all matches dimly)
                         let mut is_current_match = false;
                         for (match_idx, &(line, start, end)) in editor.search_results.iter().enumerate() {
@@ -570,8 +586,8 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             display_build_status(f, &editor);
 
             // Check and draw errors FIRST
-            if let Some(error) = &editor.code_error {
-                display_error(f, error, &editor, content_area);
+            if !editor.code_errors.is_empty() {
+                display_errors(f, &editor.code_errors, &editor, content_area);
             }
             
             // Draw completion popup LAST so it appears on top
@@ -734,55 +750,57 @@ fn display_build_status(f: &mut Frame, editor: &Editor) {
     f.render_widget(paragraph, status_area);
 }
 
-fn display_error(f: &mut Frame, error: &CodeError, editor: &Editor, content_area: Rect) {
+fn display_errors(f: &mut Frame, errors: &[CodeError], editor: &Editor, content_area: Rect) {
     let current_tab = editor.get_current_tab();
-    // Error line is 1-based, convert to 0-based for array indexing
-    let error_line_0based = error.code_span.start_line.saturating_sub(1);
-    let error_line = error_line_0based.saturating_sub(current_tab.scroll_position as usize);
-    let error_column = error.code_span.start_column.saturating_sub(1);  // Column is also 1-based
-    let error_message = error.message.clone();
-
-    log::info!("Displaying error - line: {}, column: {}, message: {}", error.code_span.start_line, error_column, error_message);
-
-    // Only display the error if it's within the visible area
-
-    let error_message = Line::from(vec![Span::styled(error_message, Style::default().fg(editor.theme.error).bg(editor.theme.background))]);
-
-    let paragraph = Paragraph::new(error_message.clone()).style(Style::default().fg(editor.theme.error).bg(editor.theme.background)).alignment(Alignment::Left);
-
-    // Calculate current cursor line relative to scroll position
-    let current_cursor_line = current_tab.cursor_y.saturating_sub(current_tab.scroll_position as usize);
-    
-    // Position error to avoid covering the current cursor line
-    let error_display_y = if error_line == current_cursor_line {
-        // If error is on current line, position it below unless we're at the bottom
-        if content_area.y + error_line as u16 + 2 < content_area.y + content_area.height {
-            content_area.y + error_line as u16 + 2 // Position below current line
-        } else {
-            // If no space below, position above
-            content_area.y + (error_line as u16).saturating_sub(1)
-        }
-    } else {
-        content_area.y + error_line as u16 + 1 // Normal positioning
-    };
-
-    let error_area = Rect::new(
-        content_area.x + error_column as u16,
-        error_display_y,
-        error_message.width() as u16,
-        1,
-    );
-
-    log::info!("Error area: {:?}, content_area: {:?}, frame area: {:?}", error_area, content_area, f.area());
-
-    // Check if error area is within frame bounds
-    if error_area.x + error_area.width > f.area().width || error_area.y + error_area.height > f.area().height {
-        log::warn!("Error area exceeds frame bounds, skipping render");
+    let scroll = current_tab.scroll_position as usize;
+    // Content rows sit inside the block border: row n renders at content_area.y + 1 + n
+    let visible_rows = content_area.height.saturating_sub(2) as usize;
+    if visible_rows == 0 || content_area.width <= 2 {
         return;
     }
+    let right_edge = content_area.x + content_area.width - 1;
 
-    f.render_widget(Clear, error_area);
-    f.render_widget(paragraph, error_area);
+    // Each error renders at the end of its own line; errors sharing a line
+    // are joined so they never overdraw each other
+    let mut messages_by_line: std::collections::BTreeMap<usize, Vec<&str>> = std::collections::BTreeMap::new();
+    for error in errors {
+        messages_by_line.entry(error.code_span.start_line).or_default().push(error.message.as_str());
+    }
+
+    for (start_line, messages) in messages_by_line {
+        // Messages without a code span (status notices like "Loaded: ...") go to the
+        // bottom row of the content area instead of masquerading as a line-1 error
+        let (row_y, msg_x) = if start_line == 0 {
+            (content_area.y + visible_rows as u16, content_area.x + 1)
+        } else {
+            let error_line_0based = start_line - 1;
+            if error_line_0based < scroll || error_line_0based >= scroll + visible_rows {
+                continue; // Error line is scrolled out of view
+            }
+            // Place the message after the end of the line's code so it never covers it
+            let line_len = current_tab.content.get(error_line_0based).map(|l| l.chars().count()).unwrap_or(0) as u16;
+            (content_area.y + 1 + (error_line_0based - scroll) as u16, content_area.x + 1 + line_len + 2)
+        };
+
+        if msg_x >= right_edge {
+            continue;
+        }
+        let avail = (right_edge - msg_x) as usize;
+        let mut text = format!("◀ {}", messages.join(" | "));
+        if text.chars().count() > avail {
+            text = text.chars().take(avail.saturating_sub(1)).collect();
+            text.push('…');
+        }
+
+        let error_area = Rect::new(msg_x, row_y, text.chars().count() as u16, 1).intersection(f.area());
+        if error_area.width == 0 || error_area.height == 0 {
+            continue;
+        }
+
+        let paragraph = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(editor.theme.error).bg(editor.theme.background))));
+        f.render_widget(Clear, error_area);
+        f.render_widget(paragraph, error_area);
+    }
 }
 
 fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect) {
@@ -1417,7 +1435,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     match editor.load_file(next_file) {
                                         Ok(_) => {
                                             editor.build_status = BuildStatus::Idle;
-                                            editor.code_error = Some(format!("Loaded: {}", next_file).into());
+                                            editor.code_errors = vec![format!("Loaded: {}", next_file).into()];
                                             log::info!("Successfully loaded file: {}", next_file);
                                             loaded = true;
                                         }
@@ -2082,22 +2100,18 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
             current_tab.tokens = tokens.clone();
         }
 
-        // Check for error tokens
-        let mut lexing_error = None;
-        for token in tokens.clone() {
-            if let lexer::TokenType::LexerError(message) = token.token_type {
-                lexing_error = Some(CodeError { message: format!("^ {}", message), code_span: token.code_span });
-                break;
-            }
-        }
+        // Check for error tokens (collect_lexer_errors also finds errors nested
+        // inside FunctionSignature tokens, so every one gets its own line)
+        let lexing_errors: Vec<CodeError> =
+            lexer::collect_lexer_errors(&tokens).into_iter().map(|error| CodeError { message: error.message, code_span: error.code_span }).collect();
 
         {
             let mut editor = lock(&editor_arc);
-            editor.code_error = lexing_error.clone();
+            editor.code_errors = lexing_errors.clone();
         }
 
-        if lexing_error.is_some() {
-            log::info!("Lexer error detected: {:?}", lexing_error);
+        if !lexing_errors.is_empty() {
+            log::info!("Lexer errors detected: {:?}", lexing_errors);
             // Sleep for a while to avoid excessive CPU usage, no need to parse if there are lexer errors
             thread::sleep(Duration::from_millis(250));
             continue;
@@ -2109,7 +2123,7 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
             Ok(ast) => (ast, true),
             Err(e) => {
                 let mut editor = lock(&editor_arc);
-                editor.code_error = Some(CodeError { message: format!("^ {}", e.message), code_span: e.code_span });
+                editor.code_errors = vec![CodeError { message: e.message.clone(), code_span: e.code_span }];
                 (ASTNode::default(), false)
             }
         };
@@ -2129,14 +2143,23 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
                 Ok(_) => {
                     // Clear any previous errors if everything is successful
                     let mut editor = lock(&editor_arc);
-                    editor.code_error = None;
+                    editor.code_errors.clear();
                 }
                 Err(errors) => {
-                    // Surface every checker error, not just the first one; the
-                    // span points at the first error for line highlighting.
-                    let combined_message = errors.iter().map(|error| error.message.as_str()).collect::<Vec<_>>().join(" | ");
+                    // Every checker error keeps its own span so it renders on
+                    // its own line; a help suggestion rides along in the message
+                    let code_errors: Vec<CodeError> = errors
+                        .into_iter()
+                        .map(|error| {
+                            let message = match &error.help {
+                                Some(help) => format!("{} — help: {}", error.message, help),
+                                None => error.message,
+                            };
+                            CodeError { message, code_span: error.code_span }
+                        })
+                        .collect();
                     let mut editor = lock(&editor_arc);
-                    editor.code_error = Some(CodeError { message: format!("^ {}", combined_message), code_span: errors[0].code_span.clone() });
+                    editor.code_errors = code_errors;
                 }
             };
         }
@@ -2315,16 +2338,12 @@ pub fn render_line_numbers(f: &mut Frame, editor: &Editor, gutter_area: Rect) {
         
         // Check if this line has an error
         // Line numbers in errors are 1-based, but we need to compare with displayed line numbers
-        let has_error = if let Some(error) = &editor.code_error {
-            line_number == error.code_span.start_line  // Compare 1-based line number with 1-based error line
-        } else {
-            false
-        };
-        
+        let has_error = editor.code_errors.iter().any(|error| line_number == error.code_span.start_line);
+
         let (style, line_text) = if has_error {
-            // Show red error marker in gutter
+            // Keep the line number visible, just paint it error-red
             let style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
-            let text = format!("{:>width$}", "●", width = (gutter_area.width - 1) as usize);
+            let text = format!("{:>width$}", line_number, width = (gutter_area.width - 1) as usize);
             (style, text)
         } else if is_current_line && editor.highlight_current_line {
             let style = Style::default()

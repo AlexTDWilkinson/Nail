@@ -9,9 +9,8 @@
 #
 # Build-machine requirements (users need none of this):
 #   - network access (crates.io + static.rust-lang.org)
-#   - musl C/C++ cross compilers for the C-containing crates
-#     (sqlite, ring, duckdb): musl-gcc from musl-tools plus a musl g++
-#     such as x86_64-linux-musl-g++ from https://musl.cc
+#   - a musl C compiler for the plain-C crates (sqlite, ring, compression):
+#     musl-gcc from the musl-tools package is enough. No C++ anywhere.
 set -euo pipefail
 
 RUST_VERSION="${RUST_VERSION:-1.92.0}"
@@ -29,20 +28,13 @@ if ! mkdir -p "$ROOT" 2>/dev/null || [ ! -w "$ROOT" ]; then
 fi
 mkdir -p "$DOWNLOADS" "$ROOT/bin" "$ROOT/cache" "$ROOT/cargo-home"
 
-# --- musl C/C++ compilers (needed only while building the bundle) ---------
+# --- musl C compiler (needed only while building the bundle) --------------
 MUSL_CC="${CC_x86_64_unknown_linux_musl:-$(command -v x86_64-linux-musl-gcc || command -v musl-gcc || true)}"
-MUSL_CXX="${CXX_x86_64_unknown_linux_musl:-$(command -v x86_64-linux-musl-g++ || true)}"
 if [ -z "$MUSL_CC" ]; then
     echo "error: no musl C compiler found (install musl-tools or set CC_x86_64_unknown_linux_musl)" >&2
     exit 1
 fi
-if [ -z "$MUSL_CXX" ]; then
-    echo "error: no musl C++ compiler found - needed for the duckdb package." >&2
-    echo "       Install x86_64-linux-musl-cross from https://musl.cc or set CXX_x86_64_unknown_linux_musl" >&2
-    exit 1
-fi
 export CC_x86_64_unknown_linux_musl="$MUSL_CC"
-export CXX_x86_64_unknown_linux_musl="$MUSL_CXX"
 
 # --- 1. Pinned Rust toolchain --------------------------------------------
 fetch() {
@@ -122,7 +114,6 @@ warm_build() {
         CARGO_HOME="$ROOT/cargo-home" \
         CARGO_TARGET_DIR="$ROOT/cache/target" \
         CC_x86_64_unknown_linux_musl="$MUSL_CC" \
-        CXX_x86_64_unknown_linux_musl="$MUSL_CXX" \
         "$ROOT/toolchain/bin/cargo" build --release --manifest-path "$1/Cargo.toml"
 }
 warm_build "$ROOT/warmup/superset"

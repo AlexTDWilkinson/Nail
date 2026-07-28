@@ -1,7 +1,7 @@
 use std::env;
 
 /// Get command line argument by index (0 is the program name)
-pub async fn get(index: i64) -> Result<String, String> {
+pub fn get(index: i64) -> Result<String, String> {
     let args: Vec<String> = env::args().collect();
     
     if index < 0 {
@@ -17,7 +17,7 @@ pub async fn get(index: i64) -> Result<String, String> {
 }
 
 /// Check if a flag exists (e.g., --flag or -f)
-pub async fn flag(name: String) -> bool {
+pub fn flag(name: String) -> bool {
     let args: Vec<String> = env::args().collect();
     
     // Check for both long form (--name) and short form (-n)
@@ -33,7 +33,7 @@ pub async fn flag(name: String) -> bool {
 }
 
 /// Get value for a named argument (e.g., --name=value or --name value)
-pub async fn value(name: String) -> Result<String, String> {
+pub fn value(name: String) -> Result<String, String> {
     let args: Vec<String> = env::args().collect();
     
     let flag_with_equals = format!("--{}=", name);
@@ -66,6 +66,6 @@ pub async fn value(name: String) -> Result<String, String> {
 }
 
 /// Get the number of command line arguments (including program name)
-pub async fn count() -> i64 {
+pub fn count() -> i64 {
     env::args().count() as i64
 }

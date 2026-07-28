@@ -1,15 +1,15 @@
 use std::path::{Path, PathBuf};
 
-pub async fn join(base: String, path: String) -> String {
+pub fn join(base: String, path: String) -> String {
     Path::new(&base).join(&path).to_string_lossy().to_string()
 }
 
-pub async fn exists(path: String) -> bool {
+pub fn exists(path: String) -> bool {
     Path::new(&path).exists()
 }
 
 /// Get the filename from a path
-pub async fn basename(path: String) -> String {
+pub fn basename(path: String) -> String {
     Path::new(&path)
         .file_name()
         .and_then(|s| s.to_str())
@@ -18,7 +18,7 @@ pub async fn basename(path: String) -> String {
 }
 
 /// Get the directory from a path
-pub async fn dirname(path: String) -> String {
+pub fn dirname(path: String) -> String {
     Path::new(&path)
         .parent()
         .and_then(|p| p.to_str())
@@ -27,7 +27,7 @@ pub async fn dirname(path: String) -> String {
 }
 
 /// Get the file extension from a path
-pub async fn extension(path: String) -> Result<String, String> {
+pub fn extension(path: String) -> Result<String, String> {
     Path::new(&path)
         .extension()
         .and_then(|s| s.to_str())
@@ -36,12 +36,12 @@ pub async fn extension(path: String) -> Result<String, String> {
 }
 
 /// Check if a path is absolute
-pub async fn is_absolute(path: String) -> bool {
+pub fn is_absolute(path: String) -> bool {
     Path::new(&path).is_absolute()
 }
 
 /// Normalize a path (resolve . and ..)
-pub async fn normalize(path: String) -> String {
+pub fn normalize(path: String) -> String {
     let path = Path::new(&path);
     let mut components = Vec::new();
     

@@ -4,8 +4,8 @@ pub mod code;
 pub mod compress;
 pub mod crypto;
 pub mod database;
-#[cfg(feature = "duckdb")]
-pub mod duckdb;
+#[cfg(feature = "datafusion")]
+pub mod datafusion;
 pub mod env;
 pub mod error;
 pub mod float;

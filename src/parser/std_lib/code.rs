@@ -144,7 +144,7 @@ fn advance_to(lines: &[Vec<char>], cur: &mut (usize, usize), target: (usize, usi
 /// Highlights Nail source as HTML using the real Nail lexer. Every token is
 /// wrapped in a `<span class="tok-*">`; text is HTML-escaped. Intended for
 /// embedding inside a `<pre>` element.
-pub async fn highlight_html(source: String) -> String {
+pub fn highlight_html(source: String) -> String {
     let tokens = lexer(&source);
     let mut spans: Vec<SpanEntry> = Vec::new();
     flatten(&tokens, &mut spans);
@@ -199,7 +199,7 @@ pub async fn highlight_html(source: String) -> String {
 
 /// Runs the full Nail compiler pipeline on a source string and returns the
 /// generated Rust code, or the first error encountered at any stage.
-pub async fn transpile_to_rust(source: String) -> Result<String, String> {
+pub fn transpile_to_rust(source: String) -> Result<String, String> {
     let tokens = lexer(&source);
     let lex_errors = collect_lexer_errors(&tokens);
     if let Some(first) = lex_errors.first() {
@@ -215,6 +215,6 @@ pub async fn transpile_to_rust(source: String) -> Result<String, String> {
 }
 
 /// Escapes text for safe embedding in HTML (`&`, `<`, `>`).
-pub async fn escape_html(text: String) -> String {
+pub fn escape_html(text: String) -> String {
     escape(&text)
 }

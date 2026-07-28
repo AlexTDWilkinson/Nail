@@ -3,7 +3,7 @@ use std::cmp::{Ord, Ordering};
 use std::ops::Neg;
 
 // Generic min function - returns minimum of two values
-pub async fn min<T>(a: T, b: T) -> T
+pub fn min<T>(a: T, b: T) -> T
 where
     T: PartialOrd,
 {
@@ -15,7 +15,7 @@ where
 }
 
 // Generic max function - returns maximum of two values
-pub async fn max<T>(a: T, b: T) -> T
+pub fn max<T>(a: T, b: T) -> T
 where
     T: PartialOrd,
 {
@@ -28,7 +28,7 @@ where
 
 // Generic clamp function - clamps value between min and max
 // (PartialOrd rather than Ord so it works for floats too)
-pub async fn clamp<T>(value: T, min_val: T, max_val: T) -> T
+pub fn clamp<T>(value: T, min_val: T, max_val: T) -> T
 where
     T: PartialOrd,
 {
@@ -42,7 +42,7 @@ where
 }
 
 // Generic sign function - returns -1, 0, or 1
-pub async fn sign<T>(value: T) -> i64
+pub fn sign<T>(value: T) -> i64
 where
     T: Ord + Default,
 {
@@ -55,7 +55,7 @@ where
 }
 
 // Generic absolute value (PartialOrd rather than Ord so it works for floats)
-pub async fn abs<T>(value: T) -> T
+pub fn abs<T>(value: T) -> T
 where
     T: PartialOrd + Default + Neg<Output = T>,
 {
@@ -68,52 +68,52 @@ where
 }
 
 // Square root
-pub async fn sqrt(x: f64) -> f64 {
+pub fn sqrt(x: f64) -> f64 {
     x.sqrt()
 }
 
 // Power function
-pub async fn pow(base: f64, exp: f64) -> f64 {
+pub fn pow(base: f64, exp: f64) -> f64 {
     base.powf(exp)
 }
 
 // Round to nearest whole number, as a float
-pub async fn round(x: f64) -> f64 {
+pub fn round(x: f64) -> f64 {
     x.round()
 }
 
 // Round to nearest whole number, as an integer
-pub async fn round_to_int(x: f64) -> i64 {
+pub fn round_to_int(x: f64) -> i64 {
     x.round() as i64
 }
 
 // Floor function
-pub async fn floor(x: f64) -> f64 {
+pub fn floor(x: f64) -> f64 {
     x.floor()
 }
 
 // Ceiling function
-pub async fn ceil(x: f64) -> f64 {
+pub fn ceil(x: f64) -> f64 {
     x.ceil()
 }
 
 // Random float in [0.0, 1.0)
-pub async fn random() -> f64 {
+pub fn random() -> f64 {
     rand::random::<f64>()
 }
 
 // The constant pi
-pub async fn pi() -> f64 {
+pub fn pi() -> f64 {
     std::f64::consts::PI
 }
 
 // Euler's number
-pub async fn e() -> f64 {
+pub fn e() -> f64 {
     std::f64::consts::E
 }
 
 // Division with a divide-by-zero check
-pub async fn divide<T>(numerator: T, denominator: T) -> Result<T, String>
+pub fn divide<T>(numerator: T, denominator: T) -> Result<T, String>
 where
     T: std::ops::Div<Output = T> + Default + PartialEq + std::fmt::Display,
 {
@@ -124,7 +124,7 @@ where
 }
 
 // Greatest common divisor (Euclidean algorithm)
-pub async fn gcd(mut a: i64, mut b: i64) -> i64 {
+pub fn gcd(mut a: i64, mut b: i64) -> i64 {
     a = a.abs();
     b = b.abs();
     while b != 0 {
@@ -136,17 +136,17 @@ pub async fn gcd(mut a: i64, mut b: i64) -> i64 {
 }
 
 // Least common multiple
-pub async fn lcm(a: i64, b: i64) -> i64 {
+pub fn lcm(a: i64, b: i64) -> i64 {
     let a_abs = a.abs();
     let b_abs = b.abs();
     if a_abs == 0 || b_abs == 0 {
         return 0;
     }
-    (a_abs / gcd(a_abs, b_abs).await) * b_abs
+    (a_abs / gcd(a_abs, b_abs)) * b_abs
 }
 
 // Factorial
-pub async fn factorial(n: i64) -> Result<i64, String> {
+pub fn factorial(n: i64) -> Result<i64, String> {
     if n < 0 {
         return Err(format!("math_factorial: not defined for negative numbers, got {}", n));
     }
@@ -163,7 +163,7 @@ pub async fn factorial(n: i64) -> Result<i64, String> {
 }
 
 // Check if number is prime
-pub async fn is_prime(n: i64) -> bool {
+pub fn is_prime(n: i64) -> bool {
     if n <= 1 {
         return false;
     }
@@ -185,62 +185,62 @@ pub async fn is_prime(n: i64) -> bool {
 }
 
 // Sigmoid function (useful for ML)
-pub async fn sigmoid(x: f64) -> f64 {
+pub fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
 }
 
 // Linear interpolation
-pub async fn lerp(a: f64, b: f64, t: f64) -> f64 {
+pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t.clamp(0.0, 1.0)
 }
 
 // Trigonometric functions
-pub async fn sin(x: f64) -> f64 {
+pub fn sin(x: f64) -> f64 {
     x.sin()
 }
 
-pub async fn cos(x: f64) -> f64 {
+pub fn cos(x: f64) -> f64 {
     x.cos()
 }
 
-pub async fn tan(x: f64) -> f64 {
+pub fn tan(x: f64) -> f64 {
     x.tan()
 }
 
-pub async fn asin(x: f64) -> Result<f64, String> {
+pub fn asin(x: f64) -> Result<f64, String> {
     if x < -1.0 || x > 1.0 {
         return Err(format!("math_asin: input must be between -1 and 1, got {}", x));
     }
     Ok(x.asin())
 }
 
-pub async fn acos(x: f64) -> Result<f64, String> {
+pub fn acos(x: f64) -> Result<f64, String> {
     if x < -1.0 || x > 1.0 {
         return Err(format!("math_acos: input must be between -1 and 1, got {}", x));
     }
     Ok(x.acos())
 }
 
-pub async fn atan(x: f64) -> f64 {
+pub fn atan(x: f64) -> f64 {
     x.atan()
 }
 
 // Logarithmic functions
-pub async fn log(x: f64) -> Result<f64, String> {
+pub fn log(x: f64) -> Result<f64, String> {
     if x <= 0.0 {
         return Err(format!("math_log: input must be positive, got {}", x));
     }
     Ok(x.ln())
 }
 
-pub async fn log10(x: f64) -> Result<f64, String> {
+pub fn log10(x: f64) -> Result<f64, String> {
     if x <= 0.0 {
         return Err(format!("math_log10: input must be positive, got {}", x));
     }
     Ok(x.log10())
 }
 
-pub async fn log2(x: f64) -> Result<f64, String> {
+pub fn log2(x: f64) -> Result<f64, String> {
     if x <= 0.0 {
         return Err(format!("math_log2: input must be positive, got {}", x));
     }
@@ -248,6 +248,6 @@ pub async fn log2(x: f64) -> Result<f64, String> {
 }
 
 // Exponential function
-pub async fn exp(x: f64) -> f64 {
+pub fn exp(x: f64) -> f64 {
     x.exp()
 }
