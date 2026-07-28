@@ -1,0 +1,7 @@
+// E2E: arithmetic on nested struct field access chains
+struct Corner { x_pos:i, y_pos:i }
+struct Rect { top_left:Corner, bottom_right:Corner }
+shape:Rect = Rect { top_left = Corner { x_pos = 2, y_pos = 10 }, bottom_right = Corner { x_pos = 8, y_pos = 4 } };
+width_val:i = shape.bottom_right.x_pos - shape.top_left.x_pos;
+height_val:i = shape.top_left.y_pos - shape.bottom_right.y_pos;
+print(width_val * height_val);

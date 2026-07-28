@@ -3,7 +3,7 @@
 # Test Rust compilation of successfully transpiled Nail files
 # This is slow but ensures the generated Rust code actually compiles
 
-set -e
+# No `set -e`: the script tracks per-file failures itself and reports a summary
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -18,6 +18,16 @@ echo ""
 # Create a temporary directory for test projects
 TEMP_DIR="/tmp/nail_rust_tests_$$"
 mkdir -p "$TEMP_DIR"
+
+PROJECT_ROOT="$(pwd)"
+
+# Make sure nailc is up to date (needed for --cargo-toml generation)
+cargo build --bin nailc --quiet
+
+# Share one target dir across all test projects so dependencies (tokio, nail, ...)
+# compile once instead of once per test file. Exported AFTER building nailc so
+# the ./target/debug/nailc path above stays valid.
+export CARGO_TARGET_DIR="$TEMP_DIR/shared_target"
 
 # Track results
 PASSED=0
@@ -55,25 +65,13 @@ test_rust_compilation() {
     # Move the generated .rs file
     mv "$rs_file" "$test_dir/src/main.rs"
     
-    # Create Cargo.toml with proper dependencies
-    cat > "$test_dir/Cargo.toml" << 'EOF'
-[package]
-name = "nail_test"
-edition = "2021"
-
-[dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
-rayon = "1.5"
-futures = "0.3"
-nail = { path = "PROJECT_PATH" }
-dashmap = "6.1.0"
-serde = { version = "1.0", features = ["derive"] }
-rusqlite = { version = "0.31", features = ["bundled"] }
-serde_rusqlite = "0.35"
-EOF
-    
-    # Replace PROJECT_PATH with actual path
-    sed -i "s|PROJECT_PATH|$(pwd)|" "$test_dir/Cargo.toml"
+    # Generate Cargo.toml with usage-driven dependencies from the stdlib registry
+    if ! ./target/debug/nailc "$nail_file" --cargo-toml "--nail-path=$PROJECT_ROOT" --package-name=nail_test > "$test_dir/Cargo.toml" 2>/dev/null; then
+        echo -e "${RED}✗ Cargo.toml generation failed${NC}"
+        FAILED=$((FAILED + 1))
+        FAILED_FILES+=("$nail_file (cargo-toml)")
+        return 1
+    fi
     
     # Try to build the Rust project
     if cd "$test_dir" && cargo build --quiet 2>/dev/null; then

@@ -1,0 +1,4 @@
+// E2E: float subtraction with exact results
+print(5.0 - 0.5);
+print(0.5 - 0.75);
+print(2.25 - 2.25);

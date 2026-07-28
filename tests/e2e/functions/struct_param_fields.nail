@@ -1,0 +1,7 @@
+// E2E: function with struct parameter reading fields
+struct Rect { width_val:i, height_val:i }
+f area(shape:Rect):i {
+    r shape.width_val * shape.height_val;
+}
+box_rect:Rect = Rect { width_val = 3, height_val = 5 };
+print(area(box_rect));

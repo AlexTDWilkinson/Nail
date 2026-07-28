@@ -1,0 +1,8 @@
+// E2E: enum comparisons drive if branches
+enum Signal { Stop, Go, Wait }
+current:Signal = Signal::Wait;
+if {
+    current == Signal::Stop => { print(`halt`); },
+    current == Signal::Go => { print(`move`); },
+    else => { print(`hold`); }
+}

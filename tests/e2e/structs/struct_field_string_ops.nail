@@ -1,0 +1,5 @@
+// E2E: string stdlib functions on a struct string field
+struct Tag { label:s }
+marker:Tag = Tag { label = `hello` };
+print(string_to_uppercase(marker.label));
+print(string_length(marker.label));

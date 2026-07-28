@@ -1,0 +1,15 @@
+// E2E: mutually recursive functions
+f is_even_rec(num:i):b {
+    r if {
+        num == 0 => { r true; },
+        else => { r is_odd_rec(num - 1); }
+    };
+}
+f is_odd_rec(num:i):b {
+    r if {
+        num == 0 => { r false; },
+        else => { r is_even_rec(num - 1); }
+    };
+}
+print(is_even_rec(10));
+print(is_odd_rec(7));

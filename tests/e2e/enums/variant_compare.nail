@@ -1,0 +1,7 @@
+// E2E: enum declaration and variant comparison
+enum Direction { North, South, East, West }
+heading:Direction = Direction::North;
+if {
+    heading == Direction::North => { print(`going north`); },
+    else => { print(`going elsewhere`); }
+}

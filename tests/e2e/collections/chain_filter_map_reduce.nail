@@ -1,0 +1,8 @@
+// E2E: chained filter then map then reduce via intermediate variables
+nums:a:i = [1, 2, 3, 4, 5, 6];
+evens:a:i = filter num in nums { y num % 2 == 0; };
+squared:a:i = map num in evens { y num * num; };
+total:i = reduce acc num in squared from 0 { y acc + num; };
+print(evens);
+print(squared);
+print(total);

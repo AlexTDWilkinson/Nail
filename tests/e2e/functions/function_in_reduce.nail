@@ -1,0 +1,5 @@
+// E2E: user function called inside reduce body
+f combine(acc_val:i, num:i):i { r acc_val + num * 2; }
+values:a:i = [1, 2, 3];
+total:i = reduce acc num in values from 0 { y combine(acc, num); };
+print(total);

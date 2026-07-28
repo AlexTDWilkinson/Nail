@@ -1,0 +1,4 @@
+// E2E: printing enum variants directly shows the bare name
+enum Status { Active, Inactive, Pending }
+print(Status::Active);
+print(Status::Pending);

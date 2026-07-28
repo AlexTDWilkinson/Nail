@@ -1,0 +1,4 @@
+// E2E: filter over empty array yields empty array
+empty_nums:a:i = [];
+kept:a:i = filter num in empty_nums { y num > 0; };
+print(kept);

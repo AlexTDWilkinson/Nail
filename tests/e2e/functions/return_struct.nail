@@ -1,0 +1,8 @@
+// E2E: function returning a struct
+struct Point { x_coord:i, y_coord:i }
+f make_point(x_input:i, y_input:i):Point {
+    r Point { x_coord = x_input, y_coord = y_input };
+}
+created:Point = make_point(2, 8);
+print(created);
+print(created.y_coord);

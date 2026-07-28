@@ -1,0 +1,5 @@
+// E2E: string equality and inequality
+print(`abc` == `abc`);
+print(`abc` == `abd`);
+print(`abc` != `abd`);
+print(`` == ``);

@@ -1,0 +1,5 @@
+// E2E: while with a false condition never executes its body
+while false max 5 {
+    print(`never`);
+}
+print(`skipped`);

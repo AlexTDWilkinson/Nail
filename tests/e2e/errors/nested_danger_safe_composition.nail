@@ -1,0 +1,10 @@
+// E2E: nested composition of danger around safe
+f divide_pair(top_num:i, bottom_num:i):i!e {
+    if {
+        bottom_num == 0 => { r e(`zero divisor`); },
+        else => { r top_num / bottom_num; }
+    }
+}
+f fallback_one(error_msg:e):i { r 1; }
+result_val:i = danger(divide_pair(100, safe(divide_pair(5, 0), fallback_one)));
+print(result_val);

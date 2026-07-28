@@ -1,0 +1,2 @@
+// E2E: print with mixed argument types in one call
+print(`int:`, 7, `float:`, 2.5, `bool:`, true);

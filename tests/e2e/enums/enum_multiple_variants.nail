@@ -1,0 +1,7 @@
+// E2E: enum with many variants assigned and printed
+enum Weekday { Monday, Tuesday, Wednesday, Thursday, Friday }
+start_day:Weekday = Weekday::Monday;
+end_day:Weekday = Weekday::Friday;
+print(start_day);
+print(end_day);
+print(start_day != end_day);

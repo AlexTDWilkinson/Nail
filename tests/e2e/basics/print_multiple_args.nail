@@ -1,0 +1,7 @@
+// E2E: print with multiple arguments joins them with single spaces
+name:s = `world`;
+num:i = 42;
+flag:b = true;
+print(`hello`, name);
+print(`num is`, num);
+print(`flag is`, flag);

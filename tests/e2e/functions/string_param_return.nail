@@ -1,0 +1,5 @@
+// E2E: function with string parameter and string return
+f shout(message:s):s {
+    r string_to_uppercase(message);
+}
+print(shout(`nail rocks`));

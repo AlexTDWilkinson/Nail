@@ -1,0 +1,4 @@
+// E2E: map over string array with string_to_uppercase
+words:a:s = [`apple`, `pear`];
+upper_words:a:s = map word in words { y string_to_uppercase(word); };
+print(upper_words);

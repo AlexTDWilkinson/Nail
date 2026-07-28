@@ -1,0 +1,4 @@
+// E2E: map with index parameter multiplying element by position
+nums:a:i = [10, 20, 30];
+scaled:a:i = map num idx in nums { y num * idx; };
+print(scaled);

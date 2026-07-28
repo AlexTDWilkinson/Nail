@@ -1,0 +1,9 @@
+// E2E: recursive sum from 1 to n
+f sum_to(num:i):i {
+    r if {
+        num <= 0 => { r 0; },
+        else => { r num + sum_to(num - 1); }
+    };
+}
+print(sum_to(10));
+print(sum_to(25));

@@ -1,0 +1,6 @@
+// E2E: for loop over an array of structs with field access
+struct Pet { pet_name:s, legs:i }
+pets:a:Pet = [Pet { pet_name = `rex`, legs = 4 }, Pet { pet_name = `tweety`, legs = 2 }];
+for pet in pets {
+    print(pet.pet_name, pet.legs);
+}

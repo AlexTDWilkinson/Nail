@@ -1,0 +1,5 @@
+// E2E: negative float literals
+print(-1.5);
+print(-0.25);
+neg_float:f = -3.75;
+print(neg_float);

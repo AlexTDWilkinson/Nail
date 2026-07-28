@@ -1,0 +1,6 @@
+// E2E: safe handles float_from parse failure
+f parse_fallback(error_msg:e):f {
+    print(`float parse failed`);
+    r 0.0;
+}
+print(safe(float_from(`xyz`), parse_fallback));

@@ -1,0 +1,4 @@
+// E2E: string inequality comparison in an if condition
+first_name:s = `alice`;
+second_name:s = `bob`;
+if { first_name != second_name => { print(`different`); }, else => { print(`same`); } }

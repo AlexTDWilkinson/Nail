@@ -1,0 +1,4 @@
+// E2E: array_length on an array of enum values
+enum Tile { Grass, Water, Rock }
+board:a:Tile = [Tile::Grass, Tile::Water, Tile::Rock, Tile::Grass];
+print(array_length(board));

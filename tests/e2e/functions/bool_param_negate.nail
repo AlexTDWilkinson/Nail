@@ -1,0 +1,6 @@
+// E2E: function with boolean parameter and boolean return
+f negate(flag:b):b {
+    r !flag;
+}
+print(negate(true));
+print(negate(false));

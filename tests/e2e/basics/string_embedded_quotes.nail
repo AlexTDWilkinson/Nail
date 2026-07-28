@@ -1,0 +1,4 @@
+// E2E: string with embedded double quotes
+print(`she said "hello" loudly`);
+quoted:s = `a "quoted" word`;
+print(quoted);

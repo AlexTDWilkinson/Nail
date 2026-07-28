@@ -1,0 +1,8 @@
+// E2E: if expression nested inside a branch of another if expression
+x_val:i = 7;
+y_val:i = 3;
+result_val:s = if {
+    x_val > 5 => { r if { y_val > 5 => { r `both big`; }, else => { r `x big only`; } }; },
+    else => { r `x small`; }
+};
+print(result_val);

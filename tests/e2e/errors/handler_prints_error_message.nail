@@ -1,0 +1,9 @@
+// E2E: error handler receives and prints the error message
+f always_fails(value:i):i!e {
+    r e(`custom failure text`);
+}
+f report(error_msg:e):i {
+    print(error_msg);
+    r 99;
+}
+print(safe(always_fails(1), report));

@@ -1,0 +1,5 @@
+// E2E: struct field in if expression condition
+struct Player { score:i }
+gamer:Player = Player { score = 85 };
+rank:s = if { gamer.score >= 90 => { r `gold`; }, gamer.score >= 80 => { r `silver`; }, else => { r `bronze`; } };
+print(rank);

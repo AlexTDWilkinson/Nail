@@ -1,0 +1,4 @@
+// E2E: reduce counting elements matching a predicate
+nums:a:i = [4, 7, 10, 3, 8];
+even_count:i = reduce acc num in nums from 0 { y if { num % 2 == 0 => { r acc + 1; }, else => { r acc; } }; };
+print(even_count);

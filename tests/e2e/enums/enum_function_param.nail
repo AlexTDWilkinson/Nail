@@ -1,0 +1,7 @@
+// E2E: enum passed as a function parameter
+enum Direction { North, South }
+f is_north(dir:Direction):b {
+    r dir == Direction::North;
+}
+print(is_north(Direction::North));
+print(is_north(Direction::South));

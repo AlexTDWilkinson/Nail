@@ -1,0 +1,6 @@
+// E2E: function taking a string array parameter
+f join_words(words:a:s):s {
+    r string_join(words, ` `);
+}
+parts:a:s = [`nail`, `is`, `fun`];
+print(join_words(parts));

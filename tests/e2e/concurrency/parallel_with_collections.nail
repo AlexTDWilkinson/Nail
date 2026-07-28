@@ -1,0 +1,8 @@
+// E2E: parallel block running collection operations
+nums:a:i = [1, 2, 3, 4];
+p
+    squares:a:i = map num in nums { y num * num; };
+    total:i = reduce acc num in nums from 0 { y acc + num; };
+/p
+print(squares);
+print(total);

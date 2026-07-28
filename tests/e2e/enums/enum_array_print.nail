@@ -1,0 +1,4 @@
+// E2E: array of enum values prints bare variant names
+enum Color { Red, Green, Blue }
+palette:a:Color = [Color::Red, Color::Blue, Color::Red];
+print(palette);

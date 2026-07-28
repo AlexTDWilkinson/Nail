@@ -1,0 +1,4 @@
+// E2E: float addition with exact halves and quarters
+print(1.5 + 2.25);
+print(0.5 + 0.5);
+print(0.25 + 0.25);

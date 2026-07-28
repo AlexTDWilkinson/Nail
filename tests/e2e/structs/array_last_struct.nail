@@ -1,0 +1,5 @@
+// E2E: array_last on an array of structs
+struct Stop { name:s }
+route:a:Stop = [Stop { name = `alpha` }, Stop { name = `omega` }];
+final_stop:Stop = danger(array_last(route));
+print(final_stop.name);

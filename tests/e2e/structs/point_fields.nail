@@ -1,0 +1,6 @@
+// E2E: struct declaration, instantiation, field access
+struct Point { x_coord:i, y_coord:i }
+origin_point:Point = Point { x_coord = 3, y_coord = 4 };
+print(origin_point.x_coord);
+print(origin_point.y_coord);
+print(`sum is`, origin_point.x_coord + origin_point.y_coord);

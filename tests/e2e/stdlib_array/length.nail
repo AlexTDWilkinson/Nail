@@ -1,0 +1,5 @@
+// E2E: array_length on non-empty and empty arrays
+nums:a:i = [10, 20, 30];
+empty_list:a:i = [];
+print(array_length(nums));
+print(array_length(empty_list));

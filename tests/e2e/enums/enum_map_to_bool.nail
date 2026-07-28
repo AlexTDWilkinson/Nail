@@ -1,0 +1,5 @@
+// E2E: mapping enum values to booleans in a map body
+enum Light { On, Off }
+lights:a:Light = [Light::On, Light::Off, Light::On];
+states:a:b = map bulb in lights { y bulb == Light::On; };
+print(states);

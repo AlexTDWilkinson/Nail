@@ -1,0 +1,6 @@
+// E2E: basic loop that prints once and breaks
+loop {
+    print(`once`);
+    break;
+}
+print(`after loop`);

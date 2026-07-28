@@ -1,0 +1,12 @@
+// E2E: safe does not run handler on success
+f checked_double(value:i):i!e {
+    if {
+        value > 0 => { r value * 2; },
+        else => { r e(`not positive`); }
+    }
+}
+f loud_fallback(error_msg:e):i {
+    print(`should not print`);
+    r -1;
+}
+print(safe(checked_double(21), loud_fallback));

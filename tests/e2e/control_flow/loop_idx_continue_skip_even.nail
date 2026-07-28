@@ -1,0 +1,9 @@
+// E2E: continue inside loop idx skips even indexes, break terminates
+loop idx {
+    if {
+        idx >= 7 => { break; },
+        idx % 2 == 0 => { continue; },
+        else => { print(idx); }
+    }
+}
+print(`odds done`);

@@ -1,0 +1,4 @@
+// E2E: any returns false when no element matches
+nums:a:i = [1, 3, 5];
+has_even:b = any num in nums { y num % 2 == 0; };
+print(has_even);

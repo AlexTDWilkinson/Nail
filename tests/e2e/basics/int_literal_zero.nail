@@ -1,0 +1,4 @@
+// E2E: integer literal zero
+zero_val:i = 0;
+print(zero_val);
+print(0);

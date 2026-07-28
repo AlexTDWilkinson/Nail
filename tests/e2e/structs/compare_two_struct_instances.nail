@@ -1,0 +1,6 @@
+// E2E: comparing fields between two struct instances
+struct Runner { speed:i }
+fast_runner:Runner = Runner { speed = 12 };
+slow_runner:Runner = Runner { speed = 8 };
+print(fast_runner.speed > slow_runner.speed);
+print(fast_runner.speed - slow_runner.speed);

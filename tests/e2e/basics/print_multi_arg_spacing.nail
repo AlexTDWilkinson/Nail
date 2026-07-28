@@ -1,0 +1,4 @@
+// E2E: multi-argument print joins with exactly one space
+print(1, 2, 3);
+print(`value is`, 42);
+print(`a`, `b`, `c`, `d`);

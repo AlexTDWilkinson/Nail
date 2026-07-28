@@ -1,0 +1,4 @@
+// E2E: array_length on an array of structs
+struct Node { id_val:i }
+nodes:a:Node = [Node { id_val = 1 }, Node { id_val = 2 }, Node { id_val = 3 }];
+print(array_length(nodes));

@@ -1,0 +1,7 @@
+// E2E: function returning combined boolean logic
+f in_range(num:i, low:i, high:i):b {
+    r num >= low && num <= high;
+}
+print(in_range(5, 1, 10));
+print(in_range(15, 1, 10));
+print(in_range(1, 1, 10) || in_range(99, 1, 10));

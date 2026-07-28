@@ -1,0 +1,6 @@
+// E2E: filtering an array of enums by variant
+enum Color { Red, Green, Blue }
+palette:a:Color = [Color::Red, Color::Blue, Color::Red, Color::Green];
+reds:a:Color = filter col in palette { y col == Color::Red; };
+print(array_length(reds));
+print(reds);

@@ -1,0 +1,6 @@
+// E2E: nested structs and nested field access chains
+struct Inner { value:i }
+struct Outer { inner_part:Inner, label:s }
+wrapped:Outer = Outer { inner_part = Inner { value = 42 }, label = `wrap` };
+print(wrapped.inner_part.value);
+print(wrapped.label);

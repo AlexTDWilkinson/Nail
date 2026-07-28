@@ -1,0 +1,4 @@
+// E2E: nested parentheses group correctly
+print(((2 + 3) * (4 - 1)));
+print((2 * (3 + (4 - 2))));
+print((((1 + 1)) * ((2 + 2))));

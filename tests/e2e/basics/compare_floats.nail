@@ -1,0 +1,5 @@
+// E2E: float comparison operators
+print(1.5 < 2.5);
+print(2.5 == 2.5);
+print(3.5 != 3.5);
+print(0.25 >= 0.5);

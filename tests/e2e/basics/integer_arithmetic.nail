@@ -1,0 +1,7 @@
+// E2E: integer arithmetic and operator precedence
+print(2 + 3 * 4);
+print((2 + 3) * 4);
+print(20 - 10 / 2);
+print(10 - 5 + 3);
+print(7 % 3);
+print(-8 / 2);

@@ -1,0 +1,6 @@
+// E2E: arrays of structs with array_get and danger
+struct Pair { left_val:i, right_val:i }
+pairs:a:Pair = [Pair { left_val = 1, right_val = 2 }, Pair { left_val = 3, right_val = 4 }];
+second_pair:Pair = danger(array_get(pairs, 1));
+print(second_pair.left_val);
+print(second_pair.right_val);

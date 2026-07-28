@@ -1,0 +1,5 @@
+// E2E: printing a nested struct shows nested Debug format
+struct Inner { value:i }
+struct Outer { inner_part:Inner }
+nested:Outer = Outer { inner_part = Inner { value = 5 } };
+print(nested);

@@ -1,0 +1,13 @@
+// E2E: error handling with danger and safe
+f divide(dividend:i, divisor:i):i!e {
+    if {
+        divisor == 0 => { r e(`Division by zero`); },
+        else => { r dividend / divisor; }
+    }
+}
+f fallback(error_msg:e):i {
+    print(`error handled`);
+    r -1;
+}
+print(danger(divide(10, 2)));
+print(safe(divide(10, 0), fallback));

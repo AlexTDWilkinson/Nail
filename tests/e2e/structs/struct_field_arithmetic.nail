@@ -1,0 +1,7 @@
+// E2E: arithmetic operators on struct fields
+struct Dim { width:i, height:i }
+panel:Dim = Dim { width = 6, height = 7 };
+print(panel.width * panel.height);
+print(panel.width + panel.height);
+print(panel.height - panel.width);
+print(panel.height % panel.width);

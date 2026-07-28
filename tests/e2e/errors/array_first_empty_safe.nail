@@ -1,0 +1,7 @@
+// E2E: safe handles array_first on an empty array
+f no_first(error_msg:e):i {
+    print(`empty array`);
+    r 0;
+}
+empty_nums:a:i = [];
+print(safe(array_first(empty_nums), no_first));

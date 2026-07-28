@@ -1,0 +1,6 @@
+// E2E: function with float parameter and float return
+f halve(value:f):f {
+    r value / 2.0;
+}
+print(halve(9.0));
+print(halve(1.0));

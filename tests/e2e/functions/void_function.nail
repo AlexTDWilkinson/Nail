@@ -1,0 +1,6 @@
+// E2E: void function that only prints
+f announce(name:s):v {
+    print(`hello`, name);
+}
+announce(`world`);
+announce(`nail`);

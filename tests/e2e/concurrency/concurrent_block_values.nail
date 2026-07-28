@@ -1,0 +1,6 @@
+// E2E: concurrent block computes values usable after the block
+c
+    left_val:i = 10;
+    right_val:i = 32;
+/c
+print(left_val + right_val);

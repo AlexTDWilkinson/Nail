@@ -1,0 +1,4 @@
+// E2E: standalone if statement without an else branch
+value_num:i = 5;
+if { value_num > 0 => { print(`positive`); } }
+print(`after`);

@@ -1,0 +1,10 @@
+// E2E: safe on success and failure paths of the same function
+f checked_sub(minuend:i, subtrahend:i):i!e {
+    if {
+        subtrahend > minuend => { r e(`would go negative`); },
+        else => { r minuend - subtrahend; }
+    }
+}
+f to_zero(error_msg:e):i { r 0; }
+print(safe(checked_sub(9, 4), to_zero));
+print(safe(checked_sub(4, 9), to_zero));

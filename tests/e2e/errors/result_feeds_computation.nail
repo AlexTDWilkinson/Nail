@@ -1,0 +1,7 @@
+// E2E: unwrapped result values feed further computation
+f parse_and_add(first_text:s, second_text:s):i {
+    first_num:i = danger(int_from(first_text));
+    second_num:i = danger(int_from(second_text));
+    r first_num + second_num;
+}
+print(parse_and_add(`10`, `32`));

@@ -1,0 +1,6 @@
+// E2E: comparing struct fields with relational operators
+struct Pair { left_val:i, right_val:i }
+sample:Pair = Pair { left_val = 3, right_val = 8 };
+print(sample.left_val < sample.right_val);
+print(sample.left_val == sample.right_val);
+print(sample.right_val >= 8);

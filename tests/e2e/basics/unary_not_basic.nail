@@ -1,0 +1,5 @@
+// E2E: logical not operator
+print(!true);
+print(!false);
+flag_val:b = true;
+print(!flag_val);

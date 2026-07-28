@@ -1,0 +1,10 @@
+// E2E: recursive countdown that prints on the way down
+f countdown(num:i):i {
+    print(num);
+    r if {
+        num <= 1 => { r 0; },
+        else => { r countdown(num - 1); }
+    };
+}
+final_val:i = countdown(3);
+print(`liftoff`, final_val);

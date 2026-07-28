@@ -1,0 +1,6 @@
+// E2E: for loop over an empty array produces no iterations
+empty_nums:a:i = [];
+for num in empty_nums {
+    print(num);
+}
+print(`no iterations`);

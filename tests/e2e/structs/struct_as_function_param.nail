@@ -1,0 +1,5 @@
+// E2E: struct as function parameter
+struct Circle { radius:i }
+f doubled_radius(shape:Circle):i { r shape.radius * 2; }
+unit_circle:Circle = Circle { radius = 5 };
+print(doubled_radius(unit_circle));

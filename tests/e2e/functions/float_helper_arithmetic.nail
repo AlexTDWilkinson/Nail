@@ -1,0 +1,5 @@
+// E2E: float function results feeding arithmetic
+f area_of(width_val:f, height_val:f):f {
+    r width_val * height_val;
+}
+print(area_of(2.5, 4.0) + area_of(1.0, 0.5));

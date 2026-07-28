@@ -1,0 +1,7 @@
+// E2E: safe handles array_get index out of bounds
+f missing_item(error_msg:e):i {
+    print(`index out of bounds`);
+    r -1;
+}
+nums:a:i = [10, 20, 30];
+print(safe(array_get(nums, 9), missing_item));

@@ -1,0 +1,9 @@
+// E2E: if expression with four branches assigned to a variable
+day_num:i = 3;
+day_name:s = if {
+    day_num == 1 => { r `mon`; },
+    day_num == 2 => { r `tue`; },
+    day_num == 3 => { r `wed`; },
+    else => { r `other`; }
+};
+print(day_name);

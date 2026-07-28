@@ -1,0 +1,5 @@
+// E2E: enum variant equality comparison
+enum Fruit { Apple, Banana }
+picked:Fruit = Fruit::Apple;
+print(picked == Fruit::Apple);
+print(picked == Fruit::Banana);

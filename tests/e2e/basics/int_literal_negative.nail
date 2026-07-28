@@ -1,0 +1,4 @@
+// E2E: negative integer literals
+print(-42);
+neg_val:i = -7;
+print(neg_val);

@@ -1,0 +1,7 @@
+// E2E: filter struct array on a boolean field
+struct Task { title:s, done:b }
+tasks:a:Task = [Task { title = `wash`, done = true }, Task { title = `cook`, done = false }, Task { title = `shop`, done = true }];
+done_tasks:a:Task = filter task in tasks { y task.done; };
+done_titles:a:s = map task in done_tasks { y task.title; };
+print(done_titles);
+print(array_length(done_tasks));

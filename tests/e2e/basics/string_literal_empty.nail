@@ -1,0 +1,5 @@
+// E2E: empty string prints as a blank line
+print(``);
+empty_str:s = ``;
+print(empty_str);
+print(`after`);

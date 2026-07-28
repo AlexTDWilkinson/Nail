@@ -1,0 +1,6 @@
+// E2E: function with four int parameters
+f sum_four(first:i, second:i, third:i, fourth:i):i {
+    r first + second + third + fourth;
+}
+print(sum_four(1, 2, 3, 4));
+print(sum_four(10, 20, 30, 40));

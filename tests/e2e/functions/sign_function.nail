@@ -1,0 +1,11 @@
+// E2E: function returning from multiple branches
+f sign_of(num:i):i {
+    r if {
+        num > 0 => { r 1; },
+        num < 0 => { r -1; },
+        else => { r 0; }
+    };
+}
+print(sign_of(42));
+print(sign_of(-7));
+print(sign_of(0));

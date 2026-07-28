@@ -1,0 +1,5 @@
+// E2E: variable declaration and use
+answer_val:i = 42;
+print(answer_val);
+message_text:s = `stored`;
+print(message_text);

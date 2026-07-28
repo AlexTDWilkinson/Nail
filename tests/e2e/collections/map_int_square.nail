@@ -1,0 +1,4 @@
+// E2E: map over int array squaring each element
+nums:a:i = [1, 2, 3, 5];
+squares:a:i = map num in nums { y num * num; };
+print(squares);

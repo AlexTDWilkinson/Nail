@@ -1,0 +1,9 @@
+// E2E: concurrent block feeding a parallel block
+c
+    base_text:s = `hello`;
+    times_val:i = 2;
+/c
+p
+    repeated_text:s = string_repeat(base_text, times_val);
+/p
+print(repeated_text);

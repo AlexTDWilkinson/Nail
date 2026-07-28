@@ -1,0 +1,5 @@
+// E2E: if expression selecting a string from an enum value
+enum Size { Small, Large }
+chosen:Size = Size::Large;
+label_text:s = if { chosen == Size::Small => { r `small`; }, else => { r `large`; } };
+print(label_text);

@@ -1,0 +1,5 @@
+// E2E: nested call expressions f(g(h(x)))
+f add_one(num:i):i { r num + 1; }
+f triple(num:i):i { r num * 3; }
+f minus_two(num:i):i { r num - 2; }
+print(add_one(triple(minus_two(10))));

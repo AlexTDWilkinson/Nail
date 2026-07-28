@@ -1,0 +1,6 @@
+// E2E: if condition combining and, or, and not
+temp_val:i = 72;
+raining:b = false;
+windy:b = true;
+nice:b = if { temp_val > 60 && (!raining || !windy) => { r true; }, else => { r false; } };
+print(nice);

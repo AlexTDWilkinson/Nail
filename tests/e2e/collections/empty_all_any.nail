@@ -1,0 +1,6 @@
+// E2E: all over empty array is true, any over empty array is false
+empty_nums:a:i = [];
+all_result:b = all num in empty_nums { y num > 0; };
+any_result:b = any num in empty_nums { y num > 0; };
+print(all_result);
+print(any_result);

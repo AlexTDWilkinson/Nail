@@ -1,0 +1,7 @@
+// E2E: safe handles math_divide by zero and handler prints message
+f div_fallback(error_msg:e):i {
+    print(error_msg);
+    r 0;
+}
+quotient:i = safe(math_divide(1, 0), div_fallback);
+print(quotient);

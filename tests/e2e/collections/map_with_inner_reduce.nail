@@ -1,0 +1,4 @@
+// E2E: map over nested array with reduce inside the body computing row sums
+grid:a:a:i = [[1, 2, 3], [4, 5]];
+row_sums:a:i = map row in grid { y reduce acc cell in row from 0 { y acc + cell; }; };
+print(row_sums);

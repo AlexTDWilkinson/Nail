@@ -1,0 +1,13 @@
+// E2E: outer loop breaks after the inner loop finishes one full pass
+loop outer_idx {
+    if {
+        outer_idx >= 1 => { break; },
+        else => {
+            loop inner_idx {
+                if { inner_idx >= 3 => { break; }, else => { print(inner_idx); } }
+            }
+            print(`inner finished`);
+        }
+    }
+}
+print(`outer finished`);

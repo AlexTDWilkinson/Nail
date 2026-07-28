@@ -1,0 +1,4 @@
+// E2E: multiplication with negative operands
+print(6 * 7);
+print(-6 * 7);
+print((-6) * (-7));

@@ -1,0 +1,5 @@
+// E2E: reduce summing a struct field across an array of structs
+struct Item { label:s, cost:i }
+items:a:Item = [Item { label = `pen`, cost = 3 }, Item { label = `book`, cost = 12 }, Item { label = `bag`, cost = 25 }];
+total_cost:i = reduce acc item in items from 0 { y acc + item.cost; };
+print(total_cost);

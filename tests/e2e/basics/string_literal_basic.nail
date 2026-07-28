@@ -1,0 +1,4 @@
+// E2E: basic string literal printing
+print(`hello world`);
+greeting:s = `nail speaks`;
+print(greeting);

@@ -1,0 +1,4 @@
+// E2E: filter string array by string_length predicate
+words:a:s = [`hi`, `hello`, `hey`, `greetings`];
+long_words:a:s = filter word in words { y string_length(word) > 3; };
+print(long_words);

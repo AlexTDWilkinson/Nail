@@ -1,0 +1,9 @@
+// E2E: recursion over an array by index
+f sum_from(nums:a:i, idx:i):i {
+    r if {
+        idx >= array_length(nums) => { r 0; },
+        else => { r danger(array_get(nums, idx)) + sum_from(nums, idx + 1); }
+    };
+}
+values:a:i = [3, 1, 4, 1, 5];
+print(sum_from(values, 0));

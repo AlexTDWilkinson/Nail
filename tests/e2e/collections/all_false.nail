@@ -1,0 +1,4 @@
+// E2E: all returns false when one element fails
+nums:a:i = [2, 4, 5];
+all_even:b = all num in nums { y num % 2 == 0; };
+print(all_even);

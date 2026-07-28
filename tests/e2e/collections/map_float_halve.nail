@@ -1,0 +1,4 @@
+// E2E: map over float array halving each element
+amounts:a:f = [1.0, 2.5, 4.0];
+halved:a:f = map amount in amounts { y amount * 0.5; };
+print(halved);

@@ -1,0 +1,5 @@
+// E2E: map body captures an outer immutable variable
+factor:i = 3;
+nums:a:i = [1, 2, 3];
+scaled:a:i = map num in nums { y num * factor; };
+print(scaled);

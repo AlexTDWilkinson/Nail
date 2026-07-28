@@ -1,0 +1,6 @@
+// E2E: safe handles math_factorial of a negative number
+f fact_fallback(error_msg:e):i {
+    print(`factorial error`);
+    r -1;
+}
+print(safe(math_factorial(-1), fact_fallback));

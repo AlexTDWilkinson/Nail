@@ -1,0 +1,7 @@
+// E2E: map over struct array reading fields
+struct Pet { name:s, age:i }
+pets:a:Pet = [Pet { name = `Rex`, age = 3 }, Pet { name = `Mia`, age = 5 }];
+names:a:s = map pet in pets { y pet.name; };
+ages:a:i = map pet in pets { y pet.age; };
+print(names);
+print(ages);

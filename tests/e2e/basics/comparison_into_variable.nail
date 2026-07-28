@@ -1,0 +1,6 @@
+// E2E: comparison results stored in boolean variables
+is_big:b = 10 > 5;
+is_equal:b = 3 == 4;
+print(is_big);
+print(is_equal);
+print(is_big && !is_equal);

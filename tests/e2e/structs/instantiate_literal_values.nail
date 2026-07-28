@@ -1,0 +1,5 @@
+// E2E: struct instantiation with literal field values
+struct Item { count:i, price:f }
+cart_item:Item = Item { count = 3, price = 2.5 };
+print(cart_item.count);
+print(cart_item.price);

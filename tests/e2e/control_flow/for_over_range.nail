@@ -1,0 +1,4 @@
+// E2E: for loop over array_range with exclusive end
+for range_num in array_range(0, 4) {
+    print(range_num);
+}

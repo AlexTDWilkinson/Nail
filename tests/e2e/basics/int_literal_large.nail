@@ -1,0 +1,4 @@
+// E2E: large i64 integer literals
+print(9223372036854775807);
+print(-9223372036854775807);
+print(1000000000000);

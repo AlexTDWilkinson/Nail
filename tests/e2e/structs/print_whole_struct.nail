@@ -1,0 +1,4 @@
+// E2E: printing a whole struct uses Debug format
+struct Pt { x_val:i, y_val:i }
+spot:Pt = Pt { x_val = 1, y_val = 2 };
+print(spot);

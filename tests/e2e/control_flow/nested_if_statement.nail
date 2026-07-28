@@ -1,0 +1,8 @@
+// E2E: if statement nested inside another if statement branch
+outer_num:i = 10;
+if {
+    outer_num > 0 => {
+        if { outer_num > 5 => { print(`big positive`); }, else => { print(`small positive`); } }
+    },
+    else => { print(`non positive`); }
+}

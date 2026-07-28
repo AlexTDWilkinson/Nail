@@ -1,0 +1,5 @@
+// E2E: function results used inside arithmetic
+f base_price():i { r 100; }
+f tax_amount(price:i):i { r price / 10; }
+print(base_price() + tax_amount(base_price()));
+print(base_price() * 2 - tax_amount(50));

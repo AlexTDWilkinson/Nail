@@ -1,0 +1,6 @@
+// E2E: for loop when clause that filters out every element
+nums:a:i = [1, 2, 3];
+for num in nums when num > 100 {
+    print(num);
+}
+print(`filtered all`);

@@ -1,0 +1,6 @@
+// E2E: function taking an int array parameter
+f total_of(nums:a:i):i {
+    r array_sum(nums);
+}
+values:a:i = [1, 2, 3, 4];
+print(total_of(values));

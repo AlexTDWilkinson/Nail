@@ -1,0 +1,6 @@
+// E2E: struct copy assignment to a new variable
+struct Coord { x_val:i, y_val:i }
+original:Coord = Coord { x_val = 7, y_val = 9 };
+copied:Coord = original;
+print(copied.x_val);
+print(copied.y_val);

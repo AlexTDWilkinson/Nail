@@ -1,0 +1,8 @@
+// E2E: struct with int float string bool and array fields
+struct Mixed { count:i, ratio:f, label:s, active:b, nums:a:i }
+sample:Mixed = Mixed { count = 4, ratio = 1.5, label = `mix`, active = true, nums = [1, 2, 3] };
+print(sample.count);
+print(sample.ratio);
+print(sample.label);
+print(sample.active);
+print(sample.nums);

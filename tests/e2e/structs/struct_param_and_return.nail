@@ -1,0 +1,10 @@
+// E2E: function that both takes and returns a struct
+struct Pt { x_val:i, y_val:i }
+f translate(point:Pt, dx_amount:i, dy_amount:i):Pt {
+    moved:Pt = Pt { x_val = point.x_val + dx_amount, y_val = point.y_val + dy_amount };
+    r moved;
+}
+start_pt:Pt = Pt { x_val = 1, y_val = 1 };
+end_pt:Pt = translate(start_pt, 4, 5);
+print(end_pt.x_val);
+print(end_pt.y_val);

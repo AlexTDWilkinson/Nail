@@ -1,0 +1,4 @@
+// E2E: map with index over string array combining length and position
+words:a:s = [`zero`, `one`, `two`];
+combined:a:i = map word idx in words { y string_length(word) + idx; };
+print(combined);

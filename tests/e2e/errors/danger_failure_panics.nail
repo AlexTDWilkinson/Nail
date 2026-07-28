@@ -1,0 +1,4 @@
+// E2E: danger on a failing result panics with exit code 101
+print(`attempting parse`);
+bad_num:i = danger(int_from(`not a number`));
+print(bad_num);

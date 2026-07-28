@@ -1,0 +1,5 @@
+// E2E: lexicographic string ordering comparisons
+print(`apple` < `banana`);
+print(`zebra` > `apple`);
+print(`same` <= `same`);
+print(`same` >= `samez`);

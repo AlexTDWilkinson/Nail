@@ -1,0 +1,5 @@
+// E2E: find with no match falls back via safe handler
+f fallback(error_msg:e):i { r -1; }
+nums:a:i = [1, 2, 3];
+missing:i = safe(find num in nums { y num > 99; }, fallback);
+print(missing);

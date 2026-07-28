@@ -1,0 +1,7 @@
+// E2E: concurrent block calling user functions
+f square_num(base_num:i):i { r base_num * base_num; }
+c
+    first_sq:i = square_num(5);
+    second_sq:i = square_num(6);
+/c
+print(first_sq, second_sq);

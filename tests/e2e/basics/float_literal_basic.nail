@@ -1,0 +1,5 @@
+// E2E: float literals print with a decimal point
+print(0.0);
+print(1.5);
+print(100.0);
+print(0.25);

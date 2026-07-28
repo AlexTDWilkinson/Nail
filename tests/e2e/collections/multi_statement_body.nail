@@ -1,0 +1,8 @@
+// E2E: map body with intermediate variables before yielding
+nums:a:i = [2, 3, 4];
+processed:a:i = map num in nums {
+    doubled:i = num * 2;
+    plus_one:i = doubled + 1;
+    y plus_one;
+};
+print(processed);

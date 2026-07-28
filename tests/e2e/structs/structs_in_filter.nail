@@ -1,0 +1,7 @@
+// E2E: filter array of structs by field predicate
+struct Worker { name:s, age:i }
+crew:a:Worker = [Worker { name = `Ann`, age = 30 }, Worker { name = `Ben`, age = 17 }, Worker { name = `Cal`, age = 45 }];
+adults:a:Worker = filter member in crew { y member.age >= 18; };
+print(array_length(adults));
+first_adult:Worker = danger(array_get(adults, 0));
+print(first_adult.name);

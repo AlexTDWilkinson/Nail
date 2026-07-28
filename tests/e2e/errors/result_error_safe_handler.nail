@@ -1,0 +1,12 @@
+// E2E: safe runs handler on error path
+f half_of(value:i):i!e {
+    if {
+        value % 2 == 0 => { r value / 2; },
+        else => { r e(`odd number`); }
+    }
+}
+f fallback_zero(error_msg:e):i {
+    print(`handler ran`);
+    r 0;
+}
+print(safe(half_of(7), fallback_zero));

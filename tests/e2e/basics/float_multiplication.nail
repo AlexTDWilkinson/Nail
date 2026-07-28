@@ -1,0 +1,4 @@
+// E2E: float multiplication with exact results
+print(2.5 * 4.0);
+print(0.5 * 0.5);
+print(-1.5 * 2.0);

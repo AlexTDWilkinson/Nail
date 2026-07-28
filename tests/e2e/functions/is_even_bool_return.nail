@@ -1,0 +1,6 @@
+// E2E: function returning boolean from comparison
+f is_even(num:i):b {
+    r num % 2 == 0;
+}
+print(is_even(4));
+print(is_even(7));

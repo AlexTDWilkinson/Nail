@@ -1,0 +1,4 @@
+// E2E: if condition using logical and
+age:i = 25;
+has_ticket:b = true;
+if { age >= 18 && has_ticket => { print(`enter`); }, else => { print(`denied`); } }

@@ -1,0 +1,4 @@
+// E2E: all returns true when every element matches
+nums:a:i = [2, 4, 6];
+all_even:b = all num in nums { y num % 2 == 0; };
+print(all_even);

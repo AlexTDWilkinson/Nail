@@ -1,0 +1,6 @@
+// E2E: safe handles int_from parse failure
+f parse_fallback(error_msg:e):i {
+    print(`parse failed`);
+    r -1;
+}
+print(safe(int_from(`abc`), parse_fallback));

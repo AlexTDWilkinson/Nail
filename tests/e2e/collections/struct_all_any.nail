@@ -1,0 +1,7 @@
+// E2E: all and any over struct fields
+struct Player { name:s, score:i }
+players:a:Player = [Player { name = `Ana`, score = 50 }, Player { name = `Bo`, score = 80 }];
+all_scored:b = all player in players { y player.score > 0; };
+any_high:b = any player in players { y player.score > 75; };
+print(all_scored);
+print(any_high);

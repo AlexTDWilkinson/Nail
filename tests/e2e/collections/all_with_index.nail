@@ -1,0 +1,6 @@
+// E2E: all with index parameter, true and false cases
+nums:a:i = [1, 2, 3, 4];
+ascending:b = all num idx in nums { y num == idx + 1; };
+print(ascending);
+same_as_index:b = all num idx in nums { y num == idx; };
+print(same_as_index);

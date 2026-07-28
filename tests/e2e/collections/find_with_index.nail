@@ -1,0 +1,4 @@
+// E2E: find with index parameter returning first element equal to its index
+nums:a:i = [5, 1, 7];
+matched:i = danger(find num idx in nums { y num == idx; });
+print(matched);

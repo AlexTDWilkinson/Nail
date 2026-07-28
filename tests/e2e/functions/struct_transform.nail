@@ -1,0 +1,8 @@
+// E2E: function taking and returning a struct
+struct Point { x_coord:i, y_coord:i }
+f shift_point(pt_in:Point, dx_val:i, dy_val:i):Point {
+    r Point { x_coord = pt_in.x_coord + dx_val, y_coord = pt_in.y_coord + dy_val };
+}
+start_pt:Point = Point { x_coord = 1, y_coord = 1 };
+moved:Point = shift_point(start_pt, 4, 6);
+print(moved);

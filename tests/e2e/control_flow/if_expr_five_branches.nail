@@ -1,0 +1,15 @@
+// E2E: if expression with five branches covering every branch
+f classify(score:i):s {
+    r if {
+        score >= 90 => { r `A`; },
+        score >= 80 => { r `B`; },
+        score >= 70 => { r `C`; },
+        score >= 60 => { r `D`; },
+        else => { r `F`; }
+    };
+}
+print(classify(95));
+print(classify(83));
+print(classify(71));
+print(classify(65));
+print(classify(10));

@@ -1,0 +1,7 @@
+// E2E: enum returned from a function
+enum Color { Red, Green, Blue }
+f favorite():Color {
+    r Color::Blue;
+}
+result_color:Color = favorite();
+print(result_color);

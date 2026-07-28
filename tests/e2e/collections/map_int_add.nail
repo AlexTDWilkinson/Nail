@@ -1,0 +1,4 @@
+// E2E: map over int array adding a constant
+nums:a:i = [1, 2, 3, 4];
+shifted:a:i = map num in nums { y num + 10; };
+print(shifted);

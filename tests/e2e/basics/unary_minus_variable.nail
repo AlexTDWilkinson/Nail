@@ -1,0 +1,5 @@
+// E2E: unary minus applied to variables
+num_val:i = 5;
+print(-num_val);
+float_val:f = 2.5;
+print(-float_val);

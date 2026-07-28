@@ -1,0 +1,10 @@
+// E2E: map over array of structs producing new structs
+struct Pt { x_val:i, y_val:i }
+points:a:Pt = [Pt { x_val = 1, y_val = 2 }, Pt { x_val = 3, y_val = 4 }];
+shifted:a:Pt = map point in points {
+    moved:Pt = Pt { x_val = point.x_val + 10, y_val = point.y_val + 10 };
+    y moved;
+};
+first_shifted:Pt = danger(array_get(shifted, 0));
+print(first_shifted.x_val);
+print(first_shifted.y_val);
