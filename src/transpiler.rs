@@ -1,8 +1,29 @@
+use crate::common::{CodeError, CodeSpan};
 use crate::lexer::{NailDataTypeDescriptor, Operation};
 use crate::parser::ASTNode;
 use crate::stdlib_registry::{self, CrateDependency, StructDerive};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+
+/// Per-function (or per-program) bookkeeping that lets identifier references
+/// transpile to moves instead of clones. Nail is fully immutable, so replacing
+/// a clone with a move can never change behavior — a wrong decision here fails
+/// Rust compilation loudly rather than miscompiling silently.
+struct MoveContext {
+    /// Remaining syntactic uses of each variable, in emission order. A use that
+    /// is emitted outside the Identifier arm (struct field access, assignment
+    /// target) is counted but never decremented, which pins the count above
+    /// zero and keeps the variable clone-only.
+    remaining: HashMap<String, usize>,
+    /// Variables declared in THIS context (declarations and params). Only
+    /// activated variables may be moved.
+    activated: HashSet<String>,
+    /// Variables referenced anywhere execution can revisit the reference
+    /// (loop bodies, closure bodies, parallel blocks) — never moved.
+    never_move: HashSet<String>,
+    /// Declared types, used to emit Copy types (i/f/b) bare with no clone.
+    types: HashMap<String, NailDataTypeDescriptor>,
+}
 
 pub struct Transpiler {
     indent_level: usize,
@@ -12,18 +33,20 @@ pub struct Transpiler {
     used_stdlib_functions: HashSet<String>,
     in_collection_operation: bool,
     stdlib_types: HashMap<String, String>,  // Maps stdlib type names to their full paths
+    move_contexts: Vec<MoveContext>,
 }
 
 impl Transpiler {
     pub fn new() -> Self {
-        Transpiler { 
-            indent_level: 0, 
-            scope_level: 0, 
-            current_function_return_type: None, 
-            current_function_name: None, 
-            used_stdlib_functions: HashSet::new(), 
+        Transpiler {
+            indent_level: 0,
+            scope_level: 0,
+            current_function_return_type: None,
+            current_function_name: None,
+            used_stdlib_functions: HashSet::new(),
             in_collection_operation: false,
             stdlib_types: HashMap::new(),
+            move_contexts: Vec::new(),
         }
     }
 
@@ -54,6 +77,65 @@ impl Transpiler {
         }
 
         required_crates
+    }
+
+    /// Cargo features of the `nail` crate required by the stdlib functions this
+    /// program uses (heavy optional dependencies like DuckDB are feature-gated).
+    pub fn get_required_nail_features(&self) -> Vec<&'static str> {
+        let mut features: Vec<&'static str> = self.get_required_dependencies().iter().filter_map(|dep| dep.nail_feature()).collect();
+        features.sort();
+        features.dedup();
+        features
+    }
+
+    /// Generate a complete Cargo.toml for a transpiled program based on the
+    /// stdlib functions it actually uses. Crates gated behind a nail feature
+    /// are delivered through the nail crate's feature flags rather than as
+    /// direct dependencies.
+    pub fn generate_cargo_toml(&self, package_name: &str, nail_path: &str) -> String {
+        use std::collections::BTreeSet;
+
+        // Crates the generated code references unconditionally (see transpile() header)
+        let mut dep_lines: BTreeSet<String> = BTreeSet::new();
+        dep_lines.insert(CrateDependency::Tokio.to_cargo_dep().to_string());
+        dep_lines.insert("rayon = \"1.10.0\"".to_string());
+        dep_lines.insert("futures = \"0.3\"".to_string());
+        dep_lines.insert(CrateDependency::DashMap.to_cargo_dep().to_string());
+        dep_lines.insert(CrateDependency::Serde.to_cargo_dep().to_string());
+
+        let mut nail_features: BTreeSet<&'static str> = BTreeSet::new();
+        for dep in self.get_required_dependencies() {
+            match dep.nail_feature() {
+                Some(feature) => {
+                    nail_features.insert(feature);
+                }
+                None => {
+                    dep_lines.insert(dep.to_cargo_dep().to_string());
+                }
+            }
+        }
+
+        let nail_dep = if nail_features.is_empty() {
+            format!("nail = {{ path = \"{}\" }}", nail_path)
+        } else {
+            let features: Vec<String> = nail_features.iter().map(|feature| format!("\"{}\"", feature)).collect();
+            format!("nail = {{ path = \"{}\", features = [{}] }}", nail_path, features.join(", "))
+        };
+
+        let mut manifest = String::new();
+        manifest.push_str("[package]\n");
+        manifest.push_str(&format!("name = \"{}\"\n", package_name));
+        manifest.push_str("version = \"0.1.0\"\n");
+        manifest.push_str("edition = \"2021\"\n");
+        manifest.push('\n');
+        manifest.push_str("[dependencies]\n");
+        manifest.push_str(&nail_dep);
+        manifest.push('\n');
+        for line in dep_lines {
+            manifest.push_str(&line);
+            manifest.push('\n');
+        }
+        manifest
     }
     
     fn collect_used_functions(&mut self, node: &ASTNode) {
@@ -199,13 +281,519 @@ impl Transpiler {
                 self.collect_used_functions(left);
                 self.collect_used_functions(right);
             }
-            _ => {
-                panic!("collect_used_functions: unhandled node type");
+            ASTNode::StructInstantiationField { value, .. } => {
+                self.collect_used_functions(value);
             }
         }
     }
 
-    pub fn transpile(&mut self, node: &ASTNode) -> Result<String, std::fmt::Error> {
+    /// Collect free variables referenced in `node` that are not in `bound`.
+    /// Used to determine which outer-scope variables a generated closure captures,
+    /// so they can be cloned before being moved into an `async move` block.
+    fn collect_free_variables(node: &ASTNode, bound: &mut HashSet<String>, free: &mut std::collections::BTreeSet<String>) {
+        match node {
+            ASTNode::Program { statements, .. } | ASTNode::Block { statements, .. } | ASTNode::ParallelBlock { statements, .. } | ASTNode::ConcurrentBlock { statements, .. } => {
+                // Statements form a sequence: declarations bind names for later statements
+                let mut inner_bound = bound.clone();
+                for stmt in statements {
+                    Self::collect_free_variables(stmt, &mut inner_bound, free);
+                }
+            }
+            ASTNode::FunctionDeclaration { name, params, body, .. } => {
+                bound.insert(name.clone());
+                let mut inner_bound = bound.clone();
+                for (param_name, _) in params {
+                    inner_bound.insert(param_name.clone());
+                }
+                Self::collect_free_variables(body, &mut inner_bound, free);
+            }
+            ASTNode::LambdaDeclaration { params, body, .. } => {
+                let mut inner_bound = bound.clone();
+                for (param_name, _) in params {
+                    inner_bound.insert(param_name.clone());
+                }
+                Self::collect_free_variables(body, &mut inner_bound, free);
+            }
+            ASTNode::FunctionCall { args, .. } => {
+                for arg in args {
+                    Self::collect_free_variables(arg, bound, free);
+                }
+            }
+            ASTNode::ConstDeclaration { name, value, .. } => {
+                Self::collect_free_variables(value, bound, free);
+                bound.insert(name.clone());
+            }
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+                for (condition, branch) in condition_branches {
+                    Self::collect_free_variables(condition, bound, free);
+                    Self::collect_free_variables(branch, &mut bound.clone(), free);
+                }
+                if let Some(else_b) = else_branch {
+                    Self::collect_free_variables(else_b, &mut bound.clone(), free);
+                }
+            }
+            ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, .. } => {
+                Self::collect_free_variables(iterable, bound, free);
+                if let Some(init) = initial_value {
+                    Self::collect_free_variables(init, bound, free);
+                }
+                let mut inner_bound = bound.clone();
+                inner_bound.insert(iterator.clone());
+                if let Some(filter_expr) = filter {
+                    Self::collect_free_variables(filter_expr, &mut inner_bound, free);
+                }
+                Self::collect_free_variables(body, &mut inner_bound, free);
+            }
+            ASTNode::MapExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::FilterExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::EachExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::FindExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::AllExpression { iterator, index_iterator, iterable, body, .. }
+            | ASTNode::AnyExpression { iterator, index_iterator, iterable, body, .. } => {
+                Self::collect_free_variables(iterable, bound, free);
+                let mut inner_bound = bound.clone();
+                inner_bound.insert(iterator.clone());
+                if let Some(idx) = index_iterator {
+                    inner_bound.insert(idx.clone());
+                }
+                Self::collect_free_variables(body, &mut inner_bound, free);
+            }
+            ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, .. } => {
+                Self::collect_free_variables(iterable, bound, free);
+                Self::collect_free_variables(initial_value, bound, free);
+                let mut inner_bound = bound.clone();
+                inner_bound.insert(accumulator.clone());
+                inner_bound.insert(iterator.clone());
+                if let Some(idx) = index_iterator {
+                    inner_bound.insert(idx.clone());
+                }
+                Self::collect_free_variables(body, &mut inner_bound, free);
+            }
+            ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
+                Self::collect_free_variables(condition, bound, free);
+                if let Some(init) = initial_value {
+                    Self::collect_free_variables(init, bound, free);
+                }
+                if let Some(max) = max_iterations {
+                    Self::collect_free_variables(max, bound, free);
+                }
+                Self::collect_free_variables(body, &mut bound.clone(), free);
+            }
+            ASTNode::Loop { index_iterator, body, .. } => {
+                let mut inner_bound = bound.clone();
+                if let Some(idx) = index_iterator {
+                    inner_bound.insert(idx.clone());
+                }
+                Self::collect_free_variables(body, &mut inner_bound, free);
+            }
+            ASTNode::SpawnBlock { body, .. } => {
+                Self::collect_free_variables(body, &mut bound.clone(), free);
+            }
+            ASTNode::BinaryOperation { left, right, .. } | ASTNode::Assignment { left, right, .. } => {
+                Self::collect_free_variables(left, bound, free);
+                Self::collect_free_variables(right, bound, free);
+            }
+            ASTNode::UnaryOperation { operand, .. } => {
+                Self::collect_free_variables(operand, bound, free);
+            }
+            ASTNode::StructInstantiation { fields, .. } => {
+                for field in fields {
+                    Self::collect_free_variables(field, bound, free);
+                }
+            }
+            ASTNode::StructInstantiationField { value, .. } => {
+                Self::collect_free_variables(value, bound, free);
+            }
+            ASTNode::StructFieldAccess { struct_name, .. } => {
+                if !bound.contains(struct_name) {
+                    free.insert(struct_name.clone());
+                }
+            }
+            ASTNode::NestedFieldAccess { object, .. } => {
+                Self::collect_free_variables(object, bound, free);
+            }
+            ASTNode::ArrayLiteral { elements, .. } => {
+                for elem in elements {
+                    Self::collect_free_variables(elem, bound, free);
+                }
+            }
+            ASTNode::Identifier { name, .. } => {
+                if !bound.contains(name) {
+                    free.insert(name.clone());
+                }
+            }
+            ASTNode::ReturnDeclaration { statement, .. } | ASTNode::YieldDeclaration { statement, .. } => {
+                Self::collect_free_variables(statement, bound, free);
+            }
+            ASTNode::StringLiteral { .. }
+            | ASTNode::NumberLiteral { .. }
+            | ASTNode::BooleanLiteral { .. }
+            | ASTNode::BreakStatement { .. }
+            | ASTNode::ContinueStatement { .. }
+            | ASTNode::StructDeclaration { .. }
+            | ASTNode::StructDeclarationField { .. }
+            | ASTNode::EnumDeclaration { .. }
+            | ASTNode::EnumVariant { .. } => {
+                // No variable references
+            }
+        }
+    }
+
+    /// Free variables that a collection-operation closure body captures from the
+    /// enclosing scope (excluding the iterator and optional index binding).
+    fn closure_captured_variables(body: &ASTNode, iterator: &str, index_iterator: &Option<String>) -> std::collections::BTreeSet<String> {
+        let mut bound = HashSet::new();
+        bound.insert(iterator.to_string());
+        if let Some(idx) = index_iterator {
+            bound.insert(idx.clone());
+        }
+        let mut free = std::collections::BTreeSet::new();
+        Self::collect_free_variables(body, &mut bound, &mut free);
+        free
+    }
+
+    /// Every direct child expression/statement node of an AST node, used by the
+    /// move-analysis walks below. Binder names (iterators, params) are handled
+    /// by the callers, not here.
+    fn ast_children(node: &ASTNode) -> Vec<&ASTNode> {
+        match node {
+            ASTNode::Program { statements, .. }
+            | ASTNode::Block { statements, .. }
+            | ASTNode::ParallelBlock { statements, .. }
+            | ASTNode::ConcurrentBlock { statements, .. } => statements.iter().collect(),
+            ASTNode::FunctionDeclaration { body, .. } | ASTNode::LambdaDeclaration { body, .. } => vec![body.as_ref()],
+            ASTNode::FunctionCall { args, .. } => args.iter().collect(),
+            ASTNode::ConstDeclaration { value, .. } => vec![value.as_ref()],
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+                let mut children: Vec<&ASTNode> = Vec::new();
+                for (condition, branch) in condition_branches {
+                    children.push(condition.as_ref());
+                    children.push(branch.as_ref());
+                }
+                if let Some(else_branch) = else_branch {
+                    children.push(else_branch.as_ref());
+                }
+                children
+            }
+            ASTNode::ForLoop { iterable, initial_value, filter, body, .. } => {
+                let mut children = vec![iterable.as_ref()];
+                children.extend(initial_value.as_deref());
+                children.extend(filter.as_deref());
+                children.push(body.as_ref());
+                children
+            }
+            ASTNode::MapExpression { iterable, body, .. }
+            | ASTNode::FilterExpression { iterable, body, .. }
+            | ASTNode::EachExpression { iterable, body, .. }
+            | ASTNode::FindExpression { iterable, body, .. }
+            | ASTNode::AllExpression { iterable, body, .. }
+            | ASTNode::AnyExpression { iterable, body, .. } => vec![iterable.as_ref(), body.as_ref()],
+            ASTNode::ReduceExpression { iterable, initial_value, body, .. } => vec![iterable.as_ref(), initial_value.as_ref(), body.as_ref()],
+            ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
+                let mut children = vec![condition.as_ref()];
+                children.extend(initial_value.as_deref());
+                children.extend(max_iterations.as_deref());
+                children.push(body.as_ref());
+                children
+            }
+            ASTNode::Loop { body, .. } | ASTNode::SpawnBlock { body, .. } => vec![body.as_ref()],
+            ASTNode::BinaryOperation { left, right, .. } | ASTNode::Assignment { left, right, .. } => vec![left.as_ref(), right.as_ref()],
+            ASTNode::UnaryOperation { operand, .. } => vec![operand.as_ref()],
+            ASTNode::StructDeclaration { fields, .. } | ASTNode::StructInstantiation { fields, .. } | ASTNode::EnumDeclaration { variants: fields, .. } => fields.iter().collect(),
+            ASTNode::StructInstantiationField { value, .. } => vec![value.as_ref()],
+            ASTNode::NestedFieldAccess { object, .. } => vec![object.as_ref()],
+            ASTNode::ArrayLiteral { elements, .. } => elements.iter().collect(),
+            ASTNode::ReturnDeclaration { statement, .. } | ASTNode::YieldDeclaration { statement, .. } => vec![statement.as_ref()],
+            ASTNode::StructDeclarationField { .. }
+            | ASTNode::StructFieldAccess { .. }
+            | ASTNode::EnumVariant { .. }
+            | ASTNode::Identifier { .. }
+            | ASTNode::NumberLiteral { .. }
+            | ASTNode::StringLiteral { .. }
+            | ASTNode::BooleanLiteral { .. }
+            | ASTNode::BreakStatement { .. }
+            | ASTNode::ContinueStatement { .. } => Vec::new(),
+        }
+    }
+
+    /// Count how many times each variable is referenced, in the same shape the
+    /// emitter walks the tree. Nested functions and lambdas get their own
+    /// MoveContext, so their bodies are skipped. References that emit outside
+    /// the Identifier arm (struct field access bases, assignment targets) are
+    /// counted here but never decremented during emission, which permanently
+    /// pins those variables to clone-only.
+    fn count_variable_uses(node: &ASTNode, counts: &mut HashMap<String, usize>) {
+        match node {
+            ASTNode::Identifier { name, .. } => {
+                *counts.entry(name.clone()).or_insert(0) += 1;
+            }
+            ASTNode::StructFieldAccess { struct_name, .. } => {
+                // Emitted as a raw name outside the Identifier arm: pin it.
+                *counts.entry(struct_name.clone()).or_insert(0) += 1;
+            }
+            ASTNode::Assignment { left, right, .. } => {
+                // The assignment target is emitted bare and must stay valid: pin it.
+                if let ASTNode::Identifier { name, .. } = left.as_ref() {
+                    *counts.entry(name.clone()).or_insert(0) += 1;
+                } else {
+                    Self::count_variable_uses(left, counts);
+                }
+                Self::count_variable_uses(right, counts);
+            }
+            ASTNode::FunctionDeclaration { .. } | ASTNode::LambdaDeclaration { .. } => {}
+            _ => {
+                for child in Self::ast_children(node) {
+                    Self::count_variable_uses(child, counts);
+                }
+            }
+        }
+    }
+
+    /// Collect every variable name referenced in a region that execution can
+    /// revisit (loop bodies, closure bodies, parallel/spawn blocks) or that is
+    /// captured by a lambda. Those variables are never moved. Expressions a
+    /// construct evaluates exactly once in the enclosing flow (a loop's
+    /// iterable, a reduce's initial value) are NOT part of the region.
+    fn collect_never_move(node: &ASTNode, revisitable: bool, out: &mut HashSet<String>) {
+        let mark_all = |subtrees: &[&ASTNode], out: &mut HashSet<String>| {
+            for subtree in subtrees {
+                Self::collect_never_move(subtree, true, out);
+            }
+        };
+        match node {
+            ASTNode::Identifier { name, .. } => {
+                if revisitable {
+                    out.insert(name.clone());
+                }
+            }
+            ASTNode::StructFieldAccess { struct_name, .. } => {
+                if revisitable {
+                    out.insert(struct_name.clone());
+                }
+            }
+            ASTNode::FunctionDeclaration { .. } => {} // own context, cannot capture
+            ASTNode::LambdaDeclaration { body, .. } => mark_all(&[body.as_ref()], out),
+            ASTNode::MapExpression { iterable, body, .. }
+            | ASTNode::FilterExpression { iterable, body, .. }
+            | ASTNode::EachExpression { iterable, body, .. }
+            | ASTNode::FindExpression { iterable, body, .. }
+            | ASTNode::AllExpression { iterable, body, .. }
+            | ASTNode::AnyExpression { iterable, body, .. } => {
+                Self::collect_never_move(iterable, revisitable, out);
+                mark_all(&[body.as_ref()], out);
+            }
+            ASTNode::ReduceExpression { iterable, initial_value, body, .. } => {
+                Self::collect_never_move(iterable, revisitable, out);
+                Self::collect_never_move(initial_value, revisitable, out);
+                mark_all(&[body.as_ref()], out);
+            }
+            ASTNode::ForLoop { iterable, initial_value, filter, body, .. } => {
+                Self::collect_never_move(iterable, revisitable, out);
+                if let Some(initial_value) = initial_value {
+                    Self::collect_never_move(initial_value, revisitable, out);
+                }
+                if let Some(filter) = filter {
+                    mark_all(&[filter.as_ref()], out);
+                }
+                mark_all(&[body.as_ref()], out);
+            }
+            ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
+                if let Some(initial_value) = initial_value {
+                    Self::collect_never_move(initial_value, revisitable, out);
+                }
+                if let Some(max_iterations) = max_iterations {
+                    Self::collect_never_move(max_iterations, revisitable, out);
+                }
+                mark_all(&[condition.as_ref(), body.as_ref()], out);
+            }
+            ASTNode::Loop { body, .. } => mark_all(&[body.as_ref()], out),
+            ASTNode::ParallelBlock { statements, .. } | ASTNode::ConcurrentBlock { statements, .. } => {
+                for statement in statements {
+                    Self::collect_never_move(statement, true, out);
+                }
+            }
+            ASTNode::SpawnBlock { body, .. } => mark_all(&[body.as_ref()], out),
+            _ => {
+                for child in Self::ast_children(node) {
+                    Self::collect_never_move(child, revisitable, out);
+                }
+            }
+        }
+    }
+
+    fn push_move_context(&mut self, root: &ASTNode) {
+        let mut remaining = HashMap::new();
+        Self::count_variable_uses(root, &mut remaining);
+        let mut never_move = HashSet::new();
+        Self::collect_never_move(root, false, &mut never_move);
+        self.move_contexts.push(MoveContext { remaining, activated: HashSet::new(), never_move, types: HashMap::new() });
+    }
+
+    fn pop_move_context(&mut self) {
+        self.move_contexts.pop();
+    }
+
+    /// Record a variable declared in the current context as move-eligible.
+    fn activate_variable(&mut self, name: &str, data_type: &NailDataTypeDescriptor) {
+        if let Some(context) = self.move_contexts.last_mut() {
+            context.activated.insert(name.to_string());
+            context.types.insert(name.to_string(), data_type.clone());
+        }
+    }
+
+    /// Record a binder's type (iterator, index) for Copy classification only.
+    fn record_variable_type(&mut self, name: &str, data_type: NailDataTypeDescriptor) {
+        if let Some(context) = self.move_contexts.last_mut() {
+            context.types.insert(name.to_string(), data_type);
+        }
+    }
+
+    fn lookup_variable_type(&self, name: &str) -> Option<&NailDataTypeDescriptor> {
+        self.move_contexts.iter().rev().find_map(|context| context.types.get(name))
+    }
+
+    /// The element type of an iterable, when statically known from a declared
+    /// array variable.
+    fn iterable_element_type(&self, iterable: &ASTNode) -> Option<NailDataTypeDescriptor> {
+        if let ASTNode::Identifier { name, .. } = iterable {
+            if let Some(NailDataTypeDescriptor::Array(inner)) = self.lookup_variable_type(name) {
+                return Some((**inner).clone());
+            }
+        }
+        None
+    }
+
+    /// How a variable reference is emitted. Copy types (i/f/b) are always bare.
+    /// A heap-typed variable moves at its last syntactic use when execution
+    /// cannot revisit the reference; otherwise it clones.
+    fn identifier_expression(&mut self, name: &str) -> String {
+        if matches!(self.lookup_variable_type(name), Some(NailDataTypeDescriptor::Int | NailDataTypeDescriptor::Float | NailDataTypeDescriptor::Boolean)) {
+            return name.to_string();
+        }
+        if let Some(context) = self.move_contexts.last_mut() {
+            if let Some(remaining) = context.remaining.get_mut(name) {
+                if *remaining > 0 {
+                    *remaining -= 1;
+                }
+                if *remaining == 0 && context.activated.contains(name) && !context.never_move.contains(name) {
+                    return name.to_string();
+                }
+            }
+        }
+        format!("{}.clone()", name)
+    }
+
+    /// Shared opening of a parallel collection operation (map/filter): rayon
+    /// par_iter with enumerate, per-capture clones so the async move block
+    /// doesn't move outer variables (E0507), then the async block and the
+    /// optional index binding. Leaves indent_level two deeper; callers emit
+    /// the body and the matching closes.
+    fn write_parallel_iter_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, body: &ASTNode, output: &mut String) -> Result<(), CodeError> {
+        if let Some(element_type) = self.iterable_element_type(iterable) {
+            self.record_variable_type(iterator, element_type);
+        }
+        if let Some(idx) = index_iterator {
+            self.record_variable_type(idx, NailDataTypeDescriptor::Int);
+        }
+        write!(output, "{}let __futures: Vec<_> = ", self.indent())?;
+        self.transpile_node_internal(iterable, output, false)?;
+        writeln!(output, ".into_par_iter().enumerate().map(|(_idx, {})| {{", iterator)?;
+        self.indent_level += 1;
+
+        for var in Self::closure_captured_variables(body, iterator, index_iterator) {
+            writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
+        }
+
+        writeln!(output, "{}async move {{", self.indent())?;
+        self.indent_level += 1;
+
+        if let Some(idx) = index_iterator {
+            writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+        }
+        Ok(())
+    }
+
+    /// Shared opening of a sequential collection operation (reduce/each/find/
+    /// all/any): enumerate for-loop plus the optional index binding. Leaves
+    /// indent_level one deeper; callers emit the body and the closing brace.
+    fn write_sequential_for_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, output: &mut String) -> Result<(), CodeError> {
+        if let Some(element_type) = self.iterable_element_type(iterable) {
+            self.record_variable_type(iterator, element_type);
+        }
+        if let Some(idx) = index_iterator {
+            self.record_variable_type(idx, NailDataTypeDescriptor::Int);
+        }
+        write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
+        self.transpile_node_internal(iterable, output, false)?;
+        writeln!(output, ".into_iter().enumerate() {{")?;
+        self.indent_level += 1;
+
+        if let Some(idx) = index_iterator {
+            writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+        }
+        Ok(())
+    }
+
+    /// Emit `let condition_result = { <body> };` with the collection-operation
+    /// context flag set while the body transpiles (filter/find/all/any).
+    fn write_condition_result(&mut self, body: &ASTNode, output: &mut String) -> Result<(), CodeError> {
+        writeln!(output, "{}let condition_result = {{", self.indent())?;
+        self.indent_level += 1;
+
+        let prev_context = self.in_collection_operation;
+        self.in_collection_operation = true;
+        self.transpile_node_internal(body, output, false)?;
+        self.in_collection_operation = prev_context;
+
+        self.indent_level -= 1;
+        writeln!(output, "{}}};", self.indent())?;
+        Ok(())
+    }
+
+    /// Shared shape of the short-circuiting search operations (find/all/any):
+    /// an init statement, a sequential loop evaluating the body as a condition,
+    /// on-match statements ending in break, and a result expression.
+    fn write_search_loop(
+        &mut self,
+        iterator: &str,
+        index_iterator: &Option<String>,
+        iterable: &ASTNode,
+        body: &ASTNode,
+        output: &mut String,
+        add_semicolons: bool,
+        init: &str,
+        negate_condition: bool,
+        on_match: &[String],
+        result_expr: &str,
+    ) -> Result<(), CodeError> {
+        if add_semicolons {
+            write!(output, "{}", self.indent())?;
+        }
+        write!(output, "{{")?;
+        writeln!(output)?;
+        self.indent_level += 1;
+        writeln!(output, "{}{}", self.indent(), init)?;
+
+        self.write_sequential_for_open(iterator, index_iterator, iterable, output)?;
+        self.write_condition_result(body, output)?;
+
+        writeln!(output, "{}if {}condition_result {{", self.indent(), if negate_condition { "!" } else { "" })?;
+        self.indent_level += 1;
+        for line in on_match {
+            writeln!(output, "{}{}", self.indent(), line)?;
+        }
+        self.indent_level -= 1;
+        writeln!(output, "{}}}", self.indent())?;
+
+        self.indent_level -= 1;
+        writeln!(output, "{}}}", self.indent())?;
+        writeln!(output, "{}{}", self.indent(), result_expr)?;
+        self.indent_level -= 1;
+        write!(output, "{}}}", self.indent())?;
+        Ok(())
+    }
+
+    pub fn transpile(&mut self, node: &ASTNode) -> Result<String, CodeError> {
         // First pass: collect all used functions by traversing the AST
         self.collect_used_functions(node);
         
@@ -221,7 +809,8 @@ impl Transpiler {
         writeln!(output, "use futures::future;")?;
         
         // Collect and import all custom types from used stdlib functions
-        let mut custom_type_imports = std::collections::HashSet::new();
+        // (BTreeSet keeps generated import order deterministic)
+        let mut custom_type_imports = std::collections::BTreeSet::new();
         for func_name in &self.used_stdlib_functions {
             if let Some(func) = stdlib_registry::get_stdlib_function(func_name) {
                 for (type_name, module_path) in &func.custom_type_imports {
@@ -267,11 +856,26 @@ impl Transpiler {
         Ok(output)
     }
 
-    fn transpile_node(&mut self, node: &ASTNode, output: &mut String) -> Result<(), std::fmt::Error> {
+    fn transpile_node(&mut self, node: &ASTNode, output: &mut String) -> Result<(), CodeError> {
         self.transpile_node_internal(node, output, true)
     }
 
-    fn transpile_node_internal(&mut self, node: &ASTNode, output: &mut String, add_semicolons: bool) -> Result<(), std::fmt::Error> {
+    /// Transpile an operand of a binary/unary operation, parenthesizing nested
+    /// operations so the emitted Rust preserves the AST's grouping instead of
+    /// being regrouped by Rust's own operator precedence.
+    fn transpile_operand(&mut self, node: &ASTNode, output: &mut String) -> Result<(), CodeError> {
+        let needs_parens = matches!(node, ASTNode::BinaryOperation { .. } | ASTNode::UnaryOperation { .. });
+        if needs_parens {
+            write!(output, "(")?;
+        }
+        self.transpile_node_internal(node, output, false)?;
+        if needs_parens {
+            write!(output, ")")?;
+        }
+        Ok(())
+    }
+
+    fn transpile_node_internal(&mut self, node: &ASTNode, output: &mut String, add_semicolons: bool) -> Result<(), CodeError> {
         match node {
             ASTNode::StructDeclarationField { .. } => {
                 // This is handled in StructDeclaration
@@ -280,12 +884,14 @@ impl Transpiler {
                 // This is handled in StructInstantiation
             }
             ASTNode::Program { statements, .. } => {
+                self.push_move_context(node);
                 for stmt in statements {
                     self.transpile_node_internal(stmt, output, add_semicolons)?;
                     if !add_semicolons {
                         writeln!(output)?;
                     }
                 }
+                self.pop_move_context();
             }
             ASTNode::FunctionDeclaration { name, params, data_type, body, .. } => {
                 write!(output, "{}async fn {}(", self.indent(), name)?;
@@ -303,10 +909,17 @@ impl Transpiler {
                 self.current_function_return_type = Some(data_type.clone());
                 self.current_function_name = Some(name.clone());
 
+                self.push_move_context(body);
+                for (param_name, param_type) in params {
+                    self.activate_variable(param_name, param_type);
+                }
+
                 self.indent_level += 1;
                 self.transpile_node_internal(body, output, add_semicolons)?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
+
+                self.pop_move_context();
 
                 // Restore previous function context
                 self.current_function_return_type = prev_return_type;
@@ -327,6 +940,7 @@ impl Transpiler {
                     write!(output, "let {}: {} = ", name, self.rust_type(data_type, name))?;
                 }
                 self.transpile_node_internal(value, output, false)?;
+                self.activate_variable(name, data_type);
                 if add_semicolons {
                     writeln!(output, ";")?;
                 }
@@ -447,9 +1061,12 @@ impl Transpiler {
                 }
             }
             ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, .. } => {
+                if let Some(element_type) = self.iterable_element_type(iterable) {
+                    self.record_variable_type(iterator, element_type);
+                }
                 // Check if the loop body contains return statements (collecting values)
                 let has_returns = self.has_return_statements(body);
-                
+
                 if has_returns {
                     // Generate an imperative collecting loop (since everything is async)
                     if add_semicolons {
@@ -522,55 +1139,35 @@ impl Transpiler {
                 write!(output, "{{")?;
                 writeln!(output)?;
                 self.indent_level += 1;
-                
-                // Use Rayon to create futures in parallel, then await them all
-                write!(output, "{}let __futures: Vec<_> = ", self.indent())?;
-                self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_par_iter().enumerate().map(|(_idx, {})| {{", iterator)?;
-                self.indent_level += 1;
-                
-                // Create async block that captures variables by cloning
-                writeln!(output, "{}async move {{", self.indent())?;
-                self.indent_level += 1;
-                
-                // Convert index to i64 if needed
-                if let Some(idx) = index_iterator {
-                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
-                }
-                
+
+                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, output)?;
+
                 // Transpile the body statements and collect result
                 if let ASTNode::Block { statements, .. } = body.as_ref() {
                     let num_statements = statements.len();
                     for (i, stmt) in statements.iter().enumerate() {
-                        if let ASTNode::YieldDeclaration { statement, .. } = stmt {
-                            // This is the yield statement - it's the return value
-                            self.transpile_node_internal(statement, output, false)?;
-                            if i < num_statements - 1 {
-                                writeln!(output)?;
+                        match stmt {
+                            // Yield/return statements are the produced value
+                            ASTNode::YieldDeclaration { statement, .. } | ASTNode::ReturnDeclaration { statement, .. } => {
+                                self.transpile_node_internal(statement, output, false)?;
                             }
-                        } else if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
-                            // Return statement - it's the return value
-                            self.transpile_node_internal(statement, output, false)?;
-                            if i < num_statements - 1 {
-                                writeln!(output)?;
+                            _ => {
+                                self.transpile_node_internal(stmt, output, true)?;
                             }
-                        } else {
-                            // Regular statement in the map body
-                            self.transpile_node_internal(stmt, output, true)?;
-                            if i < num_statements - 1 {
-                                writeln!(output)?;
-                            }
+                        }
+                        if i < num_statements - 1 {
+                            writeln!(output)?;
                         }
                     }
                 }
-                
+
                 self.indent_level -= 1;
                 writeln!(output)?;
                 writeln!(output, "{}}}", self.indent())?;
-                
+
                 self.indent_level -= 1;
                 writeln!(output, "{}}}).collect();", self.indent())?;
-                
+
                 writeln!(output, "{}let __result = future::join_all(__futures).await;", self.indent())?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
@@ -584,35 +1181,10 @@ impl Transpiler {
                 write!(output, "{{")?;
                 writeln!(output)?;
                 self.indent_level += 1;
-                
-                // Use Rayon to create futures in parallel, then await them all
-                write!(output, "{}let __futures: Vec<_> = ", self.indent())?;
-                self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_par_iter().enumerate().map(|(_idx, {})| async move {{", iterator)?;
-                self.indent_level += 1;
-                
-                // Convert index to i64 if needed
-                if let Some(idx) = index_iterator {
-                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
-                }
-                
-                // Execute the body block and check the result
-                writeln!(output, "{}let condition_result = {{", self.indent())?;
-                self.indent_level += 1;
-                
-                // Set collection operation context
-                let prev_context = self.in_collection_operation;
-                self.in_collection_operation = true;
-                
-                // Transpile the body block
-                self.transpile_node_internal(body, output, false)?;
-                
-                // Restore previous context
-                self.in_collection_operation = prev_context;
-                
-                self.indent_level -= 1;
-                writeln!(output, "{}}};", self.indent())?;
-                
+
+                self.write_parallel_iter_open(iterator, index_iterator, iterable, body, output)?;
+                self.write_condition_result(body, output)?;
+
                 // Return Some(value) if condition is true, None otherwise
                 writeln!(output, "{}if condition_result {{", self.indent())?;
                 self.indent_level += 1;
@@ -623,7 +1195,9 @@ impl Transpiler {
                 writeln!(output, "{}None", self.indent())?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
-                
+
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}).collect();", self.indent())?;
                 writeln!(output, "{}let __results = future::join_all(__futures).await;", self.indent())?;
@@ -641,43 +1215,31 @@ impl Transpiler {
                 write!(output, "{{")?;
                 writeln!(output)?;
                 self.indent_level += 1;
-                
+
                 // Initialize accumulator
                 write!(output, "{}let mut {} = ", self.indent(), accumulator)?;
                 self.transpile_node_internal(initial_value, output, false)?;
                 writeln!(output, ";")?;
-                
-                // Use regular iteration for sequential reduce
-                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
-                self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_iter().enumerate() {{")?;
-                self.indent_level += 1;
-                
-                // Convert index to i64 if needed
-                if let Some(idx) = index_iterator {
-                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
-                }
-                
+
+                self.write_sequential_for_open(iterator, index_iterator, iterable, output)?;
+
                 // Transpile the body statements
                 if let ASTNode::Block { statements, .. } = body.as_ref() {
                     for stmt in statements {
-                        if let ASTNode::YieldDeclaration { statement, .. } = stmt {
-                            // This is the yield statement - assign to accumulator
-                            write!(output, "{}{} = ", self.indent(), accumulator)?;
-                            self.transpile_node_internal(statement, output, false)?;
-                            writeln!(output, ";")?;
-                        } else if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
-                            // Return statement - assign to accumulator
-                            write!(output, "{}{} = ", self.indent(), accumulator)?;
-                            self.transpile_node_internal(statement, output, false)?;
-                            writeln!(output, ";")?;
-                        } else {
-                            // Regular statement in the reduce body
-                            self.transpile_node_internal(stmt, output, true)?;
+                        match stmt {
+                            // Yield/return statements assign the next accumulator value
+                            ASTNode::YieldDeclaration { statement, .. } | ASTNode::ReturnDeclaration { statement, .. } => {
+                                write!(output, "{}{} = ", self.indent(), accumulator)?;
+                                self.transpile_node_internal(statement, output, false)?;
+                                writeln!(output, ";")?;
+                            }
+                            _ => {
+                                self.transpile_node_internal(stmt, output, true)?;
+                            }
                         }
                     }
                 }
-                
+
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
                 writeln!(output, "{}{}", self.indent(), accumulator)?;
@@ -692,21 +1254,12 @@ impl Transpiler {
                 write!(output, "{{")?;
                 writeln!(output)?;
                 self.indent_level += 1;
-                
-                // Always use enumerate()
-                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
-                self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_iter().enumerate() {{")?;
-                self.indent_level += 1;
-                
-                // Convert index to i64 if needed
-                if let Some(idx) = index_iterator {
-                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
-                }
-                
+
+                self.write_sequential_for_open(iterator, index_iterator, iterable, output)?;
+
                 // Transpile the body statements (no return collection)
                 self.transpile_node_internal(body, output, true)?;
-                
+
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
                 writeln!(output, "{}()", self.indent())?; // Each returns unit
@@ -714,160 +1267,30 @@ impl Transpiler {
                 write!(output, "{}}}", self.indent())?;
             }
             ASTNode::FindExpression { iterator, index_iterator, iterable, body, .. } => {
-                // Find expressions return Result<T>
-                if add_semicolons {
-                    write!(output, "{}", self.indent())?;
-                }
-                write!(output, "{{")?;
-                writeln!(output)?;
-                self.indent_level += 1;
-                writeln!(output, "{}let mut __found = None;", self.indent())?;
-                
-                // Always use enumerate()
-                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
-                self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_iter().enumerate() {{")?;
-                self.indent_level += 1;
-                
-                // Convert index to i64 if needed
-                if let Some(idx) = index_iterator {
-                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
-                }
-                
-                // Execute the body block and check the result
-                writeln!(output, "{}let condition_result = {{", self.indent())?;
-                self.indent_level += 1;
-                
-                // Set collection operation context
-                let prev_context = self.in_collection_operation;
-                self.in_collection_operation = true;
-                
-                // Transpile the body block
-                self.transpile_node_internal(body, output, false)?;
-                
-                // Restore previous context
-                self.in_collection_operation = prev_context;
-                
-                self.indent_level -= 1;
-                writeln!(output, "{}}};", self.indent())?;
-                
-                // Use the result as condition
-                writeln!(output, "{}if condition_result {{", self.indent())?;
-                self.indent_level += 1;
-                writeln!(output, "{}__found = Some({}.clone());", self.indent(), iterator)?;
-                writeln!(output, "{}break;", self.indent())?;
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
-                
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
-                writeln!(output, "{}__found.ok_or_else(|| \"Element not found\".to_string())", self.indent())?;
-                self.indent_level -= 1;
-                write!(output, "{}}}", self.indent())?;
+                // Find expressions return Result<T>: first matching element or error
+                let on_match = [format!("__found = Some({}.clone());", iterator), "break;".to_string()];
+                self.write_search_loop(
+                    iterator,
+                    index_iterator,
+                    iterable,
+                    body,
+                    output,
+                    add_semicolons,
+                    "let mut __found = None;",
+                    false,
+                    &on_match,
+                    "__found.ok_or_else(|| \"Element not found\".to_string())",
+                )?;
             }
             ASTNode::AllExpression { iterator, index_iterator, iterable, body, .. } => {
-                // All expressions check if all elements match a condition
-                if add_semicolons {
-                    write!(output, "{}", self.indent())?;
-                }
-                write!(output, "{{")?;
-                writeln!(output)?;
-                self.indent_level += 1;
-                writeln!(output, "{}let mut __all_match = true;", self.indent())?;
-                
-                // Always use enumerate()
-                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
-                self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_iter().enumerate() {{")?;
-                self.indent_level += 1;
-                
-                // Convert index to i64 if needed
-                if let Some(idx) = index_iterator {
-                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
-                }
-                
-                // Execute the body block and check the result
-                writeln!(output, "{}let condition_result = {{", self.indent())?;
-                self.indent_level += 1;
-                
-                // Set collection operation context
-                let prev_context = self.in_collection_operation;
-                self.in_collection_operation = true;
-                
-                // Transpile the body block
-                self.transpile_node_internal(body, output, false)?;
-                
-                // Restore previous context
-                self.in_collection_operation = prev_context;
-                
-                self.indent_level -= 1;
-                writeln!(output, "{}}};", self.indent())?;
-                
-                // Use the result as condition (negated for All)
-                writeln!(output, "{}if !condition_result {{", self.indent())?;
-                self.indent_level += 1;
-                writeln!(output, "{}__all_match = false;", self.indent())?;
-                writeln!(output, "{}break;", self.indent())?;
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
-                
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
-                writeln!(output, "{}__all_match", self.indent())?;
-                self.indent_level -= 1;
-                write!(output, "{}}}", self.indent())?;
+                // All expressions check if all elements match a condition (short-circuits on first miss)
+                let on_match = ["__all_match = false;".to_string(), "break;".to_string()];
+                self.write_search_loop(iterator, index_iterator, iterable, body, output, add_semicolons, "let mut __all_match = true;", true, &on_match, "__all_match")?;
             }
             ASTNode::AnyExpression { iterator, index_iterator, iterable, body, .. } => {
-                // Any expressions check if any element matches a condition
-                if add_semicolons {
-                    write!(output, "{}", self.indent())?;
-                }
-                write!(output, "{{")?;
-                writeln!(output)?;
-                self.indent_level += 1;
-                writeln!(output, "{}let mut __any_match = false;", self.indent())?;
-                
-                // Always use enumerate()
-                write!(output, "{}for (_idx, {}) in ", self.indent(), iterator)?;
-                self.transpile_node_internal(iterable, output, false)?;
-                writeln!(output, ".into_iter().enumerate() {{")?;
-                self.indent_level += 1;
-                
-                // Convert index to i64 if needed
-                if let Some(idx) = index_iterator {
-                    writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
-                }
-                
-                // Execute the body block and check the result
-                writeln!(output, "{}let condition_result = {{", self.indent())?;
-                self.indent_level += 1;
-                
-                // Set collection operation context
-                let prev_context = self.in_collection_operation;
-                self.in_collection_operation = true;
-                
-                // Transpile the body block
-                self.transpile_node_internal(body, output, false)?;
-                
-                // Restore collection operation context
-                self.in_collection_operation = prev_context;
-                
-                self.indent_level -= 1;
-                writeln!(output, "{}}};", self.indent())?;
-                
-                // Use the result as condition
-                writeln!(output, "{}if condition_result {{", self.indent())?;
-                self.indent_level += 1;
-                writeln!(output, "{}__any_match = true;", self.indent())?;
-                writeln!(output, "{}break;", self.indent())?;
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
-                
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
-                writeln!(output, "{}__any_match", self.indent())?;
-                self.indent_level -= 1;
-                write!(output, "{}}}", self.indent())?;
+                // Any expressions check if any element matches a condition (short-circuits on first hit)
+                let on_match = ["__any_match = true;".to_string(), "break;".to_string()];
+                self.write_search_loop(iterator, index_iterator, iterable, body, output, add_semicolons, "let mut __any_match = false;", false, &on_match, "__any_match")?;
             }
             ASTNode::WhileLoop { condition, max_iterations, body, .. } => {
                 if let Some(max_iter) = max_iterations {
@@ -925,6 +1348,7 @@ impl Transpiler {
             }
             ASTNode::Loop { index_iterator, body, .. } => {
                 if let Some(index_name) = index_iterator {
+                    self.record_variable_type(index_name, NailDataTypeDescriptor::Int);
                     // Loop with index iterator - needs mutable counter outside loop
                     if add_semicolons {
                         writeln!(output, "{}{{", self.indent())?;
@@ -1005,17 +1429,20 @@ impl Transpiler {
             }
             ASTNode::BinaryOperation { left, operator, right, .. } => {
                 // No string concatenation with + allowed in Nail - use array_join instead
-                self.transpile_node_internal(left, output, false)?;
+                // Nested operations must be parenthesized: the Nail AST already encodes
+                // the intended grouping, and re-emitting flat text would let Rust's
+                // operator precedence regroup it (e.g. (2 + 3) * 4 becoming 2 + 3 * 4).
+                self.transpile_operand(left, output)?;
                 write!(output, " {} ", self.rust_operator(operator))?;
-                self.transpile_node_internal(right, output, false)?;
+                self.transpile_operand(right, output)?;
             }
             ASTNode::UnaryOperation { operator, operand, .. } => {
                 write!(output, "{}", self.rust_operator(operator))?;
-                self.transpile_node_internal(operand, output, false)?;
+                self.transpile_operand(operand, output)?;
             }
             ASTNode::Identifier { name, .. } => {
-                // Always clone identifiers to avoid ownership issues
-                write!(output, "{}.clone()", name)?;
+                let expression = self.identifier_expression(name);
+                write!(output, "{}", expression)?;
             }
             ASTNode::NumberLiteral { value, .. } => {
                 write!(output, "{}", value)?;
@@ -1125,7 +1552,7 @@ impl Transpiler {
                         ASTNode::StructDeclarationField { name: field_name, data_type, .. } => {
                             writeln!(output, "{}{}: {},", self.indent(), field_name, self.rust_type(data_type, field_name))?;
                         }
-                        _ => return Err(std::fmt::Error),
+                        other => return Err(CodeError { message: format!("Struct declaration '{}' contains a non-field node", name), code_span: other.code_span() }),
                     }
                 }
                 self.indent_level -= 1;
@@ -1140,7 +1567,7 @@ impl Transpiler {
                         ASTNode::EnumVariant { variant, .. } => {
                             writeln!(output, "{}{},", self.indent(), variant)?;
                         }
-                        _ => return Err(std::fmt::Error),
+                        other => return Err(CodeError { message: format!("Enum declaration '{}' contains a non-variant node", name), code_span: other.code_span() }),
                     }
                 }
                 self.indent_level -= 1;
@@ -1157,6 +1584,11 @@ impl Transpiler {
                 }
                 write!(output, "| {{ async move {{ ")?;
 
+                self.push_move_context(body);
+                for (param_name, param_type) in params {
+                    self.activate_variable(param_name, param_type);
+                }
+
                 // Transpile the body inline
                 if let ASTNode::Block { statements, .. } = body.as_ref() {
                     for (i, stmt) in statements.iter().enumerate() {
@@ -1167,6 +1599,7 @@ impl Transpiler {
                     }
                 }
 
+                self.pop_move_context();
                 write!(output, " }} }}")?;
             }
             ASTNode::StructInstantiation { name, fields, .. } => {
@@ -1186,7 +1619,7 @@ impl Transpiler {
                             write!(output, " {}: ", field_name)?;
                             self.transpile_node_internal(value, output, false)?;
                         }
-                        _ => return Err(std::fmt::Error),
+                        other => return Err(CodeError { message: "Struct instantiation contains a non-field node".to_string(), code_span: other.code_span() }),
                     }
                 }
                 write!(output, " }}")?;
@@ -1244,6 +1677,7 @@ impl Transpiler {
                 format!("DashMap<{}, {}>", self.rust_type(key_type, _name), self.rust_type(value_type, _name))
             }
             NailDataTypeDescriptor::FailedToResolve => panic!("NailDataTypeDescriptor::FailedToResolve found during transpilation. This should not happen."),
+            NailDataTypeDescriptor::TypeVar(name) => panic!("NailDataTypeDescriptor::TypeVar({}) found during transpilation. Type variables must be resolved by the checker.", name),
         }
     }
 
@@ -1276,12 +1710,12 @@ impl Transpiler {
     }
 
 
-    fn transpile_function_call(&mut self, name: &str, args: &[ASTNode], output: &mut String, add_indent: bool) -> Result<(), std::fmt::Error> {
+    fn transpile_function_call(&mut self, name: &str, args: &[ASTNode], output: &mut String, add_indent: bool) -> Result<(), CodeError> {
         // Special handling for error-related functions
         if name == "e" {
             // e(message) - create an error with context
             if args.len() != 1 {
-                return Err(std::fmt::Error);
+                return Err(CodeError { message: format!("e expects 1 argument, got {}", args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
             }
 
             if add_indent {
@@ -1300,7 +1734,7 @@ impl Transpiler {
         } else if name == "safe" {
             // safe(expression, |e|:T { handler })
             if args.len() != 2 {
-                return Err(std::fmt::Error);
+                return Err(CodeError { message: format!("safe expects 2 arguments, got {}", args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
             }
 
             if add_indent {
@@ -1320,34 +1754,11 @@ impl Transpiler {
                 writeln!(output, ";")?;
             }
             return Ok(());
-        } else if name == "danger" {
-            // danger(expression) - unwrap with a custom panic message
+        } else if name == "danger" || name == "expect" {
+            // danger/expect(expression) - unwrap with a custom panic message
+            // (semantically identical; they differ only in programmer intent)
             if args.len() != 1 {
-                return Err(std::fmt::Error);
-            }
-
-            if add_indent {
-                write!(output, "{}", self.indent())?;
-            }
-
-            // Check if the argument is a function call that needs .await
-            if let ASTNode::FunctionCall { name: inner_name, args: inner_args, .. } = &args[0] {
-                // It's a function call - transpile it properly with .await if needed
-                self.transpile_function_call(inner_name, inner_args, output, false)?;
-            } else {
-                // Not a function call, transpile normally
-                self.transpile_node_internal(&args[0], output, false)?;
-            }
-            write!(output, ".unwrap_or_else(|nail_error| panic!(\"🔨 Nail Error: {{}}\", nail_error))")?;
-
-            if add_indent {
-                writeln!(output, ";")?;
-            }
-            return Ok(());
-        } else if name == "expect" {
-            // expect(expression) - semantically identical to danger but with different intent
-            if args.len() != 1 {
-                return Err(std::fmt::Error);
+                return Err(CodeError { message: format!("{} expects 1 argument, got {}", name, args.len()), code_span: args.first().map(|a| a.code_span()).unwrap_or_default() });
             }
 
             if add_indent {
@@ -1381,26 +1792,14 @@ impl Transpiler {
                 write!(output, "{}", stdlib_fn.rust_path)?;
             }
 
-            // Special case for macros
+            // Special case for macros (rust_path ending in "!"), e.g. print_macro!
             if stdlib_fn.rust_path.ends_with("!") {
                 write!(output, "(")?;
-                // For print, we need to handle the macro call format
-                if name == "print" {
-                    // print_macro!(arg1, arg2, arg3)
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
-                            write!(output, ", ")?;
-                        }
-                        self.transpile_node_internal(arg, output, false)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(output, ", ")?;
                     }
-                } else {
-                    // Other macros
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
-                            write!(output, ", ")?;
-                        }
-                        self.transpile_node_internal(arg, output, false)?;
-                    }
+                    self.transpile_node_internal(arg, output, false)?;
                 }
                 write!(output, ")")?;
             } else {
@@ -1484,7 +1883,7 @@ impl Transpiler {
         Ok(())
     }
 
-    fn transpile_concurrent_block(&mut self, statements: &[ASTNode], output: &mut String) -> Result<(), std::fmt::Error> {
+    fn transpile_concurrent_block(&mut self, statements: &[ASTNode], output: &mut String) -> Result<(), CodeError> {
         if statements.is_empty() {
             return Ok(());
         }
@@ -1543,7 +1942,7 @@ impl Transpiler {
         Ok(())
     }
 
-    fn transpile_parallel_block(&mut self, statements: &[ASTNode], output: &mut String) -> Result<(), std::fmt::Error> {
+    fn transpile_parallel_block(&mut self, statements: &[ASTNode], output: &mut String) -> Result<(), CodeError> {
         if statements.is_empty() {
             return Ok(());
         }
@@ -1583,11 +1982,22 @@ impl Transpiler {
 
         self.indent_level += 1;
         
-        // Spawn threads for each expression
+        // Spawn threads for each expression. Statements may call stdlib functions,
+        // which are async, so each thread gets a handle to the tokio runtime and
+        // drives its expression to completion with block_on. Outer variables are
+        // cloned per thread before the move closure so several statements can
+        // capture the same variable.
         for (i, expr) in expressions.iter().enumerate() {
-            write!(output, "{}let handle{} = std::thread::spawn(move || {{ ", self.indent(), i)?;
+            let mut bound = HashSet::new();
+            let mut free = std::collections::BTreeSet::new();
+            Self::collect_free_variables(expr, &mut bound, &mut free);
+            write!(output, "{}let handle{} = std::thread::spawn({{ let __rt_handle = tokio::runtime::Handle::current(); ", self.indent(), i)?;
+            for var_name in &free {
+                write!(output, "let {0} = {0}.clone(); ", var_name)?;
+            }
+            write!(output, "move || {{ __rt_handle.block_on(async move {{ ")?;
             self.transpile_node_internal(expr, output, false)?;
-            writeln!(output, " }});")?;
+            writeln!(output, " }}) }} }});")?;
         }
         
         // Join all threads and collect results
@@ -1606,7 +2016,7 @@ impl Transpiler {
         Ok(())
     }
 
-    fn transpile_parallel_assignment(&mut self, assignments: &[(String, NailDataTypeDescriptor, Box<ASTNode>)], output: &mut String) -> Result<(), std::fmt::Error> {
+    fn transpile_parallel_assignment(&mut self, assignments: &[(String, NailDataTypeDescriptor, Box<ASTNode>)], output: &mut String) -> Result<(), CodeError> {
         if assignments.is_empty() {
             return Ok(());
         }

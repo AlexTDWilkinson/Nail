@@ -1,7 +1,7 @@
 // QuickSort implementation example from the website
 
 f quicksort(arr:a:i):a:i {
-    len:i = array_len(arr);
+    len:i = array_length(arr);
     result:a:i = if {
         len <= 1 => { r arr; },
         else => {

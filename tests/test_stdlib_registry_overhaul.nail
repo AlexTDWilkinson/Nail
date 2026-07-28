@@ -1,0 +1,44 @@
+// Tests for stdlib registry overhaul additions and changes:
+// array_sum / array_min / array_max, array_pop returning a new array,
+// math_pi / math_e / math_round_to_int / math_log2, and int_pow.
+
+numbers:a:i = [3, 1, 4, 1, 5];
+prices:a:f = [2.5, 1.0, 4.25];
+
+// Array aggregation
+total:i = array_sum(numbers);
+lowest:i = danger(array_min(numbers));
+highest:i = danger(array_max(numbers));
+print(`Sum:`, total);
+print(`Min:`, lowest);
+print(`Max:`, highest);
+
+float_total:f = array_sum(prices);
+cheapest:f = danger(array_min(prices));
+priciest:f = danger(array_max(prices));
+print(`Float sum:`, float_total);
+print(`Float min:`, cheapest);
+print(`Float max:`, priciest);
+
+// array_pop returns a new array without the last element
+shorter:a:i = danger(array_pop(numbers));
+shorter_count:i = array_length(shorter);
+print(`After pop:`, shorter, `length:`, shorter_count);
+
+// Math constants and rounding
+pi_value:f = math_pi();
+e_value:f = math_e();
+circumference:f = 2.0 * pi_value * 10.0;
+print(`Pi:`, pi_value);
+print(`E:`, e_value);
+print(`Circumference:`, circumference);
+
+rounded:i = math_round_to_int(2.6);
+print(`Rounded to int:`, rounded);
+
+bits:f = danger(math_log2(8.0));
+print(`Log2 of 8:`, bits);
+
+// Integer power with overflow checking
+big:i = danger(int_pow(2, 10));
+print(`2^10 =`, big);

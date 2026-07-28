@@ -35,16 +35,6 @@ pub async fn from<T: std::fmt::Debug>(value: T) -> String {
     format!("{:?}", value)
 }
 
-// Convert integer to string
-pub async fn from_int(value: i64) -> String {
-    value.to_string()
-}
-
-// Convert boolean to string
-pub async fn from_bool(value: bool) -> String {
-    value.to_string()
-}
-
 // Convert array of integers to string
 pub async fn from_array_i64(arr: Vec<i64>) -> String {
     format!("{:?}", arr)
@@ -264,6 +254,37 @@ pub async fn trim_end(s: String) -> String {
 // Replace first occurrence of substring
 pub async fn replace_first(s: String, from: String, to: String) -> String {
     s.replacen(&from, &to, 1)
+}
+
+// Convert to snake_case (handles camelCase, spaces, and dashes)
+pub async fn to_snake_case(s: String) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut prev_was_separator = true;
+    for c in s.chars() {
+        if c.is_uppercase() {
+            if !prev_was_separator && !result.is_empty() {
+                result.push('_');
+            }
+            for lower in c.to_lowercase() {
+                result.push(lower);
+            }
+            prev_was_separator = false;
+        } else if c == ' ' || c == '-' || c == '_' {
+            if !prev_was_separator && !result.is_empty() {
+                result.push('_');
+            }
+            prev_was_separator = true;
+        } else {
+            result.push(c);
+            prev_was_separator = false;
+        }
+    }
+    result.trim_end_matches('_').to_string()
+}
+
+// Convert to kebab-case (handles camelCase, spaces, and underscores)
+pub async fn to_kebab_case(s: String) -> String {
+    to_snake_case(s).await.replace('_', "-")
 }
 
 // Convert to title case (capitalize first letter of each word)

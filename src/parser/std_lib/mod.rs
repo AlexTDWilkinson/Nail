@@ -3,6 +3,8 @@ pub mod array;
 pub mod compress;
 pub mod crypto;
 pub mod database;
+#[cfg(feature = "duckdb")]
+pub mod duckdb;
 pub mod env;
 pub mod error;
 pub mod float;

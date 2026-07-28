@@ -66,66 +66,9 @@ pub enum NailDataType {
     Void,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NailDataTypeDescriptor {
-    Int,
-    Float,
-    String,
-    Boolean,
-    Array(Box<NailDataTypeDescriptor>), // Generic array type for all arrays
-    Struct(String),
-    Enum(String),
-    Void,
-    Never, // For functions that never return (like panic, todo)
-    Error,
-    OneOf(Vec<NailDataTypeDescriptor>),
-    Fn(Vec<NailDataTypeDescriptor>, Box<NailDataTypeDescriptor>),
-    Result(Box<NailDataTypeDescriptor>),                               // For types like i!e, f!e, s!e
-    HashMap(Box<NailDataTypeDescriptor>, Box<NailDataTypeDescriptor>), // For types like h<s,s>
-    Any,                                                               // Any type accepts any concrete type
-    FailedToResolve,                                                   // Only used internally during type resolution
-}
-
-impl std::fmt::Display for NailDataTypeDescriptor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NailDataTypeDescriptor::Int => write!(f, "i"),
-            NailDataTypeDescriptor::Float => write!(f, "f"),
-            NailDataTypeDescriptor::String => write!(f, "s"),
-            NailDataTypeDescriptor::Boolean => write!(f, "b"),
-            NailDataTypeDescriptor::Array(inner) => write!(f, "a:{}", inner),
-            NailDataTypeDescriptor::Struct(name) => write!(f, "{}", name),
-            NailDataTypeDescriptor::Enum(name) => write!(f, "{}", name),
-            NailDataTypeDescriptor::Void => write!(f, "v"),
-            NailDataTypeDescriptor::Never => write!(f, "!"),
-            NailDataTypeDescriptor::Error => write!(f, "e"),
-            NailDataTypeDescriptor::Result(inner) => write!(f, "{}!e", inner),
-            NailDataTypeDescriptor::HashMap(key, value) => write!(f, "h<{},{}>", key, value),
-            NailDataTypeDescriptor::OneOf(types) => {
-                write!(f, "OneOf<")?;
-                for (i, t) in types.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ",")?;
-                    }
-                    write!(f, "{}", t)?;
-                }
-                write!(f, ">")
-            }
-            NailDataTypeDescriptor::Fn(params, ret) => {
-                write!(f, "fn(")?;
-                for (i, p) in params.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ",")?;
-                    }
-                    write!(f, "{}", p)?;
-                }
-                write!(f, "):{}", ret)
-            }
-            NailDataTypeDescriptor::Any => write!(f, "Any"),
-            NailDataTypeDescriptor::FailedToResolve => write!(f, "FailedToResolve"),
-        }
-    }
-}
+// The core type-system descriptor lives in `common` (shared by parser, checker,
+// transpiler, and the stdlib registry); re-exported here for compatibility.
+pub use crate::common::NailDataTypeDescriptor;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
@@ -286,6 +229,20 @@ pub struct LexerOutput {
 pub struct LexerState {
     pub line: usize,
     pub column: usize,
+}
+
+/// All lexer errors in a token stream, in source order. The lexer embeds
+/// errors as LexerError tokens rather than failing; callers use this to
+/// report every lex error eagerly instead of hitting them one at a time
+/// during parsing.
+pub fn collect_lexer_errors(tokens: &[Token]) -> Vec<crate::common::CodeError> {
+    tokens
+        .iter()
+        .filter_map(|token| match &token.token_type {
+            TokenType::LexerError(message) => Some(crate::common::CodeError { message: message.clone(), code_span: token.code_span.clone() }),
+            _ => None,
+        })
+        .collect()
 }
 
 pub fn lexer(input: &str) -> Vec<Token> {

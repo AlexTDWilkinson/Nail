@@ -18,7 +18,7 @@ print(bools);
 
 // Test array_join with larger array (benefits from Rayon)
 large_array:a:i = array_range(1, 200);
-count:i = array_len(large_array);
+count:i = array_length(large_array);
 print(large_array);
 print(count);
 

@@ -1,0 +1,10 @@
+// This test should FAIL type checking
+// Attempting to define a function with a stdlib function name
+
+// Try to define math_sqrt locally (should fail - stdlib function name)
+f math_sqrt(value:f):f {
+    r value * 2.0;
+}
+
+// This should never be reached because type checking should fail
+print(`This should not execute`);

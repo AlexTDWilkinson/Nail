@@ -27,9 +27,10 @@ where
 }
 
 // Generic clamp function - clamps value between min and max
+// (PartialOrd rather than Ord so it works for floats too)
 pub async fn clamp<T>(value: T, min_val: T, max_val: T) -> T
 where
-    T: Ord,
+    T: PartialOrd,
 {
     if value < min_val {
         min_val
@@ -53,9 +54,10 @@ where
     }
 }
 
+// Generic absolute value (PartialOrd rather than Ord so it works for floats)
 pub async fn abs<T>(value: T) -> T
 where
-    T: Ord + Default + Neg<Output = T>,
+    T: PartialOrd + Default + Neg<Output = T>,
 {
     let zero = T::default();
     if value < zero {
@@ -63,6 +65,62 @@ where
     } else {
         value
     }
+}
+
+// Square root
+pub async fn sqrt(x: f64) -> f64 {
+    x.sqrt()
+}
+
+// Power function
+pub async fn pow(base: f64, exp: f64) -> f64 {
+    base.powf(exp)
+}
+
+// Round to nearest whole number, as a float
+pub async fn round(x: f64) -> f64 {
+    x.round()
+}
+
+// Round to nearest whole number, as an integer
+pub async fn round_to_int(x: f64) -> i64 {
+    x.round() as i64
+}
+
+// Floor function
+pub async fn floor(x: f64) -> f64 {
+    x.floor()
+}
+
+// Ceiling function
+pub async fn ceil(x: f64) -> f64 {
+    x.ceil()
+}
+
+// Random float in [0.0, 1.0)
+pub async fn random() -> f64 {
+    rand::random::<f64>()
+}
+
+// The constant pi
+pub async fn pi() -> f64 {
+    std::f64::consts::PI
+}
+
+// Euler's number
+pub async fn e() -> f64 {
+    std::f64::consts::E
+}
+
+// Division with a divide-by-zero check
+pub async fn divide<T>(numerator: T, denominator: T) -> Result<T, String>
+where
+    T: std::ops::Div<Output = T> + Default + PartialEq,
+{
+    if denominator == T::default() {
+        return Err("Division by zero".to_string());
+    }
+    Ok(numerator / denominator)
 }
 
 // Greatest common divisor (Euclidean algorithm)
@@ -180,6 +238,13 @@ pub async fn log10(x: f64) -> Result<f64, String> {
         return Err("log10 input must be positive".to_string());
     }
     Ok(x.log10())
+}
+
+pub async fn log2(x: f64) -> Result<f64, String> {
+    if x <= 0.0 {
+        return Err("log2 input must be positive".to_string());
+    }
+    Ok(x.log2())
 }
 
 // Exponential function

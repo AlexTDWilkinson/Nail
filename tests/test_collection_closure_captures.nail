@@ -1,0 +1,39 @@
+// Regression test: map/filter closures must clone captured outer variables
+// instead of moving them into the async block (E0507).
+
+prefixes:a:s = [`Mr`, `Ms`];
+names:a:s = [`Alice`, `Bob`, `Carol`];
+threshold:i = 3;
+
+// Outer variable captured by index inside a map body
+titled:a:s = map name idx in names {
+    prefix:s = danger(array_get(prefixes, idx % 2));
+    y array_join([prefix, name], ` `);
+};
+
+// Outer variable captured inside a filter body
+long_names:a:s = filter name in names {
+    y string_length(name) > threshold;
+};
+
+// Outer variable captured inside an if branch of a map body
+labels:a:s = map name in names {
+    label:s = if {
+        string_length(name) > threshold => { r array_join([name, `long`], `-`); },
+        else => { r array_join(prefixes, `-`); }
+    };
+    y label;
+};
+
+// Nested map: inner body captures both an outer variable and the outer iterator
+pairs:a:s = map name in names {
+    combos:a:s = map prefix in prefixes {
+        y array_join([prefix, name, danger(array_get(names, 0))], ` `);
+    };
+    y array_join(combos, `, `);
+};
+
+print(`Titled: `, titled);
+print(`Long names: `, long_names);
+print(`Labels: `, labels);
+print(`Pairs: `, pairs);

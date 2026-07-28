@@ -47,8 +47,8 @@ print(`Right trimmed:`, right_trimmed, `end`);
 
 // String padding
 short:s = `hi`;
-padded_left:s = string_pad_left(short, 5, ` `);
-padded_right:s = string_pad_right(short, 5, `-`);
+padded_left:s = string_pad_start(short, 5, ` `);
+padded_right:s = string_pad_end(short, 5, `-`);
 print(`Padded left:`, padded_left);
 print(`Padded right:`, padded_right);
 
@@ -59,7 +59,7 @@ print(`Repeated:`, repeated);
 print(`Reversed:`, reversed);
 
 // String replace
-replaced:s = string_replace_all(`hello hello`, `hello`, `hi`);
+replaced:s = string_replace(`hello hello`, `hello`, `hi`);
 print(`Replace all:`, replaced);
 
 // String validation

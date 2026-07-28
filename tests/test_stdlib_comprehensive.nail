@@ -11,12 +11,12 @@ minimum_value:f = math_min(5.0, 3.0);
 // String functions  
 greeting_text:s = `Hello, Nail!`;
 uppercase_greeting:s = string_to_uppercase(greeting_text);
-text_length:i = string_len(greeting_text);
+text_length:i = string_length(greeting_text);
 replaced_text:s = string_replace(greeting_text, `Nail`, `Grug`);
 
 // Array operations
 number_list:a:i = [10, 20, 30, 40, 50];
-list_length:i = array_len(number_list);
+list_length:i = array_length(number_list);
 
 // Type conversions
 number_string:s = `42`;

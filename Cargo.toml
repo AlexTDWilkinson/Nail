@@ -47,4 +47,9 @@ base64 = "0.21"
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde_rusqlite = "0.35"
 arboard = "3.2"
+duckdb = { version = "1.10504.0", features = ["bundled"], optional = true }
+
+[features]
+default = []
+duckdb = ["dep:duckdb"]
 

@@ -23,108 +23,140 @@ pub struct DB_Result {
     pub last_insert_id: i64,
 }
 
+/// Look up the shared connection for a database handle
+fn get_connection(handle: &str) -> Result<Arc<Mutex<Connection>>, String> {
+    CONNECTIONS
+        .get(handle)
+        .map(|entry| entry.value().clone())
+        .ok_or_else(|| format!("Database handle '{}' not found", handle))
+}
+
+/// Run blocking SQLite work on the blocking thread pool so it doesn't
+/// stall the async executor
+async fn run_blocking<T, F>(work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("Database task failed: {}", e))?
+}
+
 /// Open or create a SQLite database
 pub async fn sqlite_open(path: String) -> Result<DB_SQLite, String> {
-    let conn = Connection::open(&path)
-        .map_err(|e| format!("Failed to open database '{}': {}", path, e))?;
-    
-    // Generate a unique handle for this connection
-    let handle = format!("db_{}", uuid::Uuid::new_v4().to_string());
-    
-    CONNECTIONS.insert(handle.clone(), Arc::new(Mutex::new(conn)));
-    
-    Ok(DB_SQLite {
-        handle,
-        path,
-    })
+    run_blocking(move || {
+        let conn = Connection::open(&path)
+            .map_err(|e| format!("Failed to open database '{}': {}", path, e))?;
+
+        // Generate a unique handle for this connection
+        let handle = format!("db_{}", uuid::Uuid::new_v4().to_string());
+
+        CONNECTIONS.insert(handle.clone(), Arc::new(Mutex::new(conn)));
+
+        Ok(DB_SQLite {
+            handle,
+            path,
+        })
+    }).await
 }
 
 /// Open an in-memory SQLite database
 pub async fn sqlite_memory() -> Result<DB_SQLite, String> {
-    let conn = Connection::open_in_memory()
-        .map_err(|e| format!("Failed to open in-memory database: {}", e))?;
-    
-    let handle = format!("db_mem_{}", uuid::Uuid::new_v4().to_string());
-    
-    CONNECTIONS.insert(handle.clone(), Arc::new(Mutex::new(conn)));
-    
-    Ok(DB_SQLite {
-        handle,
-        path: ":memory:".to_string(),
-    })
+    run_blocking(move || {
+        let conn = Connection::open_in_memory()
+            .map_err(|e| format!("Failed to open in-memory database: {}", e))?;
+
+        let handle = format!("db_mem_{}", uuid::Uuid::new_v4().to_string());
+
+        CONNECTIONS.insert(handle.clone(), Arc::new(Mutex::new(conn)));
+
+        Ok(DB_SQLite {
+            handle,
+            path: ":memory:".to_string(),
+        })
+    }).await
 }
 
 /// Execute a SQL statement that doesn't return rows (CREATE, INSERT, UPDATE, DELETE)
 pub async fn sqlite_execute(db: &DB_SQLite, sql: String) -> Result<DB_Result, String> {
-    let conn_arc = CONNECTIONS.get(&db.handle)
-        .ok_or_else(|| format!("Database handle '{}' not found", db.handle))?;
-    
-    let conn = conn_arc.lock()
-        .map_err(|e| format!("Failed to lock database connection: {}", e))?;
-    
-    let affected = conn.execute(&sql, [])
-        .map_err(|e| format!("Failed to execute SQL: {}", e))?;
-    
-    // Try to get last insert rowid
-    let last_insert_id = conn.last_insert_rowid();
-    
-    Ok(DB_Result {
-        rows_affected: affected as i64,
-        last_insert_id,
-    })
+    let conn_arc = get_connection(&db.handle)?;
+
+    run_blocking(move || {
+        let conn = conn_arc.lock()
+            .map_err(|e| format!("Failed to lock database connection: {}", e))?;
+
+        let affected = conn.execute(&sql, [])
+            .map_err(|e| format!("Failed to execute SQL: {}", e))?;
+
+        // Try to get last insert rowid
+        let last_insert_id = conn.last_insert_rowid();
+
+        Ok(DB_Result {
+            rows_affected: affected as i64,
+            last_insert_id,
+        })
+    }).await
 }
 
 /// Execute a SQL query and return results as a vector of typed structs
-pub async fn sqlite_query<T>(db: &DB_SQLite, sql: String) -> Result<Vec<T>, String> 
+pub async fn sqlite_query<T>(db: &DB_SQLite, sql: String) -> Result<Vec<T>, String>
 where
-    T: DeserializeOwned,
+    T: DeserializeOwned + Send + 'static,
 {
-    let conn_arc = CONNECTIONS.get(&db.handle)
-        .ok_or_else(|| format!("Database handle '{}' not found", db.handle))?;
-    
-    let conn = conn_arc.lock()
-        .map_err(|e| format!("Failed to lock database connection: {}", e))?;
-    
-    let mut stmt = conn.prepare(&sql)
-        .map_err(|e| format!("Failed to prepare SQL statement: {}", e))?;
-    
-    let rows = from_rows::<T>(stmt.query([]).map_err(|e| format!("Failed to execute query: {}", e))?)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to deserialize rows: {}", e))?;
-    
-    Ok(rows)
+    let conn_arc = get_connection(&db.handle)?;
+
+    run_blocking(move || {
+        let conn = conn_arc.lock()
+            .map_err(|e| format!("Failed to lock database connection: {}", e))?;
+
+        let mut stmt = conn.prepare(&sql)
+            .map_err(|e| format!("Failed to prepare SQL statement: {}", e))?;
+
+        let rows = from_rows::<T>(stmt.query([]).map_err(|e| format!("Failed to execute query: {}", e))?)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to deserialize rows: {}", e))?;
+
+        Ok(rows)
+    }).await
 }
 
 /// Execute a SQL query and return the first result as a typed struct
 pub async fn sqlite_query_single<T>(db: &DB_SQLite, sql: String) -> Result<T, String>
 where
-    T: DeserializeOwned,
+    T: DeserializeOwned + Send + 'static,
 {
-    let conn_arc = CONNECTIONS.get(&db.handle)
-        .ok_or_else(|| format!("Database handle '{}' not found", db.handle))?;
-    
-    let conn = conn_arc.lock()
-        .map_err(|e| format!("Failed to lock database connection: {}", e))?;
-    
-    let mut stmt = conn.prepare(&sql)
-        .map_err(|e| format!("Failed to prepare SQL statement: {}", e))?;
-    
-    let mut rows = stmt.query([])
-        .map_err(|e| format!("Failed to execute query: {}", e))?;
-    
-    match rows.next().map_err(|e| format!("Failed to get row: {}", e))? {
-        Some(row) => from_row::<T>(row)
-            .map_err(|e| format!("Failed to deserialize row: {}", e)),
-        None => Err("No results found".to_string()),
-    }
+    let conn_arc = get_connection(&db.handle)?;
+
+    run_blocking(move || {
+        let conn = conn_arc.lock()
+            .map_err(|e| format!("Failed to lock database connection: {}", e))?;
+
+        let mut stmt = conn.prepare(&sql)
+            .map_err(|e| format!("Failed to prepare SQL statement: {}", e))?;
+
+        let mut rows = stmt.query([])
+            .map_err(|e| format!("Failed to execute query: {}", e))?;
+
+        match rows.next().map_err(|e| format!("Failed to get row: {}", e))? {
+            Some(row) => from_row::<T>(row)
+                .map_err(|e| format!("Failed to deserialize row: {}", e)),
+            None => Err("No results found".to_string()),
+        }
+    }).await
 }
 
 /// Close a database connection
 pub async fn sqlite_close(db: &DB_SQLite) -> Result<(), String> {
-    CONNECTIONS.remove(&db.handle)
-        .ok_or_else(|| format!("Database handle '{}' not found", db.handle))?;
-    
-    Ok(())
+    let handle = db.handle.clone();
+
+    run_blocking(move || {
+        // Dropping the connection closes the database, which can block
+        CONNECTIONS.remove(&handle)
+            .ok_or_else(|| format!("Database handle '{}' not found", handle))?;
+
+        Ok(())
+    }).await
 }
 
 /// Begin a transaction
@@ -148,43 +180,44 @@ pub async fn sqlite_rollback(db: &DB_SQLite) -> Result<(), String> {
 /// Execute multiple SQL statements in a single transaction
 /// All statements succeed or all fail atomically
 pub async fn sqlite_execute_batch(db: &DB_SQLite, statements: Vec<String>) -> Result<DB_Result, String> {
-    let conn_arc = CONNECTIONS.get(&db.handle)
-        .ok_or_else(|| format!("Database handle '{}' not found", db.handle))?;
-    
-    let conn = conn_arc.lock()
-        .map_err(|e| format!("Failed to lock database connection: {}", e))?;
-    
-    // Start transaction
-    conn.execute("BEGIN TRANSACTION", [])
-        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
-    
-    let mut total_affected = 0i64;
-    let mut last_id = 0i64;
-    
-    // Execute all statements
-    for sql in statements {
-        match conn.execute(&sql, []) {
-            Ok(affected) => {
-                total_affected += affected as i64;
-                last_id = conn.last_insert_rowid();
-            },
-            Err(e) => {
-                // Rollback on any error
-                let _ = conn.execute("ROLLBACK", []);
-                return Err(format!("Failed to execute SQL '{}': {}", sql, e));
+    let conn_arc = get_connection(&db.handle)?;
+
+    run_blocking(move || {
+        let conn = conn_arc.lock()
+            .map_err(|e| format!("Failed to lock database connection: {}", e))?;
+
+        // Start transaction
+        conn.execute("BEGIN TRANSACTION", [])
+            .map_err(|e| format!("Failed to begin transaction: {}", e))?;
+
+        let mut total_affected = 0i64;
+        let mut last_id = 0i64;
+
+        // Execute all statements
+        for sql in statements {
+            match conn.execute(&sql, []) {
+                Ok(affected) => {
+                    total_affected += affected as i64;
+                    last_id = conn.last_insert_rowid();
+                },
+                Err(e) => {
+                    // Rollback on any error
+                    let _ = conn.execute("ROLLBACK", []);
+                    return Err(format!("Failed to execute SQL '{}': {}", sql, e));
+                }
             }
         }
-    }
-    
-    // Commit if all succeeded
-    conn.execute("COMMIT", [])
-        .map_err(|e| {
-            let _ = conn.execute("ROLLBACK", []);
-            format!("Failed to commit transaction: {}", e)
-        })?;
-    
-    Ok(DB_Result {
-        rows_affected: total_affected,
-        last_insert_id: last_id,
-    })
+
+        // Commit if all succeeded
+        conn.execute("COMMIT", [])
+            .map_err(|e| {
+                let _ = conn.execute("ROLLBACK", []);
+                format!("Failed to commit transaction: {}", e)
+            })?;
+
+        Ok(DB_Result {
+            rows_affected: total_affected,
+            last_insert_id: last_id,
+        })
+    }).await
 }

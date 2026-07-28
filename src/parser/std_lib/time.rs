@@ -13,12 +13,13 @@ pub enum TimeFormat {
     Custom(String), // Custom format string (for future extension)
 }
 
-// time_now is already correct in the registry
+// Current Unix timestamp in seconds. Total (never panics): a system clock set
+// before 1970 yields a negative timestamp instead of crashing the program.
 pub async fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs() as i64,
+        Err(e) => -(e.duration().as_secs() as i64),
+    }
 }
 
 // time_sleep is already correct in the registry
@@ -84,11 +85,12 @@ pub async fn diff(t1: i64, t2: i64) -> i64 {
     (t1 - t2).abs()
 }
 
+// Current Unix timestamp in milliseconds. Total like now() above.
 pub async fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis() as i64,
+        Err(e) => -(e.duration().as_millis() as i64),
+    }
 }
 
 #[cfg(test)]
@@ -154,8 +156,9 @@ mod tests {
         
         let result_err = parse("invalid".to_string(), TimeFormat::Custom("MyFormat".to_string())).await;
         assert!(result_err.is_err());
-        assert!(result_err.unwrap_err().contains("custom format"));
-        assert!(result_err.unwrap_err().contains("MyFormat"));
+        let error_message = result_err.unwrap_err();
+        assert!(error_message.contains("custom format"));
+        assert!(error_message.contains("MyFormat"));
     }
     
     #[tokio::test]

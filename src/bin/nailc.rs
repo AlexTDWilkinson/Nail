@@ -5,7 +5,7 @@ use std::process;
 use nail::lexer::{lexer, lexer_with_context};
 use nail::parser::parse;
 use nail::checker::checker;
-use nail::transpilier::Transpiler;
+use nail::transpiler::Transpiler;
 use std::path::Path;
 
 fn main() {
@@ -20,17 +20,32 @@ fn main() {
         eprintln!("  --transpile    Run full pipeline and output Rust code");
         eprintln!("  --skip-check   Skip type checking and transpile directly");
         eprintln!("  --deps-only    Only output required Cargo dependencies");
+        eprintln!("  --cargo-toml   Output a complete Cargo.toml for the transpiled program");
+        eprintln!("                 (use --nail-path=<path> to set the nail crate path, default \"..\",");
+        eprintln!("                  and --package-name=<name> to override the package name)");
+        eprintln!("  -o <path>      Write transpiled Rust to <path> instead of next to the source");
+        eprintln!("  --stdout       Write transpiled Rust to stdout, don't touch the filesystem");
         process::exit(1);
     }
-    
+
     let filename = &args[1];
     let mut mode = args.get(2).map(|s| s.as_str()).unwrap_or("--transpile");
+    let nail_path = args.iter().find_map(|arg| arg.strip_prefix("--nail-path=")).unwrap_or("..").to_string();
     let skip_check = args.iter().any(|arg| arg == "--skip-check");
+    let to_stdout = args.iter().any(|arg| arg == "--stdout");
+    let output_path = args.iter().position(|arg| arg == "-o").and_then(|i| args.get(i + 1)).cloned();
+    // "-o" or "--stdout" in the mode position means the default mode with an output override
+    if mode == "-o" || mode == "--stdout" {
+        mode = "--transpile";
+    }
     
     // If --skip-check is present with --transpile, handle it specially
     if skip_check && mode == "--transpile" {
         mode = "--transpile-skip-check";
     }
+
+    // Machine-readable modes must not print pipeline banners to stdout
+    let quiet = matches!(mode, "--transpile" | "--transpile-skip-check" | "--deps-only" | "--cargo-toml");
     
     // Read the input file
     let input = match fs::read_to_string(filename) {
@@ -43,11 +58,19 @@ fn main() {
     
     
     // Run lexer
-    if mode != "--transpile" && mode != "--transpile-skip-check" {
+    if !quiet {
         println!("=== Lexing {} ===", filename);
     }
     let tokens = lexer_with_context(&input, Some(Path::new(filename)));
-    
+
+    let lexer_errors = nail::lexer::collect_lexer_errors(&tokens);
+    if !lexer_errors.is_empty() {
+        for error in &lexer_errors {
+            eprintln!("Lexer error: {}", error);
+        }
+        process::exit(1);
+    }
+
     if mode == "--lex-only" {
         println!("Tokens:");
         for token in &tokens {
@@ -57,16 +80,15 @@ fn main() {
     }
     
     // Run parser
-    if mode != "--transpile" && mode != "--transpile-skip-check" {
+    if !quiet {
         println!("\n=== Parsing ===");
     }
-    let (ast, _used_stdlib_functions) = match parse(tokens) {
-        Ok((ast, used_functions)) => {
-            if mode != "--transpile" && mode != "--transpile-skip-check" {
+    let ast = match parse(tokens) {
+        Ok(ast) => {
+            if !quiet {
                 println!("Parse successful!");
-                println!("Used stdlib functions: {:?}", used_functions);
             }
-            (ast, used_functions)
+            ast
         }
         Err(e) => {
             eprintln!("Parse error: {:?}", e);
@@ -82,19 +104,19 @@ fn main() {
     
     // Skip type checking if requested
     let checked_ast = if skip_check || mode == "--transpile-skip-check" {
-        if mode != "--transpile" && mode != "--transpile-skip-check" {
+        if !quiet {
             println!("\n=== Skipping Type Check ===");
         }
         ast
     } else {
         // Run type checker
-        if mode != "--transpile" && mode != "--transpile-skip-check" {
+        if !quiet {
             println!("\n=== Type Checking ===");
         }
         let mut checked_ast = ast;
         match checker(&mut checked_ast) {
             Ok(_) => {
-                if mode != "--transpile" && mode != "--transpile-skip-check" {
+                if !quiet {
                     println!("Type check successful!");
                 }
                 checked_ast
@@ -119,7 +141,7 @@ fn main() {
     }
     
     // Run transpiler
-    if mode != "--transpile" && mode != "--transpile-skip-check" {
+    if !quiet {
         println!("\n=== Transpiling to Rust ===");
     }
     let mut transpiler = Transpiler::new();
@@ -139,15 +161,31 @@ fn main() {
         }
         return;
     }
+
+    if mode == "--cargo-toml" {
+        let package_name = args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--package-name="))
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| Path::new(filename).file_stem().and_then(|stem| stem.to_str()).unwrap_or("nail_program").replace('-', "_"));
+        print!("{}", transpiler.generate_cargo_toml(&package_name, &nail_path));
+        return;
+    }
     
-    if mode != "--transpile" && mode != "--transpile-skip-check" {
+    if !quiet {
         println!("\nGenerated Rust code:");
     }
     
+    if to_stdout {
+        print!("{}", rust_code);
+        return;
+    }
+
+    let output_filename = output_path.unwrap_or_else(|| filename.replace(".nail", ".rs"));
+
     // For --transpile mode, just output the code directly
     if mode == "--transpile" || mode == "--transpile-skip-check" {
         // Save the Rust code to file
-        let output_filename = filename.replace(".nail", ".rs");
         match fs::write(&output_filename, &rust_code) {
             Ok(_) => {
                 // Don't print anything, just save the file
@@ -160,7 +198,6 @@ fn main() {
     } else {
         // For other modes, print the code and save message
         println!("{}", rust_code);
-        let output_filename = filename.replace(".nail", ".rs");
         match fs::write(&output_filename, &rust_code) {
             Ok(_) => println!("\nRust code saved to: {}", output_filename),
             Err(e) => eprintln!("Error writing output file: {}", e),

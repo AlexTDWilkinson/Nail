@@ -17,12 +17,21 @@ pub struct HTTP_Response {
     pub body: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HTTP_Route {
     pub path: String,
     pub content: String,
     pub content_type: String, // e.g., "text/html", "application/json"
     pub status_code: u16,     // HTTP status code (200, 404, etc.)
+}
+
+/// Builds a response without panicking: if the header value is somehow
+/// invalid, the client gets a 500 instead of the server thread crashing.
+fn build_response(status: StatusCode, content_type: &str, content: String) -> Response {
+    match Response::builder().status(status).header(header::CONTENT_TYPE, content_type).body(Body::from(content)) {
+        Ok(response) => response,
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to build HTTP response: {}", e)).into_response(),
+    }
 }
 
 // THE ONE AND ONLY HTTP SERVER FUNCTION
@@ -39,7 +48,7 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
                 let content = route.content.clone();
                 let content_type = route.content_type.clone();
                 let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
-                app = app.route("/", get(move || async move { Response::builder().status(status).header(header::CONTENT_TYPE, content_type).body(content).unwrap() }));
+                app = app.route("/", get(move || async move { build_response(status, &content_type, content) }));
             }
         }
     } else {
@@ -82,7 +91,7 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
                             let content = route.content.clone();
                             let content_type = route.content_type.clone();
                             let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
-                            return Response::builder().status(status).header(header::CONTENT_TYPE, content_type).body(Body::from(content)).unwrap();
+                            return build_response(status, &content_type, content);
                         }
 
                         // Fall back to no-query-param version
@@ -90,7 +99,7 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
                             let content = route.content.clone();
                             let content_type = route.content_type.clone();
                             let status = StatusCode::from_u16(route.status_code).unwrap_or(StatusCode::OK);
-                            return Response::builder().status(status).header(header::CONTENT_TYPE, content_type).body(Body::from(content)).unwrap();
+                            return build_response(status, &content_type, content);
                         }
 
                         Html(format!("<pre>404 - Route not found: {}?{}</pre>", path_for_error, query_string)).into_response()

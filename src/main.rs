@@ -7,7 +7,7 @@ mod parser;
 mod statics_for_tests;
 mod stdlib_registry;
 // mod stdlib_types; // Merged into stdlib_registry
-mod transpilier;
+mod transpiler;
 mod utils;
 use crate::colorizer::ColorScheme;
 use crate::colorizer::LIGHT_THEME;
@@ -2973,15 +2973,41 @@ impl Editor {
     
     fn save_file(&mut self) -> Result<(), String> {
         let current_tab = self.get_current_tab_mut();
-        if let Some(filename) = &current_tab.filename {
-            let content = current_tab.content.join("\n");
-            std::fs::write(filename, content)
-                .map_err(|e| format!("Failed to save file: {}", e))?;
-            current_tab.modified = false;
-            Ok(())
-        } else {
-            Err("No filename set for current tab".to_string())
+        if current_tab.filename.is_none() {
+            return Err("No filename set for current tab".to_string());
         }
+
+        // Formatting is enforced on save: reformat the buffer, then keep the
+        // cursor, selection, and scroll position sane against the new content.
+        let mut formatted = formatter::format_nail_code(&current_tab.content);
+        if formatted.is_empty() {
+            formatted.push(String::new());
+        }
+        if formatted != current_tab.content {
+            current_tab.content = formatted;
+            if current_tab.cursor_y >= current_tab.content.len() {
+                current_tab.cursor_y = current_tab.content.len() - 1;
+            }
+            let line_len = current_tab.content[current_tab.cursor_y].chars().count();
+            if current_tab.cursor_x > line_len {
+                current_tab.cursor_x = line_len;
+            }
+            // Selections refer to pre-format coordinates; drop them
+            current_tab.selection_start = None;
+            current_tab.selection_end = None;
+            current_tab.selection_mode = false;
+            let max_scroll = current_tab.content.len().saturating_sub(1) as u16;
+            if current_tab.scroll_position > max_scroll {
+                current_tab.scroll_position = max_scroll;
+            }
+        }
+
+        let filename = current_tab.filename.clone().expect("filename checked above");
+        let content = current_tab.content.join("\n");
+        std::fs::write(&filename, content)
+            .map_err(|e| format!("Failed to save file: {}", e))?;
+        current_tab.modified = false;
+        Ok(())
     }
     
     fn load_file(&mut self, filename: &str) -> Result<(), String> {

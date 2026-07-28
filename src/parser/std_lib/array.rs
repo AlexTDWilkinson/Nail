@@ -10,9 +10,14 @@ pub async fn push<T: Clone>(mut arr: Vec<T>, item: T) -> Vec<T> {
     arr
 }
 
-pub async fn pop<T: Clone>(mut arr: Vec<T>) -> (Vec<T>, Option<T>) {
-    let item = arr.pop();
-    (arr, item)
+// Returns a new array with the last element removed; errors on empty arrays.
+// Use array_last to read the final element - Nail arrays are immutable, so
+// pop never mutates in place.
+pub async fn pop<T: Clone>(mut arr: Vec<T>) -> Result<Vec<T>, String> {
+    if arr.pop().is_none() {
+        return Err("Cannot pop from empty array".to_string());
+    }
+    Ok(arr)
 }
 
 pub async fn contains<T: PartialEq + Sync + Send>(arr: Vec<T>, item: T) -> bool 
@@ -140,19 +145,41 @@ pub async fn zip<T, U>(arr1: Vec<T>, arr2: Vec<U>) -> Vec<(T, U)> {
 }
 
 
-// Generic min/max functions for arrays
+// Generic min/max functions for arrays (PartialOrd so they work for floats)
 pub async fn min<T>(arr: Vec<T>) -> Result<T, String>
 where
-    T: Ord,
+    T: PartialOrd,
 {
-    arr.into_iter().min().ok_or_else(|| "Array is empty".to_string())
+    let mut iter = arr.into_iter();
+    let mut best = iter.next().ok_or_else(|| "Cannot get minimum of empty array".to_string())?;
+    for item in iter {
+        if item < best {
+            best = item;
+        }
+    }
+    Ok(best)
 }
 
 pub async fn max<T>(arr: Vec<T>) -> Result<T, String>
 where
-    T: Ord,
+    T: PartialOrd,
 {
-    arr.into_iter().max().ok_or_else(|| "Array is empty".to_string())
+    let mut iter = arr.into_iter();
+    let mut best = iter.next().ok_or_else(|| "Cannot get maximum of empty array".to_string())?;
+    for item in iter {
+        if item > best {
+            best = item;
+        }
+    }
+    Ok(best)
+}
+
+// Sum of all elements (0 for an empty array)
+pub async fn sum<T>(arr: Vec<T>) -> T
+where
+    T: std::iter::Sum<T>,
+{
+    arr.into_iter().sum()
 }
 
 
@@ -207,10 +234,6 @@ pub async fn repeat<T: Clone>(value: T, count: i64) -> Vec<T> {
     }
     vec![value; count as usize]
 }
-
-// NOTE: Removed sum/product/average functions - use reduce instead:
-// sum:i = reduce acc, num in nums from 0 { y acc + num; };
-// product:i = reduce acc, num in nums from 1 { y acc * num; };
 
 // Split array into chunks of specified size
 pub async fn chunk<T: Clone>(arr: Vec<T>, size: i64) -> Result<Vec<Vec<T>>, String> {

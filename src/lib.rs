@@ -6,10 +6,9 @@ pub mod colorizer;
 pub mod formatter;
 pub mod lexer;
 pub mod parser;
-pub mod transpilier;
+pub mod transpiler;
 pub mod statics_for_tests;
 pub mod stdlib_registry;
-// pub mod stdlib_types; // Merged into stdlib_registry
 
 pub use common::{CodeError, CodeSpan};
 

@@ -20,9 +20,9 @@ bob:User = User { name = `Bob`, age = 25, active = false };
 charlie:User = User { name = `Charlie`, age = 35, active = true };
 
 // Insert users into map
-hashmap_insert(user_map, `alice_id`, alice);
-hashmap_insert(user_map, `bob_id`, bob);
-hashmap_insert(user_map, `charlie_id`, charlie);
+hashmap_set(user_map, `alice_id`, alice);
+hashmap_set(user_map, `bob_id`, bob);
+hashmap_set(user_map, `charlie_id`, charlie);
 
 // Retrieve and use struct from hashmap
 alice_from_map:User = danger(hashmap_get(user_map, `alice_id`));
@@ -36,9 +36,9 @@ origin:Point = Point { x_coord = 0.0, y_coord = 0.0 };
 point1:Point = Point { x_coord = 1.5 * 2.0, y_coord = 4.0 - 1.0 };
 point2:Point = Point { x_coord = origin.x_coord + 5.0, y_coord = origin.y_coord + 10.0 };
 
-hashmap_insert(point_map, 0, origin);
-hashmap_insert(point_map, 1, point1);
-hashmap_insert(point_map, 2, point2);
+hashmap_set(point_map, 0, origin);
+hashmap_set(point_map, 1, point1);
+hashmap_set(point_map, 2, point2);
 
 // Iterate over keys and calculate distances
 keys:a:i = hashmap_keys(point_map);
@@ -59,7 +59,7 @@ user_list:a:User = [alice, bob, charlie];
 
 // Use reduce to populate hashmap from array
 dummy:i = reduce sum user in user_list from 0 {
-    hashmap_insert(user_ages, user.name, user.age);
+    hashmap_set(user_ages, user.name, user.age);
     y sum; // Just return unchanged sum
 };
 
@@ -76,7 +76,7 @@ new_user:User = User {
     active = !computed_user.active 
 };
 
-hashmap_insert(user_map, computed_key, new_user);
+hashmap_set(user_map, computed_key, new_user);
 updated_user:User = danger(hashmap_get(user_map, computed_key));
 print(`Updated user age: `, updated_user.age, `, active: `, updated_user.active);
 

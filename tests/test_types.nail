@@ -30,22 +30,22 @@ print(`First row: `, first_row);
 
 // Hashmaps with different types
 string_map:h<s,s> = hashmap_new();
-hashmap_insert(string_map, `hello`, `world`);
-hashmap_insert(string_map, `foo`, `bar`);
+hashmap_set(string_map, `hello`, `world`);
+hashmap_set(string_map, `foo`, `bar`);
 print(`Map size: `, hashmap_len(string_map));
 
 // Hashmap with array values
 scores_map:h<s,a:i> = hashmap_new();
 alice_scores:a:i = [100, 95, 98];
-hashmap_insert(scores_map, `alice`, alice_scores);
+hashmap_set(scores_map, `alice`, alice_scores);
 retrieved_scores:a:i = danger(hashmap_get(scores_map, `alice`));
 print(`Alice's first score: `, danger(array_get(retrieved_scores, 0)));
 
 // Array of hashmaps
 map1:h<s,i> = hashmap_new();
-hashmap_insert(map1, `score`, 100);
+hashmap_set(map1, `score`, 100);
 map2:h<s,i> = hashmap_new();
-hashmap_insert(map2, `score`, 150);
+hashmap_set(map2, `score`, 150);
 map_array:a:h<s,i> = [map1, map2];
 first_map:h<s,i> = danger(array_get(map_array, 0));
 first_score:i = danger(hashmap_get(first_map, `score`));

@@ -2,7 +2,7 @@
 
 // Test array length
 arr:a:i = [1, 2, 3];
-len:i = array_len(arr);
+len:i = array_length(arr);
 print(`Array length:`);
 print(len);
 

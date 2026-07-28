@@ -1,9 +1,43 @@
+/// Counts backticks that are not escaped with a backslash. Used to track
+/// whether a line opens or closes a multi-line string literal.
+fn count_unescaped_backticks(line: &str) -> usize {
+    let mut count = 0;
+    let mut chars = line.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            chars.next();
+        } else if ch == '`' {
+            count += 1;
+        }
+    }
+    count
+}
+
 pub fn format_nail_code(lines: &[String]) -> Vec<String> {
     let mut formatted_lines = Vec::new();
     let mut indent_level: usize = 0;
     let mut last_line_had_closing_brace = false;
+    let mut in_multiline_string = false;
 
     for (i, line) in lines.iter().enumerate() {
+        // Lines that are part of a multi-line string literal (or that open one)
+        // must pass through verbatim: reformatting or re-indenting them would
+        // change the string's contents.
+        if in_multiline_string {
+            if count_unescaped_backticks(line) % 2 == 1 {
+                in_multiline_string = false;
+            }
+            formatted_lines.push(line.clone());
+            last_line_had_closing_brace = false;
+            continue;
+        }
+        if count_unescaped_backticks(line) % 2 == 1 {
+            in_multiline_string = true;
+            formatted_lines.push(line.clone());
+            last_line_had_closing_brace = false;
+            continue;
+        }
+
         let trimmed = line.trim();
 
         // Skip empty lines
@@ -12,12 +46,14 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
             last_line_had_closing_brace = false;
             continue;
         }
-        
+
         // Check if this line has content followed by a closing brace (like "age:i}" or "age:i }")
         // Split it into two separate lines
-        let needs_split = (trimmed.contains("}") && !trimmed.starts_with("}") && 
+        // Lines containing string literals are never split: the brace may be inside the string.
+        let needs_split = (trimmed.contains("}") && !trimmed.starts_with("}") &&
                           !trimmed.contains("{") && !trimmed.contains("=>") &&
-                          !trimmed.starts_with("//")) && 
+                          !trimmed.contains('`') &&
+                          !trimmed.starts_with("//")) &&
                           trimmed.chars().filter(|&c| c != '}' && c != ' ').count() > 0;
         
         if needs_split {
@@ -126,6 +162,7 @@ pub fn format_nail_line(line: &str) -> String {
     let mut in_string = false;
     let mut in_comment = false;
     let mut brace_stack: Vec<bool> = Vec::new();  // Track whether each brace level is a struct init
+    let mut angle_depth: usize = 0; // Track unmatched '<' so generic types like h<s,s> stay untouched
 
     while let Some(ch) = chars.next() {
         // Check for string start/end
@@ -234,21 +271,34 @@ pub fn format_nail_line(line: &str) -> String {
             '<' => {
                 if chars.peek() == Some(&'=') {
                     // <=
+                    while formatted.ends_with(' ') {
+                        formatted.pop();
+                    }
                     formatted.push_str(" <= ");
                     chars.next();
                 } else {
-                    // <
-                    formatted.push_str(" < ");
+                    // Bare '<' is ambiguous between comparison and a generic
+                    // type like h<s,s>, so preserve it exactly as written.
+                    angle_depth += 1;
+                    formatted.push(ch);
                 }
             }
             '>' => {
-                if chars.peek() == Some(&'=') {
+                if angle_depth > 0 {
+                    // Closing a generic type parameter list like h<s,s>;
+                    // a following '=' belongs to an assignment, not '>='.
+                    angle_depth -= 1;
+                    formatted.push(ch);
+                } else if chars.peek() == Some(&'=') {
                     // >=
+                    while formatted.ends_with(' ') {
+                        formatted.pop();
+                    }
                     formatted.push_str(" >= ");
                     chars.next();
                 } else {
-                    // >
-                    formatted.push_str(" > ");
+                    // Bare '>' comparison: preserve as written.
+                    formatted.push(ch);
                 }
             }
             '+' | '-' | '*' | '%' => {
@@ -285,11 +335,18 @@ pub fn format_nail_line(line: &str) -> String {
                 }
             }
             ',' => {
+                // Remove space before comma
+                while formatted.ends_with(' ') {
+                    formatted.pop();
+                }
                 formatted.push(',');
                 formatted.push(' ');
             }
             ';' => {
-                // Just push semicolon, no space after (unless followed by comment)
+                // Remove space before semicolon, no space after (unless followed by comment)
+                while formatted.ends_with(' ') {
+                    formatted.pop();
+                }
                 formatted.push(ch);
             }
             '(' => {
@@ -309,11 +366,9 @@ pub fn format_nail_line(line: &str) -> String {
         }
     }
 
-    // Clean up multiple spaces
-    while formatted.contains("  ") {
-        formatted = formatted.replace("  ", " ");
-    }
-
+    // Note: no blanket double-space collapsing here — it would mangle the
+    // contents of string literals and comments. Runs of spaces outside
+    // strings are already collapsed by the ' ' arm above.
     formatted.trim().to_string()
 }
 
@@ -336,8 +391,41 @@ mod tests {
         assert_eq!(format_nail_line("c!=d"), "c != d");
         assert_eq!(format_nail_line("e<=f"), "e <= f");
         assert_eq!(format_nail_line("g>=h"), "g >= h");
-        assert_eq!(format_nail_line("i<j"), "i < j");
-        assert_eq!(format_nail_line("k>l"), "k > l");
+        // Bare < and > are ambiguous with generic types (h<s,s>), so they are
+        // preserved exactly as written rather than force-spaced.
+        assert_eq!(format_nail_line("i<j"), "i<j");
+        assert_eq!(format_nail_line("k>l"), "k>l");
+        assert_eq!(format_nail_line("a < b"), "a < b");
+        assert_eq!(format_nail_line("x > y"), "x > y");
+    }
+
+    #[test]
+    fn test_hashmap_generic_types() {
+        assert_eq!(format_nail_line("map1:h<s,s> = hashmap_new()"), "map1:h<s, s> = hashmap_new()");
+        assert_eq!(format_nail_line("map1:h<s,s>=hashmap_new()"), "map1:h<s, s> = hashmap_new()");
+        assert_eq!(format_nail_line("map2:h<s,i> = hashmap_new()"), "map2:h<s, i> = hashmap_new()");
+    }
+
+    #[test]
+    fn test_string_contents_preserved() {
+        // Runs of spaces inside string literals must survive formatting
+        assert_eq!(format_nail_line("x:s = `hello  world`;"), "x:s = `hello  world`;");
+        assert_eq!(format_nail_line("y:s = `a<b  and  c>d`;"), "y:s = `a<b  and  c>d`;");
+    }
+
+    #[test]
+    fn test_multiline_strings_pass_through() {
+        let input = vec![
+            "text:s = `first line".to_string(),
+            "  indented   string  content".to_string(),
+            "last line`;".to_string(),
+            "x=1;".to_string(),
+        ];
+        let formatted = format_nail_code(&input);
+        assert_eq!(formatted[0], "text:s = `first line");
+        assert_eq!(formatted[1], "  indented   string  content");
+        assert_eq!(formatted[2], "last line`;");
+        assert_eq!(formatted[3], "x = 1;");
     }
 
     #[test]
@@ -482,6 +570,58 @@ mod tests {
         ];
 
         assert_eq!(format_nail_code(&input), expected);
+    }
+
+    #[test]
+    fn test_real_files_survive_formatting() {
+        // Formatting must never break valid programs: the formatted output has
+        // to lex without errors, keep every string literal byte-identical, and
+        // still parse. Formatting must also be idempotent.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let files = ["tests/test_hashmap.nail", "tests/test_arrays.nail", "examples/hello_world.nail"];
+        let mut files_verified = 0;
+
+        for file in files {
+            let path = format!("{}/{}", manifest_dir, file);
+            let source = match std::fs::read_to_string(&path) {
+                Ok(source) => source,
+                Err(_) => continue, // File layout changed; nothing to verify
+            };
+            let lines: Vec<String> = source.lines().map(String::from).collect();
+
+            let original_tokens = crate::lexer::lexer(&source);
+            let original_had_lex_errors = original_tokens.iter().any(|t| matches!(t.token_type, crate::lexer::TokenType::LexerError(_)));
+            let original_parsed = crate::parser::parse(original_tokens.clone()).is_ok();
+            if original_had_lex_errors || !original_parsed {
+                continue; // Only valid programs are meaningful inputs here
+            }
+
+            let formatted = format_nail_code(&lines);
+            let formatted_source = formatted.join("\n");
+            let formatted_tokens = crate::lexer::lexer(&formatted_source);
+
+            for token in &formatted_tokens {
+                if let crate::lexer::TokenType::LexerError(message) = &token.token_type {
+                    panic!("Formatting {} introduced lexer error: {}", file, message);
+                }
+            }
+
+            let string_literals = |tokens: &[crate::lexer::Token]| -> Vec<String> {
+                tokens
+                    .iter()
+                    .filter_map(|t| if let crate::lexer::TokenType::StringLiteral(s) = &t.token_type { Some(s.clone()) } else { None })
+                    .collect()
+            };
+            assert_eq!(string_literals(&original_tokens), string_literals(&formatted_tokens), "Formatting {} changed string literal contents", file);
+
+            assert!(crate::parser::parse(formatted_tokens).is_ok(), "Formatting {} broke parsing", file);
+
+            let reformatted = format_nail_code(&formatted);
+            assert_eq!(reformatted, formatted, "Formatting {} is not idempotent", file);
+            files_verified += 1;
+        }
+
+        assert!(files_verified > 0, "No valid .nail files were available to verify formatting against");
     }
 
     #[test]

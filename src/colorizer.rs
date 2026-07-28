@@ -451,7 +451,10 @@ fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: 
     // Track position in original string
     let mut pos = 0;
     let chars: Vec<char> = content.chars().collect();
-    
+    // True when the previous non-whitespace token was ':' - the next word is
+    // then a type annotation, not a variable declaration
+    let mut prev_was_colon = false;
+
     while pos < chars.len() {
         // Skip whitespace
         let start_pos = pos;
@@ -480,6 +483,7 @@ fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: 
         if matches!(ch, '(' | ')' | '{' | '}' | '[' | ']' | ',' | ';' | ':') {
             // Single character delimiter
             colored_spans.push(colorize_single_char(ch, theme));
+            prev_was_colon = ch == ':';
             pos += 1;
         } else if matches!(ch, '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/') {
             // Potentially multi-character operator
@@ -510,6 +514,7 @@ fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: 
             
             let token: String = chars[token_start..token_end].iter().collect();
             colored_spans.push(Span::styled(token, Style::default().fg(theme.operator)));
+            prev_was_colon = false;
             pos = token_end;
         } else {
             // Regular word/identifier
@@ -558,9 +563,16 @@ fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: 
             
             if next_non_ws < chars.len() && chars[next_non_ws] == '(' {
                 colored_spans.push(Span::styled(token, Style::default().fg(theme.function)));
+            } else if prev_was_colon {
+                // Word directly after ':' is a type annotation (name:TYPE)
+                colored_spans.push(Span::styled(token, Style::default().fg(theme.identifier_type)));
+            } else if next_non_ws < chars.len() && chars[next_non_ws] == ':' && token.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') {
+                // Word directly before ':' is a variable declaration (NAME:type)
+                colored_spans.push(Span::styled(token, Style::default().fg(theme.var_decl)));
             } else {
                 colored_spans.push(colorize_word(&token, theme));
             }
+            prev_was_colon = false;
             
             pos = token_end;
         }
@@ -589,6 +601,11 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
         "r" | "return" => Span::styled(word.to_string(), Style::default().fg(theme.return_keyword)),
         "async" | "await" => Span::styled(word.to_string(), Style::default().fg(theme.async_keyword)),
         "c" | "v" => Span::styled(word.to_string(), Style::default().fg(theme.keyword)), // const/var keywords
+
+        // Collection/iteration language constructs (lexer keywords, not stdlib functions)
+        "map" | "filter" | "reduce" | "each" | "find" | "all" | "any" | "loop" | "while" | "for" | "in" | "from" | "when" | "break" | "continue" | "spawn" => {
+            Span::styled(word.to_string(), Style::default().fg(theme.function))
+        }
 
         // Literals
         "true" | "false" => Span::styled(word.to_string(), Style::default().fg(theme.keyword)),
@@ -620,8 +637,8 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
         // String literals (Nail uses backticks)
         _ if word.starts_with('`') || word.ends_with('`') => Span::styled(word.to_string(), Style::default().fg(theme.string_literal)),
 
-        // Known stdlib functions
-        "print" | "from" | "time_now" | "math_sqrt" | "array_len" | "map" | "filter_int" | "reduce" | "range" | "safe" | "divide" => {
+        // Known stdlib functions (queried from the registry so the list never goes stale)
+        _ if crate::stdlib_registry::is_stdlib_function(word) => {
             Span::styled(word.to_string(), Style::default().fg(theme.function))
         }
 

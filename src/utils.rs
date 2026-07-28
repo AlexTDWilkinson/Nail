@@ -1,7 +1,7 @@
 use crate::checker::checker;
 use crate::parser::parse;
 use crate::parser::ASTNode;
-use crate::transpilier::Transpiler;
+use crate::transpiler::Transpiler;
 use crate::CodeError;
 use crate::Editor;
 use log::error;
@@ -32,7 +32,9 @@ use std::io::Write;
 use std::sync::MutexGuard;
 use std::thread;
 
-use crate::colorizer::colorize_code;
+use crate::colorizer::{colorize_code, ColorScheme};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use ratatui::text::Span;
 use ratatui::{
@@ -131,7 +133,12 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
         log::error!("DRAW THREAD PANICKED: {:?}", panic_info);
         eprintln!("DRAW THREAD PANICKED: {:?}", panic_info);
     }));
-    
+
+    // Cache of the last full-file colorization, keyed by (content hash, theme).
+    // An unchanged file costs zero colorize work per frame; only the visible
+    // window is cloned out of the cache for cursor/selection overlays.
+    let mut colorize_cache: Option<(u64, ColorScheme, Vec<Line<'static>>)> = None;
+
     loop {
         match rx.try_recv() {
             Ok(EditorMessage::Shutdown) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -285,14 +292,23 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             let visible_lines = if chunks[1].height > 2 { chunks[1].height as usize - 2 } else { 0 };
 
-            // First colorize the entire content to properly handle multi-line constructs
+            // Colorize the entire content to properly handle multi-line constructs,
+            // reusing the cached result when neither content nor theme changed.
             let current_tab = editor.get_current_tab();
-            let all_content_lines: Vec<Line> =
-                current_tab.content.iter().map(|line| Line::from(vec![Span::raw(line.clone())])).collect();
-            let all_colorized = colorize_code(all_content_lines, &editor.theme);
+            let mut hasher = DefaultHasher::new();
+            current_tab.content.hash(&mut hasher);
+            let content_hash = hasher.finish();
+            let cache_is_valid = colorize_cache.as_ref().map_or(false, |(cached_hash, cached_theme, _)| *cached_hash == content_hash && *cached_theme == *editor.theme);
+            if !cache_is_valid {
+                let all_content_lines: Vec<Line> =
+                    current_tab.content.iter().map(|line| Line::from(vec![Span::raw(line.clone())])).collect();
+                let colorized = colorize_code(all_content_lines, &editor.theme);
+                colorize_cache = Some((content_hash, *editor.theme, colorized));
+            }
+            let all_colorized = &colorize_cache.as_ref().expect("colorize cache populated above").2;
 
             // Then extract the visible portion and apply cursor and selection highlighting
-            let mut visible_content: Vec<Line> = all_colorized.into_iter().skip(current_tab.scroll_position as usize).take(visible_lines).collect();
+            let mut visible_content: Vec<Line> = all_colorized.iter().skip(current_tab.scroll_position as usize).take(visible_lines).cloned().collect();
             
             // Apply selection highlighting first, then cursor highlighting
             for (visible_line_idx, line) in visible_content.iter_mut().enumerate() {
@@ -1881,7 +1897,7 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             drop(editor);
 
             let mut ast = match parse(tokens) {
-                Ok((ast, _used_functions)) => {
+                Ok(ast) => {
                     log::info!("AST (parsed): {:#?}", ast);
                     ast
                 }
@@ -1899,8 +1915,9 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                     ast
                 }
                 Err(errors) => {
+                    let combined_message = errors.iter().map(|error| error.message.as_str()).collect::<Vec<_>>().join("; ");
                     let mut editor = editor_arc.lock().unwrap();
-                    editor.build_status = BuildStatus::Failed(errors[0].message.clone());
+                    editor.build_status = BuildStatus::Failed(combined_message);
                     log::error!("Checker failed: {:?}", errors);
                     continue;
                 }
@@ -1924,11 +1941,12 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                 }
             };
 
-            // Step 3: Write Rust code to a temporary file
+            // Step 3: Write Rust code into the persistent transpilation project.
+            // The directory is kept between builds so cargo can reuse target/
+            // instead of recompiling every dependency from scratch. Files are
+            // only rewritten when their content changed, preserving cargo's
+            // mtime-based fingerprints where possible.
             let transpilation_dir = Path::new("./transpilation");
-            let _ = fs::remove_dir_all(transpilation_dir);
-            let _ = fs::create_dir(transpilation_dir);
-
             let transpilation_src_dir = transpilation_dir.join("src");
             if let Err(e) = fs::create_dir_all(&transpilation_src_dir) {
                 let mut editor = editor_arc.lock().unwrap();
@@ -1937,22 +1955,28 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                 continue;
             }
 
-            let transpilation_toml = crate::utils::create_transpilation_cargo_toml();
+            let transpilation_toml = transpiler.generate_cargo_toml("nail_transpilation", "..");
             let transpilation_toml_path = transpilation_dir.join("Cargo.toml");
-            if let Err(e) = fs::write(&transpilation_toml_path, &transpilation_toml) {
-                let mut editor = editor_arc.lock().unwrap();
-                editor.build_status = BuildStatus::Failed(format!("Failed to write Cargo.toml file: {}", e));
-                log::error!("Failed to write Cargo.toml file: {}", e);
-                continue;
+            let toml_unchanged = fs::read_to_string(&transpilation_toml_path).map(|existing| existing == transpilation_toml).unwrap_or(false);
+            if !toml_unchanged {
+                if let Err(e) = fs::write(&transpilation_toml_path, &transpilation_toml) {
+                    let mut editor = editor_arc.lock().unwrap();
+                    editor.build_status = BuildStatus::Failed(format!("Failed to write Cargo.toml file: {}", e));
+                    log::error!("Failed to write Cargo.toml file: {}", e);
+                    continue;
+                }
             }
 
             let temp_file_path = transpilation_src_dir.join("main.rs");
-            if let Err(e) = fs::write(&temp_file_path, &rust_code) {
-                let mut editor = editor_arc.lock().unwrap();
-                editor.build_status = BuildStatus::Failed(format!("Failed to write Rust code to file: {}", e));
-                log::error!("Failed to write Rust code to file: {}", e);
+            let main_rs_unchanged = fs::read_to_string(&temp_file_path).map(|existing| existing == rust_code).unwrap_or(false);
+            if !main_rs_unchanged {
+                if let Err(e) = fs::write(&temp_file_path, &rust_code) {
+                    let mut editor = editor_arc.lock().unwrap();
+                    editor.build_status = BuildStatus::Failed(format!("Failed to write Rust code to file: {}", e));
+                    log::error!("Failed to write Rust code to file: {}", e);
 
-                continue;
+                    continue;
+                }
             }
 
             // Step 4: Compile the Rust code
@@ -1973,16 +1997,17 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
 
                         let binary_path = transpilation_dir.join("target/release/nail_transpilation");
                         let destination_path = Path::new("./build");
-                        if let Err(e) = fs::rename(&binary_path, &destination_path) {
-                            log::error!("Failed to move binary: {}", e);
+                        // Copy (not move) so cargo's target/ stays intact and the
+                        // next build can skip even the final link when unchanged.
+                        // Unlink first so copying succeeds even if ./build is running.
+                        let _ = fs::remove_file(&destination_path);
+                        if let Err(e) = fs::copy(&binary_path, &destination_path) {
+                            log::error!("Failed to copy binary: {}", e);
                             let mut editor = editor_arc.lock().unwrap();
-                            editor.build_status = BuildStatus::Failed(format!("Failed to move binary: {}", e));
+                            editor.build_status = BuildStatus::Failed(format!("Failed to copy binary: {}", e));
                         } else {
                             let mut editor = editor_arc.lock().unwrap();
                             editor.build_status = BuildStatus::Complete;
-                        }
-                        if let Err(e) = fs::remove_dir_all(transpilation_dir) {
-                            log::error!("Failed to remove transpilation directory: {}", e);
                         }
                     } else {
                         log::error!("Compiler stderr: {}", String::from_utf8_lossy(&output.stderr));
@@ -2009,6 +2034,9 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
 }
 
 pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>) {
+    // Tracks the (tab index, content hash) last run through the pipeline so
+    // unchanged content is not re-lexed/re-parsed/re-checked every 250ms.
+    let mut last_processed: Option<(usize, u64)> = None;
     loop {
         // Check for shutdown message
         match rx.try_recv() {
@@ -2020,10 +2048,20 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         }
 
         // Lock the editor to access its content
-        let content = {
+        let (tab_index, content) = {
             let editor = lock(&editor_arc);
-            editor.get_current_tab().content.join("\n")
+            (editor.tab_index, editor.get_current_tab().content.join("\n"))
         };
+
+        // Skip the whole pipeline when nothing changed since the last run
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        let content_hash = hasher.finish();
+        if last_processed == Some((tab_index, content_hash)) {
+            thread::sleep(Duration::from_millis(250));
+            continue;
+        }
+        last_processed = Some((tab_index, content_hash));
 
         // Run the lexer on the content
         let tokens = lexer::lexer(&content);
@@ -2058,7 +2096,7 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         // if the above is successful, get the parser errors and do the same thing
 
         let (mut ast, parse_succeeded) = match parse(tokens) {
-            Ok((ast, _used_functions)) => (ast, true),
+            Ok(ast) => (ast, true),
             Err(e) => {
                 let mut editor = lock(&editor_arc);
                 editor.code_error = Some(CodeError { message: format!("^ {}", e.message), code_span: e.code_span });
@@ -2084,8 +2122,11 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
                     editor.code_error = None;
                 }
                 Err(errors) => {
+                    // Surface every checker error, not just the first one; the
+                    // span points at the first error for line highlighting.
+                    let combined_message = errors.iter().map(|error| error.message.as_str()).collect::<Vec<_>>().join(" | ");
                     let mut editor = lock(&editor_arc);
-                    editor.code_error = Some(CodeError { message: format!("^ {}", errors[0].message), code_span: errors[0].code_span.clone() });
+                    editor.code_error = Some(CodeError { message: format!("^ {}", combined_message), code_span: errors[0].code_span.clone() });
                 }
             };
         }
@@ -2093,24 +2134,6 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         // Sleep to avoid excessive CPU usage
         thread::sleep(Duration::from_millis(250));
     }
-}
-
-pub fn create_transpilation_cargo_toml() -> String {
-    r#"
-    [package]
-    name = "nail_transpilation"
-    edition = "2021"
-
-    [dependencies]
-    tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-    nail = { path = ".." }
-
-    # Binary target for the project
-    [[bin]]
-    name = "nail_transpilation"
-    path = "src/main.rs"
-    "#
-    .to_string()
 }
 
 static WELCOME_MESSAGE: &str = include_str!("../examples/hello_world.nail");

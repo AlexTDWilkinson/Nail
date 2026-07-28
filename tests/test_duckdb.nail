@@ -1,0 +1,35 @@
+// Test DuckDB database functions
+
+struct Person {
+    name:s,
+    age:i
+}
+
+// Open an in-memory DuckDB database
+db:DB_DuckDB = danger(db_duckdb_memory());
+print(`Opened DuckDB at: `, db.path);
+
+// Create a table and insert rows
+create_result:DB_DuckDB_Result = danger(db_duckdb_execute(db, `CREATE TABLE people (name VARCHAR, age INTEGER)`));
+
+// Batch insert inside a single transaction
+statements:a:s = [
+    `INSERT INTO people VALUES ('Alice', 30)`,
+    `INSERT INTO people VALUES ('Bob', 25)`,
+    `INSERT INTO people VALUES ('Charlie', 35)`
+];
+batch_result:DB_DuckDB_Result = danger(db_duckdb_execute_batch(db, statements));
+print(`Inserted rows: `, batch_result.rows_affected);
+
+// Query all rows as typed structs
+people:a:Person = danger(db_duckdb_query(db, `SELECT name, age FROM people ORDER BY age`));
+first_person:Person = danger(array_first(people));
+print(`Youngest person: `, first_person.name);
+
+// Query a single row
+oldest:Person = danger(db_duckdb_query_single(db, `SELECT name, age FROM people ORDER BY age DESC LIMIT 1`));
+print(`Oldest person: `, oldest.name, ` age: `, oldest.age);
+
+// Close the connection
+danger(db_duckdb_close(db));
+print(`DuckDB test complete`);

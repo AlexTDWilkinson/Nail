@@ -132,7 +132,7 @@ print(`Item values: `, item_values);
 
 // Filter with struct field
 rare_items:a:Item = filter item in items { y item.is_rare; };
-print(`Number of rare items: `, array_len(rare_items));
+print(`Number of rare items: `, array_length(rare_items));
 
 // Reduce with struct field
 total_value:i = reduce acc item in items from 0 { y acc + item.value; };

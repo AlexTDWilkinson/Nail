@@ -1,5 +1,4 @@
-use crate::checker::GLOBAL_SCOPE;
-use crate::common::{CodeError, CodeSpan};
+use crate::common::{CodeError, CodeSpan, GLOBAL_SCOPE};
 use crate::lexer::*;
 use crate::stdlib_registry;
 use std::collections::HashSet;
@@ -12,7 +11,7 @@ pub mod std_lib;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ASTNode {
-    Program { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize, used_stdlib_functions: HashSet<String> },
+    Program { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     FunctionDeclaration { name: String, params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     LambdaDeclaration { params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     FunctionCall { name: String, args: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
@@ -131,7 +130,7 @@ pub enum ASTNode {
 
 impl Default for ASTNode {
     fn default() -> Self {
-        ASTNode::Program { statements: Vec::new(), code_span: CodeSpan::default(), scope: 0, used_stdlib_functions: HashSet::new() }
+        ASTNode::Program { statements: Vec::new(), code_span: CodeSpan::default(), scope: 0 }
     }
 }
 
@@ -186,13 +185,11 @@ pub struct ParserState {
     tokens: Peekable<IntoIter<Token>>,
     current_token: Option<Token>,
     previous_token: Option<Token>,
-    used_stdlib_functions: HashSet<String>,
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<(ASTNode, HashSet<String>), CodeError> {
-    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None, used_stdlib_functions: HashSet::new() };
-    let ast = parse_inner(&mut state)?;
-    Ok((ast, state.used_stdlib_functions))
+pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, CodeError> {
+    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None };
+    parse_inner(&mut state)
 }
 
 fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
@@ -200,7 +197,7 @@ fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     while state.tokens.peek().is_some() {
         program.push(parse_statement(state)?);
     }
-    Ok(ASTNode::Program { statements: program, code_span: CodeSpan::default(), scope: GLOBAL_SCOPE, used_stdlib_functions: state.used_stdlib_functions.clone() })
+    Ok(ASTNode::Program { statements: program, code_span: CodeSpan::default(), scope: GLOBAL_SCOPE })
 }
 
 fn advance(state: &mut ParserState) -> Option<Token> {
@@ -460,11 +457,6 @@ fn parse_function_call(state: &mut ParserState, name: String) -> Result<ASTNode,
         }
     }
     let code_span = expect_token(state, TokenType::ParenthesisClose)?;
-
-    // Track stdlib function usage
-    if stdlib_registry::is_stdlib_function(&name) {
-        state.used_stdlib_functions.insert(name.clone());
-    }
 
     Ok(ASTNode::FunctionCall { name, args, code_span, scope: GLOBAL_SCOPE })
 }
@@ -1502,51 +1494,6 @@ mod tests {
     }
 
     #[test]
-    fn test_lambda() {
-        let input = "| x:i ):i { result:i = x + 1; r result; }";
-        let (result, _) = parse(lexer(input)).unwrap();
-        let expected = r#"
-        Program(
-            [
-                LambdaDeclaration {
-                    params: [
-                        (
-                            "x",
-                            Int,
-                        ),
-                    ],
-                    data_type: Int,
-                    body: Block(
-                        [
-                            ConstDeclaration {
-                                name: "result",
-                                data_type: Int,
-                                value: BinaryOperation {
-                                    left: Identifier(
-                                        "x",
-                                    ),
-                                    operator: Add,
-                                    right: NumberLiteral(
-                                        "1",
-                                    ),
-                                },
-                            },
-                            ReturnDeclaration(
-                                Identifier(
-                                    "result",
-                                ),
-                            ),
-                        ],
-                    ),
-                },
-            ],
-        )
-        "#;
-        // Just verify it parses successfully
-        assert!(matches!(result, ASTNode::Program { .. }));
-    }
-
-    #[test]
     fn test_struct_declaration() {
         let input = "struct Point { x:i, y:i }";
         let (result, _) = parse(lexer(input)).unwrap();
@@ -1748,25 +1695,28 @@ mod tests {
 
     #[test]
     fn test_enum_variant() {
-        let input = "my_color:enum:Color = Color::Red;";
+        // Enum-typed constants now use a bare type name annotation (`:Color`),
+        // not the old `:enum:Color` form.
+        let input = "enum Color { Red, Green, Blue } my_color:Color = Color::Red;";
         let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
-        let expected = r#"
-        Program(
-    [
-        ConstDeclaration {
-            name: "my_color",
-            data_type: EnumColor,
-            value: EnumVariant {
-                name: "Color",
-                variant: "Red",
-            },
-        },
-    ],
-)
-        "#;
-        // Just verify it parses successfully
-        assert!(matches!(result, ASTNode::Program { .. }));
+        if let ASTNode::Program { statements, .. } = result {
+            assert!(matches!(statements.get(0), Some(ASTNode::EnumDeclaration { .. })), "First statement should be the enum declaration");
+            if let Some(ASTNode::ConstDeclaration { name, value, .. }) = statements.get(1) {
+                assert_eq!(name, "my_color");
+                match value.as_ref() {
+                    ASTNode::EnumVariant { name, variant, .. } => {
+                        assert_eq!(name, "Color");
+                        assert_eq!(variant, "Red");
+                    }
+                    other => panic!("Expected EnumVariant value, got: {:?}", other),
+                }
+            } else {
+                panic!("Expected ConstDeclaration as second statement");
+            }
+        } else {
+            panic!("Expected Program node");
+        }
     }
 
     #[test]
@@ -1779,154 +1729,43 @@ mod tests {
 
     // Variable declarations no longer supported - using constants only
 
-    #[test]
-    fn test_oneof_type_declaration() {
-        let input = "c every_nail_type:oneof(i|f|s|b|a:i|a:f|a:struct:oneof|a:enum:oneof) = 13;";
-        let (result, _) = parse(lexer(input)).unwrap();
-        println!("RESULT: {:#?}", result);
-        // Just verify it parses successfully and has const declaration
-        if let ASTNode::Program { statements, .. } = result {
-            assert!(matches!(statements.get(0), Some(ASTNode::ConstDeclaration { .. })));
-        } else {
-            panic!("Expected Program node");
-        }
-    }
-
-    // FAILING
-    #[test]
-    fn test_lambda_multi_param() {
-        let input = "| x:i, y:f ):i { result:i = x + 1; r result; }";
-        let (result, _) = parse(lexer(input)).unwrap();
-        println!("RESULT: {:#?}", result);
-        // Just verify it parses successfully and has lambda declaration
-        if let ASTNode::Program { statements, .. } = result {
-            assert!(matches!(statements.get(0), Some(ASTNode::LambdaDeclaration { .. })));
-        } else {
-            panic!("Expected Program node");
-        }
-    }
-
-    #[test]
-    fn test_lambda_with_error_parameter() {
-        // Test that |e):i syntax works for error parameters
-        let input = r#"|e):i { r 0; }"#;
-
-        let result = parse(lexer(input));
-        assert!(result.is_ok(), "Failed to parse lambda with error parameter: {:?}", result.err());
-
-        let (ast, _) = result.unwrap();
-
-        // The lambda should be at the top level
-        if let ASTNode::Program { statements, .. } = ast {
-            assert!(!statements.is_empty(), "Program should have statements");
-
-            if let Some(ASTNode::LambdaDeclaration { params, data_type, .. }) = statements.first() {
-                // Check that there's one parameter named 'e' with Error type
-                assert_eq!(params.len(), 1, "Lambda should have exactly one parameter");
-                assert_eq!(params[0].0, "e", "Parameter should be named 'e'");
-                assert_eq!(params[0].1, NailDataTypeDescriptor::Error, "Parameter 'e' should have Error type");
-
-                // Check return type is Int
-                assert_eq!(*data_type, NailDataTypeDescriptor::Int, "Lambda should return Int");
-            } else {
-                panic!("Expected LambdaDeclaration at top level");
-            }
-        } else {
-            panic!("Expected Program node");
-        }
-    }
-
-    fn find_lambda_in_ast(node: &ASTNode) -> Option<&ASTNode> {
-        match node {
-            ASTNode::LambdaDeclaration { .. } => Some(node),
-            ASTNode::Program { statements, .. } => {
-                for stmt in statements {
-                    if let Some(found) = find_lambda_in_ast(stmt) {
-                        return Some(found);
-                    }
-                }
-                None
-            }
-            ASTNode::FunctionDeclaration { body, .. } => find_lambda_in_ast(body),
-            ASTNode::Block { statements, .. } => {
-                for stmt in statements {
-                    if let Some(found) = find_lambda_in_ast(stmt) {
-                        return Some(found);
-                    }
-                }
-                None
-            }
-            ASTNode::ConstDeclaration { value, .. } => find_lambda_in_ast(value),
-            ASTNode::FunctionCall { args, .. } => {
-                for arg in args {
-                    if let Some(found) = find_lambda_in_ast(arg) {
-                        return Some(found);
-                    }
-                }
-                None
-            }
-            _ => None,
-        }
-    }
+    // Removed tests for features no longer in the language:
+    // - test_oneof_type_declaration: `oneof(...)` type annotations are rejected by the
+    //   parser ("Unknown type: oneof"); the oneof type declaration syntax was removed.
+    // - test_lambda / test_lambda_multi_param / test_lambda_with_error_parameter:
+    //   pipe lambda syntax `| x:i ):i { ... }` was removed from the lexer ('|' is no
+    //   longer a recognized character) and no replacement anonymous function syntax
+    //   is implemented. Error handlers are now named functions passed to safe().
 
     #[test]
     fn test_array_of_point_structs() {
+        // Arrays of structs now use a bare struct name in the annotation (`a:Point`),
+        // not the old `a:struct:Point` form.
         let input = r#"
-            points:a:struct:Point = [Point { x = 1, y = 5 }, Point { x = 3, y = 4 }];
+            struct Point { x_coord:i, y_coord:i }
+            points:a:Point = [Point { x_coord = 1, y_coord = 5 }, Point { x_coord = 3, y_coord = 4 }];
             "#;
         let (result, _) = parse(lexer(input)).unwrap();
         println!("RESULT: {:#?}", result);
-        let expected = r#"
-        Program(
-    [
-        ConstDeclaration {
-            name: "points",
-            data_type: Array(Box::new(NailDataTypeDescriptor::Struct(
-                "Point".to_string(),
-            ))),
-            value: ArrayLiteral(
-                [
-                    StructInstantiation {
-                        name: "Point",
-                        fields: [
-                            StructInstantiationField {
-                                name: "x",
-                                value: NumberLiteral(
-                                    "1",
-                                ),
-                            },
-                            StructInstantiationField {
-                                name: "y",
-                                value: NumberLiteral(
-                                    "5",
-                                ),
-                            },
-                        ],
-                    },
-                    StructInstantiation {
-                        name: "Point",
-                        fields: [
-                            StructInstantiationField {
-                                name: "x",
-                                value: NumberLiteral(
-                                    "3",
-                                ),
-                            },
-                            StructInstantiationField {
-                                name: "y",
-                                value: NumberLiteral(
-                                    "4",
-                                ),
-                            },
-                        ],
-                    },
-                ],
-            ),
-        },
-    ],
-)
-        "#;
-        // Just verify it parses successfully
-        assert!(matches!(result, ASTNode::Program { .. }));
+        if let ASTNode::Program { statements, .. } = result {
+            assert!(matches!(statements.get(0), Some(ASTNode::StructDeclaration { .. })), "First statement should be the struct declaration");
+            if let Some(ASTNode::ConstDeclaration { name, data_type, value, .. }) = statements.get(1) {
+                assert_eq!(name, "points");
+                assert!(matches!(data_type, NailDataTypeDescriptor::Array(_)), "Declared type should be an array, got: {:?}", data_type);
+                match value.as_ref() {
+                    ASTNode::ArrayLiteral { elements, .. } => {
+                        assert_eq!(elements.len(), 2, "Array literal should have two struct instantiations");
+                        for element in elements {
+                            assert!(matches!(element, ASTNode::StructInstantiation { .. }), "Array element should be a struct instantiation, got: {:?}", element);
+                        }
+                    }
+                    other => panic!("Expected ArrayLiteral value, got: {:?}", other),
+                }
+            } else {
+                panic!("Expected ConstDeclaration as second statement");
+            }
+        } else {
+            panic!("Expected Program node");
+        }
     }
 }
