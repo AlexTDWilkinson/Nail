@@ -681,7 +681,9 @@ fn visit_map_expression(iterator: &str, index_iterator: &Option<String>, iterabl
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         NailDataTypeDescriptor::String => NailDataTypeDescriptor::String, // Each character
         _ => {
-            add_error(state, format!("Cannot map over type: {:?}", iterable_type), &mut iterable.code_span());
+            if !iterable_type.is_unresolved() {
+                add_error_with_help(state, format!("'map' works on arrays and strings, but this is neither — it is just {}", iterable_type.describe()), collection_op_help("map", iterable), &mut iterable.code_span());
+            }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
@@ -758,7 +760,9 @@ fn visit_for_loop(iterator: &str, iterable: &mut ASTNode, initial_value: &mut Op
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         NailDataTypeDescriptor::String => NailDataTypeDescriptor::String, // Could be char in future
         _ => {
-            add_error(state, format!("Cannot iterate over type: {:?}", iterable_type), &mut iterable.code_span());
+            if !iterable_type.is_unresolved() {
+                add_error_with_help(state, format!("'for' loops over arrays and strings, but this is neither — it is just {}", iterable_type.describe()), collection_op_help("for", iterable), &mut iterable.code_span());
+            }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
@@ -807,7 +811,9 @@ fn visit_filter_expression(iterator: &str, index_iterator: &Option<String>, iter
     let iterator_type = match &iterable_type {
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
-            add_error(state, format!("Cannot filter over type: {:?}", iterable_type), &mut iterable.code_span());
+            if !iterable_type.is_unresolved() {
+                add_error_with_help(state, format!("'filter' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("filter", iterable), &mut iterable.code_span());
+            }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
@@ -849,8 +855,8 @@ fn visit_filter_expression(iterator: &str, index_iterator: &Option<String>, iter
     
     // Check that body returns boolean
     let body_type = check_type(body, state);
-    if body_type != NailDataTypeDescriptor::Boolean && body_type != NailDataTypeDescriptor::FailedToResolve {
-        add_error(state, format!("Filter body must return boolean, got {:?}", body_type), &mut body.code_span());
+    if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
+        add_error(state, format!("The body of 'filter' must return a boolean (whether to keep each item), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
     // NOTE: We don't pop the scope here because type checking happens later
@@ -874,7 +880,9 @@ fn visit_reduce_expression(accumulator: &str, iterator: &str, index_iterator: &O
     let iterator_type = match &iterable_type {
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
-            add_error(state, format!("Cannot reduce over type: {:?}", iterable_type), &mut iterable.code_span());
+            if !iterable_type.is_unresolved() {
+                add_error_with_help(state, format!("'reduce' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("reduce", iterable), &mut iterable.code_span());
+            }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
@@ -942,7 +950,9 @@ fn visit_each_expression(iterator: &str, index_iterator: &Option<String>, iterab
     let iterator_type = match &iterable_type {
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
-            add_error(state, format!("Cannot iterate with each over type: {:?}", iterable_type), &mut iterable.code_span());
+            if !iterable_type.is_unresolved() {
+                add_error_with_help(state, format!("'each' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("each", iterable), &mut iterable.code_span());
+            }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
@@ -993,7 +1003,9 @@ fn visit_find_expression(iterator: &str, index_iterator: &Option<String>, iterab
     let iterator_type = match &iterable_type {
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
-            add_error(state, format!("Cannot find in type: {:?}", iterable_type), &mut iterable.code_span());
+            if !iterable_type.is_unresolved() {
+                add_error_with_help(state, format!("'find' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("find", iterable), &mut iterable.code_span());
+            }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
@@ -1035,8 +1047,8 @@ fn visit_find_expression(iterator: &str, index_iterator: &Option<String>, iterab
     
     // Check that body returns boolean
     let body_type = check_type(body, state);
-    if body_type != NailDataTypeDescriptor::Boolean && body_type != NailDataTypeDescriptor::FailedToResolve {
-        add_error(state, format!("Find body must return boolean, got {:?}", body_type), &mut body.code_span());
+    if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
+        add_error(state, format!("The body of 'find' must return a boolean (whether each item is the one to find), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
     // NOTE: We don't pop the scope here because type checking happens later
@@ -1058,7 +1070,9 @@ fn visit_all_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     let iterator_type = match &iterable_type {
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
-            add_error(state, format!("Cannot check all in type: {:?}", iterable_type), &mut iterable.code_span());
+            if !iterable_type.is_unresolved() {
+                add_error_with_help(state, format!("'all' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("all", iterable), &mut iterable.code_span());
+            }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
@@ -1100,8 +1114,8 @@ fn visit_all_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     
     // Check that body returns boolean
     let body_type = check_type(body, state);
-    if body_type != NailDataTypeDescriptor::Boolean && body_type != NailDataTypeDescriptor::FailedToResolve {
-        add_error(state, format!("All body must return boolean, got {:?}", body_type), &mut body.code_span());
+    if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
+        add_error(state, format!("The body of 'all' must return a boolean (whether each item passes the check), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
     // NOTE: We don't pop the scope here because type checking happens later
@@ -1123,7 +1137,9 @@ fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     let iterator_type = match &iterable_type {
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
-            add_error(state, format!("Cannot check any in type: {:?}", iterable_type), &mut iterable.code_span());
+            if !iterable_type.is_unresolved() {
+                add_error_with_help(state, format!("'any' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("any", iterable), &mut iterable.code_span());
+            }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
@@ -1165,8 +1181,8 @@ fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     
     // Check that body returns boolean
     let body_type = check_type(body, state);
-    if body_type != NailDataTypeDescriptor::Boolean && body_type != NailDataTypeDescriptor::FailedToResolve {
-        add_error(state, format!("Any body must return boolean, got {:?}", body_type), &mut body.code_span());
+    if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
+        add_error(state, format!("The body of 'any' must return a boolean (whether each item passes the check), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
     // NOTE: We don't pop the scope here because type checking happens later
@@ -1185,8 +1201,8 @@ fn visit_while_loop(condition: &mut ASTNode, initial_value: &mut Option<Box<ASTN
     
     // Check that condition is boolean
     let condition_type = check_type(condition, state);
-    if condition_type != NailDataTypeDescriptor::Boolean && condition_type != NailDataTypeDescriptor::FailedToResolve {
-        add_error(state, format!("While condition must be boolean, got: {:?}", condition_type), &mut condition.code_span());
+    if condition_type != NailDataTypeDescriptor::Boolean && !condition_type.is_unresolved() {
+        add_error(state, format!("The 'while' condition must be a boolean, but it is {}", condition_type.describe()), &mut condition.code_span());
     }
     
     // Visit initial value if present
@@ -1200,8 +1216,8 @@ fn visit_while_loop(condition: &mut ASTNode, initial_value: &mut Option<Box<ASTN
         
         // Check that max iterations is an integer
         let max_type = check_type(max_iter, state);
-        if max_type != NailDataTypeDescriptor::Int && max_type != NailDataTypeDescriptor::FailedToResolve {
-            add_error(state, format!("Max iterations must be an integer, got: {:?}", max_type), &mut max_iter.code_span());
+        if max_type != NailDataTypeDescriptor::Int && !max_type.is_unresolved() {
+            add_error(state, format!("The 'while' loop's maximum iteration count must be an integer, but it is {}", max_type.describe()), &mut max_iter.code_span());
         }
     }
     
@@ -1270,7 +1286,8 @@ fn visit_continue_statement(state: &mut AnalyzerState, code_span: &CodeSpan) {
 fn visit_struct_field_access(struct_name: &str, field_name: &str, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     // Check if the struct variable exists
     if !mark_symbol_as_used(state, struct_name) {
-        add_error(state, format!("Undefined variable: {}", struct_name), code_span);
+        let help = best_suggestion(struct_name, visible_symbol_names(state).iter().map(|s| s.as_str())).map(|suggestion| format!("did you mean '{}'?", suggestion));
+        add_error_with_help(state, format!("There is no variable named '{}' in this scope", struct_name), help, code_span);
         return;
     }
 
@@ -1290,7 +1307,7 @@ fn visit_struct_field_access(struct_name: &str, field_name: &str, state: &mut An
                 } else {
                     // Check if it's a stdlib struct
                     if !crate::stdlib_registry::is_stdlib_struct(struct_type_name) {
-                        add_error(state, format!("FailedToResolve struct type: {}", struct_type_name), code_span);
+                        add_error(state, format!("There is no struct named '{}' defined anywhere in this program", struct_type_name), code_span);
                     } else {
                         // For stdlib structs, check if the field exists using the registry
                         if crate::stdlib_registry::get_stdlib_struct_field_type(struct_type_name, field_name).is_none() {
@@ -1300,7 +1317,9 @@ fn visit_struct_field_access(struct_name: &str, field_name: &str, state: &mut An
                 }
             }
             _ => {
-                add_error(state, format!("Variable '{}' is not a struct", struct_name), code_span);
+                if !data_type.is_unresolved() {
+                    add_error(state, format!("Cannot access field '{}' here: '{}' is {}, not a struct", field_name, struct_name, data_type.describe()), code_span);
+                }
             }
         }
     }
@@ -1326,7 +1345,7 @@ fn visit_nested_field_access(object: &mut Box<ASTNode>, field_name: &str, state:
             } else {
                 // Check if it's a stdlib struct
                 if !crate::stdlib_registry::is_stdlib_struct(struct_type_name) {
-                    add_error(state, format!("FailedToResolve struct type: {}", struct_type_name), code_span);
+                    add_error(state, format!("There is no struct named '{}' defined anywhere in this program", struct_type_name), code_span);
                 } else {
                     // For stdlib structs, check if the field exists using the registry
                     if crate::stdlib_registry::get_stdlib_struct_field_type(struct_type_name, field_name).is_none() {
@@ -1336,7 +1355,9 @@ fn visit_nested_field_access(object: &mut Box<ASTNode>, field_name: &str, state:
             }
         }
         _ => {
-            add_error(state, format!("Cannot access field '{}' on non-struct type {:?}", field_name, object_type), code_span);
+            if !object_type.is_unresolved() {
+                add_error(state, format!("Cannot access field '{}' here: this value is {}, not a struct", field_name, object_type.describe()), code_span);
+            }
         }
     }
 }
@@ -1424,7 +1445,7 @@ fn visit_struct_instantiation(name: &str, fields: &mut [ASTNode], state: &mut An
     } else if let Some(stdlib_fields) = crate::stdlib_registry::get_stdlib_struct_fields(name) {
         stdlib_fields
     } else {
-        add_error(state, format!("Unknown struct '{}'", name), code_span);
+        add_error(state, format!("There is no struct named '{}' defined anywhere in this program", name), code_span);
         return;
     };
 
@@ -1577,7 +1598,7 @@ fn visit_array_literal(elements: &[ASTNode], state: &mut AnalyzerState, code_spa
             // Only report error if both types were properly resolved
             if !matches!(first_type, NailDataTypeDescriptor::OneOf(ref v) if v.is_empty()) &&
                !matches!(element_type, NailDataTypeDescriptor::OneOf(ref v) if v.is_empty()) {
-                add_error(state, format!("Inconsistent types in array literal: expected {:?}, got {:?}", first_type, element_type), code_span);
+                add_error(state, format!("All elements of an array must have the same type: this array starts with {}, but a later element is {}", first_type.describe(), element_type.describe()), code_span);
             }
         }
     });
@@ -1629,7 +1650,7 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
             if params.len() == 1 {
                 let (_, param_type) = &params[0];
                 if *param_type != NailDataTypeDescriptor::Error {
-                    add_error(state, format!("safe error handler parameter must be of type :e, got {:?}", param_type), code_span);
+                    add_error(state, format!("The error handler passed to 'safe' must take a parameter of type :e (an error), but this parameter is {}", param_type.describe()), code_span);
                 }
             }
         } else if let ASTNode::Identifier { name: handler_name, .. } = &args[1] {
@@ -1637,7 +1658,7 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
             let handler_type = lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), handler_name).map(|s| s.data_type.clone());
             if let Some(NailDataTypeDescriptor::Fn(param_types, _)) = handler_type {
                 if param_types.len() == 1 && param_types[0] != NailDataTypeDescriptor::Error {
-                    add_error(state, format!("safe error handler function '{}' must accept parameter of type :e, got {:?}", handler_name, param_types[0]), code_span);
+                    add_error(state, format!("The error handler '{}' passed to 'safe' must accept a parameter of type :e (an error), but its parameter is {}", handler_name, param_types[0].describe()), code_span);
                 }
             }
         }
@@ -1827,7 +1848,7 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                     // Not operator always returns boolean
                     let operand_type = check_type(operand, state);
                     // Check that operand is boolean
-                    if operand_type != NailDataTypeDescriptor::Boolean && operand_type != NailDataTypeDescriptor::FailedToResolve {
+                    if operand_type != NailDataTypeDescriptor::Boolean && !operand_type.is_unresolved() {
                         // Type error will be caught elsewhere
                     }
                     NailDataTypeDescriptor::Boolean
@@ -2138,9 +2159,9 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                             }
                         }
                     }
-                    _ => {
-                        panic!("check_type: unhandled struct name node type");
-                    }
+                    // Not a struct: visit_struct_field_access reports the error;
+                    // here we just fail to resolve the field's type
+                    _ => return NailDataTypeDescriptor::FailedToResolve,
                 }
             }
             NailDataTypeDescriptor::FailedToResolve
@@ -2384,6 +2405,17 @@ fn add_error(state: &mut AnalyzerState, message: String, code_span: &mut CodeSpa
     state.errors.push(CodeError { help: None, message, code_span: code_span.clone() });
 }
 
+/// Help text for using a collection operation on a scalar value: explains that
+/// the operation is per-element and shows how to wrap the value if a
+/// one-element collection was intended.
+fn collection_op_help(op: &str, iterable: &ASTNode) -> Option<String> {
+    let wrapped = match iterable {
+        ASTNode::Identifier { name, .. } => format!("[{}]", name),
+        _ => "[...]".to_string(),
+    };
+    Some(format!("'{}' runs its body once for each element of a collection, and a single value has no elements to loop over; if you meant a one-element array, write {}", op, wrapped))
+}
+
 fn add_error_with_help(state: &mut AnalyzerState, message: String, help: Option<String>, code_span: &mut CodeSpan) {
     state.errors.push(CodeError { help, message, code_span: code_span.clone() });
 }
@@ -2539,7 +2571,12 @@ fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &
             };
 
             if !types_compatible {
-                add_error(state, format!("Type mismatch in return statement of function '{}': expected {:?}, got {:?}", name, data_type, actual_return_type), code_span);
+                add_error_with_help(
+                    state,
+                    format!("Function '{}' is declared to return {} but this return statement gives {}", name, data_type.describe(), actual_return_type.describe()),
+                    Some(format!("either change the function's declared return type to '{}' or return {}", actual_return_type, data_type.describe())),
+                    code_span,
+                );
             }
         }
         Some(ASTNode::YieldDeclaration { .. }) => {

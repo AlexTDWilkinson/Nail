@@ -1,0 +1,7 @@
+error: 'map' works on arrays and strings, but this is neither — it is just an integer (i)
+  --> tests/errors/map_over_non_array.nail:3:26
+   |
+ 3 | doubled:a:i = map num in count {
+   |                          ^^^^^
+help: 'map' runs its body once for each element of a collection, and a single value has no elements to loop over; if you meant a one-element array, write [count]
+1 error found

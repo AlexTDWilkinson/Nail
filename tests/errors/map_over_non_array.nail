@@ -1,0 +1,5 @@
+// Error test: map needs an array or string, not a single integer
+count:i = 5;
+doubled:a:i = map num in count {
+    y num * 2;
+};

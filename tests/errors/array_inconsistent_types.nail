@@ -1,0 +1,2 @@
+// Error test: all elements of an array literal must share one type
+mixed:a:i = [1, 2, `three`];

@@ -142,6 +142,73 @@ pub enum TokenType {
     EndOfFile,                               // For end of file
 }
 
+impl TokenType {
+    /// Plain-language name for a token, used in error messages instead of the
+    /// internal enum variant name.
+    pub fn describe(&self) -> String {
+        match self {
+            TokenType::BlockOpen => "'{'".to_string(),
+            TokenType::BlockClose => "'}'".to_string(),
+            TokenType::ParenthesisOpen => "'('".to_string(),
+            TokenType::ParenthesisClose => "')'".to_string(),
+            TokenType::ArrayOpen => "'['".to_string(),
+            TokenType::ArrayClose => "']'".to_string(),
+            TokenType::Comma => "','".to_string(),
+            TokenType::EndStatementOrExpression => "';'".to_string(),
+            TokenType::Assignment => "'='".to_string(),
+            TokenType::ArrowAssignment => "'=>'".to_string(),
+            TokenType::Dot => "'.'".to_string(),
+            TokenType::EndOfFile => "the end of the file".to_string(),
+            TokenType::Identifier(name) => format!("the name '{}'", name),
+            TokenType::Colon => "':'".to_string(),
+            TokenType::Range => "'..'".to_string(),
+            TokenType::RangeInclusive => "'..='".to_string(),
+            TokenType::Integer(value) => format!("the number '{}'", value),
+            TokenType::Float(value) => format!("the number '{}'", value),
+            TokenType::BooleanLiteral(value) => format!("the boolean '{}'", value),
+            TokenType::StringLiteral(_) => "a string literal".to_string(),
+            TokenType::Operator(op) => format!("the operator '{}'", op),
+            TokenType::TypeDeclaration(data_type) => format!("the type ':{}'", data_type),
+            TokenType::FunctionReturnTypeDeclaration(data_type) => format!("the return type ':{}'", data_type),
+            TokenType::FunctionName(name) => format!("the function name '{}'", name),
+            TokenType::FunctionSignature(_) => "a function declaration".to_string(),
+            TokenType::StructDeclaration(_) => "a struct declaration".to_string(),
+            TokenType::EnumDeclaration(_) => "an enum declaration".to_string(),
+            TokenType::StructFieldAccess(object, field) => format!("the field access '{}.{}'", object, field),
+            TokenType::EnumVariant(_) => "an enum variant".to_string(),
+            TokenType::Comment(_) => "a comment".to_string(),
+            TokenType::IfDeclaration => "the 'if' keyword".to_string(),
+            TokenType::ElseDeclaration => "the 'else' keyword".to_string(),
+            TokenType::InsertKeyword => "the 'insert' keyword".to_string(),
+            TokenType::ParallelStart => "the 'p' (parallel) keyword".to_string(),
+            TokenType::ParallelEnd => "the '/p' (end parallel) keyword".to_string(),
+            TokenType::ConcurrentStart => "the 'c' (concurrent) keyword".to_string(),
+            TokenType::ConcurrentEnd => "the '/c' (end concurrent) keyword".to_string(),
+            TokenType::ForDeclaration => "the 'for' keyword".to_string(),
+            TokenType::MapDeclaration => "the 'map' keyword".to_string(),
+            TokenType::FilterDeclaration => "the 'filter' keyword".to_string(),
+            TokenType::ReduceDeclaration => "the 'reduce' keyword".to_string(),
+            TokenType::EachDeclaration => "the 'each' keyword".to_string(),
+            TokenType::FindDeclaration => "the 'find' keyword".to_string(),
+            TokenType::AllDeclaration => "the 'all' keyword".to_string(),
+            TokenType::AnyDeclaration => "the 'any' keyword".to_string(),
+            TokenType::WhileDeclaration => "the 'while' keyword".to_string(),
+            TokenType::LoopKeyword => "the 'loop' keyword".to_string(),
+            TokenType::SpawnKeyword => "the 'spawn' keyword".to_string(),
+            TokenType::InKeyword => "the 'in' keyword".to_string(),
+            TokenType::FromKeyword => "the 'from' keyword".to_string(),
+            TokenType::WhenKeyword => "the 'when' keyword".to_string(),
+            TokenType::BreakKeyword => "the 'break' keyword".to_string(),
+            TokenType::ContinueKeyword => "the 'continue' keyword".to_string(),
+            TokenType::MaxKeyword => "the 'max' keyword".to_string(),
+            TokenType::StepKeyword => "the 'step' keyword".to_string(),
+            TokenType::Return => "the 'r' (return) keyword".to_string(),
+            TokenType::Yield => "the 'y' (yield) keyword".to_string(),
+            TokenType::LexerError(_) => "an invalid token".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Operation {
     Add, // "+"
@@ -634,7 +701,7 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
             // Reserved words and other keywords already lex to a specific error
             // or token; surface that instead of a generic complaint
             TokenType::LexerError(message) => TokenType::LexerError(message),
-            other => TokenType::LexerError(format!("Expected a function name here, but found {:?}", other)),
+            other => TokenType::LexerError(format!("Expected a function name here, but found {}", other.describe())),
         },
         code_span: CodeSpan { start_line: function_name.start_line, end_line: function_name.end_line, start_column: function_name.start_column, end_column: function_name.end_column },
     });

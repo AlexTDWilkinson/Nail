@@ -1,0 +1,6 @@
+error: Cannot access field 'value' here: 'count' is an integer (i), not a struct
+  --> tests/errors/field_access_non_struct.nail:3:16
+   |
+ 3 | value:i = count.value;
+   |                ^
+1 error found

@@ -295,7 +295,7 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::FunctionSignature(_) => parse_inline_function_from_signature(state)?,
             _ => {
                 let code_span = token.code_span;
-                return Err(CodeError { help: None, message: format!("Unexpected token {:?}", token.token_type), code_span: code_span.clone() });
+                return Err(CodeError { help: None, message: format!("Did not expect {} here", describe_token(&token.token_type)), code_span: code_span.clone() });
             }
         };
         
@@ -370,7 +370,7 @@ fn parse_expression(state: &mut ParserState, min_precedence: u8) -> Result<ASTNo
 
                 // Unary operators should have been handled in parse_primary
                 if op.is_unary() {
-                    return Err(CodeError { help: None, message: format!("Unexpected unary operator {:?} in infix position", op), code_span });
+                    return Err(CodeError { help: None, message: format!("The operator '{}' cannot be used between two values", op), code_span });
                 } else {
                     let right = parse_expression(state, op.precedence() + 1)?;
                     left = ASTNode::BinaryOperation { left: Box::new(left), operator: op, right: Box::new(right), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
@@ -399,22 +399,7 @@ fn parse_expression(state: &mut ParserState, min_precedence: u8) -> Result<ASTNo
 /// Plain-language name for a token, used in error messages instead of the
 /// internal enum variant name.
 fn describe_token(token_type: &TokenType) -> String {
-    match token_type {
-        TokenType::BlockOpen => "'{'".to_string(),
-        TokenType::BlockClose => "'}'".to_string(),
-        TokenType::ParenthesisOpen => "'('".to_string(),
-        TokenType::ParenthesisClose => "')'".to_string(),
-        TokenType::ArrayOpen => "'['".to_string(),
-        TokenType::ArrayClose => "']'".to_string(),
-        TokenType::Comma => "','".to_string(),
-        TokenType::EndStatementOrExpression => "';'".to_string(),
-        TokenType::Assignment => "'='".to_string(),
-        TokenType::ArrowAssignment => "'=>'".to_string(),
-        TokenType::Dot => "'.'".to_string(),
-        TokenType::EndOfFile => "the end of the file".to_string(),
-        TokenType::Identifier(name) => format!("the name '{}'", name),
-        other => format!("{:?}", other),
-    }
+    token_type.describe()
 }
 
 fn expect_token(state: &mut ParserState, expected: TokenType) -> Result<CodeSpan, CodeError> {
@@ -465,7 +450,7 @@ fn expect_identifier(state: &mut ParserState) -> Result<String, CodeError> {
         }
     } else {
         let error = CodeError { help: None,
-            message: format!("Expected identifier, found {:?}", state.tokens.peek().map(|token| token.token_type.clone()).unwrap_or(TokenType::EndOfFile)),
+            message: format!("Expected a name here, but found {}", describe_token(&state.tokens.peek().map(|token| token.token_type.clone()).unwrap_or(TokenType::EndOfFile))),
             code_span: state.tokens.peek().map_or(CodeSpan::default(), |token| token.code_span.clone()),
         };
         log::error!("Expect identifier error: {:?}", error);
@@ -618,7 +603,7 @@ fn parse_enum_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError>
                 TokenType::EnumVariant(variant) => variants.push(ASTNode::EnumVariant { name: enum_name.clone(), variant: variant.variant.clone(), code_span, scope: GLOBAL_SCOPE }),
                 TokenType::BlockClose => break,
                 _ => {
-                    return Err(CodeError { help: None, message: format!("Unexpected token in enum declaration: {:?}", token.token_type), code_span });
+                    return Err(CodeError { help: None, message: format!("Did not expect {} inside an enum declaration; only variant names belong here", describe_token(&token.token_type)), code_span });
                 }
             }
         }
@@ -661,7 +646,7 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
                                 data_type = rt;
                                 break;
                             }
-                            Some(other) => return Err(CodeError { help: None, message: format!("Expected comma or return type declaration, found {:?}", other.token_type), code_span: other.code_span.clone() }),
+                            Some(other) => return Err(CodeError { help: None, message: format!("Expected ',' or a return type declaration here, but found {}", describe_token(&other.token_type)), code_span: other.code_span.clone() }),
                             None => {
                                 return Err(CodeError { help: None,
                                     message: "Unexpected end of function declaration".to_string(),
@@ -680,7 +665,7 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
                     data_type = rt;
                     break;
                 }
-                Some(other) => return Err(CodeError { help: None, message: format!("Unexpected token in function declaration: {:?}", other.token_type), code_span: other.code_span.clone() }),
+                Some(other) => return Err(CodeError { help: None, message: format!("Did not expect {} in a function declaration", describe_token(&other.token_type)), code_span: other.code_span.clone() }),
                 None => {
                     return Err(CodeError { help: None,
                         message: "Unexpected end of function declaration".to_string(),
@@ -848,7 +833,7 @@ fn parse_type_annotation(state: &mut ParserState) -> Result<NailDataTypeDescript
                 }
             }
             _ => Err(CodeError { help: None,
-                message: format!("Expected type annotation, found {:?}", token.token_type),
+                message: format!("Expected a type here (like i, f, s, or b), but found {}", describe_token(&token.token_type)),
                 code_span: token.code_span.clone(),
             })
         }
@@ -1437,7 +1422,7 @@ fn parse_type_declaration(state: &mut ParserState) -> Result<NailDataTypeDescrip
         Ok(data_type)
     } else {
         let error = CodeError { help: None,
-            message: format!("Expected type declaration, found {:?}", state.tokens.peek().map(|token| token.token_type.clone()).unwrap_or(TokenType::EndOfFile)),
+            message: format!("Expected a type declaration here (like ':i' or ':s'), but found {}", describe_token(&state.tokens.peek().map(|token| token.token_type.clone()).unwrap_or(TokenType::EndOfFile))),
             code_span: state.tokens.peek().map_or(CodeSpan::default(), |token| token.code_span.clone()),
         };
         log::error!("parse_type_declaration error: {:?}", error);

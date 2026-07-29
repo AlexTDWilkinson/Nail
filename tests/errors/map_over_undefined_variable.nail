@@ -1,0 +1,5 @@
+// Error test: mapping over an undefined variable should report ONLY the
+// undefined variable, not a second nonsense error about an unknown type
+doubled:a:i = map num in numbrs {
+    y num * 2;
+};

@@ -96,7 +96,25 @@ impl NailDataTypeDescriptor {
             NailDataTypeDescriptor::Enum(name) => format!("the enum '{}'", name),
             NailDataTypeDescriptor::Fn(_, _) => format!("a function ({})", self),
             NailDataTypeDescriptor::TypeVar(_, bounds) if !bounds.is_empty() => bounds.iter().map(|b| b.describe()).collect::<Vec<_>>().join(" or "),
-            other => other.to_string(),
+            NailDataTypeDescriptor::TypeVar(_, _) => "any type".to_string(),
+            NailDataTypeDescriptor::Any => "any type".to_string(),
+            NailDataTypeDescriptor::Never => "a value that never returns (!)".to_string(),
+            NailDataTypeDescriptor::OneOf(types) if !types.is_empty() => types.iter().map(|t| t.describe()).collect::<Vec<_>>().join(" or "),
+            // Internal placeholders for types the checker could not work out
+            // (e.g. because of an earlier error); never show their debug names.
+            NailDataTypeDescriptor::OneOf(_) | NailDataTypeDescriptor::FailedToResolve => "a value whose type could not be determined".to_string(),
+        }
+    }
+
+    /// True when this type is an internal placeholder meaning "the checker could
+    /// not work out the type", usually because an earlier error (undefined
+    /// variable, bad call, ...) was already reported. Follow-up errors about
+    /// such values should be suppressed rather than shown as noise.
+    pub fn is_unresolved(&self) -> bool {
+        match self {
+            NailDataTypeDescriptor::FailedToResolve => true,
+            NailDataTypeDescriptor::OneOf(types) => types.is_empty(),
+            _ => false,
         }
     }
 }
