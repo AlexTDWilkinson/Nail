@@ -593,6 +593,28 @@ f generate_features():s {
                See the honest benchmark below.</p>
         </div>`,
         `<div class="feature-card">
+            <div class="feature-icon">🚫</div>
+            <h3>No Unsafe, No Escape Hatch</h3>
+            <p>Rust lets you opt out of its own guarantees with unsafe. Nail has no such keyword —
+               the lexer rejects it outright, so no Nail program can contain it and none of the Rust
+               Nail generates does either. There are no raw pointers, no manual lifetimes, no borrow
+               checker to argue with. The guarantees aren't a default you can turn off.</p>
+        </div>`,
+        `<div class="feature-card">
+            <div class="feature-icon">👻</div>
+            <h3>No Nulls, No Uninitialized State</h3>
+            <p>There is no null, no nil, no undefined. Every constant must be defined with a value,
+               and there are no default values waiting to surprise you. The billion-dollar mistake
+               isn't guarded against — it simply has no way to be expressed.</p>
+        </div>`,
+        `<div class="feature-card">
+            <div class="feature-icon">📦</div>
+            <h3>No Package Manager</h3>
+            <p>No dependency tree, no lockfile, no supply chain to audit, no transitive package
+               breaking your build at 2am. The standard library ships with the language and is
+               updated with every release. What you compile is what you wrote.</p>
+        </div>`,
+        `<div class="feature-card">
             <div class="feature-icon">🦀</div>
             <h3>Production Ready</h3>
             <p>Built on Rust's proven foundation. Deploy anywhere Rust runs—from embedded systems 
