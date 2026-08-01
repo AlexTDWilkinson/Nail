@@ -20,14 +20,20 @@ Generated files to watch for and delete:
 
 ## CRITICAL: Test After Every Change
 
-**IMPORTANT**: After making ANY changes to the Nail language implementation (lexer, parser, checker, transpiler), you MUST:
+**IMPORTANT**: After making ANY changes to the Nail language implementation (lexer, parser, checker, transpiler, stdlib), you MUST:
 
-1. Run `./run_comprehensive_tests.sh` immediately after your changes
-2. Verify all previously passing tests still pass
-3. If any tests fail that previously passed, investigate and fix the regression
-4. Only proceed with additional changes after all tests pass
+1. While iterating, run the fast script for the stage you touched -
+   `./test_lexer_parser.sh`, `./test_type_checker.sh`, or `./test_transpiler.sh`
+2. Before committing, run `./test_all_stages.sh` - all three stages in sequence
+3. Verify all previously passing tests still pass
+4. If any tests fail that previously passed, investigate and fix the regression
+5. Only proceed with additional changes after all tests pass
 
 This is non-negotiable to maintain language stability and prevent regressions.
+
+A clean run currently reports 92/92 lexer/parser, 92/92 type checker and
+77/77 transpiler, with zero failures. Treat any number below that as a
+regression to investigate, not a new baseline.
 
 ## CRITICAL: Never Use Workarounds
 
@@ -91,8 +97,13 @@ This ensures the language remains consistent and bugs are actually fixed, not hi
 - **`./test_type_checker.sh`** - Tests type checking for files that pass lexer/parser (fast)
 - **`./test_transpiler.sh`** - Tests transpilation for files that pass type checking (fast)
 - **`./test_rust_compilation.sh`** - Tests Rust compilation of transpiled files (VERY SLOW - only use when specifically needed)
-- **`./test_all_stages.sh`** - DO NOT USE THIS UNLESS ASKED TO TEST ALL (it's slow) - Runs all three fast test scripts in sequence
+- **`./test_all_stages.sh`** - Runs all three fast test scripts in sequence. Too slow for tight iteration, but required before committing a change to the language implementation
 - **`./test_all_stages.sh --with-rust`** - DO NOT USE UNLESS EXPLICITLY ASKED - Also runs Rust compilation tests (EXTREMELY SLOW)
+
+**Other suites** (not part of the standard pre-commit run):
+- **`./test_e2e.sh`** - End-to-end runs of compiled Nail programs
+- **`./test_error_messages.sh`** - Checks runtime error message wording against goldens
+- **`./check_all_features.sh`** - Verifies every feature-gated combination still compiles
 
 **Usage:**
 ```bash
@@ -141,6 +152,16 @@ cargo run --bin nailc tests/example.nail --transpile
 
 # Skip type checking (for debugging)
 cargo run --bin nailc tests/example.nail --skip-check
+
+# Stop after a single stage, to isolate where something breaks
+cargo run --bin nailc tests/example.nail --lex-only
+cargo run --bin nailc tests/example.nail --parse-only
+
+# Write transpiler output to stdout instead of a file
+cargo run --bin nailc tests/example.nail --transpile --stdout
+
+# Generate the Cargo.toml a transpiled program needs, from its actual usage
+cargo run --bin nailc tests/example.nail --cargo-toml --package-name=my_app
 ```
 
 ## Transpilation Guidelines
@@ -151,12 +172,38 @@ cargo run --bin nailc tests/example.nail --skip-check
 
 The Nail website is a demonstration of the language written in Nail itself:
 
-- **Source**: `examples/nail_website.nail` - The website code written in Nail
-- **Build Script**: `./run_website.sh` - Transpiles and runs the website
+- **Source**: `examples/nail_website.nail` - The website code written in Nail. This is the ONLY file to edit
+- **Local run**: `./run_website.sh` - Transpiles and runs the website on port 8080
+- **Deploy**: `./scripts/deploy.sh` - Transpiles, builds, and ships to the droplet
 - **How it works**:
   1. The script transpiles `nail_website.nail` to Rust
-  2. Creates a separate Cargo project in `nail_website_server/`
+  2. Writes it into the separate Cargo project in `nail_website_server/`
   3. Builds and runs the server on port 8080
   4. The website showcases Nail examples and features using HTMX for interactivity
 
 **Important**: The `nail-website` binary in Cargo.toml is NOT the actual website - it's just a build helper. The real website runs from the transpiled `nail_website.nail` file.
+
+**`nail_website_server/src/main.rs` is transpiler output and is gitignored.**
+It used to be tracked, drifted out of sync with the compiler, and eventually
+stopped compiling entirely. Never edit it and never commit it - it is
+regenerated on every run and every deploy. Note that
+`nail_website_server/Cargo.toml` is also generated (by `nailc --cargo-toml`)
+but is still tracked.
+
+The server reads several files at runtime relative to its working directory
+(`examples/website_examples/`, `tests/`, `nail_language_spec.md`, `README.md`,
+`examples/nail_website.nail`). `scripts/deploy.sh` ships those alongside the
+binary - if you add a new `read_file` call to the website, add its path to
+`DATA_PATHS` in that script or the deployed site will panic on startup.
+
+## Deployment
+
+The website runs on a DigitalOcean droplet shared with other services. See
+`deploy/README.md` for the full runbook. In short:
+
+- `deploy/provision-base.sh` - box-level setup (Caddy, ufw, fail2ban, swap), run once per droplet
+- `deploy/add-app.sh` - registers one app: its own user, `/srv/<app>` at 0750, a sandboxed systemd unit, its own Caddy fragment
+- `scripts/deploy.sh` - everyday deploy; builds locally and ships a finished binary. Nothing is compiled on the droplet
+
+Apps bind `127.0.0.1` via `BIND_ADDR`, so the reverse proxy is the only public
+entrance. Credentials live in `.env` (gitignored).
