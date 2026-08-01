@@ -1,0 +1,45 @@
+[Unit]
+Description=@NAME@
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@NAME@
+Group=@NAME@
+WorkingDirectory=/srv/@NAME@
+EnvironmentFile=/srv/@NAME@/env
+Environment=PORT=@PORT@
+# Loopback only - the proxy is the sole public listener on this box.
+Environment=BIND_ADDR=127.0.0.1
+Environment=RUST_LOG=info
+ExecStart=/srv/@NAME@/@BIN@
+Restart=always
+RestartSec=2
+
+# Isolation: this service can read and write its own directory and nothing
+# else. It cannot see other apps' files, cannot gain privileges, and gets its
+# own /tmp.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/@NAME@
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+# Only ordinary network sockets - no raw packets, no exotic address families.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Resource ceiling: one misbehaving app cannot starve its neighbours. Soft
+# limit throttles, hard limit kills.
+MemoryHigh=@MEMHIGH@
+MemoryMax=@MEMMAX@
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
