@@ -26,6 +26,7 @@ BIN=nail_website_server
 # resolves. Keep in sync with the read_file calls in the generated main.rs.
 DATA_PATHS=(
 	examples/website_examples
+	examples/website_screenshots
 	examples/nail_website.nail
 	tests
 	nail_language_spec.md
