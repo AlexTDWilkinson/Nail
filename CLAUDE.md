@@ -31,8 +31,8 @@ Generated files to watch for and delete:
 
 This is non-negotiable to maintain language stability and prevent regressions.
 
-A clean run currently reports 92/92 lexer/parser, 92/92 type checker and
-77/77 transpiler, with zero failures. Treat any number below that as a
+A clean run currently reports 93/93 lexer/parser, 93/93 type checker and
+78/78 transpiler, with zero failures. Treat any number below that as a
 regression to investigate, not a new baseline.
 
 ## CRITICAL: Never Use Workarounds

@@ -41,6 +41,17 @@ fn worth_parallel(len: usize, min_len: usize) -> bool {
     len as u128 >= scaled
 }
 
+/// Whether a hand-written fold of this many elements is worth handing to rayon.
+///
+/// Called by transpiled code. The compiler parallelises a `reduce` only when it
+/// can prove from the fold's shape that regrouping cannot change the answer,
+/// and then defers the size question to the same measured crossover the stdlib
+/// reductions use: an integer fold is the cheapest per element, so it needs the
+/// largest input before threading pays for itself.
+pub fn worth_parallel_fold(len: usize) -> bool {
+    worth_parallel(len, PARALLEL_MIN_LEN_SUM)
+}
+
 pub fn len<T>(arr: &Vec<T>) -> i64 {
     arr.len() as i64
 }

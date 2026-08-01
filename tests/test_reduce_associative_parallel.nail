@@ -1,0 +1,43 @@
+// A reduce whose step is provably associative may be split across cores; every
+// other fold must stay sequential, because regrouping it could change the
+// answer. Both kinds are exercised here.
+
+numbers:a:i = [1, 2, 3, 4, 5];
+
+// Associative over integers: parallelisable above the size threshold.
+total:i = reduce acc num in numbers from 0 { y acc + num; };
+product:i = reduce acc num in numbers from 1 { y acc * num; };
+
+// Associative step, non-identity start: the start is applied once, not once
+// per chunk, so this stays correct however the work is divided.
+total_offset:i = reduce acc num in numbers from 100 { y acc + num; };
+
+// Element on the left of the operator is the same fold written the other way.
+total_flipped:i = reduce acc num in numbers from 0 { y num + acc; };
+
+// Not associative: (10-1)-2 is not 10-(1-2), so this must fold in order.
+difference:i = reduce acc num in numbers from 100 { y acc - num; };
+
+// Associative in exact arithmetic, but not in floating point - rounding
+// depends on the grouping - so float folds stay sequential too.
+measurements:a:f = [1.5, 2.5, 3.5];
+float_total:f = reduce acc measurement in measurements from 0.0 { y acc + measurement; };
+
+// A body that does more than combine the two values is not a plain fold.
+counted:i = reduce acc num in numbers from 0 {
+    doubled:i = num * 2;
+    y acc + doubled;
+};
+
+// Large enough to cross the threshold and actually take the parallel path.
+// 1 + 2 + ... + 3,000,000 is 4,500,001,500,000, whatever order it is added in.
+big_total:i = reduce acc num in array_range_inclusive(1, 3000000) from 0 { y acc + num; };
+
+print(`Sum: `, total);
+print(`Product: `, product);
+print(`Sum from 100: `, total_offset);
+print(`Sum written flipped: `, total_flipped);
+print(`Difference: `, difference);
+print(`Float total: `, float_total);
+print(`Counted: `, counted);
+print(`Big total: `, big_total);

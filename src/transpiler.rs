@@ -1104,6 +1104,58 @@ impl Transpiler {
     /// Shared opening of a sequential collection operation (reduce/each/find/
     /// all/any): enumerate for-loop plus the optional index binding. Leaves
     /// indent_level one deeper; callers emit the body and the closing brace.
+    /// The operator and identity of a fold that may be evaluated in any
+    /// grouping, or None when the fold must stay sequential.
+    ///
+    /// Splitting a fold across threads regroups it - `(a+b)+c` becomes
+    /// `a+(b+c)` - so only an associative step may be parallelised. That is
+    /// proven here from the shape of the code rather than promised by whoever
+    /// wrote it: the body must be a single yield combining exactly the
+    /// accumulator and the element with `+` or `*`, and the initial value must
+    /// be an integer literal, which makes every operand an i64. Integer
+    /// addition and multiplication are associative and commutative, so no
+    /// grouping and no ordering can change the answer.
+    ///
+    /// Everything else stays sequential, including folds that happen to be
+    /// associative but aren't written this plainly, and every float fold -
+    /// floating point addition is not associative, so regrouping changes the
+    /// rounding and the result.
+    fn associative_fold(accumulator: &str, iterator: &str, index_iterator: &Option<String>, initial_value: &ASTNode, body: &ASTNode) -> Option<(&'static str, &'static str)> {
+        if index_iterator.is_some() {
+            return None;
+        }
+        match initial_value {
+            ASTNode::NumberLiteral { data_type: NailDataTypeDescriptor::Int, .. } => {}
+            _ => return None,
+        }
+        let statements = match body {
+            ASTNode::Block { statements, .. } => statements,
+            _ => return None,
+        };
+        let folded = match statements.as_slice() {
+            [ASTNode::YieldDeclaration { statement, .. }] | [ASTNode::ReturnDeclaration { statement, .. }] => statement,
+            _ => return None,
+        };
+        let (left, operator, right) = match folded.as_ref() {
+            ASTNode::BinaryOperation { left, operator, right, .. } => (left, operator, right),
+            _ => return None,
+        };
+        let name_of = |node: &ASTNode| match node {
+            ASTNode::Identifier { name, .. } => Some(name.clone()),
+            _ => None,
+        };
+        let (left_name, right_name) = (name_of(left)?, name_of(right)?);
+        let combines_both = (left_name == accumulator && right_name == iterator) || (left_name == iterator && right_name == accumulator);
+        if !combines_both {
+            return None;
+        }
+        match operator {
+            Operation::Add => Some(("+", "0i64")),
+            Operation::Mul => Some(("*", "1i64")),
+            _ => None,
+        }
+    }
+
     fn write_sequential_for_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, output: &mut String) -> Result<(), CodeError> {
         if let Some(element_type) = self.iterable_element_type(iterable) {
             self.record_variable_type(iterator, element_type);
@@ -1703,9 +1755,45 @@ impl Transpiler {
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
             }
+            ASTNode::ReduceExpression { iterator, index_iterator, iterable, initial_value, accumulator, body, .. } if Self::associative_fold(accumulator, iterator, index_iterator, initial_value, body).is_some() => {
+                // A fold whose step is provably associative gives the same
+                // answer however the work is divided, so it can be split
+                // across cores - above the size where threading pays for
+                // itself. The initial value is applied once at the end rather
+                // than seeded into each chunk, which is why it need not be the
+                // operator's identity.
+                let (operator, identity) = Self::associative_fold(accumulator, iterator, index_iterator, initial_value, body).expect("guard proved this fold associative");
+                self.record_variable_type(accumulator, NailDataTypeDescriptor::Int);
+
+                if add_semicolons {
+                    write!(output, "{}", self.indent())?;
+                }
+                writeln!(output, "{{")?;
+                self.indent_level += 1;
+
+                write!(output, "{}let __fold_items = ", self.indent())?;
+                self.transpile_iterable(iterable, true, output)?;
+                writeln!(output, ".into_iter();")?;
+                write!(output, "{}let __fold_init = ", self.indent())?;
+                self.transpile_node_internal(initial_value, output, false)?;
+                writeln!(output, ";")?;
+                // An iterator that cannot report its length reports zero here,
+                // which keeps the fold sequential - the safe direction.
+                writeln!(output, "{}let (__fold_len, _) = __fold_items.size_hint();", self.indent())?;
+                writeln!(output, "{}if std_lib::array::worth_parallel_fold(__fold_len) {{", self.indent())?;
+                writeln!(output, "{}    let __fold_vec: Vec<i64> = __fold_items.collect();", self.indent())?;
+                writeln!(output, "{}    __fold_init {} __fold_vec.into_par_iter().reduce(|| {}, |__a, __b| __a {} __b)", self.indent(), operator, identity, operator)?;
+                writeln!(output, "{}}} else {{", self.indent())?;
+                writeln!(output, "{}    __fold_items.fold(__fold_init, |__a, __b| __a {} __b)", self.indent(), operator)?;
+                writeln!(output, "{}}}", self.indent())?;
+
+                self.indent_level -= 1;
+                write!(output, "{}}}", self.indent())?;
+            }
             ASTNode::ReduceExpression { iterator, index_iterator, iterable, initial_value, accumulator, body, .. } => {
-                // Reduce expressions fold values into a single result
-                // Note: We use sequential iteration for reduce to maintain order-dependent operations
+                // Every other fold stays sequential: an arbitrary step is only
+                // safe to regroup if it is associative, and that cannot be
+                // proven about code the compiler did not write.
                 if add_semicolons {
                     write!(output, "{}", self.indent())?;
                 }
