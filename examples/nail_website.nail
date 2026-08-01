@@ -762,10 +762,77 @@ f generate_performance():s {
                 <li><strong>c blocks</strong> — I/O runs concurrently with async Rust (tokio::join!)</li>
                 <li>All I/O is async under the hood — no blocked threads, ever</li>
             </ul>
-            <p style="margin: 0;"><strong>Sequential — because parallelism would change what your code means:</strong>
-                <strong> reduce</strong> folds in order (parallel folding is only valid for operations the compiler
-                can't verify), and <strong>each</strong> runs side effects in the order you wrote them.</p>
+            <p style="margin: 0.75rem 0 0 0;"><strong>Parallel above a measured size:</strong>
+                <strong>sum</strong>, <strong>min</strong> and <strong>max</strong>. These are associative —
+                (a+b)+c equals a+(b+c) — so splitting them across cores provably gives the same answer as
+                folding left to right.</p>
+            <p style="margin: 0.75rem 0 0 0;"><strong>Sequential — because parallelism would change what your code means:</strong>
+                <strong> reduce</strong> folds in order, because an arbitrary fold you wrote is only safe to
+                split if it's associative, and the compiler has no way to prove that about your code.
+                <strong>each</strong> runs side effects in the order you wrote them.</p>
         </div>
+
+        <h3 style="margin-top: 2.5rem;">Why naming the operation is what makes it fast</h3>
+        <p>
+            This is the part that isn't really about parallelism. When you write a loop, the compiler sees
+            a loop: some reads, some arithmetic, a branch. It cannot tell whether the order matters, so it
+            must assume the worst and leave it alone. When you write <strong>sum</strong>, the compiler
+            doesn't have to infer anything — it wrote that operation, so it already knows the answer is the
+            same however the work is divided.
+        </p>
+        <p>
+            That's why Nail makes map, filter, reduce, find, all, any, sum, min and max language-level
+            operations rather than library methods you assemble by hand. Every piece of logic you lift out
+            of a hand-rolled loop and into a named operation is a piece the compiler is allowed to optimize.
+            The same code gets faster because it got clearer, which is the trade the language is built
+            around.
+        </p>
+        <p>
+            The flip side is honesty about when it doesn't help. Threads cost tens of microseconds to
+            coordinate, so parallelism only pays once there's enough work to cover that. Nail measures the
+            crossover rather than guessing at it, and stays sequential below it:
+        </p>
+        <div style="overflow-x: auto; margin: 1.5rem 0;">
+            <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
+                <tr style="border-bottom: 2px solid var(--border);">
+                    <th style="text-align: left; padding: 0.75rem 1rem;">Elements</th>
+                    <th style="text-align: right; padding: 0.75rem 1rem;">min / max</th>
+                    <th style="text-align: right; padding: 0.75rem 1rem;">sum</th>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 0.75rem 1rem;">200,000</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem;">0.42x — slower</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem;">slower</td>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 0.75rem 1rem;">1,000,000</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">1.23x</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem;">0.63x — slower</td>
+                </tr>
+                <tr>
+                    <td style="padding: 0.75rem 1rem;">4,000,000</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">2.64x</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">1.98x</td>
+                </tr>
+            </table>
+        </div>
+        <p style="font-size: 0.95rem; color: var(--text-secondary);">
+            Same 24-core machine, i64 elements — the cheapest case, and so the hardest one to win. Summing
+            integers is limited by memory bandwidth and vectorises well on a single core, so it needs a
+            larger array before threading pays; comparisons cross over sooner. Anything more expensive to
+            compare crosses over sooner still — finding the minimum of a million strings is already 2.69x
+            at a fifth of that size. On a single-core machine Nail skips the parallel path entirely, because
+            there is no second core to win anything back.
+        </p>
+        <p style="font-size: 0.95rem; color: var(--text-secondary);">
+            One caveat worth stating plainly: these are microbenchmarks of individual operations, not
+            measurements of whole programs. They tell you what a given operation costs at a given size —
+            not what your application will do. Most programs spend most of their time waiting on I/O, a
+            database, or the network, and no amount of core-parallelism touches that. The programs that
+            gain here are the ones doing real CPU work over real collections. If yours isn't one of them,
+            the honest answer is that Nail compiles to roughly the same sequential Rust you'd have written
+            anyway — which is the floor we'd rather promise than a speedup number we can't back up.
+        </p>
         <div style="overflow-x: auto; margin: 2rem 0;">
             <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
                 <tr style="border-bottom: 2px solid var(--border);">
