@@ -27,6 +27,7 @@ BIN=nail_website_server
 DATA_PATHS=(
 	examples/website_examples
 	examples/website_screenshots
+	examples/website_assets
 	examples/nail_website.nail
 	tests
 	nail_language_spec.md

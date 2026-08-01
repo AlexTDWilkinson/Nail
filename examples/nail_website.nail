@@ -88,6 +88,10 @@ div_fallback:i = safe(divide(10, 0), zero_fallback);
 
 // Syntax-highlight the examples with Nail's own lexer (no JS highlighter —
 // the server lexes each example and emits colored HTML spans)
+// The author photo travels as base64 in the page itself: this server serves
+// routes of text, so there is no binary asset to host or path to get wrong.
+author_avatar:s = danger(fs_read(`examples/website_assets/author_avatar.b64`));
+
 // Real frames of the IDE, captured from a terminal and converted to HTML, so
 // the colors below are the ones the editor actually drew.
 ide_shot_error:s = danger(fs_read(`examples/website_screenshots/ide_error.html`));
@@ -404,6 +408,60 @@ f generate_css():s {
         overflow-y: auto;
     }`;
     
+    author_styles:s = `
+    .author-card {
+        max-width: 900px;
+        margin: 0 auto;
+        background: var(--bg-primary);
+        border-radius: 1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        padding: 2.5rem;
+        font-size: 1.05rem;
+        line-height: 1.8;
+        color: var(--text-secondary);
+    }
+
+    .author-photo {
+        float: right;
+        width: 11rem;
+        height: 11rem;
+        border-radius: 50%;
+        object-fit: cover;
+        margin: 0 0 1.5rem 2rem;
+        shape-outside: circle(50%);
+        background: var(--bg-secondary);
+    }
+
+    .author-lead {
+        font-size: 1.6rem;
+        font-weight: 700;
+        line-height: 1.35;
+        color: var(--text-primary);
+        margin-bottom: 1.5rem;
+    }
+
+    .author-name {
+        display: block;
+        color: var(--primary);
+    }
+
+    .author-card p + p {
+        margin-top: 1rem;
+    }
+
+    .author-card a {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
+    @media (max-width: 600px) {
+        .author-photo {
+            float: none;
+            display: block;
+            margin: 0 auto 1.5rem;
+        }
+    }`;
+
     ide_styles:s = `
     .ide-shot {
         background: #11111b;
@@ -463,6 +521,7 @@ f generate_css():s {
         feature_styles,
         code_styles,
         ide_styles,
+        author_styles,
         philosophy_styles,
         animation_styles
     ], ``);
@@ -966,6 +1025,38 @@ f generate_versioning():s {
 </section>`;
 }
 
+f generate_author(avatar_base64:s):s {
+    author_html:s = array_join([
+        `<section id="author" class="author">
+    <div class="section-header">
+        <h2>Made By</h2>
+    </div>
+    <div class="author-card">
+        <img class="author-photo" src="data:image/jpeg;base64,`,
+        avatar_base64,
+        `" alt="Alex Wilkinson">
+        <p class="author-lead"><span class="author-name">Alex Wilkinson —</span>
+            I designed Nail and wrote all of it.</p>
+        <p>
+            Most of the bugs I have shipped in my career were not hard problems solved badly. They were
+            simple problems buried under language features I did not need: a value that turned out to be
+            null, a variable something else had changed, a loop index off by one, two threads touching
+            the same thing. Nail is the language I wanted instead — one that removes those features
+            rather than handing me better tools for surviving them.
+        </p>
+        <p>
+            The lexer, parser, type checker, transpiler, standard library and the terminal IDE are all
+            mine, and so is this page: it is a Nail program, compiled by that compiler, serving you this
+            HTML right now. I also made
+            <a href="https://sul.alex-wilkinson.ca" target="_blank">Simple Universal Language</a>,
+            a writing system built to be readable by people who cannot see or hear it.
+        </p>
+    </div>
+</section>`
+    ], ``);
+    r author_html;
+}
+
 f generate_footer():s {
     r `<footer style="background: var(--text-primary); color: white; padding: 3rem 2rem; margin-top: 4rem;">
     <div style="max-width: 1200px; margin: 0 auto; text-align: center;">
@@ -998,6 +1089,7 @@ website_html:s = array_join([
     generate_ide(ide_shot_error, ide_shot_complete, ide_shot_docs),
     generate_performance(),
     generate_versioning(),
+    generate_author(author_avatar),
     generate_footer(),
     `</body>
 </html>`
