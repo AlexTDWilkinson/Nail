@@ -25,6 +25,24 @@ pub struct HTTP_Route {
     pub status_code: i64,     // HTTP status code (200, 404, etc.); i64 to match Nail's integer type
 }
 
+/// Escapes text for use inside HTML. Anything a client controls must go
+/// through this before being embedded in a page - otherwise a crafted URL
+/// executes attacker JavaScript on the site's own origin.
+fn escape_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#x27;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Builds a response without panicking: if the header value is somehow
 /// invalid, the client gets a 500 instead of the server thread crashing.
 fn build_response(status: StatusCode, content_type: &str, content: String) -> Response {
@@ -102,14 +120,34 @@ pub async fn http_server(port: i64, routes: DashMap<String, HTTP_Route>) -> Resu
                             return build_response(status, &content_type, content);
                         }
 
-                        Html(format!("<pre>404 - Route not found: {}?{}</pre>", path_for_error, query_string)).into_response()
+                        // The query string is client-controlled, so it is
+                        // escaped before being echoed back, and the status is a
+                        // real 404 rather than a 200 describing one.
+                        (
+                            StatusCode::NOT_FOUND,
+                            Html(format!(
+                                "<pre>404 - Route not found: {}?{}</pre>",
+                                escape_html(&path_for_error),
+                                escape_html(&query_string)
+                            )),
+                        )
+                            .into_response()
                     }
                 }),
             );
         }
     }
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port as u16));
+    // Every interface by default, so `nail run` in a container or on a LAN
+    // keeps working. Behind a reverse proxy, set BIND_ADDR=127.0.0.1 so the
+    // server is unreachable from outside the machine no matter what the
+    // firewall is doing.
+    let addr: SocketAddr = match std::env::var("BIND_ADDR") {
+        Ok(host) => format!("{}:{}", host, port)
+            .parse()
+            .map_err(|_| format!("http_server: invalid BIND_ADDR '{}'", host))?,
+        Err(_) => SocketAddr::from(([0, 0, 0, 0], port as u16)),
+    };
     println!("🔨 Nail HTTP server listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| format!("http_server: could not bind to port {}: {}", port, e))?;
