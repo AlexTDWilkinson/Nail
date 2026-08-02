@@ -1,0 +1,24 @@
+// Names introduced by a block belong to that block. A map iterator, a lambda
+// parameter or a function parameter that happens to share a name with a
+// function must not shadow it once the block is over.
+
+f label(text:s):s {
+    r text;
+}
+
+f shadows_in_map(items:a:s):s {
+    parts:a:s = map label in items {
+        y label;
+    };
+    r array_join(parts, ` `);
+}
+
+f shadows_in_parameter(label:s):s {
+    r label;
+}
+
+// Both of the above used a local named `label`; the function is still callable.
+joined:s = shadows_in_map([`one`, `two`]);
+passed:s = shadows_in_parameter(`three`);
+called:s = label(`four`);
+print(array_join([joined, passed, called], ` `));

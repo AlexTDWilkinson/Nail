@@ -1,0 +1,9 @@
+// E2E: a mapped fold big enough to be split across cores agrees with the same
+// fold run sequentially over a short array
+numbers:a:i = array_range(1, 2000001);
+sum_of_remainders:i = reduce acc num in numbers from 0 { y acc + num % 7; };
+print(sum_of_remainders);
+
+short:a:i = array_range(1, 15);
+short_sum:i = reduce acc num in short from 0 { y acc + num % 7; };
+print(short_sum);

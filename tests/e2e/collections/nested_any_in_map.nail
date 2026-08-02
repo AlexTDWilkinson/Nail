@@ -1,0 +1,6 @@
+// E2E: any nested inside a map, and all nested inside a filter
+grid:a:a:i = [[1, 3, 5], [2, 4, 6], [7, 8, 9]];
+has_even:a:b = map row in grid { y any cell in row { y cell % 2 == 0; }; };
+print(has_even);
+all_odd_rows:a:a:i = filter row in grid { y all cell in row { y cell % 2 == 1; }; };
+print(all_odd_rows);

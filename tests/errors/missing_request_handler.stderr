@@ -1,0 +1,7 @@
+error: 'http_server' passes every request to a function named 'handle_request', but this program does not define one
+  --> tests/errors/missing_request_handler.nail:8:25
+   |
+ 8 | http_server(8080, config);
+   |                         ^
+help: define a function 'handle_request' taking (the struct 'HTTP_Request', a hashmap (h<s,s>)) and returning the struct 'HTTP_Response'
+1 error found

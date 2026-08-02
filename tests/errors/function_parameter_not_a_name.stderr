@@ -1,0 +1,5 @@
+error: Expected a parameter name or ')' here, but found '@'
+  --> tests/errors/function_parameter_not_a_name.nail:2:1
+   |
+ 2 | f lookup(@bad:s):s {
+   | ^^^^^^^^^^^^^^^^

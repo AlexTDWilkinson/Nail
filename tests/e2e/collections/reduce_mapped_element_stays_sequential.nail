@@ -1,0 +1,10 @@
+// E2E: contributions the compiler cannot prove are whole numbers keep the fold
+// sequential, and the answers are the same either way
+prices:a:f = [1.5, 2.25, 3.0];
+total:f = reduce acc price in prices from 0.0 { y acc + price * 2.0; };
+print(total);
+
+// subtraction is not associative however the element is computed
+numbers:a:i = [10, 20, 30];
+difference:i = reduce acc num in numbers from 100 { y acc - num * 2; };
+print(difference);

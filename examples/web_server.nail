@@ -72,15 +72,39 @@ each option in port_options {
     print(`- `, option);
 }
 
-// Create routes
-routes:h<s, HTTP_Route> = hashmap_new();
-home_route:HTTP_Route = HTTP_Route {
-    path = `/`,
-    content = html_content,
-    content_type = `text/html`,
-    status_code = 200
+// Every request goes to handle_request. A Nail function sees only its own
+// parameters, so the page built above travels in through the config hashmap.
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    headers:h<s,s> = hashmap_new();
+    if {
+        request.path == `/` => {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_home`)),
+                content_type = `text/html`,
+                headers = headers
+            };
+        },
+        else => {
+            r HTTP_Response {
+                status = 404,
+                body = `<pre>404 - not found</pre>`,
+                content_type = `text/html`,
+                headers = headers
+            };
+        }
+    }
+}
+
+state:h<s,s> = hashmap_new();
+hashmap_set(state, `page_home`, html_content);
+
+config:HTTP_Config = HTTP_Config {
+    static_mounts = [],
+    max_body_bytes = 0,
+    timeout_seconds = 0,
+    state = state
 };
-hashmap_set(routes, `/`, home_route);
 
 // Start the HTTP server
-http_server(port, routes);
+http_server(port, config);

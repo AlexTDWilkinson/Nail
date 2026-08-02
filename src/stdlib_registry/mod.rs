@@ -92,6 +92,7 @@ mod array;
 mod code;
 mod compress;
 mod crypto;
+mod csv;
 mod database;
 mod datafusion;
 mod env;
@@ -159,12 +160,14 @@ macro_rules! crate_dependencies {
 
 crate_dependencies! {
     Axum => { cargo: "axum = \"0.7\"", name: "axum", import: "use axum;" },
+    TowerHttp => { cargo: "tower-http = { version = \"0.5\", features = [\"fs\"] }", name: "tower-http", import: "use tower_http;" },
     Tokio => { cargo: "tokio = { version = \"1\", features = [\"rt-multi-thread\", \"macros\"] }", name: "tokio", import: "use tokio;" },
     SerdeJson => { cargo: "serde_json = \"1.0\"", name: "serde_json", import: "use serde_json;" },
     Serde => { cargo: "serde = { version = \"1.0\", features = [\"derive\"] }", name: "serde", import: "use serde;" },
     Regex => { cargo: "regex = \"1.10\"", name: "regex", import: "use regex;" },
     Rand => { cargo: "rand = \"0.8\"", name: "rand", import: "use rand;" },
-    DashMap => { cargo: "dashmap = \"6.1.0\"", name: "dashmap", import: "use dashmap;" },
+    Csv => { cargo: "csv = \"1.3\"", name: "csv", import: "use csv;" },
+    DashMap => { cargo: "dashmap = { version = \"6.1.0\", features = [\"serde\"] }", name: "dashmap", import: "use dashmap;" },
     Pulldown => { cargo: "pulldown-cmark = \"0.9\"", name: "pulldown-cmark", import: "use pulldown_cmark;" },
     Reqwest => { cargo: "reqwest = { version = \"0.11\", default-features = false, features = [\"json\", \"rustls-tls\"] }", name: "reqwest", import: "use reqwest;" },
     Sha2 => { cargo: "sha2 = \"0.10\"", name: "sha2", import: "use sha2;" },
@@ -177,9 +180,12 @@ crate_dependencies! {
     DataFusion => { cargo: "datafusion = \"50\"", name: "datafusion", import: "use datafusion;", feature: "datafusion" },
 }
 
-/// Defines the StdlibModule enum and its runtime module path from one table.
+/// Defines the StdlibModule enum, its runtime module path, and the namespace
+/// every name in that module wears, from one table. The namespace is not
+/// decoration: a Nail program has one flat name space, so `csv_open` and
+/// `CSV_Options` say which library they belong to without an import list.
 macro_rules! stdlib_modules {
-    ($($variant:ident => $path:literal),* $(,)?) => {
+    ($($variant:ident => $path:literal, $prefix:literal),* $(,)?) => {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub enum StdlibModule {
             $($variant,)*
@@ -189,37 +195,47 @@ macro_rules! stdlib_modules {
             pub fn to_module_path(&self) -> &'static str {
                 match self { $(StdlibModule::$variant => $path,)* }
             }
+
+            /// The prefix every function this module exports must start with.
+            pub fn name_prefix(&self) -> &'static str {
+                match self { $(StdlibModule::$variant => $prefix,)* }
+            }
+
+            pub fn all() -> &'static [StdlibModule] {
+                &[$(StdlibModule::$variant,)*]
+            }
         }
     };
 }
 
 stdlib_modules! {
-    Http => "std_lib::http",
-    Fs => "std_lib::fs",
-    Json => "std_lib::json",
-    String => "std_lib::string",
-    Int => "std_lib::int",
-    Float => "std_lib::float",
-    Array => "std_lib::array",
-    Math => "std_lib::math",
-    Time => "std_lib::time",
-    Env => "std_lib::env",
-    Process => "std_lib::process",
-    Path => "std_lib::path",
-    Error => "std_lib::error",
-    Panic => "std_lib::panic",
-    HashMap => "std_lib::hashmap",
-    IO => "std_lib::io",
-    Print => "std_lib::print",
-    Markdown => "std_lib::markdown",
-    Code => "std_lib::code",
-    Crypto => "std_lib::crypto",
-    Regex => "std_lib::regex",
-    Args => "std_lib::args",
-    Url => "std_lib::url",
-    Compress => "std_lib::compress",
-    Database => "std_lib::database",
-    DataFusion => "std_lib::datafusion",
+    Http => "std_lib::http", "http_",
+    Fs => "std_lib::fs", "fs_",
+    Json => "std_lib::json", "json_",
+    String => "std_lib::string", "string_",
+    Int => "std_lib::int", "int_",
+    Float => "std_lib::float", "float_",
+    Array => "std_lib::array", "array_",
+    Math => "std_lib::math", "math_",
+    Time => "std_lib::time", "time_",
+    Env => "std_lib::env", "env_",
+    Process => "std_lib::process", "process_",
+    Path => "std_lib::path", "path_",
+    Error => "std_lib::error", "error_",
+    Panic => "std_lib::panic", "panic_",
+    HashMap => "std_lib::hashmap", "hashmap_",
+    IO => "std_lib::io", "io_",
+    Print => "std_lib::print", "print",
+    Markdown => "std_lib::markdown", "markdown_",
+    Code => "std_lib::code", "code_",
+    Crypto => "std_lib::crypto", "crypto_",
+    Regex => "std_lib::regex", "regex_",
+    Args => "std_lib::args", "args_",
+    Url => "std_lib::url", "url_",
+    Csv => "std_lib::csv", "csv_",
+    Compress => "std_lib::compress", "compress_",
+    Database => "std_lib::database", "db_",
+    DataFusion => "std_lib::datafusion", "db_datafusion_",
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -286,6 +302,7 @@ lazy_static! {
         code::register(&mut m);
         compress::register(&mut m);
         crypto::register(&mut m);
+        csv::register(&mut m);
         database::register(&mut m);
         datafusion::register(&mut m);
         env::register(&mut m);
@@ -372,10 +389,17 @@ pub fn get_iterator_form(name: &str) -> Option<&'static str> {
 /// async; pure computation modules are plain sync functions. Per-function
 /// exceptions to a module's default live here too, so the transpiler stays
 /// completely generic.
+/// Functions whose Rust implementations are synchronous even though their
+/// module is otherwise async, so no `.await` may be emitted for them.
+const SYNC_STDLIB_FUNCTIONS: &[&str] = &["http_path_matches", "http_path_params"];
+
 pub fn is_stdlib_fn_async(name: &str) -> bool {
     // Per-function overrides of the module default
     if name == "time_sleep" {
         return true;
+    }
+    if SYNC_STDLIB_FUNCTIONS.contains(&name) {
+        return false;
     }
     matches!(
         get_stdlib_function(name).map(|f| &f.module),
@@ -395,19 +419,77 @@ lazy_static! {
     pub static ref STDLIB_TYPES: HashMap<&'static str, StdlibTypeInfo> = {
         let mut m = HashMap::new();
         
-        // HTTP_Route struct
-        m.insert("HTTP_Route", StdlibTypeInfo {
-            name: "HTTP_Route".to_string(),
+        // CSV_Reader struct
+        m.insert("CSV_Reader", StdlibTypeInfo {
+            name: "CSV_Reader".to_string(),
             fields: {
                 let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
                 fields.insert("path".to_string(), NailDataTypeDescriptor::String);
-                fields.insert("content".to_string(), NailDataTypeDescriptor::String);
-                fields.insert("content_type".to_string(), NailDataTypeDescriptor::String);
-                fields.insert("status_code".to_string(), NailDataTypeDescriptor::Int);
                 fields
             }
         });
-        
+
+        // CSV_Options struct
+        m.insert("CSV_Options", StdlibTypeInfo {
+            name: "CSV_Options".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("delimiter".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("quote".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("escape".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("double_quote".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("comment".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("has_headers".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("flexible".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("trim".to_string(), NailDataTypeDescriptor::Enum("CSV_Trim".to_string()));
+                fields.insert("skip_rows".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("n_rows".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("null_values".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("ignore_errors".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("eol_char".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // HTTP_Static struct
+        m.insert("HTTP_Static", StdlibTypeInfo {
+            name: "HTTP_Static".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("prefix".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("directory".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // HTTP_Config struct
+        m.insert("HTTP_Config", StdlibTypeInfo {
+            name: "HTTP_Config".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("static_mounts".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct("HTTP_Static".to_string()))));
+                fields.insert("max_body_bytes".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("timeout_seconds".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("state".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
+                fields
+            }
+        });
+
+        // HTTP_Request struct
+        m.insert("HTTP_Request", StdlibTypeInfo {
+            name: "HTTP_Request".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("method".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("query".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("headers".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("body".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
         // HTTP_Response struct
         m.insert("HTTP_Response", StdlibTypeInfo {
             name: "HTTP_Response".to_string(),
@@ -415,6 +497,8 @@ lazy_static! {
                 let mut fields = HashMap::new();
                 fields.insert("status".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("body".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("content_type".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("headers".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
                 fields
             }
         });
@@ -465,9 +549,70 @@ lazy_static! {
     };
 }
 
+/// A user-defined Nail function that a stdlib function calls back into, such
+/// as the request handler `http_server` dispatches to. The transpiler passes a
+/// reference to it as a trailing argument, and the checker requires the program
+/// to define it with exactly this signature.
+///
+/// Declared here rather than in the transpiler or checker so that no core
+/// compiler stage ever names a specific function.
+pub struct HandlerCallback {
+    pub function_name: &'static str,
+    pub parameter_types: Vec<NailDataTypeDescriptor>,
+    pub return_type: NailDataTypeDescriptor,
+}
+
+lazy_static! {
+    /// Stdlib function name -> the Nail function it calls back into.
+    pub static ref HANDLER_CALLBACKS: HashMap<&'static str, HandlerCallback> = {
+        let mut m = HashMap::new();
+        m.insert("http_server", HandlerCallback {
+            function_name: "handle_request",
+            parameter_types: vec![
+                NailDataTypeDescriptor::Struct("HTTP_Request".to_string()),
+                NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
+            ],
+            return_type: NailDataTypeDescriptor::Struct("HTTP_Response".to_string()),
+        });
+        m
+    };
+}
+
+/// The Nail function a stdlib function dispatches to, if it takes one.
+pub fn get_handler_callback(name: &str) -> Option<&'static HandlerCallback> {
+    HANDLER_CALLBACKS.get(name)
+}
+
+/// Whether a user function is the target of some stdlib callback. Such a
+/// function is invoked from async glue, so it can never be emitted as a plain
+/// sync Rust function.
+pub fn is_handler_callback_target(function_name: &str) -> bool {
+    HANDLER_CALLBACKS.values().any(|callback| callback.function_name == function_name)
+}
+
+lazy_static! {
+    /// Enums the stdlib provides. Kept beside STDLIB_TYPES rather than inside
+    /// it because an enum is a variant list, not a field map.
+    pub static ref STDLIB_ENUMS: HashMap<&'static str, Vec<&'static str>> = {
+        let mut m = HashMap::new();
+        m.insert("CSV_Trim", vec!["None", "Headers", "Fields", "All"]);
+        m.insert("HTTP_Method", vec!["Get", "Post", "Put", "Delete", "Patch"]);
+        m
+    };
+}
+
+/// The variants of a stdlib enum, if the name names one.
+pub fn get_stdlib_enum_variants(name: &str) -> Option<&'static Vec<&'static str>> {
+    STDLIB_ENUMS.get(name)
+}
+
+pub fn is_stdlib_enum(name: &str) -> bool {
+    STDLIB_ENUMS.contains_key(name)
+}
+
 /// Get all stdlib type names (structs/enums defined in stdlib)
 pub fn get_stdlib_type_names() -> HashSet<String> {
-    STDLIB_TYPES.keys().map(|k| k.to_string()).collect()
+    STDLIB_TYPES.keys().chain(STDLIB_ENUMS.keys()).map(|k| k.to_string()).collect()
 }
 
 /// Get field type for a stdlib struct
@@ -506,6 +651,13 @@ mod stdlib_types_drift_tests {
             NailDataTypeDescriptor::String => serde_json::json!(""),
             NailDataTypeDescriptor::Boolean => serde_json::json!(false),
             NailDataTypeDescriptor::Array(_) => serde_json::json!([]),
+            NailDataTypeDescriptor::HashMap(_, _) => serde_json::json!({}),
+            // A unit-only enum serializes as its variant name, so any declared
+            // variant is a valid stand-in value.
+            NailDataTypeDescriptor::Enum(enum_name) => {
+                let variants = STDLIB_ENUMS.get(enum_name.as_str()).unwrap_or_else(|| panic!("dummy_json_for: '{}' is not a registered stdlib enum", enum_name));
+                serde_json::json!(variants[0])
+            }
             other => panic!("dummy_json_for: unsupported field type in STDLIB_TYPES: {:?}", other),
         }
     }
@@ -529,9 +681,81 @@ mod stdlib_types_drift_tests {
         assert_eq!(registry_keys, struct_keys, "STDLIB_TYPES field set for '{}' differs from the real struct", type_name);
     }
 
+    /// Every variant the registry claims must deserialize into the real Rust
+    /// enum, so a renamed or removed variant fails here instead of at runtime.
+    fn assert_enum_matches_registry<T: DeserializeOwned>(enum_name: &str) {
+        let variants = STDLIB_ENUMS.get(enum_name).unwrap_or_else(|| panic!("{} not in STDLIB_ENUMS", enum_name));
+        for variant in variants.iter() {
+            let _: T = serde_json::from_value(serde_json::json!(variant))
+                .unwrap_or_else(|e| panic!("STDLIB_ENUMS lists '{}::{}' but the real enum rejects it: {}", enum_name, variant, e));
+        }
+    }
+
+    #[test]
+    fn stdlib_enums_match_real_enums() {
+        assert_enum_matches_registry::<crate::parser::std_lib::csv::CSV_Trim>("CSV_Trim");
+        assert_enum_matches_registry::<crate::parser::std_lib::http::HTTP_Method>("HTTP_Method");
+    }
+
+    #[test]
+    fn all_stdlib_enums_are_drift_tested() {
+        let covered = ["CSV_Trim", "HTTP_Method"];
+        for enum_name in STDLIB_ENUMS.keys() {
+            assert!(covered.contains(enum_name), "STDLIB_ENUMS entry '{}' has no drift test", enum_name);
+        }
+    }
+
+    /// Every stdlib name wears its library's namespace: functions carry the
+    /// module prefix (`csv_open`, `http_server`), and types carry the
+    /// upper-case one (`CSV_Options`, `HTTP_Config`, `TIME_Format`). Nail has
+    /// one flat name space and no imports, so the prefix is what says where a
+    /// name comes from - a name without one reads like a language keyword.
+    #[test]
+    fn stdlib_function_names_carry_their_namespace() {
+        // The language's own words, which belong to no library and are spelled
+        // the way the grammar spells them.
+        const LANGUAGE_BUILTINS: &[&str] = &["danger", "safe", "expect", "panic", "todo", "spawn", "print", "print_no_newline"];
+        for (name, function) in STDLIB_FUNCTIONS.iter() {
+            if LANGUAGE_BUILTINS.contains(name) {
+                continue;
+            }
+            let prefix = function.module.name_prefix();
+            assert!(
+                name.starts_with(prefix),
+                "stdlib function '{}' is in the {:?} module, so it must be named '{}...'",
+                name,
+                function.module,
+                prefix
+            );
+        }
+    }
+
+    /// The type side of the same rule. Every stdlib struct and enum starts with
+    /// a module namespace in upper case, so a Nail program can tell a library
+    /// type from one of its own at a glance.
+    #[test]
+    fn stdlib_type_names_carry_their_namespace() {
+        let namespaces: Vec<String> = StdlibModule::all()
+            .iter()
+            .map(|module| module.name_prefix().trim_end_matches('_').to_uppercase() + "_")
+            .collect();
+        let named = STDLIB_TYPES.keys().copied().chain(STDLIB_ENUMS.keys().copied());
+        for name in named {
+            assert!(
+                namespaces.iter().any(|namespace| name.starts_with(namespace.as_str())),
+                "stdlib type '{}' must start with its library's namespace, e.g. CSV_ or HTTP_",
+                name
+            );
+        }
+    }
+
     #[test]
     fn stdlib_types_match_real_structs() {
-        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Route>("HTTP_Route");
+        assert_matches_registry::<crate::parser::std_lib::csv::CSV_Options>("CSV_Options");
+        assert_matches_registry::<crate::parser::std_lib::csv::CSV_Reader>("CSV_Reader");
+        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Config>("HTTP_Config");
+        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Static>("HTTP_Static");
+        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Request>("HTTP_Request");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Response>("HTTP_Response");
         assert_matches_registry::<crate::parser::std_lib::database::DB_SQLite>("DB_SQLite");
         assert_matches_registry::<crate::parser::std_lib::database::DB_Result>("DB_Result");
@@ -547,7 +771,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["HTTP_Route", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result"];
+        let covered = ["CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Static", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

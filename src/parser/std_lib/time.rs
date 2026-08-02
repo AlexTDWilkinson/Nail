@@ -2,9 +2,9 @@ use std::time::{SystemTime, UNIX_EPOCH, Duration};
 use tokio::time::sleep as tokio_sleep;
 use serde::{Deserialize, Serialize};
 
-// TimeFormat enum for parsing and formatting time
+// TIME_Format enum for parsing and formatting time
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TimeFormat {
+pub enum TIME_Format {
     Unix,        // Unix timestamp (seconds since epoch)
     UnixMillis,  // Unix timestamp in milliseconds
     ISO8601,     // ISO 8601 format: 2024-01-15T10:30:00Z
@@ -29,47 +29,47 @@ pub async fn sleep(seconds: f64) {
 }
 
 // time_format is already correct in the registry
-pub fn format(timestamp: i64, format: TimeFormat) -> String {
+pub fn format(timestamp: i64, format: TIME_Format) -> String {
     match format {
-        TimeFormat::Unix => timestamp.to_string(),
-        TimeFormat::UnixMillis => (timestamp * 1000).to_string(),
-        TimeFormat::ISO8601 => {
+        TIME_Format::Unix => timestamp.to_string(),
+        TIME_Format::UnixMillis => (timestamp * 1000).to_string(),
+        TIME_Format::ISO8601 => {
             // Simple implementation - would use chrono for proper formatting
             format!("{}Z", timestamp)
         },
-        TimeFormat::RFC3339 => {
+        TIME_Format::RFC3339 => {
             // Simple implementation
             format!("{}+00:00", timestamp)
         },
-        TimeFormat::RFC2822 => {
+        TIME_Format::RFC2822 => {
             // Simple implementation
             format!("Unix: {}", timestamp)
         },
-        TimeFormat::Custom(fmt) => {
+        TIME_Format::Custom(fmt) => {
             format!("Timestamp: {} (format: {})", timestamp, fmt)
         }
     }
 }
 
 // These new functions need time_ prefix in the registry
-pub fn parse(time_str: String, format: TimeFormat) -> Result<i64, String> {
+pub fn parse(time_str: String, format: TIME_Format) -> Result<i64, String> {
     match format {
-        TimeFormat::Unix => {
+        TIME_Format::Unix => {
             time_str.parse::<i64>()
                 .map_err(|_| format!("time_parse: could not parse '{}' as a Unix timestamp", time_str))
         },
-        TimeFormat::UnixMillis => {
+        TIME_Format::UnixMillis => {
             time_str.parse::<i64>()
                 .map(|ms| ms / 1000)
                 .map_err(|_| format!("time_parse: could not parse '{}' as Unix milliseconds", time_str))
         },
-        TimeFormat::ISO8601 | TimeFormat::RFC3339 | TimeFormat::RFC2822 => {
+        TIME_Format::ISO8601 | TIME_Format::RFC3339 | TIME_Format::RFC2822 => {
             // For now, try to parse as a number if it looks like one
             // In production, would use chrono to parse these formats properly
             time_str.parse::<i64>()
                 .map_err(|_| format!("time_parse: could not parse '{}' with format {:?}", time_str, format))
         },
-        TimeFormat::Custom(fmt) => {
+        TIME_Format::Custom(fmt) => {
             // Custom parsing logic would go here
             time_str.parse::<i64>()
                 .map_err(|_| format!("time_parse: could not parse '{}' with custom format '{}'", time_str, fmt))
@@ -100,21 +100,21 @@ mod tests {
     #[tokio::test]
     async fn test_time_format_unix() {
         let timestamp = 1234567890;
-        let formatted = format(timestamp, TimeFormat::Unix);
+        let formatted = format(timestamp, TIME_Format::Unix);
         assert_eq!(formatted, "1234567890");
     }
     
     #[tokio::test]
     async fn test_time_format_unix_millis() {
         let timestamp = 1234567890;
-        let formatted = format(timestamp, TimeFormat::UnixMillis);
+        let formatted = format(timestamp, TIME_Format::UnixMillis);
         assert_eq!(formatted, "1234567890000");
     }
     
     #[tokio::test]
     async fn test_time_format_iso8601() {
         let timestamp = 1234567890;
-        let formatted = format(timestamp, TimeFormat::ISO8601);
+        let formatted = format(timestamp, TIME_Format::ISO8601);
         assert!(formatted.ends_with("Z"));
         assert!(formatted.contains("1234567890"));
     }
@@ -122,39 +122,39 @@ mod tests {
     #[tokio::test]
     async fn test_time_format_custom() {
         let timestamp = 1234567890;
-        let formatted = format(timestamp, TimeFormat::Custom("MyFormat".to_string()));
+        let formatted = format(timestamp, TIME_Format::Custom("MyFormat".to_string()));
         assert!(formatted.contains("1234567890"));
         assert!(formatted.contains("MyFormat"));
     }
     
     #[tokio::test]
     async fn test_time_parse_unix() {
-        let result = parse("1234567890".to_string(), TimeFormat::Unix);
+        let result = parse("1234567890".to_string(), TIME_Format::Unix);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1234567890);
     }
     
     #[tokio::test]
     async fn test_time_parse_unix_invalid() {
-        let result = parse("not_a_number".to_string(), TimeFormat::Unix);
+        let result = parse("not_a_number".to_string(), TIME_Format::Unix);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("could not parse"));
     }
     
     #[tokio::test]
     async fn test_time_parse_unix_millis() {
-        let result = parse("1234567890000".to_string(), TimeFormat::UnixMillis);
+        let result = parse("1234567890000".to_string(), TIME_Format::UnixMillis);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1234567890); // Should convert from millis to seconds
     }
     
     #[tokio::test]
     async fn test_time_parse_custom() {
-        let result = parse("1234567890".to_string(), TimeFormat::Custom("MyFormat".to_string()));
+        let result = parse("1234567890".to_string(), TIME_Format::Custom("MyFormat".to_string()));
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1234567890);
         
-        let result_err = parse("invalid".to_string(), TimeFormat::Custom("MyFormat".to_string()));
+        let result_err = parse("invalid".to_string(), TIME_Format::Custom("MyFormat".to_string()));
         assert!(result_err.is_err());
         let error_message = result_err.unwrap_err();
         assert!(error_message.contains("custom format"));

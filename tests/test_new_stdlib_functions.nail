@@ -1,5 +1,5 @@
 // Test all new stdlib functions
-// Note: TimeFormat enum support is pending full implementation
+// Note: TIME_Format enum support is pending full implementation
 
 // String case functions  
 test_str:s = `hello WORLD`;

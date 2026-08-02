@@ -39,6 +39,7 @@ fn token_class(token_type: &TokenType) -> Option<&'static str> {
         | TokenType::MapDeclaration
         | TokenType::FilterDeclaration
         | TokenType::ReduceDeclaration
+        | TokenType::ScanDeclaration
         | TokenType::EachDeclaration
         | TokenType::FindDeclaration
         | TokenType::AllDeclaration

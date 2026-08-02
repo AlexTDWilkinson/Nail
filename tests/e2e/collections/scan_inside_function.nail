@@ -1,0 +1,6 @@
+// E2E: scan works inside a function and its result can be returned
+f running_totals(amounts:a:i):a:i {
+    r scan acc amount in amounts from 0 { y acc + amount; };
+}
+balances:a:i = running_totals([10, 20, 30]);
+print(balances);

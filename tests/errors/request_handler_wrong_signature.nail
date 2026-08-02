@@ -1,0 +1,12 @@
+// Error test: handle_request declared with the wrong signature
+f handle_request(request:HTTP_Request):s {
+    r request.path;
+}
+
+config:HTTP_Config = HTTP_Config {
+    static_mounts = [],
+    max_body_bytes = 0,
+    timeout_seconds = 0,
+    state = hashmap_new()
+};
+http_server(8080, config);

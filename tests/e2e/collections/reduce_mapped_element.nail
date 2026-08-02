@@ -1,0 +1,22 @@
+// E2E: a fold that combines the accumulator with something computed from the
+// element — still associative, so still split across cores
+numbers:a:i = [1, 2, 3, 4, 5];
+sum_of_squares:i = reduce acc num in numbers from 0 { y acc + num * num; };
+print(sum_of_squares);
+
+words:a:s = [`alpha`, `be`, `c`];
+total_letters:i = reduce acc word in words from 0 { y acc + string_length(word); };
+print(total_letters);
+
+// the contribution may read values from around the fold
+factor:i = 10;
+scaled:i = reduce acc num in numbers from 0 { y acc + num * factor; };
+print(scaled);
+
+// and it may be written on either side of the accumulator
+reversed:i = reduce acc num in numbers from 0 { y num * num + acc; };
+print(reversed);
+
+// multiplying works the same way
+product_of_doubles:i = reduce acc num in numbers from 1 { y acc * (num * 2); };
+print(product_of_doubles);

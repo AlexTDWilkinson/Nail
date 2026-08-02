@@ -1,0 +1,18 @@
+// An identifier that merely begins with a keyword is still an identifier:
+// `structure_of` is not a struct declaration, `enumerate` is not an enum.
+
+struct Shape {
+    sides:i
+}
+
+f structure_of(sides:i):Shape {
+    r Shape { sides = sides };
+}
+
+f enumerate_sides(shape:Shape):i {
+    r shape.sides;
+}
+
+structured:Shape = structure_of(4);
+enumeration:i = enumerate_sides(structured);
+print(enumeration);

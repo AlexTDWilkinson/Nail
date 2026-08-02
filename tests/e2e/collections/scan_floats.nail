@@ -1,0 +1,4 @@
+// E2E: scan over floats accumulates in order
+measurements:a:f = [1.5, 2.5, 3.0];
+running:a:f = scan acc measurement in measurements from 0.0 { y acc + measurement; };
+print(running);

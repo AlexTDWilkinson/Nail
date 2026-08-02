@@ -1,0 +1,6 @@
+// E2E: the final value of a scan is what the same reduce returns
+numbers:a:i = [4, 8, 15, 16, 23, 42];
+running:a:i = scan acc num in numbers from 0 { y acc + num; };
+total:i = reduce acc num in numbers from 0 { y acc + num; };
+print(danger(array_last(running)));
+print(total);

@@ -104,6 +104,7 @@ pub enum TokenType {
     MapDeclaration,                          // For map keyword
     FilterDeclaration,                       // For filter keyword
     ReduceDeclaration,                       // For reduce keyword
+    ScanDeclaration,                         // For scan keyword
     EachDeclaration,                         // For each keyword
     FindDeclaration,                         // For find keyword
     AllDeclaration,                          // For all keyword
@@ -188,6 +189,7 @@ impl TokenType {
             TokenType::MapDeclaration => "the 'map' keyword".to_string(),
             TokenType::FilterDeclaration => "the 'filter' keyword".to_string(),
             TokenType::ReduceDeclaration => "the 'reduce' keyword".to_string(),
+            TokenType::ScanDeclaration => "the 'scan' keyword".to_string(),
             TokenType::EachDeclaration => "the 'each' keyword".to_string(),
             TokenType::FindDeclaration => "the 'find' keyword".to_string(),
             TokenType::AllDeclaration => "the 'all' keyword".to_string(),
@@ -715,6 +717,9 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
             if c == ')' {
                 break;
             }
+            // A parameter that consumes nothing would spin here forever, so
+            // report the offending character instead of hanging the compiler.
+            let position_before = (state.line, state.column);
             let param_name = lex_identifier_only(chars, state);
             tokens.push(Token {
                 token_type: param_name.token_type,
@@ -752,6 +757,26 @@ fn lex_function_signature(chars: &mut std::iter::Peekable<std::str::Chars>, stat
                 } else {
                     break;
                 }
+            }
+
+            if (state.line, state.column) == position_before {
+                let found = chars.peek().copied().unwrap_or(' ');
+                // Discard the rest of the signature: without this the outer
+                // lexer resumes mid-parameter-list and reports a second error
+                // for the same mistake.
+                while let Some(&c) = chars.peek() {
+                    advance(chars, state);
+                    if c == ')' {
+                        break;
+                    }
+                }
+                return LexerOutput {
+                    token_type: TokenType::LexerError(format!("Expected a parameter name or ')' here, but found '{}'", found)),
+                    start_line,
+                    start_column,
+                    end_line: state.line,
+                    end_column: state.column,
+                };
             }
         }
 
@@ -887,6 +912,11 @@ fn is_single_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -
                             || next_char == '`'
                             || next_char == '['
                             || next_char == ']'
+                            // Nested hashmap types close with '>>' (h<s,h<s,s>>).
+                            // Nail has no shift operators, so a '>' or '<' beside
+                            // another is always type syntax.
+                            || next_char == '>'
+                            || next_char == '<'
                             || next_char == '\n'
                     }
                     None => true, // End of input is fine
@@ -928,9 +958,24 @@ fn lex_single_character_token(chars: &mut std::iter::Peekable<std::str::Chars>, 
     LexerOutput { token_type, start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
-fn is_struct_declaration(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
+// A keyword only opens a declaration when it stands as a whole word, so an
+// identifier that merely starts with one - `structure_of`, `enumerate` - stays
+// an identifier.
+fn starts_with_keyword(chars: &std::iter::Peekable<std::str::Chars>, keyword: &str) -> bool {
     let mut lookahead = chars.clone();
-    lookahead.next() == Some('s') && lookahead.next() == Some('t') && lookahead.next() == Some('r') && lookahead.next() == Some('u') && lookahead.next() == Some('c') && lookahead.next() == Some('t')
+    for expected in keyword.chars() {
+        if lookahead.next() != Some(expected) {
+            return false;
+        }
+    }
+    match lookahead.next() {
+        Some(next) => !(is_in_alphabet_or_number(next) || next == '_'),
+        None => true,
+    }
+}
+
+fn is_struct_declaration(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
+    return starts_with_keyword(chars, "struct");
 }
 
 fn lex_struct_declaration(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
@@ -1054,8 +1099,7 @@ fn lex_struct_declaration(chars: &mut std::iter::Peekable<std::str::Chars>, stat
 }
 
 fn is_enum_declaration(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
-    let mut lookahead = chars.clone();
-    lookahead.next() == Some('e') && lookahead.next() == Some('n') && lookahead.next() == Some('u') && lookahead.next() == Some('m')
+    return starts_with_keyword(chars, "enum");
 }
 
 fn lex_enum_delcaration(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
@@ -1279,6 +1323,7 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "map" => TokenType::MapDeclaration,
         "filter" => TokenType::FilterDeclaration,
         "reduce" => TokenType::ReduceDeclaration,
+        "scan" => TokenType::ScanDeclaration,
         "each" => TokenType::EachDeclaration,
         "find" => TokenType::FindDeclaration,
         "all" => TokenType::AllDeclaration,
@@ -1470,84 +1515,44 @@ fn lex_type_system_type(chars: &mut std::iter::Peekable<std::str::Chars>, state:
         }
     }
 
-    // Check for hashmap type (h(key_type, value_type))
-    if type_name == "h" && chars.peek() == Some(&'(') {
-        advance(chars, state); // skip '('
-
-        // Parse key type
-        let mut key_type_name = String::new();
-
+    // Hashmap types carry their key and value in angle brackets (h<s,s>), and
+    // the value can itself be a hashmap, so track depth rather than stopping at
+    // the first '>'. Appending to type_name lets parse_type handle the whole
+    // spelling in one place instead of a second, divergent parser here.
+    if chars.peek() == Some(&'<') {
+        let mut depth = 0usize;
         while let Some(&c) = chars.peek() {
-            if c == ',' || c == ')' {
+            // None of these can appear inside a type, so an unclosed '<' is
+            // reported against the type alone rather than swallowing the rest
+            // of the program into the message.
+            if c == '\n' || c == ';' || c == '{' || c == ')' {
                 break;
             }
-            if is_in_alphabet_or_number(c) || c == '_' {
-                key_type_name.push(c);
-                advance(chars, state);
-            } else {
-                break;
+            if c == '<' {
+                depth += 1;
+            } else if c == '>' {
+                depth -= 1;
             }
-        }
-
-        // Skip whitespace
-        while chars.peek() == Some(&' ') {
+            type_name.push(c);
             advance(chars, state);
-        }
-
-        // Expect comma
-        if chars.peek() != Some(&',') {
-            return LexerOutput { token_type: TokenType::LexerError("Expected ',' in hashmap type".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
-        }
-        advance(chars, state); // skip ','
-
-        // Skip whitespace
-        while chars.peek() == Some(&' ') {
-            advance(chars, state);
-        }
-
-        // Parse value type
-        let mut value_type_name = String::new();
-        while let Some(&c) = chars.peek() {
-            if c == ')' {
-                break;
-            }
-            if is_in_alphabet_or_number(c) || c == '_' {
-                value_type_name.push(c);
-                advance(chars, state);
-            } else {
+            if depth == 0 {
                 break;
             }
         }
 
-        // Expect closing parenthesis
-        if chars.peek() != Some(&')') {
-            return LexerOutput { token_type: TokenType::LexerError("Expected ')' in hashmap type".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
+        if depth != 0 {
+            return LexerOutput {
+                token_type: TokenType::LexerError(format!("Expected '>' to close the type ':{}'", type_name)),
+                start_line,
+                start_column,
+                end_line: state.line,
+                end_column: state.column,
+            };
         }
-        advance(chars, state); // skip ')'
 
-        // Parse the key and value types
-        let key_type = match parse_type(&key_type_name) {
-            Ok(t) => t,
-            Err(_) => {
-                // If it's not a primitive type, assume it's a struct
-                NailDataTypeDescriptor::Struct(key_type_name)
-            }
-        };
-
-        let value_type = match parse_type(&value_type_name) {
-            Ok(t) => t,
-            Err(_) => {
-                // If it's not a primitive type, assume it's a struct
-                NailDataTypeDescriptor::Struct(value_type_name)
-            }
-        };
-
-        return LexerOutput {
-            token_type: TokenType::TypeDeclaration(NailDataTypeDescriptor::HashMap(Box::new(key_type), Box::new(value_type))),
-            start_line,
-            start_column,
-            end_line: state.line,
-            end_column: state.column,
+        return match parse_type(&type_name) {
+            Ok(type_desc) => LexerOutput { token_type: TokenType::TypeDeclaration(type_desc), start_line, start_column, end_line: state.line, end_column: state.column },
+            Err(e) => LexerOutput { token_type: TokenType::LexerError(e), start_line, start_column, end_line: state.line, end_column: state.column },
         };
     }
 
@@ -1791,7 +1796,8 @@ fn lex_enum_variant(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mu
             } else {
                 break;
             }
-        } else if is_in_alphabet(c) || c == '_' {
+        } else if is_in_alphabet_or_number(c) || c == '_' {
+            // Digits belong to the name: a variant like ISO8601 is one word.
             full_name.push(c);
             advance(chars, state);
         } else {

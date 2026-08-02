@@ -1,42 +1,42 @@
 // Test that stdlib structs can be instantiated properly
 
-// Test creating HTTP_Route structs
-route1:HTTP_Route = HTTP_Route {
-    path = `/api/users`,
-    content = `{"users": []}`,
+// Test creating HTTP_Response structs
+empty_headers:h<s,s> = hashmap_new();
+route1:HTTP_Response = HTTP_Response {
+    status = 200,
+    body = `{"users": []}`,
     content_type = `application/json`,
-    status_code = 200
+    headers = empty_headers
 };
 
-// Test creating multiple routes
-route2:HTTP_Route = HTTP_Route {
-    path = `/api/health`,
-    content = `{"status": "ok"}`,
+// Test creating multiple responses
+route2:HTTP_Response = HTTP_Response {
+    status = 200,
+    body = `{"status": "ok"}`,
     content_type = `application/json`,
-    status_code = 200
+    headers = empty_headers
 };
 
-// Test using HTTP_Route in a hashmap
-routes:h<s,HTTP_Route> = hashmap_new();
+// Test using HTTP_Response in a hashmap
+routes:h<s,HTTP_Response> = hashmap_new();
 hashmap_set(routes, `/api/users`, route1);
 hashmap_set(routes, `/api/health`, route2);
 
 // Test that we can access struct fields
-path1:s = route1.path;
-content1:s = route1.content;
+content1:s = route1.body;
 type1:s = route1.content_type;
-status1:i = route1.status_code;
+status1:i = route1.status;
 
-print(`Route 1 path: `, path1);
+print(`Route 1 body: `, content1);
 print(`Route 1 content type: `, type1);
 print(`Route 1 status: `, status1);
 
-// Test creating a route inline in function call
-inline_route:HTTP_Route = HTTP_Route {
-    path = `/`,
-    content = `<html><body>Hello</body></html>`,
+// Test creating a response inline in function call
+inline_route:HTTP_Response = HTTP_Response {
+    status = 200,
+    body = `<html><body>Hello</body></html>`,
     content_type = `text/html`,
-    status_code = 200
+    headers = empty_headers
 };
 hashmap_set(routes, `/`, inline_route);
 

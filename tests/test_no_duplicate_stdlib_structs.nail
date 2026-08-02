@@ -1,12 +1,13 @@
 // Test that stdlib structs are not redefined in generated code
-// This test should transpile without creating a duplicate HTTP_Route struct
+// This test should transpile without creating a duplicate HTTP_Response struct
 
-// Use HTTP_Route from stdlib
-test_route:HTTP_Route = HTTP_Route {
-    path = `/test`,
-    content = `Test content`,
+// Use HTTP_Response from stdlib
+response_headers:h<s,s> = hashmap_new();
+test_response:HTTP_Response = HTTP_Response {
+    status = 200,
+    body = `Test content`,
     content_type = `text/plain`,
-    status_code = 200
+    headers = response_headers
 };
 
 // Create a local struct with a different name
@@ -22,7 +23,7 @@ my_struct:MyCustomStruct = MyCustomStruct {
 };
 
 // Both should work without conflicts
-print(`Stdlib struct path: `, test_route.path);
+print(`Stdlib struct body: `, test_response.body);
 print(`Local struct name: `, my_struct.name);
 
 print(`No duplicate struct definitions!`);

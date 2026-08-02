@@ -49,7 +49,7 @@ To achieve its goals, Nail imposes the following restrictions:
 - No macros or metaprogramming.
 - No single letter variable names (must be descriptive)
 - No lambda functions or closures
-- Explicit collection operation keywords (map, filter, reduce, each, find, all, any) instead of generic functional methods
+- Explicit collection operation keywords (map, filter, reduce, scan, each, find, all, any) instead of generic functional methods
 - Collection operations use 'y' (yield) to produce values, while 'r' (return) exits functions
 
 ## Lexical Structure
@@ -90,6 +90,9 @@ some_number:i = 5; // This is an inline comment
 ### 4.5 Operators
 
 #### 4.5.1 Arithmetic Operators
+
+Arithmetic is for numbers only; text is joined with `string_concat`.
+
 - `+` Addition
 - `-` Subtraction  
 - `*` Multiplication
@@ -320,11 +323,33 @@ max_val:i = reduce acc num idx in numbers from danger(array_get(numbers, 0)) {
     y if { num > acc => { num }, else => { acc } };
 };
 
-// Build string
-concatenated:s = reduce acc str in [`hello`, ` `, `world`] from `` {
-    y acc + str;
+// Build string ('+' adds numbers only, so text is joined with string_concat)
+concatenated:s = reduce acc word in [`hello`, ` `, `world`] from `` {
+    y string_concat([acc, word]);
 };
 ```
+
+#### Scan Operation
+
+Scan is a reduce that keeps its work: the accumulator's value after every
+element, so the result is an array as long as the one it scanned.
+
+```js
+// Running total: [1, 3, 6, 10, 15]
+running:a:i = scan acc num in numbers from 0 {
+    y acc + num;
+};
+
+// The last value of a scan is what the same reduce would have returned
+total:i = reduce acc num in numbers from 0 {
+    y acc + num;
+};
+```
+
+Each value a scan produces depends on every element before it, so a scan runs
+in order, one element at a time. Reach for it when the intermediate values are
+the point - a running balance, a cumulative chart line, the offset each chunk
+starts at - and for `map` when each element stands alone.
 
 #### Each Operation
 
@@ -569,6 +594,9 @@ filter_expression :=
 
 reduce_expression :=
     "reduce" identifier identifier [identifier] "in" expression "from" expression block
+
+scan_expression :=
+    "scan" identifier identifier [identifier] "in" expression "from" expression block
 
 each_statement :=
     "each" identifier [identifier] "in" expression block
@@ -929,6 +957,28 @@ ship.
 
 Nail includes a comprehensive standard library with functions organized by category:
 
+### Namespaces
+
+A Nail program has one flat name space and no import list, so every standard
+library name carries the namespace of the library it belongs to. Functions wear
+it in lower case and types in upper case:
+
+```nail
+reader:CSV_Reader = danger(csv_open(`big.csv`, csv_default_options()));
+config:HTTP_Config = HTTP_Config { static_mounts = [], max_body_bytes = 0, timeout_seconds = 0, state = state };
+stamp:s = time_format(time_now(), TIME_Format::ISO8601);
+```
+
+`csv_*` and `CSV_*` belong to the CSV library, `http_*` and `HTTP_*` to the
+HTTP one, `db_*` and `DB_*` to the databases, and so on - the prefix is what
+says where a name comes from, since nothing else does. The rule covers
+functions, structs, and enums alike, and holds for every module: a name
+without a namespace reads as a word of the language itself.
+
+The language's own words are the only names with no namespace: `print`,
+`danger`, `safe`, `expect`, `panic`, `todo` and `spawn`. Two registry tests
+enforce the rule, so a new stdlib name cannot skip it.
+
 ### Core Operations
 - `print(value)` - Print any value to stdout
 - `assert(condition:b)` - Assert a condition is true, panic if false
@@ -1073,20 +1123,134 @@ Nail includes a comprehensive standard library with functions organized by categ
 - `fs_remove_file(path:s):v!e` - Delete file
 
 ### HTTP Operations (`http_*`)
-- `http_request(method:s, url:s, headers:h<s,s>, body:s):s!e` - Make HTTP request
-- `http_get(url:s):s!e` - Simple GET request
-- `http_post(url:s, body:s):s!e` - Simple POST request
+- `http_request(method:HTTP_Method, url:s, headers:h<s,s>, body:s):HTTP_Response!e` - Make an outbound HTTP request. `HTTP_Method` is `Get`, `Post`, `Put`, `Delete` or `Patch`
+- `http_server(port:i, config:HTTP_Config):v` - Serve HTTP on a port. Blocks forever
+- `http_default_config():HTTP_Config` - The default server configuration
+- `http_path_matches(pattern:s, path:s):b` - Whether a path matches a route pattern
+- `http_path_params(pattern:s, path:s):h<s,s>` - The named segments a pattern binds
+
+`http_server` hands **every** request, whatever its method or path, to a
+function the program must define:
+
+```nail
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    headers:h<s,s> = hashmap_new();
+    if {
+        http_path_matches(`/dictionary/:word`, request.path) => {
+            params:h<s,s> = http_path_params(`/dictionary/:word`, request.path);
+            word:s = danger(hashmap_get(params, `word`));
+            r HTTP_Response { status = 200, body = word, content_type = `text/html`, headers = headers };
+        },
+        request.method == `POST` => {
+            // A form body uses the same encoding as a query string
+            form:h<s,s> = url_parse_query(request.body);
+            r HTTP_Response { status = 200, body = danger(hashmap_get(form, `message`)), content_type = `text/plain`, headers = headers };
+        },
+        else => {
+            r HTTP_Response { status = 404, body = `Not found`, content_type = `text/html`, headers = headers };
+        }
+    }
+}
+
+config:HTTP_Config = HTTP_Config {
+    static_mounts = [
+        HTTP_Static { prefix = `/static`, directory = `static` },
+        HTTP_Static { prefix = `/images`, directory = `static/images` }
+    ],
+    max_body_bytes = 0,
+    timeout_seconds = 0,
+    state = hashmap_new()
+};
+http_server(8080, config);
+```
+
+Routing is ordinary Nail code rather than a table the server owns, so a path
+and what it serves stay together. Since a function can only see its own
+parameters, anything the handler needs - page content, file paths, settings -
+travels in through `config`.
+
+`HTTP_Request` has `method:s`, `path:s`, `query:h<s,s>`, `headers:h<s,s>` and
+`body:s`. `HTTP_Response` has `status:i`, `body:s`, `content_type:s` and
+`headers:h<s,s>`; set `location` in its headers with status 301 to redirect.
+
+`HTTP_Config` fields: `static_mounts` (directories served as static files,
+including binary ones; an empty array serves none), `max_body_bytes` (0 means 1 MiB; larger bodies get 413), `timeout_seconds`
+(0 means 30; a handler that overruns gives the client 504), and `state`.
+
+Each `HTTP_Static` pairs a URL `prefix` with the `directory` on disk behind
+it. It is a list because a real site serves several trees - `/images`,
+`/fonts`, `/js` - from different directories, and files are matched against
+the mounts before the handler runs.
+
+Settings are typed fields, not string keys. `state` is the one deliberate
+hashmap: it carries application data - page content, file paths - straight
+through to `handle_request`, and only the program knows its shape. Since a
+Nail function can only see its own parameters, that map is how anything
+computed at startup reaches the handler.
+
+A pattern segment beginning with `:` matches any one segment, and a trailing
+`*` matches the rest of the path. Set `BIND_ADDR=127.0.0.1` to serve only to a
+local reverse proxy.
+
+### CSV Operations (`csv_*`)
+- `csv_parse(text:s, options:CSV_Options):a:h<s,s>!e` - Parse CSV text into one hashmap per row, keyed by the header row
+- `csv_default_options():CSV_Options` - The defaults, since Nail has no default field values
+- `csv_open(path:s, options:CSV_Options):CSV_Reader!e` - Open a file for batch reading
+- `csv_next_rows(reader:CSV_Reader, count:i):a:h<s,s>!e` - Read up to `count` more rows
+- `csv_close(reader:CSV_Reader):v!e` - Close a reader and release its file descriptor
+
+All of these are quote-aware, so a field containing the delimiter or a newline
+survives intact. Splitting on commas by hand corrupts every column after such
+a field.
+
+**Which one to use.** There are three layers, and picking the wrong one is the
+usual mistake:
+
+| Situation | Use |
+| --- | --- |
+| Text you already have in memory - an API response, a small file | `csv_parse` |
+| A file too large to hold in memory, walked row by row | `csv_open` + `csv_next_rows` |
+| A large file you want to *query* - filter, aggregate, join | `db_datafusion_register_csv` |
+
+`csv_parse` takes the whole document as a string, so the file has to fit in
+memory twice over - once as text, once as rows. For anything larger, open a
+reader and pull batches:
+
+```nail
+reader:CSV_Reader = danger(csv_open(`big.csv`, csv_default_options()));
+batch:a:h<s,s> = danger(csv_next_rows(reader, 10000));
+// A batch shorter than the count asked for means the file is finished.
+danger(csv_close(reader));
+```
+
+For analytical work over a large file - filtering, aggregating, joining - use
+DataFusion instead, which streams, pushes projections down, and spills to disk:
+
+```nail
+session:DB_DataFusion = danger(db_datafusion_session());
+danger(db_datafusion_register_csv(session, `words`, `big.csv`));
+rows:a:h<s,s> = danger(db_datafusion_query(session, `SELECT word FROM words WHERE type = 'noun'`));
+```
+
+Do not reach for DataFusion to read a small file: it is behind a feature gate
+because it is a whole query engine, and its typed columnar batches have to be
+flattened back into row hashmaps, which costs more than the plain reader.
+
+`CSV_Options` fields: `delimiter`, `quote`, `escape` (single characters, empty
+means unset), `double_quote`, `has_headers`, `flexible`, `ignore_errors`
+(booleans), `comment`, `eol_char`, `trim` (`CSV_Trim::None`, `CSV_Trim::Headers`, `CSV_Trim::Fields` or `CSV_Trim::All`), `skip_rows` and `n_rows` (0 means no limit), and `null_values` (texts
+read as empty, e.g. `NA`).
 
 ### Time Operations (`time_*`)
 - `time_sleep(seconds:f):v` - Sleep for specified seconds
 - `time_now():i` - Current timestamp in seconds
 - `time_now_millis():i` - Current timestamp in milliseconds
-- `time_format(timestamp:i, format:TimeFormat):s` - Format timestamp using TimeFormat enum
-- `time_parse(time_str:s, format:TimeFormat):i!e` - Parse time string using TimeFormat enum
+- `time_format(timestamp:i, format:TIME_Format):s` - Format timestamp using TIME_Format enum
+- `time_parse(time_str:s, format:TIME_Format):i!e` - Parse time string using TIME_Format enum
 - `time_add_seconds(timestamp:i, seconds:i):i` - Add seconds to timestamp
 - `time_diff(t1:i, t2:i):i` - Get absolute difference between timestamps
 
-**TimeFormat enum values:**
+**TIME_Format enum values:**
 - `Unix` - Unix timestamp in seconds
 - `UnixMillis` - Unix timestamp in milliseconds
 - `ISO8601` - ISO 8601 format

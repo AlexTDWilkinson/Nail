@@ -1,0 +1,5 @@
+// E2E: the element's contribution is itself a collection operation, which has
+// to run as a plain parallel chain inside the fold's closures
+grid:a:a:i = [[1, 2, 3], [4, 5], [6, 7, 8, 9]];
+cells:i = reduce acc row in grid from 0 { y acc + array_length(filter cell in row { y cell % 2 == 1; }); };
+print(cells);

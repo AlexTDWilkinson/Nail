@@ -2,7 +2,7 @@
 // Attempting to define an enum with a stdlib type name
 
 // Try to define an enum with a stdlib struct name (should fail)
-enum HTTP_Route {
+enum HTTP_Response {
     Option1,
     Option2
 }

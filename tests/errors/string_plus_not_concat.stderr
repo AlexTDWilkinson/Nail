@@ -1,0 +1,7 @@
+error: '+' adds numbers, it does not join text
+  --> tests/errors/string_plus_not_concat.nail:4:22
+   |
+ 4 | message:s = greeting + name;
+   |                      ^
+help: to build a string from pieces, write string_concat([first, second])
+1 error found

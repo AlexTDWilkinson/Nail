@@ -142,7 +142,7 @@ impl BindingResolver {
                     resolver.walk(body);
                 });
             }
-            ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, .. } => {
+            ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, .. } | ASTNode::ScanExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, .. } => {
                 self.walk(iterable);
                 self.walk(initial_value);
                 self.scoped(|resolver| {
@@ -171,6 +171,52 @@ impl BindingResolver {
     }
 }
 
+/// A fold step whose result does not depend on how the work is grouped.
+///
+/// All four are over i64, where they are associative and commutative: no
+/// grouping and no ordering of the elements can change the answer, which is
+/// exactly what splitting the fold across threads changes.
+#[derive(Clone, Copy)]
+enum AssociativeStep {
+    Add,
+    Mul,
+    Min,
+    Max,
+}
+
+impl AssociativeStep {
+    /// The value an exhausted fold produces, so that an empty chunk of a
+    /// parallel reduction contributes nothing to the result.
+    fn identity(self) -> &'static str {
+        match self {
+            AssociativeStep::Add => "0i64",
+            AssociativeStep::Mul => "1i64",
+            AssociativeStep::Min => "i64::MAX",
+            AssociativeStep::Max => "i64::MIN",
+        }
+    }
+
+    /// The step itself, applied to two i64 expressions.
+    fn combine(self, left: &str, right: &str) -> String {
+        match self {
+            AssociativeStep::Add => format!("{} + {}", left, right),
+            AssociativeStep::Mul => format!("{} * {}", left, right),
+            AssociativeStep::Min => format!("std::cmp::min({}, {})", left, right),
+            AssociativeStep::Max => format!("std::cmp::max({}, {})", left, right),
+        }
+    }
+}
+
+/// A fold proven safe to evaluate in any grouping: how two values combine, and
+/// what each element contributes to the fold.
+struct AssociativeFold<'a> {
+    step: AssociativeStep,
+    /// The whole number an element contributes, when the step folds in
+    /// something computed from the element - `acc + num * num` contributes
+    /// `num * num`. `None` when the element is folded in as it stands.
+    element_value: Option<&'a ASTNode>,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum ParallelIterMode {
     Sync,
@@ -197,9 +243,17 @@ pub struct Transpiler {
     pure_functions: HashSet<String>,
     // True while emitting the body of a pure (sync) function.
     in_sync_function: bool,
+    // True while emitting inside a rayon closure that is not itself wrapped in
+    // block_on. Nothing there may await, so a collection operation nested in
+    // one has to emit as a plain sync rayon chain.
+    in_parallel_closure: bool,
+    // Saved values of in_parallel_closure, one per open parallel operation.
+    enclosing_parallel_closures: Vec<bool>,
     // struct name -> field name -> declared type, from struct declarations;
     // used to skip .clone() on Copy-typed field access.
     struct_field_types: HashMap<String, HashMap<String, NailDataTypeDescriptor>>,
+    // User function name -> declared return type, from function declarations.
+    function_return_types: HashMap<String, NailDataTypeDescriptor>,
 }
 
 impl Transpiler {
@@ -216,7 +270,10 @@ impl Transpiler {
             reassigned_variables: HashSet::new(),
             pure_functions: HashSet::new(),
             in_sync_function: false,
+            in_parallel_closure: false,
+            enclosing_parallel_closures: Vec::new(),
             struct_field_types: HashMap::new(),
+            function_return_types: HashMap::new(),
         }
     }
 
@@ -263,6 +320,16 @@ impl Transpiler {
         }
     }
 
+    /// Collect the declared return type of every function declaration.
+    fn collect_function_return_types(node: &ASTNode, out: &mut HashMap<String, NailDataTypeDescriptor>) {
+        if let ASTNode::FunctionDeclaration { name, data_type, .. } = node {
+            out.insert(name.clone(), data_type.clone());
+        }
+        for child in Self::ast_children(node) {
+            Self::collect_function_return_types(child, out);
+        }
+    }
+
     /// Collect every function declaration (at any nesting level) as (name, body).
     fn collect_function_declarations<'a>(node: &'a ASTNode, out: &mut Vec<(String, &'a ASTNode)>) {
         if let ASTNode::FunctionDeclaration { name, body, .. } = node {
@@ -279,7 +346,10 @@ impl Transpiler {
     fn compute_pure_functions(program: &ASTNode) -> HashSet<String> {
         let mut declarations = Vec::new();
         Self::collect_function_declarations(program, &mut declarations);
-        let mut pure: HashSet<String> = declarations.iter().map(|(name, _)| name.clone()).collect();
+        // A function a stdlib callback dispatches to is invoked from async glue
+        // that always awaits it, so it must be emitted async however pure its
+        // body happens to be.
+        let mut pure: HashSet<String> = declarations.iter().map(|(name, _)| name.clone()).filter(|name| !stdlib_registry::is_handler_callback_target(name)).collect();
         loop {
             let mut changed = false;
             for (name, body) in &declarations {
@@ -463,7 +533,7 @@ impl Transpiler {
                 self.collect_used_functions(iterable);
                 self.collect_used_functions(body);
             }
-            ASTNode::ReduceExpression { iterable, initial_value, body, .. } => {
+            ASTNode::ReduceExpression { iterable, initial_value, body, .. } | ASTNode::ScanExpression { iterable, initial_value, body, .. } => {
                 self.collect_used_functions(iterable);
                 self.collect_used_functions(initial_value);
                 self.collect_used_functions(body);
@@ -626,7 +696,7 @@ impl Transpiler {
                 }
                 Self::collect_free_variables(body, &mut inner_bound, free);
             }
-            ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, .. } => {
+            ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, .. } | ASTNode::ScanExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, .. } => {
                 Self::collect_free_variables(iterable, bound, free);
                 Self::collect_free_variables(initial_value, bound, free);
                 let mut inner_bound = bound.clone();
@@ -756,7 +826,7 @@ impl Transpiler {
             | ASTNode::FindExpression { iterable, body, .. }
             | ASTNode::AllExpression { iterable, body, .. }
             | ASTNode::AnyExpression { iterable, body, .. } => vec![iterable.as_ref(), body.as_ref()],
-            ASTNode::ReduceExpression { iterable, initial_value, body, .. } => vec![iterable.as_ref(), initial_value.as_ref(), body.as_ref()],
+            ASTNode::ReduceExpression { iterable, initial_value, body, .. } | ASTNode::ScanExpression { iterable, initial_value, body, .. } => vec![iterable.as_ref(), initial_value.as_ref(), body.as_ref()],
             ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
                 let mut children = vec![condition.as_ref()];
                 children.extend(initial_value.as_deref());
@@ -859,7 +929,7 @@ impl Transpiler {
                 Self::collect_never_move(iterable, revisitable, resolution, out);
                 mark_all(&[body.as_ref()], out);
             }
-            ASTNode::ReduceExpression { iterable, initial_value, body, .. } => {
+            ASTNode::ReduceExpression { iterable, initial_value, body, .. } | ASTNode::ScanExpression { iterable, initial_value, body, .. } => {
                 Self::collect_never_move(iterable, revisitable, resolution, out);
                 Self::collect_never_move(initial_value, revisitable, resolution, out);
                 mark_all(&[body.as_ref()], out);
@@ -974,15 +1044,33 @@ impl Transpiler {
             .or_else(|| self.lookup_variable_type(name))
     }
 
-    /// The element type of an iterable, when statically known from a declared
-    /// array variable.
+    /// The element type of an iterable, when it is statically known: from a
+    /// declared array variable, from the signature of the standard library
+    /// function that built the array, or from the literal itself.
     fn iterable_element_type(&self, iterable: &ASTNode) -> Option<NailDataTypeDescriptor> {
-        if let ASTNode::Identifier { name, code_span, .. } = iterable {
-            if let Some(NailDataTypeDescriptor::Array(inner)) = self.reference_type(name, code_span) {
-                return Some((**inner).clone());
+        match iterable {
+            ASTNode::Identifier { name, code_span, .. } => match self.reference_type(name, code_span) {
+                Some(NailDataTypeDescriptor::Array(inner)) => Some((**inner).clone()),
+                _ => None,
+            },
+            ASTNode::FunctionCall { name, .. } => match stdlib_registry::get_stdlib_function(name).map(|function| function.return_type.clone()) {
+                Some(NailDataTypeDescriptor::Array(inner)) => Some(*inner),
+                _ => None,
+            },
+            // A literal array is its own declaration. Elements written as
+            // anything but literals of one type say nothing certain here.
+            ASTNode::ArrayLiteral { elements, .. } => {
+                let mut element_types = elements.iter().map(|element| match element {
+                    ASTNode::NumberLiteral { data_type, .. } => Some(data_type.clone()),
+                    ASTNode::StringLiteral { .. } => Some(NailDataTypeDescriptor::String),
+                    ASTNode::BooleanLiteral { .. } => Some(NailDataTypeDescriptor::Boolean),
+                    _ => None,
+                });
+                let first = element_types.next()??;
+                element_types.all(|element_type| element_type.as_ref() == Some(&first)).then_some(first)
             }
+            _ => None,
         }
-        None
     }
 
     /// How a variable reference is emitted. Copy types (i/f/b) are always bare.
@@ -1015,13 +1103,26 @@ impl Transpiler {
     /// - AsyncBlockOn: async context, body does async work — rayon inside
     ///   spawn_blocking with a per-element block_on.
     fn parallel_iter_mode(&self, body: &ASTNode) -> ParallelIterMode {
-        if self.in_sync_function {
+        if self.in_sync_function || self.in_parallel_closure {
             ParallelIterMode::Sync
         } else if !Self::node_needs_async(body, &self.pure_functions) {
             ParallelIterMode::AsyncPure
         } else {
             ParallelIterMode::AsyncBlockOn
         }
+    }
+
+    /// Called once the closure header of a parallel operation is written. Only
+    /// an AsyncBlockOn body sits inside an async block; every other mode puts
+    /// the body in a plain closure, where an inner operation must stay sync.
+    fn enter_parallel_closure(&mut self, mode: ParallelIterMode) {
+        self.enclosing_parallel_closures.push(self.in_parallel_closure);
+        self.in_parallel_closure = mode != ParallelIterMode::AsyncBlockOn;
+    }
+
+    /// Called once the closure of a parallel operation is closed.
+    fn leave_parallel_closure(&mut self) {
+        self.in_parallel_closure = self.enclosing_parallel_closures.pop().unwrap_or(false);
     }
 
     /// Shared opening of a parallel collection operation (map/filter). The
@@ -1078,11 +1179,13 @@ impl Transpiler {
         if let Some(idx) = index_iterator {
             writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
         }
+        self.enter_parallel_closure(mode);
         Ok(())
     }
 
     /// Closes the structure opened by write_parallel_iter_open.
     fn write_parallel_iter_close(&mut self, mode: ParallelIterMode, output: &mut String) -> Result<(), CodeError> {
+        self.leave_parallel_closure();
         if mode == ParallelIterMode::AsyncBlockOn {
             self.indent_level -= 1;
             writeln!(output, "{}}})", self.indent())?;
@@ -1101,60 +1204,263 @@ impl Transpiler {
         Ok(())
     }
 
-    /// Shared opening of a sequential collection operation (reduce/each/find/
-    /// all/any): enumerate for-loop plus the optional index binding. Leaves
-    /// indent_level one deeper; callers emit the body and the closing brace.
-    /// The operator and identity of a fold that may be evaluated in any
-    /// grouping, or None when the fold must stay sequential.
+    /// Whether an identifier appears anywhere inside a node.
+    fn mentions(node: &ASTNode, name: &str) -> bool {
+        if let ASTNode::Identifier { name: identifier, .. } = node {
+            if identifier == name {
+                return true;
+            }
+        }
+        Self::ast_children(node).into_iter().any(|child| Self::mentions(child, name))
+    }
+
+    /// The single expression a block evaluates to, whether it is written as a
+    /// yield, a return, or a bare expression - `{ num }` and `{ y num; }` are
+    /// the same branch.
+    fn block_value(node: &ASTNode) -> Option<&ASTNode> {
+        match node {
+            ASTNode::Block { statements, .. } => match statements.as_slice() {
+                [ASTNode::YieldDeclaration { statement, .. }] | [ASTNode::ReturnDeclaration { statement, .. }] => Some(statement.as_ref()),
+                [only] => Some(only),
+                _ => None,
+            },
+            other => Some(other),
+        }
+    }
+
+    /// The name an expression is, when it is nothing but an identifier.
+    fn identifier_name(node: &ASTNode) -> Option<&str> {
+        match node {
+            ASTNode::Identifier { name, .. } => Some(name.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Whether an expression provably evaluates to a whole number, with the
+    /// element binding taken to have the type its array gives it. Every case
+    /// this cannot prove reads as "not provably a whole number", which only
+    /// ever keeps a fold sequential.
+    fn provably_int(&self, node: &ASTNode, iterator: &str, element_type: &NailDataTypeDescriptor) -> bool {
+        let int = NailDataTypeDescriptor::Int;
+        match node {
+            ASTNode::NumberLiteral { data_type, .. } => data_type == &int,
+            ASTNode::Identifier { name, code_span, .. } => {
+                if name == iterator {
+                    element_type == &int
+                } else {
+                    self.reference_type(name, code_span) == Some(&int)
+                }
+            }
+            // Nail's arithmetic operators take two values of one type and
+            // produce that same type, integer division included.
+            ASTNode::BinaryOperation { left, operator, right, .. } => {
+                matches!(operator, Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod)
+                    && self.provably_int(left, iterator, element_type)
+                    && self.provably_int(right, iterator, element_type)
+            }
+            ASTNode::UnaryOperation { operator: Operation::Sub, operand, .. } => self.provably_int(operand, iterator, element_type),
+            ASTNode::FunctionCall { name, .. } => {
+                let returns = stdlib_registry::get_stdlib_function(name).map(|function| function.return_type.clone()).or_else(|| self.function_return_types.get(name).cloned());
+                returns.as_ref() == Some(&int)
+            }
+            ASTNode::StructFieldAccess { struct_name, field_name, code_span, .. } => {
+                let held = if struct_name == iterator { Some(element_type) } else { self.reference_type(struct_name, code_span) };
+                let declared = match held {
+                    Some(NailDataTypeDescriptor::Struct(name)) => name.clone(),
+                    _ => return false,
+                };
+                self.struct_field_types.get(&declared).and_then(|fields| fields.get(field_name)) == Some(&int)
+            }
+            _ => false,
+        }
+    }
+
+    /// The fold that may be evaluated in any grouping, or None when the fold
+    /// must stay sequential.
     ///
     /// Splitting a fold across threads regroups it - `(a+b)+c` becomes
     /// `a+(b+c)` - so only an associative step may be parallelised. That is
     /// proven here from the shape of the code rather than promised by whoever
-    /// wrote it: the body must be a single yield combining exactly the
-    /// accumulator and the element with `+` or `*`, and the initial value must
-    /// be an integer literal, which makes every operand an i64. Integer
-    /// addition and multiplication are associative and commutative, so no
-    /// grouping and no ordering can change the answer.
+    /// wrote it. The body must be a single value that either combines the
+    /// accumulator with a whole number computed from the element, using `+` or
+    /// `*`, or chooses the larger or smaller of the accumulator and the
+    /// element. What each element contributes is then a whole number and so is
+    /// the accumulator, making the whole fold integer arithmetic - which is
+    /// associative and commutative for all four steps.
     ///
     /// Everything else stays sequential, including folds that happen to be
     /// associative but aren't written this plainly, and every float fold -
     /// floating point addition is not associative, so regrouping changes the
     /// rounding and the result.
-    fn associative_fold(accumulator: &str, iterator: &str, index_iterator: &Option<String>, initial_value: &ASTNode, body: &ASTNode) -> Option<(&'static str, &'static str)> {
-        if index_iterator.is_some() {
-            return None;
+    fn associative_fold<'a>(&self, accumulator: &str, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, body: &'a ASTNode) -> Option<AssociativeFold<'a>> {
+        // A step that consults the position of the element is not a step that
+        // can be moved to another position. A bound but unused index is no
+        // such consultation, and is common enough to be worth allowing.
+        if let Some(index) = index_iterator {
+            if Self::mentions(body, index) {
+                return None;
+            }
         }
-        match initial_value {
-            ASTNode::NumberLiteral { data_type: NailDataTypeDescriptor::Int, .. } => {}
-            _ => return None,
-        }
+        let element_type = self.iterable_element_type(iterable)?;
         let statements = match body {
             ASTNode::Block { statements, .. } => statements,
             _ => return None,
         };
         let folded = match statements.as_slice() {
-            [ASTNode::YieldDeclaration { statement, .. }] | [ASTNode::ReturnDeclaration { statement, .. }] => statement,
+            [ASTNode::YieldDeclaration { statement, .. }] | [ASTNode::ReturnDeclaration { statement, .. }] => statement.as_ref(),
             _ => return None,
         };
-        let (left, operator, right) = match folded.as_ref() {
-            ASTNode::BinaryOperation { left, operator, right, .. } => (left, operator, right),
-            _ => return None,
+        // The two names the step is allowed to combine, in whichever order
+        // they were written.
+        let pair_of = |left: &ASTNode, right: &ASTNode| -> Option<(bool, bool)> {
+            let (left, right) = (Self::identifier_name(left)?, Self::identifier_name(right)?);
+            if left == accumulator && right == iterator {
+                Some((true, false))
+            } else if left == iterator && right == accumulator {
+                Some((false, true))
+            } else {
+                None
+            }
         };
-        let name_of = |node: &ASTNode| match node {
-            ASTNode::Identifier { name, .. } => Some(name.clone()),
-            _ => None,
-        };
-        let (left_name, right_name) = (name_of(left)?, name_of(right)?);
-        let combines_both = (left_name == accumulator && right_name == iterator) || (left_name == iterator && right_name == accumulator);
-        if !combines_both {
-            return None;
-        }
-        match operator {
-            Operation::Add => Some(("+", "0i64")),
-            Operation::Mul => Some(("*", "1i64")),
+        match folded {
+            ASTNode::BinaryOperation { left, operator, right, .. } => {
+                let step = match operator {
+                    Operation::Add => AssociativeStep::Add,
+                    Operation::Mul => AssociativeStep::Mul,
+                    _ => return None,
+                };
+                // One side must be the accumulator itself; the other is what
+                // the element contributes. That contribution has to be a whole
+                // number, may not read the accumulator - which would make the
+                // step depend on the order elements arrive in - and may not do
+                // async work, since it will be evaluated in a plain closure.
+                let contributed = match (Self::identifier_name(left), Self::identifier_name(right)) {
+                    (Some(name), _) if name == accumulator => right.as_ref(),
+                    (_, Some(name)) if name == accumulator => left.as_ref(),
+                    _ => return None,
+                };
+                if Self::mentions(contributed, accumulator) || !self.provably_int(contributed, iterator, &element_type) || Self::node_needs_async(contributed, &self.pure_functions) {
+                    return None;
+                }
+                let element_value = match Self::identifier_name(contributed) {
+                    Some(name) if name == iterator => None,
+                    _ => Some(contributed),
+                };
+                Some(AssociativeFold { step, element_value })
+            }
+            // `if { num > acc => { num }, else => { acc } }` and its seven
+            // siblings are min and max written out by hand.
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+                // Here the element is compared and kept as it stands, so it is
+                // the element itself that has to be a whole number.
+                if element_type != NailDataTypeDescriptor::Int {
+                    return None;
+                }
+                let (condition, taken) = match condition_branches.as_slice() {
+                    [(condition, branch)] => (condition.as_ref(), Self::block_value(branch)?),
+                    _ => return None,
+                };
+                let untaken = Self::block_value(else_branch.as_ref()?)?;
+                let (left, operator, right) = match condition {
+                    ASTNode::BinaryOperation { left, operator, right, .. } => (left.as_ref(), operator, right.as_ref()),
+                    _ => return None,
+                };
+                let (left_is_accumulator, _) = pair_of(left, right)?;
+                let taken = Self::identifier_name(taken)?;
+                let untaken = Self::identifier_name(untaken)?;
+                // The branches must return the two names, not the same one
+                // twice - `if { a > b => { a }, else => { a } }` ignores an
+                // element and is not this fold at all.
+                if taken == untaken || (taken != accumulator && taken != iterator) || (untaken != accumulator && untaken != iterator) {
+                    return None;
+                }
+                // Which side of the comparison is taken decides which end of
+                // the range is being kept.
+                let takes_left = (taken == accumulator) == left_is_accumulator;
+                let step = match (operator, takes_left) {
+                    (Operation::Gt | Operation::Gte, true) | (Operation::Lt | Operation::Lte, false) => AssociativeStep::Max,
+                    (Operation::Lt | Operation::Lte, true) | (Operation::Gt | Operation::Gte, false) => AssociativeStep::Min,
+                    _ => return None,
+                };
+                Some(AssociativeFold { step, element_value: None })
+            }
             _ => None,
         }
     }
+
+    /// A fold run one element at a time, carrying the accumulator forward.
+    /// With `collect_steps` the block evaluates to every value the accumulator
+    /// took, one per element, which is a `scan`; without it, to the last value
+    /// alone, which is a `reduce`.
+    #[allow(clippy::too_many_arguments)]
+    fn write_sequential_fold(
+        &mut self,
+        accumulator: &str,
+        iterator: &str,
+        index_iterator: &Option<String>,
+        iterable: &ASTNode,
+        initial_value: &ASTNode,
+        body: &ASTNode,
+        collect_steps: bool,
+        add_semicolons: bool,
+        output: &mut String,
+    ) -> Result<(), CodeError> {
+        if add_semicolons {
+            write!(output, "{}", self.indent())?;
+        }
+        writeln!(output, "{{")?;
+        self.indent_level += 1;
+
+        // Initialize accumulator; record its type when the initial
+        // value makes it obvious so Copy accumulators stay bare
+        match initial_value {
+            ASTNode::NumberLiteral { data_type, .. } => self.record_variable_type(accumulator, data_type.clone()),
+            ASTNode::StringLiteral { .. } => self.record_variable_type(accumulator, NailDataTypeDescriptor::String),
+            ASTNode::BooleanLiteral { .. } => self.record_variable_type(accumulator, NailDataTypeDescriptor::Boolean),
+            _ => {}
+        }
+        write!(output, "{}let mut {} = ", self.indent(), accumulator)?;
+        self.transpile_node_internal(initial_value, output, false)?;
+        writeln!(output, ";")?;
+        if collect_steps {
+            writeln!(output, "{}let mut __scan_result = Vec::new();", self.indent())?;
+        }
+
+        self.write_sequential_for_open(iterator, index_iterator, iterable, output)?;
+
+        // Transpile the body statements
+        if let ASTNode::Block { statements, .. } = body {
+            for stmt in statements {
+                match stmt {
+                    // Yield/return statements assign the next accumulator value
+                    ASTNode::YieldDeclaration { statement, .. } | ASTNode::ReturnDeclaration { statement, .. } => {
+                        write!(output, "{}{} = ", self.indent(), accumulator)?;
+                        self.transpile_node_internal(statement, output, false)?;
+                        writeln!(output, ";")?;
+                    }
+                    _ => {
+                        self.transpile_node_internal(stmt, output, true)?;
+                    }
+                }
+            }
+        }
+        // One value per element, recorded after the step that produced it, so
+        // a scan is always as long as the array it scanned.
+        if collect_steps {
+            writeln!(output, "{}__scan_result.push({}.clone());", self.indent(), accumulator)?;
+        }
+
+        self.indent_level -= 1;
+        writeln!(output, "{}}}", self.indent())?;
+        writeln!(output, "{}{}", self.indent(), if collect_steps { "__scan_result" } else { accumulator })?;
+        self.indent_level -= 1;
+        write!(output, "{}}}", self.indent())?;
+        Ok(())
+    }
+
+    /// Shared opening of a sequential collection operation (reduce/scan/each/
+    /// find/all/any): enumerate for-loop plus the optional index binding. Leaves
+    /// indent_level one deeper; callers emit the body and the closing brace.
 
     fn write_sequential_for_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, output: &mut String) -> Result<(), CodeError> {
         if let Some(element_type) = self.iterable_element_type(iterable) {
@@ -1298,8 +1604,10 @@ impl Transpiler {
             writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
         }
 
+        self.enter_parallel_closure(mode);
         self.write_condition_result(body, output)?;
         writeln!(output, "{}condition_result", self.indent())?;
+        self.leave_parallel_closure();
 
         if mode == ParallelIterMode::AsyncBlockOn {
             self.indent_level -= 1;
@@ -1331,6 +1639,9 @@ impl Transpiler {
         let mut struct_fields = HashMap::new();
         Self::collect_struct_field_types(node, &mut struct_fields);
         self.struct_field_types = struct_fields;
+        let mut return_types = HashMap::new();
+        Self::collect_function_return_types(node, &mut return_types);
+        self.function_return_types = return_types;
         
         let mut output = String::new();
         writeln!(output, "use tokio;")?;
@@ -1755,15 +2066,41 @@ impl Transpiler {
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
             }
-            ASTNode::ReduceExpression { iterator, index_iterator, iterable, initial_value, accumulator, body, .. } if Self::associative_fold(accumulator, iterator, index_iterator, initial_value, body).is_some() => {
+            ASTNode::ReduceExpression { iterator, index_iterator, iterable, initial_value, accumulator, body, .. } if self.associative_fold(accumulator, iterator, index_iterator, iterable, body).is_some() => {
                 // A fold whose step is provably associative gives the same
                 // answer however the work is divided, so it can be split
                 // across cores - above the size where threading pays for
                 // itself. The initial value is applied once at the end rather
                 // than seeded into each chunk, which is why it need not be the
                 // operator's identity.
-                let (operator, identity) = Self::associative_fold(accumulator, iterator, index_iterator, initial_value, body).expect("guard proved this fold associative");
+                let fold = self.associative_fold(accumulator, iterator, index_iterator, iterable, body).expect("guard proved this fold associative");
+                let step = fold.step;
                 self.record_variable_type(accumulator, NailDataTypeDescriptor::Int);
+
+                // What one element contributes, as Rust source, when it is
+                // something computed from the element rather than the element
+                // itself. It is evaluated inside plain closures, so it renders
+                // in a sync context and re-clones whatever it reads from
+                // around the fold on each call.
+                let mut captured = std::collections::BTreeSet::new();
+                let contribution = match fold.element_value {
+                    Some(expression) => {
+                        if let Some(element_type) = self.iterable_element_type(iterable) {
+                            self.record_variable_type(iterator, element_type);
+                        }
+                        captured = Self::closure_captured_variables(expression, iterator, &None);
+                        let mut rendered = String::new();
+                        for name in &captured {
+                            write!(rendered, "let {} = {}.clone(); ", name, name)?;
+                        }
+                        self.enter_parallel_closure(ParallelIterMode::Sync);
+                        let result = self.transpile_node_internal(expression, &mut rendered, false);
+                        self.leave_parallel_closure();
+                        result?;
+                        Some(rendered)
+                    }
+                    None => None,
+                };
 
                 if add_semicolons {
                     write!(output, "{}", self.indent())?;
@@ -1777,14 +2114,29 @@ impl Transpiler {
                 write!(output, "{}let __fold_init = ", self.indent())?;
                 self.transpile_node_internal(initial_value, output, false)?;
                 writeln!(output, ";")?;
+                for name in &captured {
+                    writeln!(output, "{}let {} = {}.clone();", self.indent(), name, name)?;
+                }
+                // Mapping each element to its contribution is itself work that
+                // divides across cores, so it happens inside the parallel
+                // iterator rather than before it.
+                let (collected, mapped, sequential_step) = match &contribution {
+                    Some(rendered) => (
+                        "Vec<_>".to_string(),
+                        format!(".map(|{}| {{ {} }})", iterator, rendered),
+                        format!("|__a, {}| {{ let __b = {{ {} }}; {} }}", iterator, rendered, step.combine("__a", "__b")),
+                    ),
+                    None => ("Vec<i64>".to_string(), String::new(), format!("|__a, __b| {}", step.combine("__a", "__b"))),
+                };
                 // An iterator that cannot report its length reports zero here,
                 // which keeps the fold sequential - the safe direction.
                 writeln!(output, "{}let (__fold_len, _) = __fold_items.size_hint();", self.indent())?;
                 writeln!(output, "{}if std_lib::array::worth_parallel_fold(__fold_len) {{", self.indent())?;
-                writeln!(output, "{}    let __fold_vec: Vec<i64> = __fold_items.collect();", self.indent())?;
-                writeln!(output, "{}    __fold_init {} __fold_vec.into_par_iter().reduce(|| {}, |__a, __b| __a {} __b)", self.indent(), operator, identity, operator)?;
+                writeln!(output, "{}    let __fold_vec: {} = __fold_items.collect();", self.indent(), collected)?;
+                writeln!(output, "{}    let __fold_parallel = __fold_vec.into_par_iter(){}.reduce(|| {}, |__a, __b| {});", self.indent(), mapped, step.identity(), step.combine("__a", "__b"))?;
+                writeln!(output, "{}    {}", self.indent(), step.combine("__fold_init", "__fold_parallel"))?;
                 writeln!(output, "{}}} else {{", self.indent())?;
-                writeln!(output, "{}    __fold_items.fold(__fold_init, |__a, __b| __a {} __b)", self.indent(), operator)?;
+                writeln!(output, "{}    __fold_items.fold(__fold_init, {})", self.indent(), sequential_step)?;
                 writeln!(output, "{}}}", self.indent())?;
 
                 self.indent_level -= 1;
@@ -1794,49 +2146,14 @@ impl Transpiler {
                 // Every other fold stays sequential: an arbitrary step is only
                 // safe to regroup if it is associative, and that cannot be
                 // proven about code the compiler did not write.
-                if add_semicolons {
-                    write!(output, "{}", self.indent())?;
-                }
-                write!(output, "{{")?;
-                writeln!(output)?;
-                self.indent_level += 1;
-
-                // Initialize accumulator; record its type when the initial
-                // value makes it obvious so Copy accumulators stay bare
-                match initial_value.as_ref() {
-                    ASTNode::NumberLiteral { data_type, .. } => self.record_variable_type(accumulator, data_type.clone()),
-                    ASTNode::StringLiteral { .. } => self.record_variable_type(accumulator, NailDataTypeDescriptor::String),
-                    ASTNode::BooleanLiteral { .. } => self.record_variable_type(accumulator, NailDataTypeDescriptor::Boolean),
-                    _ => {}
-                }
-                write!(output, "{}let mut {} = ", self.indent(), accumulator)?;
-                self.transpile_node_internal(initial_value, output, false)?;
-                writeln!(output, ";")?;
-
-                self.write_sequential_for_open(iterator, index_iterator, iterable, output)?;
-
-                // Transpile the body statements
-                if let ASTNode::Block { statements, .. } = body.as_ref() {
-                    for stmt in statements {
-                        match stmt {
-                            // Yield/return statements assign the next accumulator value
-                            ASTNode::YieldDeclaration { statement, .. } | ASTNode::ReturnDeclaration { statement, .. } => {
-                                write!(output, "{}{} = ", self.indent(), accumulator)?;
-                                self.transpile_node_internal(statement, output, false)?;
-                                writeln!(output, ";")?;
-                            }
-                            _ => {
-                                self.transpile_node_internal(stmt, output, true)?;
-                            }
-                        }
-                    }
-                }
-
-                self.indent_level -= 1;
-                writeln!(output, "{}}}", self.indent())?;
-                writeln!(output, "{}{}", self.indent(), accumulator)?;
-                self.indent_level -= 1;
-                write!(output, "{}}}", self.indent())?;
+                self.write_sequential_fold(accumulator, iterator, index_iterator, iterable, initial_value, body, false, add_semicolons, output)?;
+            }
+            ASTNode::ScanExpression { iterator, index_iterator, iterable, initial_value, accumulator, body, .. } => {
+                // A scan is the same fold as a reduce, keeping every value the
+                // accumulator took instead of only the last. Each of those
+                // values depends on every element before it, so a scan is
+                // sequential by nature - there is nothing here to parallelise.
+                self.write_sequential_fold(accumulator, iterator, index_iterator, iterable, initial_value, body, true, add_semicolons, output)?;
             }
             ASTNode::EachExpression { iterator, index_iterator, iterable, body, .. } => {
                 // Each expressions are for side effects only
@@ -2446,8 +2763,20 @@ impl Transpiler {
                     }
                 }
 
+                // Stdlib functions that dispatch back into the program receive
+                // the target function as a trailing argument. The name comes
+                // from the registry, so no function name is baked in here.
+                if let Some(callback) = stdlib_registry::get_handler_callback(name) {
+                    let parameters: Vec<String> = (0..callback.parameter_types.len()).map(|index| format!("callback_argument_{}", index)).collect();
+                    let argument_list = parameters.join(", ");
+                    if !args.is_empty() {
+                        write!(output, ", ")?;
+                    }
+                    write!(output, "move |{}| Box::pin({}({}))", argument_list, callback.function_name, argument_list)?;
+                }
+
                 write!(output, ")")?;
-                
+
                 // Await only the stdlib functions whose Rust implementations
                 // are async (I/O); pure computation functions are plain sync
                 if !stdlib_fn.rust_path.ends_with('!') && stdlib_registry::is_stdlib_fn_async(name) {

@@ -52,6 +52,16 @@ pub enum ASTNode {
         code_span: CodeSpan,
         scope: usize
     },
+    ScanExpression {
+        accumulator: String,
+        iterator: String,
+        index_iterator: Option<String>,
+        iterable: Box<ASTNode>,
+        initial_value: Box<ASTNode>,
+        body: Box<ASTNode>,
+        code_span: CodeSpan,
+        scope: usize
+    },
     EachExpression {
         iterator: String,
         index_iterator: Option<String>,
@@ -147,6 +157,7 @@ impl ASTNode {
             ASTNode::MapExpression { code_span, .. } => code_span.clone(),
             ASTNode::FilterExpression { code_span, .. } => code_span.clone(),
             ASTNode::ReduceExpression { code_span, .. } => code_span.clone(),
+            ASTNode::ScanExpression { code_span, .. } => code_span.clone(),
             ASTNode::EachExpression { code_span, .. } => code_span.clone(),
             ASTNode::FindExpression { code_span, .. } => code_span.clone(),
             ASTNode::AllExpression { code_span, .. } => code_span.clone(),
@@ -286,6 +297,7 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::MapDeclaration => parse_map_expression(state)?,
             TokenType::FilterDeclaration => parse_filter_expression(state)?,
             TokenType::ReduceDeclaration => parse_reduce_expression(state)?,
+            TokenType::ScanDeclaration => parse_scan_expression(state)?,
             TokenType::EachDeclaration => parse_each_expression(state)?,
             TokenType::FindDeclaration => parse_find_expression(state)?,
             TokenType::AllDeclaration => parse_all_expression(state)?,
@@ -317,6 +329,7 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::MapDeclaration => parse_map_expression(state),
             TokenType::FilterDeclaration => parse_filter_expression(state),
             TokenType::ReduceDeclaration => parse_reduce_expression(state),
+            TokenType::ScanDeclaration => parse_scan_expression(state),
             TokenType::EachDeclaration => parse_each_expression(state),
             TokenType::FindDeclaration => parse_find_expression(state),
             TokenType::AllDeclaration => parse_all_expression(state),
@@ -1098,9 +1111,23 @@ fn parse_filter_expression(state: &mut ParserState) -> Result<ASTNode, CodeError
     })
 }
 
-fn parse_reduce_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    let start_span = expect_token(state, TokenType::ReduceDeclaration)?;
-    
+/// The parts common to `reduce` and `scan`, which are written identically:
+/// an accumulator name, an element name, an optional index name, the array,
+/// a starting value and a block. They differ only in what they produce - the
+/// final accumulator, or every value it took along the way.
+struct FoldParts {
+    accumulator: String,
+    iterator: String,
+    index_iterator: Option<String>,
+    iterable: Box<ASTNode>,
+    initial_value: Box<ASTNode>,
+    body: Box<ASTNode>,
+    code_span: CodeSpan,
+}
+
+fn parse_fold_parts(state: &mut ParserState, keyword: TokenType) -> Result<FoldParts, CodeError> {
+    let start_span = expect_token(state, keyword)?;
+
     // Parse accumulator name
     let accumulator = expect_identifier(state)?;
     
@@ -1137,15 +1164,42 @@ fn parse_reduce_expression(state: &mut ParserState) -> Result<ASTNode, CodeError
         end_column: body.code_span().end_column,
     };
 
-    Ok(ASTNode::ReduceExpression { 
+    Ok(FoldParts {
         accumulator,
-        iterator, 
+        iterator,
         index_iterator,
         iterable: Box::new(iterable),
         initial_value: Box::new(initial_value),
-        body: Box::new(body), 
+        body: Box::new(body),
         code_span,
-        scope: GLOBAL_SCOPE 
+    })
+}
+
+fn parse_reduce_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let parts = parse_fold_parts(state, TokenType::ReduceDeclaration)?;
+    Ok(ASTNode::ReduceExpression {
+        accumulator: parts.accumulator,
+        iterator: parts.iterator,
+        index_iterator: parts.index_iterator,
+        iterable: parts.iterable,
+        initial_value: parts.initial_value,
+        body: parts.body,
+        code_span: parts.code_span,
+        scope: GLOBAL_SCOPE,
+    })
+}
+
+fn parse_scan_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    let parts = parse_fold_parts(state, TokenType::ScanDeclaration)?;
+    Ok(ASTNode::ScanExpression {
+        accumulator: parts.accumulator,
+        iterator: parts.iterator,
+        index_iterator: parts.index_iterator,
+        iterable: parts.iterable,
+        initial_value: parts.initial_value,
+        body: parts.body,
+        code_span: parts.code_span,
+        scope: GLOBAL_SCOPE,
     })
 }
 

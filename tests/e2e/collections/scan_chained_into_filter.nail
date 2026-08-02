@@ -1,0 +1,8 @@
+// E2E: a scan's result is an ordinary array, so it feeds the other operations
+sales:a:i = [100, 200, 300, 400];
+running:a:i = scan acc sale in sales from 0 { y acc + sale; };
+past_target:a:i = filter total in running { y total > 500; };
+doubled:a:i = map total in running { y total * 2; };
+print(past_target);
+print(doubled);
+print(array_length(running));

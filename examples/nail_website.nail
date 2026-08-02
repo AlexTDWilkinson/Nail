@@ -892,8 +892,9 @@ f generate_performance():s {
                 <li><strong>c blocks</strong> — three file reads take as long as the slowest one, instead of all three added together</li>
                 <li><strong>reduce</strong> — but only when the compiler can prove it is safe, below</li>
             </ul>
-            <p style="margin: 0.75rem 0 0 0;"><strong>Never:</strong> <strong>each</strong>. It exists to
-                run side effects, and those happen in the order you wrote them.</p>
+            <p style="margin: 0.75rem 0 0 0;"><strong>Never:</strong> <strong>each</strong>, which exists to
+                run side effects, and those happen in the order you wrote them; and <strong>scan</strong>,
+                where every value depends on the ones before it.</p>
         </div>
 
         <h3 style="margin-top: 2.5rem;">Why naming the operation is what makes it fast</h3>
@@ -906,10 +907,13 @@ f generate_performance():s {
         <p>
             <strong>reduce</strong> is where that gets interesting, because you write the combining step
             yourself. Splitting a fold across cores regroups it — <em>(a+b)+c</em> becomes <em>a+(b+c)</em> —
-            which is harmless for addition and wrong for subtraction. So Nail reads the step you wrote: if
-            it is a whole-number <em>acc + num</em> or <em>acc * num</em>, regrouping provably cannot change
-            the answer, and the fold runs on every core. Anything else — subtracting, dividing, folding
-            floats, or a body that does more than combine the two values — runs in order.
+            which is harmless for addition and wrong for subtraction. So Nail reads the step you wrote: if it
+            adds or multiplies the running total with a whole number, or keeps the larger or smaller of the
+            two, regrouping provably cannot change the answer, and the fold runs on every core. What you add
+            in need not be the element itself — <em>acc + num * num</em> and
+            <em>acc + string_length(word)</em> qualify too, and the work of computing each contribution is
+            divided across cores as well. Anything else — subtracting, dividing, folding floats, or a step
+            that reads the running total more than once — runs in order.
         </p>
         <p>
             You are never asked to promise that your fold is safe to split, and there is no flag to
@@ -1095,17 +1099,11 @@ website_html:s = array_join([
 </html>`
 ], ``);
 
-// Create routes map with HTTP_Route structs from std_lib
-routes:h<s,HTTP_Route> = hashmap_new();
-
-// Main page route
-main_route:HTTP_Route = HTTP_Route { 
-    path = `/`, 
-    content = website_html, 
-    content_type = `text/html; charset=utf-8`,
-    status_code = 200
-};
-hashmap_set(routes, `/`, main_route);
+// Everything the request handler serves travels through the config hashmap:
+// a Nail function can only see its parameters, so page content computed up
+// here reaches handle_request that way rather than as a global.
+state:h<s,s> = hashmap_new();
+hashmap_set(state, `page_main`, website_html);
 
 // Routes for running examples. The outputs are built from values this server
 // actually computed at startup by executing the same code the examples show.
@@ -1118,13 +1116,7 @@ concurrent_output:s = array_join([
     `\\nAll three files loaded concurrently!`, run_note, `"}`
 ], ``);
 
-concurrent_route:HTTP_Route = HTTP_Route {
-    path = `/run-example?name=concurrent`,
-    content = concurrent_output,
-    content_type = `application/json`,
-    status_code = 200
-};
-hashmap_set(routes, `/run-example?name=concurrent`, concurrent_route);
+hashmap_set(state, `example_concurrent`, concurrent_output);
 
 parallel_output:s = array_join([
     `{"output": "12! = `, string_from(fact_12),
@@ -1133,13 +1125,7 @@ parallel_output:s = array_join([
     run_note, `"}`
 ], ``);
 
-parallel_route:HTTP_Route = HTTP_Route {
-    path = `/run-example?name=parallel`,
-    content = parallel_output,
-    content_type = `application/json`,
-    status_code = 200
-};
-hashmap_set(routes, `/run-example?name=parallel`, parallel_route);
+hashmap_set(state, `example_parallel`, parallel_output);
 
 error_output:s = array_join([
     `{"output": "10 / 2 = `, string_from(div_ok),
@@ -1147,13 +1133,7 @@ error_output:s = array_join([
     run_note, `"}`
 ], ``);
 
-error_route:HTTP_Route = HTTP_Route {
-    path = `/run-example?name=error`,
-    content = error_output,
-    content_type = `application/json`,
-    status_code = 200
-};
-hashmap_set(routes, `/run-example?name=error`, error_route);
+hashmap_set(state, `example_error`, error_output);
 
 // Keep the server warm by pinging itself every 14.5 minutes (870 seconds)
 spawn {
@@ -1162,7 +1142,7 @@ spawn {
     
     loop {
         // Send actual HTTP GET request to keep the website alive
-        ping_response:HTTP_Response = danger(http_request(`GET`, `https://nail-idtq.onrender.com`, hashmap_new(), ``));
+        ping_response:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://nail-idtq.onrender.com`, hashmap_new(), ``));
         print(`[Self-ping] Successfully pinged server to keep it warm, status: `, ping_response.status);
         
         // Wait 14.5 minutes (870 seconds) before next ping
@@ -1170,6 +1150,69 @@ spawn {
     }
 }
 
-// Serve the website with routes
-http_server(port, routes);
+// Every request lands here. Routing is ordinary Nail code rather than a table
+// the server owns, so a path and what it serves stay side by side.
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    headers:h<s,s> = hashmap_new();
+    if {
+        request.path == `/` => {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_main`)),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
+        request.path == `/run-example` => {
+            r run_example_response(request, state, headers);
+        },
+        else => {
+            r HTTP_Response {
+                status = 404,
+                body = `<pre>404 - not found</pre>`,
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        }
+    }
+}
+
+f missing_example_name(err:e):s {
+    r ``;
+}
+
+// The example outputs were computed at startup and carried in through config,
+// since a Nail function cannot reach values declared outside it.
+f run_example_response(request:HTTP_Request, state:h<s,s>, headers:h<s,s>):HTTP_Response {
+    // A request without ?name must answer 404, not panic the handler.
+    requested:s = safe(hashmap_get(request.query, `name`), missing_example_name);
+    config_key:s = array_join([`example_`, requested], ``);
+    if {
+        hashmap_contains_key(state, config_key) => {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, config_key)),
+                content_type = `application/json`,
+                headers = headers
+            };
+        },
+        else => {
+            r HTTP_Response {
+                status = 404,
+                body = `{"output": "No such example."}`,
+                content_type = `application/json`,
+                headers = headers
+            };
+        }
+    }
+}
+
+// Serve the website
+config:HTTP_Config = HTTP_Config {
+    static_mounts = [],
+    max_body_bytes = 0,
+    timeout_seconds = 0,
+    state = state
+};
+http_server(port, config);
 print(`Server running on http://localhost:`, port);

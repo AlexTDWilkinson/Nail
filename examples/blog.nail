@@ -70,7 +70,10 @@ html:s = \`
 </body>
 </html>
 \`;
-http_server_start(port, html);
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    r HTTP_Response { status = 200, body = html, content_type = \`text/html\`, headers = hashmap_new() };
+}
+http_server(port, config);
 \`\`\`
 
 That's it! Let's break it down:
@@ -311,16 +314,40 @@ router_html:s = array_join([`
 </body>
 </html>`], ``);
 
-// Create routes
-routes:h<s, HTTP_Route> = hashmap_new();
-home_route:HTTP_Route = HTTP_Route {
-    path = `/`,
-    content = router_html,
-    content_type = `text/html`,
-    status_code = 200
+// Every request goes to handle_request; the page travels in through config
+// because a Nail function can only see its own parameters.
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    headers:h<s,s> = hashmap_new();
+    if {
+        request.path == `/` => {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_home`)),
+                content_type = `text/html`,
+                headers = headers
+            };
+        },
+        else => {
+            r HTTP_Response {
+                status = 404,
+                body = `<pre>404 - not found</pre>`,
+                content_type = `text/html`,
+                headers = headers
+            };
+        }
+    }
+}
+
+state:h<s,s> = hashmap_new();
+hashmap_set(state, `page_home`, router_html);
+
+config:HTTP_Config = HTTP_Config {
+    static_mounts = [],
+    max_body_bytes = 0,
+    timeout_seconds = 0,
+    state = state
 };
-hashmap_set(routes, `/`, home_route);
 
 // Start the server
 print(`Starting blog server on port `, port, `...`);
-http_server(port, routes);
+http_server(port, config);

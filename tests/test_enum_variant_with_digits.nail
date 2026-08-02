@@ -1,0 +1,20 @@
+// A variant name may contain digits: Http2 is one word, not Http followed by
+// a number, and the stdlib's own TIME_Format::ISO8601 depends on the same rule.
+
+enum HTTP_Protocol {
+    Http1,
+    Http2,
+    Http3
+}
+
+f protocol_label(protocol:HTTP_Protocol):s {
+    if {
+        protocol == HTTP_Protocol::Http1 => { r `HTTP/1.1`; },
+        protocol == HTTP_Protocol::Http2 => { r `HTTP/2`; },
+        else => { r `HTTP/3`; }
+    }
+}
+
+stamp:s = time_format(time_now(), TIME_Format::ISO8601);
+print(protocol_label(HTTP_Protocol::Http2));
+print(string_length(stamp) > 0);

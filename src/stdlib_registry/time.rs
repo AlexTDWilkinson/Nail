@@ -21,37 +21,37 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "now_ms:i = time_now_millis();";
     }
 
-    // time_format / time_parse take the TimeFormat enum, which needs a custom
+    // time_format / time_parse take the TIME_Format enum, which needs a custom
     // type import, so they use the full struct form.
     m.insert("time_format", StdlibFunction {
         rust_path: "std_lib::time::format".to_string(),
         crate_deps: vec![],
         struct_derives: vec![],
-        custom_type_imports: vec![("TimeFormat", "nail::std_lib::time")],
+        custom_type_imports: vec![("TIME_Format", "nail::std_lib::time")],
         module: StdlibModule::Time,
         parameters: vec![
             nail_param!(timestamp: i),
-            StdlibParameter { name: "format".to_string(), param_type: NailDataTypeDescriptor::Enum("TimeFormat".to_string()), pass_by_reference: false },
+            StdlibParameter { name: "format".to_string(), param_type: NailDataTypeDescriptor::Enum("TIME_Format".to_string()), pass_by_reference: false },
         ],
         return_type: nail_type!(s),
         diverging: false,
-        description: "Formats a Unix timestamp as a string using the given TimeFormat.",
-        example: "text:s = time_format(now, TimeFormat::Unix);",
+        description: "Formats a Unix timestamp as a string using the given TIME_Format.",
+        example: "text:s = time_format(now, TIME_Format::Unix);",
     });
 
     m.insert("time_parse", StdlibFunction {
         rust_path: "std_lib::time::parse".to_string(),
         crate_deps: vec![],
         struct_derives: vec![],
-        custom_type_imports: vec![("TimeFormat", "nail::std_lib::time")],
+        custom_type_imports: vec![("TIME_Format", "nail::std_lib::time")],
         module: StdlibModule::Time,
         parameters: vec![
             nail_param!(time_str: s),
-            StdlibParameter { name: "format".to_string(), param_type: NailDataTypeDescriptor::Enum("TimeFormat".to_string()), pass_by_reference: false },
+            StdlibParameter { name: "format".to_string(), param_type: NailDataTypeDescriptor::Enum("TIME_Format".to_string()), pass_by_reference: false },
         ],
         return_type: nail_type!((i!e)),
         diverging: false,
-        description: "Parses a time string in the given TimeFormat into a Unix timestamp; errors on invalid input.",
-        example: "stamp:i = danger(time_parse(`1700000000`, TimeFormat::Unix));",
+        description: "Parses a time string in the given TIME_Format into a Unix timestamp; errors on invalid input.",
+        example: "stamp:i = danger(time_parse(`1700000000`, TIME_Format::Unix));",
     });
 }

@@ -1,0 +1,9 @@
+// A scan accumulator may shadow an outer variable of a different type; the
+// outer binding is intact after the scan.
+total:s = `outer`;
+numbers:a:i = [1, 2, 3];
+running:a:i = scan total num in numbers from 0 {
+    y total + num;
+};
+print(running);
+print(total);

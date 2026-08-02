@@ -1,8 +1,8 @@
 // This test should FAIL type checking
 // Attempting to define a struct with a stdlib type name
 
-// Try to define HTTP_Route locally (should fail)
-struct HTTP_Route {
+// Try to define HTTP_Request locally (should fail)
+struct HTTP_Request {
     my_field:s,
     another_field:i
 }

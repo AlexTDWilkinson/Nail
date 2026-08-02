@@ -1,0 +1,4 @@
+// E2E: scanning strings builds up each prefix in turn
+words:a:s = [`na`, `il`, `!`];
+prefixes:a:s = scan acc word in words from `` { y string_concat([acc, word]); };
+print(prefixes);

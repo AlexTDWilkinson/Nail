@@ -23,32 +23,39 @@ pub struct Symbol {
 #[derive(Debug)]
 pub struct ScopeArena {
     scopes: Vec<Scope>,
+    /// Where new symbols land and where lookups start. Tracked explicitly
+    /// rather than derived from the arena's length: scopes are kept alive for
+    /// the later type-checking pass, so leaving a block restores this pointer
+    /// without discarding the block's symbols.
+    current: usize,
 }
 
 impl ScopeArena {
     pub fn new() -> Self {
         // I guess this is where we'd set up global scope?
         // Note that global scope has no parent, so it's just set to ERROR_SCOPE to cause an error if it's parent is accessed for some reason
-        ScopeArena { scopes: vec![Scope { symbols: HashMap::new(), parent: ERROR_SCOPE, is_lambda: false }] }
+        ScopeArena { scopes: vec![Scope { symbols: HashMap::new(), parent: ERROR_SCOPE, is_lambda: false }], current: GLOBAL_SCOPE }
     }
 
     pub fn push_scope(&mut self) -> usize {
         let parent = self.current_scope();
         self.scopes.push(Scope { symbols: HashMap::new(), parent, is_lambda: false });
-        self.scopes.len() - 1
+        self.current = self.scopes.len() - 1;
+        return self.current;
     }
 
-    pub fn pop_scope(&mut self) -> Result<(), &'static str> {
-        if self.scopes.len() == 1 {
-            return Err("Cannot pop global scope");
+    /// Leaves the current scope for its parent. The scope itself stays in the
+    /// arena, because nodes recorded its index and the type-checking pass
+    /// still resolves through it.
+    pub fn exit_scope(&mut self) {
+        let parent = self.scopes[self.current].parent;
+        if parent != ERROR_SCOPE {
+            self.current = parent;
         }
-        self.scopes.pop();
-        Ok(())
     }
 
     pub fn current_scope(&self) -> usize {
-        // log::info!("Current scope: {}", self.scopes.len().checked_sub(1).unwrap_or(ERROR_SCOPE));
-        self.scopes.len().checked_sub(1).unwrap_or(ERROR_SCOPE)
+        return self.current;
     }
 
     pub fn get_scope(&self, index: usize) -> &Scope {
@@ -67,6 +74,9 @@ impl ScopeArena {
 
     pub fn clear_above_scope(&mut self, index: usize) {
         self.scopes.truncate(index);
+        if self.current >= self.scopes.len() {
+            self.current = self.scopes.len().checked_sub(1).unwrap_or(GLOBAL_SCOPE);
+        }
     }
 
     pub fn mark_as_lambda(&mut self, scope_index: usize) {
@@ -117,7 +127,12 @@ fn new_analyzer_state() -> AnalyzerState {
         scope_arena: ScopeArena::new(), 
         errors: Vec::new(), 
         return_context: ReturnContext::None,
-        enum_variants: HashMap::new(),
+        // Enums the standard library provides are seeded here, so a stdlib
+        // enum resolves through exactly the same path as a user-declared one.
+        enum_variants: crate::stdlib_registry::STDLIB_ENUMS
+            .iter()
+            .map(|(name, variants)| (name.to_string(), variants.iter().map(|variant| variant.to_string()).collect()))
+            .collect(),
         structs: HashMap::new(),
         struct_spans: HashMap::new(),
         in_loop: false,
@@ -158,6 +173,7 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::MapExpression { scope, .. }
         | ASTNode::FilterExpression { scope, .. }
         | ASTNode::ReduceExpression { scope, .. }
+        | ASTNode::ScanExpression { scope, .. }
         | ASTNode::EachExpression { scope, .. }
         | ASTNode::FindExpression { scope, .. }
         | ASTNode::AllExpression { scope, .. }
@@ -218,7 +234,7 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
             update_node_scope(iterable, new_scope);
             update_node_scope(body, new_scope);
         }
-        ASTNode::ReduceExpression { iterable, initial_value, body, .. } => {
+        ASTNode::ReduceExpression { iterable, initial_value, body, .. } | ASTNode::ScanExpression { iterable, initial_value, body, .. } => {
             update_node_scope(iterable, new_scope);
             update_node_scope(initial_value, new_scope);
             update_node_scope(body, new_scope);
@@ -336,6 +352,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         | ASTNode::MapExpression { scope, .. }
         | ASTNode::FilterExpression { scope, .. }
         | ASTNode::ReduceExpression { scope, .. }
+        | ASTNode::ScanExpression { scope, .. }
         | ASTNode::EachExpression { scope, .. }
         | ASTNode::FindExpression { scope, .. }
         | ASTNode::AllExpression { scope, .. }
@@ -406,9 +423,12 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         ASTNode::BinaryOperation { left, operator, right, code_span, .. } => visit_binary_operation(left, operator, right, state, code_span),
         ASTNode::UnaryOperation { operator, operand, code_span, .. } => visit_unary_operation(operator, operand, state, code_span),
         ASTNode::Identifier { name, code_span, .. } => {
-            // Check if we're in a function and the variable is from outside
+            // Check if we're in a function and the variable is from outside.
+            // Naming another function is not reaching outside for state - a
+            // function body can already call one - so passing one to something
+            // like safe() is allowed where reading an outer variable is not.
             if let Some(func_scope) = state.function_scope {
-                if !check_variable_in_function_scope(state, name, func_scope) {
+                if !is_function_reference(state, name) && !check_variable_in_function_scope(state, name, func_scope) {
                     add_error(state, format!("Cannot access variable '{}' from outside function scope. Functions can only use parameters and local variables.", name), code_span);
                     return;
                 }
@@ -423,7 +443,8 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, scope, .. } => visit_for_loop(iterator, iterable, initial_value, filter, body, state, *scope),
         ASTNode::MapExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_map_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::FilterExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_filter_expression(iterator, index_iterator, iterable, body, state, *scope),
-        ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, scope, .. } => visit_reduce_expression(accumulator, iterator, index_iterator, iterable, initial_value, body, state, *scope),
+        ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, scope, .. } => visit_fold_expression("reduce", accumulator, iterator, index_iterator, iterable, initial_value, body, state, *scope),
+        ASTNode::ScanExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, scope, .. } => visit_fold_expression("scan", accumulator, iterator, index_iterator, iterable, initial_value, body, state, *scope),
         ASTNode::EachExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_each_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::FindExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_find_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::AllExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_all_expression(iterator, index_iterator, iterable, body, state, *scope),
@@ -472,9 +493,11 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
                 }
             }
 
-            // NOTE: We don't pop the scope here because type checking happens later
-            // and needs access to all scopes. Scopes will be preserved throughout
-            // the entire type checking process.
+            // The scope stays in the arena for the later type-checking pass,
+            // but a block's names end with the block.
+            if needs_new_scope {
+                state.scope_arena.exit_scope();
+            }
         }
         ASTNode::LambdaDeclaration { params, body, code_span, .. } => visit_lambda_declaration(params, body, state, code_span),
         ASTNode::StringLiteral { .. } => {},  // Literals don't need additional processing
@@ -569,9 +592,10 @@ fn visit_function_declaration(
     // Check function return
     check_function_return(name, return_type, body, state, code_span);
 
-    // NOTE: We don't pop the function scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // Kept in the arena for the later type-checking pass, but left behind as
+    // the current scope - a parameter must not shadow anything after the
+    // function it belongs to.
+    state.scope_arena.exit_scope();
 
     // Restore the previous function scope context
     state.function_scope = previous_function_scope;
@@ -638,11 +662,30 @@ fn visit_unary_operation(_operator: &Operation, operand: &mut ASTNode, state: &m
     visit_node(operand, state);
 }
 
-fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut ASTNode, state: &mut AnalyzerState, _code_span: &mut CodeSpan) {
+fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     // Type checking happens in a separate phase; here we visit both operands so
     // errors inside them (undefined variables, bad calls, ...) are reported.
     visit_node(left, state);
     visit_node(right, state);
+
+    // Arithmetic is for numbers. '+' in particular reads like it might join
+    // text, so say plainly that it does not and name the function that does -
+    // otherwise the mistake survives every check and surfaces as a failure to
+    // build the transpiled program.
+    if matches!(operator, Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod) {
+        let operand_types = [check_type(left, state), check_type(right, state)];
+        if operand_types.contains(&NailDataTypeDescriptor::String) {
+            let message = match operator {
+                Operation::Add => "'+' adds numbers, it does not join text".to_string(),
+                _ => format!("'{}' works on numbers, and one of these values is text", operator),
+            };
+            let help = match operator {
+                Operation::Add => Some("to build a string from pieces, write string_concat([first, second])".to_string()),
+                _ => None,
+            };
+            add_error_with_help(state, message, help, code_span);
+        }
+    }
 }
 
 fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], else_branch: &mut Option<Box<ASTNode>>, state: &mut AnalyzerState) {
@@ -740,9 +783,10 @@ fn visit_map_expression(iterator: &str, index_iterator: &Option<String>, iterabl
         add_error(state, "Map expression must contain a yield statement".to_string(), &mut body.code_span());
     }
     
-    // NOTE: We don't pop the scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // The scope itself is kept - later type checking resolves through it -
+    // but it stops being the current one, so the iterator cannot shadow
+    // anything after the block.
+    state.scope_arena.exit_scope();
 }
 
 fn visit_for_loop(iterator: &str, iterable: &mut ASTNode, initial_value: &mut Option<Box<ASTNode>>, filter: &mut Option<Box<ASTNode>>, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
@@ -859,18 +903,22 @@ fn visit_filter_expression(iterator: &str, index_iterator: &Option<String>, iter
         add_error(state, format!("The body of 'filter' must return a boolean (whether to keep each item), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
-    // NOTE: We don't pop the scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // The scope itself is kept - later type checking resolves through it -
+    // but it stops being the current one, so the iterator cannot shadow
+    // anything after the block.
+    state.scope_arena.exit_scope();
 }
 
-fn visit_reduce_expression(accumulator: &str, iterator: &str, index_iterator: &Option<String>, iterable: &mut ASTNode, initial_value: &mut ASTNode, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
+/// `reduce` and `scan` bind the same names over the same array, so they are
+/// checked the same way; `operation` only names the one being checked in
+/// error messages. They differ in result type alone, which check_type decides.
+fn visit_fold_expression(operation: &str, accumulator: &str, iterator: &str, index_iterator: &Option<String>, iterable: &mut ASTNode, initial_value: &mut ASTNode, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
     // Visit the iterable and initial value
     visit_node(iterable, state);
     visit_node(initial_value, state);
     
-    // Create a new scope for the reduce
-    let reduce_scope = state.scope_arena.push_scope();
+    // Create a new scope for the fold
+    let fold_scope = state.scope_arena.push_scope();
     
     // Get types
     let iterable_type = check_type(iterable, state);
@@ -881,14 +929,14 @@ fn visit_reduce_expression(accumulator: &str, iterator: &str, index_iterator: &O
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'reduce' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("reduce", iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'{}' works on arrays of values, but this is not an array — it is just {}", operation, iterable_type.describe()), collection_op_help(operation, iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
     };
     
     // Add variables to scope
-    if let Some(scope_data) = state.scope_arena.scopes.get_mut(reduce_scope) {
+    if let Some(scope_data) = state.scope_arena.scopes.get_mut(fold_scope) {
         scope_data.symbols.insert(
             accumulator.to_string(),
             Symbol {
@@ -920,7 +968,7 @@ fn visit_reduce_expression(accumulator: &str, iterator: &str, index_iterator: &O
     }
     
     // Update body scope
-    update_node_scope(body, reduce_scope);
+    update_node_scope(body, fold_scope);
     
     // Set context to allow return statements
     let prev_context = state.return_context.clone();
@@ -931,9 +979,10 @@ fn visit_reduce_expression(accumulator: &str, iterator: &str, index_iterator: &O
     // Restore context
     state.return_context = prev_context;
     
-    // NOTE: We don't pop the scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // The scope itself is kept - later type checking resolves through it -
+    // but it stops being the current one, so the iterator cannot shadow
+    // anything after the block.
+    state.scope_arena.exit_scope();
 }
 
 fn visit_each_expression(iterator: &str, index_iterator: &Option<String>, iterable: &mut ASTNode, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
@@ -984,9 +1033,10 @@ fn visit_each_expression(iterator: &str, index_iterator: &Option<String>, iterab
     update_node_scope(body, each_scope);
     visit_node(body, state);
     
-    // NOTE: We don't pop the scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // The scope itself is kept - later type checking resolves through it -
+    // but it stops being the current one, so the iterator cannot shadow
+    // anything after the block.
+    state.scope_arena.exit_scope();
 }
 
 fn visit_find_expression(iterator: &str, index_iterator: &Option<String>, iterable: &mut ASTNode, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
@@ -1051,9 +1101,10 @@ fn visit_find_expression(iterator: &str, index_iterator: &Option<String>, iterab
         add_error(state, format!("The body of 'find' must return a boolean (whether each item is the one to find), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
-    // NOTE: We don't pop the scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // The scope itself is kept - later type checking resolves through it -
+    // but it stops being the current one, so the iterator cannot shadow
+    // anything after the block.
+    state.scope_arena.exit_scope();
 }
 
 fn visit_all_expression(iterator: &str, index_iterator: &Option<String>, iterable: &mut ASTNode, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
@@ -1118,9 +1169,10 @@ fn visit_all_expression(iterator: &str, index_iterator: &Option<String>, iterabl
         add_error(state, format!("The body of 'all' must return a boolean (whether each item passes the check), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
-    // NOTE: We don't pop the scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // The scope itself is kept - later type checking resolves through it -
+    // but it stops being the current one, so the iterator cannot shadow
+    // anything after the block.
+    state.scope_arena.exit_scope();
 }
 
 fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterable: &mut ASTNode, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
@@ -1185,9 +1237,10 @@ fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterabl
         add_error(state, format!("The body of 'any' must return a boolean (whether each item passes the check), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
-    // NOTE: We don't pop the scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // The scope itself is kept - later type checking resolves through it -
+    // but it stops being the current one, so the iterator cannot shadow
+    // anything after the block.
+    state.scope_arena.exit_scope();
 }
 
 
@@ -1255,9 +1308,9 @@ fn visit_loop(index_iterator: &Option<String>, body: &mut ASTNode, state: &mut A
     // Visit the body
     visit_node(body, state);
     
-    // Pop the scope if we created one
+    // Leave the scope if we created one
     if index_iterator.is_some() {
-        let _ = state.scope_arena.pop_scope();
+        state.scope_arena.exit_scope();
     }
     
     // Restore previous loop context
@@ -1701,6 +1754,42 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
             }
         }
 
+        // Functions that dispatch back into the program require it to define
+        // the target function, since the transpiler emits a direct call to it.
+        if let Some(callback) = crate::stdlib_registry::get_handler_callback(name) {
+            let expected_parameters: Vec<String> = callback.parameter_types.iter().map(|param| param.describe()).collect();
+            let expected_signature = format!("'{}' taking ({}) and returning {}", callback.function_name, expected_parameters.join(", "), callback.return_type.describe());
+
+            match lookup_symbol(&state.scope_arena, call_scope, callback.function_name).map(|symbol| symbol.data_type.clone()) {
+                Some(NailDataTypeDescriptor::Fn(param_types, return_type)) => {
+                    if param_types != callback.parameter_types || *return_type != callback.return_type {
+                        let actual_parameters: Vec<String> = param_types.iter().map(|param| param.describe()).collect();
+                        add_error(
+                            state,
+                            format!(
+                                "'{}' needs '{}' to take ({}) and return {}, but it takes ({}) and returns {}",
+                                name,
+                                callback.function_name,
+                                expected_parameters.join(", "),
+                                callback.return_type.describe(),
+                                actual_parameters.join(", "),
+                                return_type.describe()
+                            ),
+                            code_span,
+                        );
+                    }
+                }
+                _ => {
+                    add_error_with_help(
+                        state,
+                        format!("'{}' passes every request to a function named '{}', but this program does not define one", name, callback.function_name),
+                        Some(format!("define a function {}", expected_signature)),
+                        code_span,
+                    );
+                }
+            }
+        }
+
         // Resolve type variables in the return type from the argument bindings;
         // unbound variables become Any and the declared type at the call site wins
         return substitute_type_vars(&func_type.return_type, &type_var_bindings);
@@ -2068,6 +2157,10 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
             // Reduce returns the type of the accumulator
             check_type(initial_value, state)
         }
+        ASTNode::ScanExpression { initial_value, .. } => {
+            // Scan returns every value the accumulator took, one per element
+            NailDataTypeDescriptor::Array(Box::new(check_type(initial_value, state)))
+        }
         ASTNode::EachExpression { .. } => {
             // Each returns void as it's for side effects
             NailDataTypeDescriptor::Void
@@ -2223,6 +2316,11 @@ fn lookup_symbol<'a>(arena: &'a ScopeArena, scope: usize, name: &str) -> Option<
         scope_for_traversal = scope_data.parent;
     }
     None
+}
+
+/// Whether a name refers to a declared function rather than to a value.
+fn is_function_reference(state: &AnalyzerState, name: &str) -> bool {
+    matches!(lookup_symbol(&state.scope_arena, GLOBAL_SCOPE, name).map(|symbol| &symbol.data_type), Some(NailDataTypeDescriptor::Fn(_, _)))
 }
 
 fn check_variable_in_function_scope(state: &AnalyzerState, name: &str, function_scope: usize) -> bool {
@@ -2536,9 +2634,9 @@ fn visit_lambda_declaration(params: &[(String, NailDataTypeDescriptor)], body: &
     // Visit the lambda body
     visit_node(body, state);
 
-    // NOTE: We don't pop the lambda scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+    // Kept in the arena for the later type-checking pass, but no longer the
+    // current scope: a lambda parameter must not outlive the lambda.
+    state.scope_arena.exit_scope();
 }
 
 fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {

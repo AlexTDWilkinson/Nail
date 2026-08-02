@@ -1,0 +1,9 @@
+// E2E: the outer map body does async work, so its closure is wrapped in
+// block_on — an inner map there is free to be async again
+grid:a:a:i = [[1, 2], [3, 4, 5]];
+sizes:a:i = map row in grid {
+    doubled:a:i = map cell in row { y cell * 2; };
+    time_sleep(0.01);
+    y array_length(doubled);
+};
+print(sizes);

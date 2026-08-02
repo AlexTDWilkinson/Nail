@@ -1,0 +1,5 @@
+// E2E: scan body captures an outer immutable bonus value
+bonus:i = 2;
+nums:a:i = [1, 2, 3];
+running:a:i = scan acc num in nums from 0 { y acc + num + bonus; };
+print(running);

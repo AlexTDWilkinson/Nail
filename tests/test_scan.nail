@@ -1,0 +1,56 @@
+// A scan is a reduce that keeps its work: one accumulator value per element,
+// so the result is always as long as the array it scanned.
+
+sales:a:i = [100, 200, 300];
+
+// Running total: [100, 300, 600]
+running:a:i = scan acc sale in sales from 0 {
+    y acc + sale;
+};
+
+// The last value of a scan is what the same reduce would have returned.
+total:i = reduce acc sale in sales from 0 {
+    y acc + sale;
+};
+
+// A non-identity start shifts every step, not just the last one.
+from_opening_balance:a:i = scan acc sale in sales from 1000 {
+    y acc + sale;
+};
+
+// The step need not be arithmetic, and need not be associative - a scan is
+// sequential either way, so subtraction is as welcome as addition.
+countdown:a:i = scan acc sale in sales from 1000 {
+    y acc - sale;
+};
+
+// Running maximum, which is where the intermediate values are the point.
+peaks:a:i = scan acc sale in [100, 50, 300, 200] from 0 {
+    y if { sale > acc => { r sale; }, else => { r acc; } };
+};
+
+// The index is available, as in every other collection operation.
+weighted:a:i = scan acc sale idx in sales from 0 {
+    y acc + sale * idx;
+};
+
+// Scanning strings builds up each prefix.
+words:a:s = [`a`, `b`, `c`];
+prefixes:a:s = scan acc word in words from `` {
+    y string_concat([acc, word]);
+};
+
+// A scan over an empty array has no steps to record.
+empty:a:i = [];
+nothing:a:i = scan acc num in empty from 7 {
+    y acc + num;
+};
+
+print(running);
+print(total);
+print(from_opening_balance);
+print(countdown);
+print(peaks);
+print(weighted);
+print(prefixes);
+print(nothing);

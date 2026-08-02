@@ -1,0 +1,85 @@
+// The HTTP server hands every request to handle_request, whatever its method
+// or path, and routing happens here in Nail rather than in a route table.
+
+f not_found(headers:h<s,s>):HTTP_Response {
+    r HTTP_Response {
+        status = 404,
+        body = `<h1>Not found</h1>`,
+        content_type = `text/html; charset=utf-8`,
+        headers = headers
+    };
+}
+
+f word_page(request:HTTP_Request, headers:h<s,s>):HTTP_Response {
+    params:h<s,s> = http_path_params(`/dictionary/:word`, request.path);
+    word:s = danger(hashmap_get(params, `word`));
+    r HTTP_Response {
+        status = 200,
+        body = array_join([`<h1>`, word, `</h1>`], ``),
+        content_type = `text/html; charset=utf-8`,
+        headers = headers
+    };
+}
+
+// A POST body is encoded exactly like a query string, so the existing
+// url_parse_query handles form submissions with nothing new added.
+f submit_page(request:HTTP_Request, headers:h<s,s>):HTTP_Response {
+    form:h<s,s> = url_parse_query(request.body);
+    message:s = danger(hashmap_get(form, `message`));
+    r HTTP_Response {
+        status = 200,
+        body = code_escape_html(message),
+        content_type = `text/html; charset=utf-8`,
+        headers = headers
+    };
+}
+
+f redirect_page():HTTP_Response {
+    headers:h<s,s> = hashmap_new();
+    hashmap_set(headers, `location`, `/dictionary/hello`);
+    r HTTP_Response {
+        status = 301,
+        body = ``,
+        content_type = `text/html; charset=utf-8`,
+        headers = headers
+    };
+}
+
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    headers:h<s,s> = hashmap_new();
+    site_name:s = danger(hashmap_get(state, `site_name`));
+    if {
+        request.path == `/` => {
+            r HTTP_Response {
+                status = 200,
+                body = array_join([`<h1>`, site_name, `</h1>`], ``),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
+        http_path_matches(`/dictionary/:word`, request.path) => {
+            r word_page(request, headers);
+        },
+        request.method == `POST` && request.path == `/submit` => {
+            r submit_page(request, headers);
+        },
+        request.path == `/old-home` => {
+            r redirect_page();
+        },
+        else => {
+            r not_found(headers);
+        }
+    }
+}
+
+state:h<s,s> = hashmap_new();
+hashmap_set(state, `site_name`, `Nail`);
+
+config:HTTP_Config = HTTP_Config {
+    static_mounts = [HTTP_Static { prefix = `/static`, directory = `static` }],
+    max_body_bytes = 16384,
+    timeout_seconds = 0,
+    state = state
+};
+
+http_server(8080, config);

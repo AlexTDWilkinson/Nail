@@ -20,7 +20,7 @@ More detailed info in the [Nail Language Spec](nail_language_spec.md).
 ### Language Features
 - **Everything Immutable:** Variables declared once. No surprises.
 - **Pattern Matching:** Nail's `if` is actually pattern matching in disguise.
-- **Functional Iteration:** `map`, `filter`, `reduce`. No loops allowed.
+- **Functional Iteration:** `map`, `filter`, `reduce`, `scan`. No loops allowed.
 - **Simple Lambdas:** Anonymous functions supported, but no nested lambdas allowed.
 - **Result Types:** `s!e` for string-or-error. Handle with `danger()` or `safe()`.
 - **Structs & Enums:** Simple data types. No methods, no complexity.

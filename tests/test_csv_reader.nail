@@ -1,0 +1,28 @@
+// csv_open walks a file in batches, so a file too large to hold in memory can
+// be read without turning it into one big string first. The reader keeps its
+// position between calls: every byte is read once, not once per batch.
+
+path:s = `tests/test_csv_reader_data.csv`;
+danger(fs_write(path, `name,note
+alpha,"one, two"
+beta,x
+gamma,y
+`));
+
+reader:CSV_Reader = danger(csv_open(path, csv_default_options()));
+
+first_batch:a:h<s,s> = danger(csv_next_rows(reader, 2));
+print(`first batch: `, array_length(first_batch));
+print(`quoted field survived: `, danger(hashmap_get(danger(array_first(first_batch)), `note`)));
+
+// The reader resumes where the previous batch stopped.
+second_batch:a:h<s,s> = danger(csv_next_rows(reader, 2));
+print(`second batch: `, array_length(second_batch));
+print(`resumed at: `, danger(hashmap_get(danger(array_first(second_batch)), `name`)));
+
+// A batch shorter than the count asked for means the file is finished.
+exhausted:a:h<s,s> = danger(csv_next_rows(reader, 2));
+print(`after end: `, array_length(exhausted));
+
+danger(csv_close(reader));
+danger(fs_remove_file(path));

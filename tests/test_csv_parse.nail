@@ -1,0 +1,146 @@
+// csv_parse keeps quoted fields intact - splitting on the delimiter by hand
+// corrupts every column after a field that contains one.
+
+text:s = `word_sul,word_english,definition
+okus,language,"a system of words, spoken or written"
+asok,all,"every one, without exception"`;
+
+rows:a:h<s,s> = danger(csv_parse(text, csv_default_options()));
+print(`row count: `, array_length(rows));
+
+for row in rows {
+    print(danger(hashmap_get(row, `word_english`)), ` => `, danger(hashmap_get(row, `definition`)));
+}
+
+// A different delimiter, for a tab-separated export.
+tsv:s = `first	second
+1	2`;
+tab_options:CSV_Options = CSV_Options {
+    delimiter = `	`,
+    quote = `"`,
+    escape = ``,
+    double_quote = true,
+    comment = ``,
+    has_headers = true,
+    flexible = true,
+    trim = CSV_Trim::None,
+    skip_rows = 0,
+    n_rows = 0,
+    null_values = [],
+    ignore_errors = false,
+    eol_char = ``
+};
+tsv_rows:a:h<s,s> = danger(csv_parse(tsv, tab_options));
+first_tsv_row:h<s,s> = danger(array_first(tsv_rows));
+print(`tsv second column: `, danger(hashmap_get(first_tsv_row, `second`)));
+
+// Without a header row the columns are addressed by number.
+headerless:s = `alpha,beta`;
+headerless_options:CSV_Options = CSV_Options {
+    delimiter = `,`,
+    quote = `"`,
+    escape = ``,
+    double_quote = true,
+    comment = ``,
+    has_headers = false,
+    flexible = true,
+    trim = CSV_Trim::None,
+    skip_rows = 0,
+    n_rows = 0,
+    null_values = [],
+    ignore_errors = false,
+    eol_char = ``
+};
+headerless_rows:a:h<s,s> = danger(csv_parse(headerless, headerless_options));
+first_headerless:h<s,s> = danger(array_first(headerless_rows));
+print(`column 1: `, danger(hashmap_get(first_headerless, `1`)));
+
+// An export with title rows above the header.
+bannered:s = `Dictionary export
+generated today
+name,value
+real,42`;
+skip_options:CSV_Options = CSV_Options {
+    delimiter = `,`,
+    quote = `"`,
+    escape = ``,
+    double_quote = true,
+    comment = ``,
+    has_headers = true,
+    flexible = true,
+    trim = CSV_Trim::None,
+    skip_rows = 2,
+    n_rows = 0,
+    null_values = [],
+    ignore_errors = false,
+    eol_char = ``
+};
+skipped_rows:a:h<s,s> = danger(csv_parse(bannered, skip_options));
+print(`after skip_rows: `, danger(hashmap_get(danger(array_first(skipped_rows)), `name`)));
+
+// Reading only the first row of a longer file.
+many:s = `name
+one
+two
+three`;
+limit_options:CSV_Options = CSV_Options {
+    delimiter = `,`,
+    quote = `"`,
+    escape = ``,
+    double_quote = true,
+    comment = ``,
+    has_headers = true,
+    flexible = true,
+    trim = CSV_Trim::None,
+    skip_rows = 0,
+    n_rows = 1,
+    null_values = [],
+    ignore_errors = false,
+    eol_char = ``
+};
+limited:a:h<s,s> = danger(csv_parse(many, limit_options));
+print(`n_rows kept: `, array_length(limited));
+
+// Sentinel texts read as empty, so absence is tested one way.
+sentinels:s = `name,note
+real,NA`;
+null_options:CSV_Options = CSV_Options {
+    delimiter = `,`,
+    quote = `"`,
+    escape = ``,
+    double_quote = true,
+    comment = ``,
+    has_headers = true,
+    flexible = true,
+    trim = CSV_Trim::None,
+    skip_rows = 0,
+    n_rows = 0,
+    null_values = [`NA`, `NULL`, `-`],
+    ignore_errors = false,
+    eol_char = ``
+};
+null_rows:a:h<s,s> = danger(csv_parse(sentinels, null_options));
+note_value:s = danger(hashmap_get(danger(array_first(null_rows)), `note`));
+print(`NA became empty: `, string_is_empty(note_value));
+
+// Comment lines are skipped when a comment character is set.
+commented:s = `name,value
+# this line is ignored
+real,42`;
+comment_options:CSV_Options = CSV_Options {
+    delimiter = `,`,
+    quote = `"`,
+    escape = ``,
+    double_quote = true,
+    comment = `#`,
+    has_headers = true,
+    flexible = true,
+    trim = CSV_Trim::None,
+    skip_rows = 0,
+    n_rows = 0,
+    null_values = [],
+    ignore_errors = false,
+    eol_char = ``
+};
+comment_rows:a:h<s,s> = danger(csv_parse(commented, comment_options));
+print(`rows after comment: `, array_length(comment_rows));

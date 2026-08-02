@@ -1,0 +1,5 @@
+// Error test: '+' is arithmetic, so it cannot join two strings
+greeting:s = `hello`;
+name:s = `world`;
+message:s = greeting + name;
+print(message);

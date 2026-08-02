@@ -1,0 +1,61 @@
+// Hashmap types in function signatures. The function-signature lexer used to
+// stop scanning a type at '<', so a hashmap parameter consumed nothing and the
+// lexer spun forever on the same character.
+
+struct Setting {
+    label:s,
+    enabled:b
+}
+
+// Hashmap as a parameter, string keys and string values
+f lookup_title(config:h<s,s>):s {
+    r danger(hashmap_get(config, `title`));
+}
+
+// A second hashmap parameter alongside an ordinary one, to cover the
+// comma handling between parameters
+f describe_count(counts:h<s,i>, label:s):s {
+    total:i = danger(hashmap_get(counts, label));
+    r array_join([label, `=`, string_from(total)], ``);
+}
+
+// Hashmap as a return type
+f build_headers(content_type:s):h<s,s> {
+    headers:h<s,s> = hashmap_new();
+    hashmap_set(headers, `content-type`, content_type);
+    r headers;
+}
+
+// Struct values inside a hashmap parameter
+f setting_label(settings:h<s,Setting>, key:s):s {
+    found:Setting = danger(hashmap_get(settings, key));
+    r found.label;
+}
+
+// Nested hashmap, so the bracket scanner has to count depth rather than
+// stopping at the first '>'
+f inner_value(groups:h<s,h<s,s>>, group:s, key:s):s {
+    inner:h<s,s> = danger(hashmap_get(groups, group));
+    r danger(hashmap_get(inner, key));
+}
+
+config:h<s,s> = hashmap_new();
+hashmap_set(config, `title`, `Nail`);
+print(lookup_title(config));
+
+counts:h<s,i> = hashmap_new();
+hashmap_set(counts, `routes`, 12);
+print(describe_count(counts, `routes`));
+
+built:h<s,s> = build_headers(`text/html`);
+print(danger(hashmap_get(built, `content-type`)));
+
+settings:h<s,Setting> = hashmap_new();
+hashmap_set(settings, `dark`, Setting { label = `Dark mode`, enabled = true });
+print(setting_label(settings, `dark`));
+
+groups:h<s,h<s,s>> = hashmap_new();
+inner_map:h<s,s> = hashmap_new();
+hashmap_set(inner_map, `port`, `8080`);
+hashmap_set(groups, `server`, inner_map);
+print(inner_value(groups, `server`, `port`));

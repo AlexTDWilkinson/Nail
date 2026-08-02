@@ -1,0 +1,8 @@
+// E2E: the element's contribution comes from a function the program declares
+f weight(word:s):i {
+    r string_length(word) * 2;
+}
+
+words:a:s = [`alpha`, `be`, `c`];
+total:i = reduce acc word in words from 0 { y acc + weight(word); };
+print(total);

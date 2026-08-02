@@ -1,0 +1,4 @@
+// E2E: scan keeps every value the accumulator took, one per element
+sales:a:i = [100, 200, 300];
+running:a:i = scan acc sale in sales from 0 { y acc + sale; };
+print(running);

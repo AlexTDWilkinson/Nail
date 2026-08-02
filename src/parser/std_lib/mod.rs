@@ -3,6 +3,7 @@ pub mod array;
 pub mod code;
 pub mod compress;
 pub mod crypto;
+pub mod csv;
 pub mod database;
 #[cfg(feature = "datafusion")]
 pub mod datafusion;
@@ -33,4 +34,4 @@ pub use http::*;
 pub use json::*;
 pub use markdown::*;
 // Don't re-export math::* to avoid conflicts with array::max
-pub use time::TimeFormat;
+pub use time::TIME_Format;
