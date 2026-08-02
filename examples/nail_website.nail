@@ -1015,12 +1015,9 @@ f generate_author(avatar_base64:s):s {
         avatar_base64,
         `" alt="Alex Wilkinson">
         <p class="author-lead"><span class="author-name">Alex Wilkinson —</span>
-            I designed Nail — the language, its compiler and the terminal IDE.</p>
-        <p>
-            Most bugs I have shipped were simple problems buried under features I did not need — a
+            most bugs I have shipped were simple problems buried under features I did not need: a
             null, a variable something else changed, an off-by-one, two threads on the same value.
-            Nail drops those features instead of giving me better tools for surviving them.
-        </p>
+            Nail drops those features instead of giving me better tools for surviving them.</p>
         <p>
             This page is a Nail program, compiled by that compiler. I also made
             <a href="https://sul.alex-wilkinson.ca" target="_blank">Simple Universal Language</a>,
