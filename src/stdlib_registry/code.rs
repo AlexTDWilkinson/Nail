@@ -11,7 +11,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Runs the full Nail compiler pipeline (lex, parse, type check, transpile) on a source string and returns the generated Rust code.",
             "rust_code:s = danger(code_transpile_to_rust(nail_source));";
         "code_escape_html" => "std_lib::code::escape_html", (text: s) -> s,
-            "Escapes &, < and > so arbitrary text can be embedded safely in HTML.",
+            "Escapes &, <, >, \" and ' so arbitrary text can be embedded safely in HTML, between tags or inside a quoted attribute.",
             "safe_text:s = code_escape_html(user_input);";
     }
 }
