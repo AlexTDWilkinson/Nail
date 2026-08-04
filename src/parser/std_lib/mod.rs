@@ -1,5 +1,6 @@
 pub mod args;
 pub mod array;
+pub mod base64;
 pub mod code;
 pub mod compress;
 pub mod crypto;

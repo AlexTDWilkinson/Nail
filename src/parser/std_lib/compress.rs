@@ -1,3 +1,5 @@
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use flate2::write::{GzEncoder, GzDecoder};
 use flate2::Compression;
 use std::io::Write;
@@ -12,13 +14,13 @@ pub fn gzip_compress(data: String) -> Result<String, String> {
         .map_err(|e| format!("compress_gzip: could not finish compression: {}", e))?;
     
     // Convert to base64 for safe string representation
-    Ok(base64::encode(compressed))
+    Ok(STANDARD.encode(compressed))
 }
 
 /// Decompress a gzipped string
 pub fn gzip_decompress(data: String) -> Result<String, String> {
     // Decode from base64
-    let compressed = base64::decode(&data)
+    let compressed = STANDARD.decode(&data)
         .map_err(|e| format!("compress_gunzip: the input is not valid base64: {}", e))?;
 
     let mut decoder = GzDecoder::new(Vec::new());

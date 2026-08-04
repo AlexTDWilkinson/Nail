@@ -1262,6 +1262,18 @@ read as empty, e.g. `NA`).
 - `crypto_hash_md5(s:s):s` - Calculate MD5 hash of string (for checksums, not security)
 - `crypto_uuid_v4():s` - Generate a UUID v4 string
 
+### URL Operations (`url_*`)
+- `url_encode(text:s):s` - Percent-encode a string for use in a URL
+- `url_decode(text:s):s!e` - Decode a percent-encoded string
+- `url_parse_query(query:s):h<s,s>` - Parse a query string or form body into a hashmap
+- `url_build_query(params:h<s,s>):s` - Build a percent-encoded query string from a hashmap
+
+### Base64 Operations (`base64_*`)
+- `base64_encode(text:s):s` - Encode as base64, standard alphabet with padding
+- `base64_decode(data:s):s!e` - Decode standard base64 back to text
+- `base64_encode_url(text:s):s` - Encode as URL-safe base64 without padding (JWTs, URL parameters)
+- `base64_decode_url(data:s):s!e` - Decode URL-safe base64, padded or not
+
 ### Error Handling
 - `safe(result:T!e, handler:f(e:e):T):T` - Handle error with function
 - `danger(result:T!e):T` - Unwrap or panic (use carefully)

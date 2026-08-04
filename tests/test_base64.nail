@@ -1,0 +1,29 @@
+// Base64 encoding, both alphabets.
+
+plain:s = `hello world`;
+
+// Standard alphabet, padded.
+encoded:s = base64_encode(plain);
+print(`standard:`, encoded);
+
+decoded:s = danger(base64_decode(encoded));
+print(`round trip:`, decoded);
+
+// URL-safe alphabet, unpadded, which is what JWT segments look like.
+token:s = base64_encode_url(`{"sub":"1234","name":"Ada"}`);
+print(`url safe:`, token);
+
+payload:s = danger(base64_decode_url(token));
+print(`payload:`, payload);
+
+// Padded input still decodes through the URL-safe decoder.
+padded:s = danger(base64_decode_url(`aGVsbG8=`));
+print(`padded url safe:`, padded);
+
+// Invalid input is an error value the caller handles, not a panic.
+f report(err:e):s {
+    r `rejected`;
+}
+
+rejected:s = safe(base64_decode(`!!!not base64!!!`), report);
+print(`invalid input:`, rejected);

@@ -89,6 +89,7 @@ macro_rules! simple_fns {
 
 mod args;
 mod array;
+mod base64;
 mod code;
 mod compress;
 mod crypto;
@@ -232,6 +233,7 @@ stdlib_modules! {
     Regex => "std_lib::regex", "regex_",
     Args => "std_lib::args", "args_",
     Url => "std_lib::url", "url_",
+    Base64 => "std_lib::base64", "base64_",
     Csv => "std_lib::csv", "csv_",
     Compress => "std_lib::compress", "compress_",
     Database => "std_lib::database", "db_",
@@ -299,6 +301,7 @@ lazy_static! {
         let mut m = HashMap::new();
         args::register(&mut m);
         array::register(&mut m);
+        base64::register(&mut m);
         code::register(&mut m);
         compress::register(&mut m);
         crypto::register(&mut m);
