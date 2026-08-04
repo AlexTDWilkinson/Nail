@@ -103,6 +103,48 @@ m.insert("http_request", StdlibFunction {
         example: "response:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://example.com`, headers, ``));",
     });
 
+    m.insert("http_default_cookie", StdlibFunction {
+        rust_path: "std_lib::http::http_default_cookie".to_string(),
+        crate_deps: vec![],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("HTTP_Cookie", "nail::std_lib::http")],
+        module: StdlibModule::Http,
+        parameters: vec![
+            StdlibParameter { name: "name".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+        ],
+        return_type: NailDataTypeDescriptor::Struct("HTTP_Cookie".to_string()),
+        diverging: false,
+        description: "A cookie with the safe defaults filled in: site-wide path, session lifetime, HttpOnly, Secure, SameSite=Lax. Change the fields that need changing.",
+        example: "cookie:HTTP_Cookie = http_default_cookie(`sid`, session_id);",
+    });
+
+    m.insert("http_build_cookie", StdlibFunction {
+        rust_path: "std_lib::http::http_build_cookie".to_string(),
+        crate_deps: vec![],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("HTTP_Cookie", "nail::std_lib::http")],
+        module: StdlibModule::Http,
+        parameters: vec![StdlibParameter { name: "cookie".to_string(), param_type: NailDataTypeDescriptor::Struct("HTTP_Cookie".to_string()), pass_by_reference: false }],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+        diverging: false,
+        description: "Builds the Set-Cookie header value for a cookie; errors on a name, value or SameSite setting a browser would reject.",
+        example: "header:s = danger(http_build_cookie(cookie));",
+    });
+
+    m.insert("http_parse_cookies", StdlibFunction {
+        rust_path: "std_lib::http::http_parse_cookies".to_string(),
+        crate_deps: vec![CrateDependency::DashMap],
+        struct_derives: vec![],
+        custom_type_imports: vec![],
+        module: StdlibModule::Http,
+        parameters: vec![StdlibParameter { name: "header".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }],
+        return_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
+        diverging: false,
+        description: "Parses the browser's Cookie header, which holds every cookie for the site at once, into a hashmap of name to value.",
+        example: "cookies:h<s,s> = http_parse_cookies(raw_cookie_header);",
+    });
+
     m.insert("http_default_config", StdlibFunction {
         rust_path: "std_lib::http::http_default_config".to_string(),
         crate_deps: vec![CrateDependency::Axum, CrateDependency::DashMap],

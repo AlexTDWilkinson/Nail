@@ -10,28 +10,9 @@ use crate::lexer::{collect_lexer_errors, lexer, Token, TokenType};
 use crate::parser::parse;
 use crate::transpiler::Transpiler;
 
-/// Both quote characters are escaped as well as the three markup ones, because
-/// text is just as likely to be written into an attribute as between tags -
-/// `value="{}"` is the usual case - and there a bare quote ends the attribute
-/// and lets whatever follows become markup of its own.
-fn push_escaped(ch: char, out: &mut String) {
-    match ch {
-        '&' => out.push_str("&amp;"),
-        '<' => out.push_str("&lt;"),
-        '>' => out.push_str("&gt;"),
-        '"' => out.push_str("&quot;"),
-        '\'' => out.push_str("&#39;"),
-        _ => out.push(ch),
-    }
-}
-
-fn escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 16);
-    for ch in text.chars() {
-        push_escaped(ch, &mut out);
-    }
-    out
-}
+/// Escaping lives in the string module, where anyone building a page will
+/// look for it; the highlighter here is just its first caller.
+use super::string::{escape_html as escape, push_escaped_html as push_escaped};
 
 fn token_class(token_type: &TokenType) -> Option<&'static str> {
     match token_type {

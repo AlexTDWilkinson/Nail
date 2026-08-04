@@ -78,6 +78,80 @@ pub async fn sqlite_memory() -> Result<DB_SQLite, String> {
     }).await
 }
 
+/// The parameterised variants below take `?` placeholders and a list of
+/// values, so a value never becomes part of the SQL text. That is the only way
+/// to put untrusted input in a statement: quoting it by hand works right up
+/// until the day a value is spliced somewhere a quote was not expected, and
+/// then it is not a bug, it is somebody else's query. SQLite binds every value
+/// as text and applies the column's affinity, so a number kept in a string
+/// still compares and stores as a number.
+///
+/// Execute a SQL statement with bound parameters
+pub async fn sqlite_execute_params(db: &DB_SQLite, sql: String, params: Vec<String>) -> Result<DB_Result, String> {
+    let conn_arc = get_connection(&db.handle)?;
+
+    run_blocking(move || {
+        let conn = conn_arc.lock().map_err(|e| format!("db_sqlite_execute_params: could not lock the database connection: {}", e))?;
+
+        let affected = conn
+            .execute(&sql, rusqlite::params_from_iter(params.iter()))
+            .map_err(|e| format!("db_sqlite_execute_params: failed to execute SQL '{}': {}", sql, e))?;
+
+        let last_insert_id = conn.last_insert_rowid();
+
+        Ok(DB_Result { rows_affected: affected as i64, last_insert_id })
+    })
+    .await
+}
+
+/// Query with bound parameters, returning every row as a typed struct
+pub async fn sqlite_query_params<T>(db: &DB_SQLite, sql: String, params: Vec<String>) -> Result<Vec<T>, String>
+where
+    T: DeserializeOwned + Send + 'static,
+{
+    let conn_arc = get_connection(&db.handle)?;
+
+    run_blocking(move || {
+        let conn = conn_arc.lock().map_err(|e| format!("db_sqlite_query_params: could not lock the database connection: {}", e))?;
+
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("db_sqlite_query_params: could not prepare SQL '{}': {}", sql, e))?;
+
+        let rows = from_rows::<T>(
+            stmt.query(rusqlite::params_from_iter(params.iter()))
+                .map_err(|e| format!("db_sqlite_query_params: failed to execute SQL '{}': {}", sql, e))?,
+        )
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("db_sqlite_query_params: could not deserialize the result rows into the target struct: {}", e))?;
+
+        Ok(rows)
+    })
+    .await
+}
+
+/// Query with bound parameters, returning the first row as a typed struct
+pub async fn sqlite_query_single_params<T>(db: &DB_SQLite, sql: String, params: Vec<String>) -> Result<T, String>
+where
+    T: DeserializeOwned + Send + 'static,
+{
+    let conn_arc = get_connection(&db.handle)?;
+
+    run_blocking(move || {
+        let conn = conn_arc.lock().map_err(|e| format!("db_sqlite_query_single_params: could not lock the database connection: {}", e))?;
+
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("db_sqlite_query_single_params: could not prepare SQL '{}': {}", sql, e))?;
+
+        let mut rows = stmt
+            .query(rusqlite::params_from_iter(params.iter()))
+            .map_err(|e| format!("db_sqlite_query_single_params: failed to execute SQL '{}': {}", sql, e))?;
+
+        match rows.next().map_err(|e| format!("db_sqlite_query_single_params: could not read the result row: {}", e))? {
+            Some(row) => from_row::<T>(row).map_err(|e| format!("db_sqlite_query_single_params: could not deserialize the result row into the target struct: {}", e)),
+            None => Err(format!("db_sqlite_query_single_params: the query '{}' returned no rows", sql)),
+        }
+    })
+    .await
+}
+
 /// Execute a SQL statement that doesn't return rows (CREATE, INSERT, UPDATE, DELETE)
 pub async fn sqlite_execute(db: &DB_SQLite, sql: String) -> Result<DB_Result, String> {
     let conn_arc = get_connection(&db.handle)?;

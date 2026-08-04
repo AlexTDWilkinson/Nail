@@ -130,5 +130,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_is_numeric" => "std_lib::string::is_numeric", (input: (&s)) -> b,
             "Returns true if the string parses as a number (including floats and negatives).",
             "numeric:b = string_is_numeric(`-1.5`);";
+        "string_escape_html" => "std_lib::string::escape_html", (text: (&s)) -> s,
+            "Escapes &, <, >, \" and ' so text a visitor supplied can be put in a page without becoming markup.",
+            "safe_name:s = string_escape_html(player_name);";
     }
 }

@@ -1,0 +1,101 @@
+// Bound SQL parameters, CSPRNG tokens, HMAC, hex, HTML escaping and cookies.
+
+struct Person {
+    name:s,
+    note:s
+}
+
+f no_people(err:e):a:Person {
+    print(err);
+    r [];
+}
+
+f no_person(err:e):Person {
+    r Person { name = ``, note = `` };
+}
+
+f empty_text(err:e):s {
+    print(err);
+    r ``;
+}
+
+db:DB_SQLite = danger(db_sqlite_memory());
+create:DB_Result = danger(db_sqlite_execute(db, `CREATE TABLE people (name TEXT, note TEXT)`));
+
+// A value that would end the statement early if it were pasted into the SQL.
+hostile:s = `Robert'); DROP TABLE people;--`;
+inserted:DB_Result = danger(db_sqlite_execute_params(
+    db,
+    `INSERT INTO people (name, note) VALUES (?, ?)`,
+    [hostile, `bound, not spliced`]
+));
+print(`rows inserted:`, inserted.rows_affected);
+
+// The table survives, and the value comes back exactly as it went in.
+found:a:Person = safe(db_sqlite_query_params(db, `SELECT name, note FROM people WHERE name = ?`, [hostile]), no_people);
+print(`rows found:`, array_length(found));
+
+single:Person = safe(db_sqlite_query_single_params(db, `SELECT name, note FROM people WHERE name = ?`, [hostile]), no_person);
+print(`name round trip:`, single.name);
+
+danger(db_sqlite_close(db));
+
+// Randomness fit for session ids: 16 bytes is 32 hex characters.
+session_id:s = danger(crypto_random_hex(16));
+print(`session id length:`, string_length(session_id));
+
+// Two draws must not match.
+other_id:s = danger(crypto_random_hex(16));
+print(`ids differ:`, session_id != other_id);
+
+// Constant-time comparison, both ways.
+print(`same token:`, crypto_secure_equal(session_id, session_id));
+print(`different token:`, crypto_secure_equal(session_id, other_id));
+
+// HMAC-SHA256 against the published test vector for this key and message.
+signature:s = crypto_hmac_sha256(`key`, `The quick brown fox jumps over the lazy dog`);
+print(`hmac:`, signature);
+print(`hmac matches vector:`, crypto_secure_equal(signature, `f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8`));
+
+// Hex, both directions.
+encoded:s = hex_encode(`hello`);
+print(`hex:`, encoded);
+print(`hex round trip:`, danger(hex_decode(encoded)));
+print(`odd length rejected:`, safe(hex_decode(`abc`), empty_text));
+
+// Escaping text that arrived from a visitor.
+print(`escaped:`, string_escape_html(`<script>alert("x")</script>`));
+
+// A session cookie, with the safe defaults already set.
+cookie:HTTP_Cookie = http_default_cookie(`sid`, session_id);
+print(`set-cookie:`, danger(http_build_cookie(cookie)));
+
+// The same cookie, kept for a week and readable across the whole site.
+week:HTTP_Cookie = HTTP_Cookie {
+    name = `sid`,
+    value = session_id,
+    path = `/`,
+    max_age = 604800,
+    http_only = true,
+    secure = true,
+    same_site = `Strict`
+};
+print(`week-long cookie:`, danger(http_build_cookie(week)));
+
+// A value that would smuggle a second attribute into the header is refused.
+smuggled:HTTP_Cookie = HTTP_Cookie {
+    name = `sid`,
+    value = `abc; Domain=evil.example`,
+    path = `/`,
+    max_age = 0,
+    http_only = true,
+    secure = true,
+    same_site = `Lax`
+};
+print(`smuggled value:`, safe(http_build_cookie(smuggled), empty_text));
+
+// Reading cookies back out of the browser's one Cookie header.
+jar:h<s,s> = http_parse_cookies(`theme=dark; sid=abc123; consent="yes"`);
+print(`sid:`, safe(hashmap_get(jar, `sid`), empty_text));
+print(`consent:`, safe(hashmap_get(jar, `consent`), empty_text));
+print(`cookies parsed:`, hashmap_len(jar));

@@ -379,3 +379,29 @@ pub fn is_alphabetic(s: &String) -> bool {
 pub fn is_alphanumeric(s: &String) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_alphanumeric())
 }
+
+/// Both quote characters are escaped as well as the three markup ones, because
+/// text is just as likely to be written into an attribute as between tags -
+/// `value="{}"` is the usual case - and there a bare quote ends the attribute
+/// and lets whatever follows become markup of its own.
+pub(crate) fn push_escaped_html(ch: char, out: &mut String) {
+    match ch {
+        '&' => out.push_str("&amp;"),
+        '<' => out.push_str("&lt;"),
+        '>' => out.push_str("&gt;"),
+        '"' => out.push_str("&quot;"),
+        '\'' => out.push_str("&#39;"),
+        _ => out.push(ch),
+    }
+}
+
+/// Escape text so it can be put in a page without becoming part of the markup.
+/// Anything a visitor supplied - a name, a comment, a search term echoed back -
+/// goes through here on its way into HTML.
+pub fn escape_html(text: &String) -> String {
+    let mut out = String::with_capacity(text.len() + 16);
+    for ch in text.chars() {
+        push_escaped_html(ch, &mut out);
+    }
+    return out;
+}

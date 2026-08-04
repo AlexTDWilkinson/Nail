@@ -1081,8 +1081,17 @@ enforce the rule, so a new stdlib name cannot skip it.
 - `db_sqlite_execute(db:DB_SQLite, sql:s):DB_Result!e` - Execute SQL that doesn't return rows (CREATE, INSERT, UPDATE, DELETE)
 - `db_sqlite_query(db:DB_SQLite, sql:s):a:T!e` - Execute SQL query and return results as array of structs (type T inferred from variable declaration)
 - `db_sqlite_query_single(db:DB_SQLite, sql:s):T!e` - Execute SQL query and return single result as struct (type T inferred from variable declaration)
+- `db_sqlite_execute_params(db:DB_SQLite, sql:s, params:a:s):DB_Result!e` - Execute SQL with `?` placeholders bound to values
+- `db_sqlite_query_params(db:DB_SQLite, sql:s, params:a:s):a:T!e` - Query with `?` placeholders bound to values
+- `db_sqlite_query_single_params(db:DB_SQLite, sql:s, params:a:s):T!e` - Query with `?` placeholders, returning the first row
 - `db_sqlite_close(db:DB_SQLite):v!e` - Close database connection
 - `db_sqlite_execute_batch(db:DB_SQLite, statements:a:s):DB_Result!e` - Execute multiple SQL statements atomically
+
+Any value going into a statement belongs in the `_params` list, not in the SQL
+text. Quoting values by hand works until one is spliced somewhere a quote was
+not expected, and then the value is running as query. SQLite binds every
+parameter as text and applies the column's affinity, so a number held in a
+string still stores and compares as a number.
 
 ### Math Operations (`math_*`)
 - `math_abs(n:i):i` - Absolute value (integer)
@@ -1128,6 +1137,9 @@ enforce the rule, so a new stdlib name cannot skip it.
 - `http_default_config():HTTP_Config` - The default server configuration
 - `http_path_matches(pattern:s, path:s):b` - Whether a path matches a route pattern
 - `http_path_params(pattern:s, path:s):h<s,s>` - The named segments a pattern binds
+- `http_default_cookie(name:s, value:s):HTTP_Cookie` - A cookie with the safe defaults: `/` path, session lifetime, HttpOnly, Secure, SameSite=Lax
+- `http_build_cookie(cookie:HTTP_Cookie):s!e` - The `Set-Cookie` header value for a cookie
+- `http_parse_cookies(header:s):h<s,s>` - Parse the browser's `Cookie` header, which holds every cookie at once
 
 `http_server` hands **every** request, whatever its method or path, to a
 function the program must define:
@@ -1261,6 +1273,15 @@ read as empty, e.g. `NA`).
 - `crypto_hash_sha256(s:s):s` - Calculate SHA-256 hash of string
 - `crypto_hash_md5(s:s):s` - Calculate MD5 hash of string (for checksums, not security)
 - `crypto_uuid_v4():s` - Generate a UUID v4 string
+- `crypto_random_hex(bytes:i):s!e` - Operating-system random bytes as hex, for session ids, nonces and anything an attacker must not guess
+- `crypto_secure_equal(left:s, right:s):b` - Compare two secrets in time that does not reveal how much of them matched
+- `crypto_hmac_sha256(key:s, message:s):s` - HMAC-SHA256 of a message under a secret key, as hex
+
+`math_random` is a fast generator for simulations and shuffles, and its output
+can be predicted from earlier output - use `crypto_random_hex` for secrets.
+Compare secrets with `crypto_secure_equal`, never with `==`: a normal
+comparison stops at the first differing byte, and how long it took says how
+much of the value was right.
 
 ### URL Operations (`url_*`)
 - `url_encode(text:s):s` - Percent-encode a string for use in a URL
@@ -1273,6 +1294,15 @@ read as empty, e.g. `NA`).
 - `base64_decode(data:s):s!e` - Decode standard base64 back to text
 - `base64_encode_url(text:s):s` - Encode as URL-safe base64 without padding (JWTs, URL parameters)
 - `base64_decode_url(data:s):s!e` - Decode URL-safe base64, padded or not
+
+### Hex Operations (`hex_*`)
+- `hex_encode(text:s):s` - Encode text as hex, two lower-case characters per byte
+- `hex_decode(data:s):s!e` - Decode hex back to text
+
+### String Operations (`string_*`)
+The string library is large; the one that matters for building pages:
+- `string_escape_html(text:s):s` - Escape `&`, `<`, `>`, `"` and `'` so text a
+  visitor supplied can be put in a page without becoming markup
 
 ### Error Handling
 - `safe(result:T!e, handler:f(e:e):T):T` - Handle error with function

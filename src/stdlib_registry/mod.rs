@@ -101,6 +101,7 @@ mod error;
 mod float;
 mod fs;
 mod hashmap;
+mod hex;
 mod http;
 mod int;
 mod io;
@@ -177,6 +178,7 @@ crate_dependencies! {
     UrlEncoding => { cargo: "urlencoding = \"2.1\"", name: "urlencoding", import: "use urlencoding;" },
     Flate2 => { cargo: "flate2 = \"1.0\"", name: "flate2", import: "use flate2;" },
     Base64 => { cargo: "base64 = \"0.21\"", name: "base64", import: "use base64;" },
+    Hmac => { cargo: "hmac = \"0.12\"", name: "hmac", import: "use hmac;" },
     Rusqlite => { cargo: "rusqlite = { version = \"0.31\", features = [\"bundled\"] }", name: "rusqlite", import: "use rusqlite;" },
     DataFusion => { cargo: "datafusion = \"50\"", name: "datafusion", import: "use datafusion;", feature: "datafusion" },
 }
@@ -234,6 +236,7 @@ stdlib_modules! {
     Args => "std_lib::args", "args_",
     Url => "std_lib::url", "url_",
     Base64 => "std_lib::base64", "base64_",
+    Hex => "std_lib::hex", "hex_",
     Csv => "std_lib::csv", "csv_",
     Compress => "std_lib::compress", "compress_",
     Database => "std_lib::database", "db_",
@@ -313,6 +316,7 @@ lazy_static! {
         float::register(&mut m);
         fs::register(&mut m);
         hashmap::register(&mut m);
+        hex::register(&mut m);
         http::register(&mut m);
         int::register(&mut m);
         io::register(&mut m);
@@ -394,7 +398,7 @@ pub fn get_iterator_form(name: &str) -> Option<&'static str> {
 /// completely generic.
 /// Functions whose Rust implementations are synchronous even though their
 /// module is otherwise async, so no `.await` may be emitted for them.
-const SYNC_STDLIB_FUNCTIONS: &[&str] = &["http_path_matches", "http_path_params"];
+const SYNC_STDLIB_FUNCTIONS: &[&str] = &["http_path_matches", "http_path_params", "http_default_cookie", "http_build_cookie", "http_parse_cookies"];
 
 pub fn is_stdlib_fn_async(name: &str) -> bool {
     // Per-function overrides of the module default
@@ -475,6 +479,22 @@ lazy_static! {
                 fields.insert("max_body_bytes".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("timeout_seconds".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("state".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
+                fields
+            }
+        });
+
+        // HTTP_Cookie struct
+        m.insert("HTTP_Cookie", StdlibTypeInfo {
+            name: "HTTP_Cookie".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("value".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("max_age".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("http_only".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("secure".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("same_site".to_string(), NailDataTypeDescriptor::String);
                 fields
             }
         });
@@ -758,6 +778,7 @@ mod stdlib_types_drift_tests {
         assert_matches_registry::<crate::parser::std_lib::csv::CSV_Reader>("CSV_Reader");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Config>("HTTP_Config");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Static>("HTTP_Static");
+        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Cookie>("HTTP_Cookie");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Request>("HTTP_Request");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Response>("HTTP_Response");
         assert_matches_registry::<crate::parser::std_lib::database::DB_SQLite>("DB_SQLite");
@@ -774,7 +795,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Static", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result"];
+        let covered = ["CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

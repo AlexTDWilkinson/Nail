@@ -42,6 +42,7 @@ pulldown-cmark = "0.9"
 # rustls instead of native-tls: bundle builds must not need system openssl
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 sha2 = "0.10"
+hmac = "0.12"
 md5 = "0.7"
 uuid = { version = "1.0", features = ["v4"] }
 urlencoding = "2.1"

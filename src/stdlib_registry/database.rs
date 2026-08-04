@@ -47,6 +47,23 @@ m.insert("db_sqlite_execute", StdlibFunction {
         example: "result:DB_Result = danger(db_sqlite_execute(db, `CREATE TABLE t (id INTEGER)`));",
     });
 
+m.insert("db_sqlite_execute_params", StdlibFunction {
+        rust_path: "std_lib::database::sqlite_execute_params".to_string(),
+        crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap, CrateDependency::Serde],
+        struct_derives: vec![],
+        custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database"), ("DB_Result", "nail::std_lib::database")],
+        module: StdlibModule::Database,
+        parameters: vec![
+            StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
+            StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "params".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false }
+        ],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_Result".to_string()))),
+        diverging: false,
+        description: "Execute SQL with ? placeholders bound to values, so untrusted input never becomes part of the statement",
+        example: "result:DB_Result = danger(db_sqlite_execute_params(db, `INSERT INTO people (name) VALUES (?)`, [name]));",
+    });
+
 m.insert("db_sqlite_query", StdlibFunction {
         rust_path: "std_lib::database::sqlite_query".to_string(),
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
@@ -77,6 +94,40 @@ m.insert("db_sqlite_query_single", StdlibFunction {
         diverging: false,
         description: "Query database and return single result as typed struct",
         example: "person:Person = danger(db_sqlite_query_single(db, `SELECT name, age FROM people LIMIT 1`));",
+    });
+
+m.insert("db_sqlite_query_params", StdlibFunction {
+        rust_path: "std_lib::database::sqlite_query_params".to_string(),
+        crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+        module: StdlibModule::Database,
+        parameters: vec![
+            StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
+            StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "params".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false }
+        ],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))))),
+        diverging: false,
+        description: "Query with ? placeholders bound to values and return the rows as typed structs",
+        example: "rows:a:Person = danger(db_sqlite_query_params(db, `SELECT name, age FROM people WHERE name = ?`, [name]));",
+    });
+
+m.insert("db_sqlite_query_single_params", StdlibFunction {
+        rust_path: "std_lib::database::sqlite_query_single_params".to_string(),
+        crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
+        module: StdlibModule::Database,
+        parameters: vec![
+            StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
+            StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "params".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false }
+        ],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))),
+        diverging: false,
+        description: "Query with ? placeholders bound to values and return the first row as a typed struct",
+        example: "person:Person = danger(db_sqlite_query_single_params(db, `SELECT name, age FROM people WHERE id = ?`, [id]));",
     });
 
 m.insert("db_sqlite_close", StdlibFunction {

@@ -20,6 +20,116 @@ pub struct HTTP_Response {
     pub headers: DashMap<String, String>,
 }
 
+/// One cookie on its way out to the browser. Every field is spelled out
+/// because the defaults a cookie gets when a field is left off are the unsafe
+/// ones: no expiry rule, readable by scripts, sent over plain HTTP, attached
+/// to requests other sites make. `http_default_cookie` fills them in the safe
+/// way, leaving name and value to the caller.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct HTTP_Cookie {
+    pub name: String,
+    pub value: String,
+    /// The path the cookie is sent back on. `/` for a whole site.
+    pub path: String,
+    /// Lifetime in seconds. 0 makes a session cookie the browser drops when it
+    /// closes; a negative value deletes a cookie already set.
+    pub max_age: i64,
+    /// Keeps the cookie out of reach of JavaScript, so a script injected into
+    /// the page cannot read the session id.
+    pub http_only: bool,
+    /// Sends it over HTTPS only.
+    pub secure: bool,
+    /// `Strict`, `Lax` or `None` - how much of a cross-site request carries
+    /// the cookie. Lax is the usual answer for a login session: it survives a
+    /// normal link into the site but not a form another site submits.
+    pub same_site: String,
+}
+
+/// A cookie with the safe answers already filled in: site-wide path, session
+/// lifetime, hidden from scripts, HTTPS only, Lax.
+pub fn http_default_cookie(name: String, value: String) -> HTTP_Cookie {
+    return HTTP_Cookie { name, value, path: "/".to_string(), max_age: 0, http_only: true, secure: true, same_site: "Lax".to_string() };
+}
+
+/// A cookie name may not contain separators or spaces, and a value may not
+/// contain the characters that end it. Letting either through would not make a
+/// broken cookie so much as an extra header of the caller's choosing.
+fn cookie_name_is_valid(name: &str) -> bool {
+    return !name.is_empty() && name.chars().all(|ch| ch.is_ascii_graphic() && !"()<>@,;:\\\"/[]?={}".contains(ch));
+}
+
+fn cookie_value_is_valid(value: &str) -> bool {
+    return value.chars().all(|ch| ch.is_ascii_graphic() && ch != ';' && ch != ',' && ch != '"' && ch != '\\');
+}
+
+/// Build the `Set-Cookie` header value for a cookie.
+pub fn http_build_cookie(cookie: HTTP_Cookie) -> Result<String, String> {
+    if !cookie_name_is_valid(&cookie.name) {
+        return Err(format!("http_build_cookie: '{}' is not a usable cookie name", cookie.name));
+    }
+    if !cookie_value_is_valid(&cookie.value) {
+        return Err(format!("http_build_cookie: the value of cookie '{}' contains a character a cookie cannot carry", cookie.name));
+    }
+
+    let same_site = match cookie.same_site.to_lowercase().as_str() {
+        "strict" => "Strict",
+        "lax" => "Lax",
+        "none" => "None",
+        other => return Err(format!("http_build_cookie: same_site is '{}', and a cookie understands only Strict, Lax or None", other)),
+    };
+    // SameSite=None is only honoured on a cookie that is also Secure, and
+    // browsers drop the pair outright otherwise - better to say so here than
+    // to have the cookie silently vanish.
+    if same_site == "None" && !cookie.secure {
+        return Err(format!("http_build_cookie: cookie '{}' asks for SameSite=None without Secure, which browsers reject", cookie.name));
+    }
+
+    let mut parts = vec![format!("{}={}", cookie.name, cookie.value), format!("Path={}", cookie.path)];
+    if cookie.max_age != 0 {
+        parts.push(format!("Max-Age={}", cookie.max_age));
+    }
+    if cookie.http_only {
+        parts.push("HttpOnly".to_string());
+    }
+    if cookie.secure {
+        parts.push("Secure".to_string());
+    }
+    parts.push(format!("SameSite={}", same_site));
+
+    return Ok(parts.join("; "));
+}
+
+/// Parse the `Cookie` header a browser sends into name/value pairs. Cookies
+/// arrive as one header holding every cookie for the site, separated by `; `,
+/// which is why reading one out of it by hand goes wrong so often.
+pub fn http_parse_cookies(header: String) -> DashMap<String, String> {
+    let cookies = DashMap::new();
+
+    for pair in header.split(';') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        // Only the first `=` separates: a value may contain more of them.
+        match pair.split_once('=') {
+            Some((name, value)) => {
+                let name = name.trim();
+                if name.is_empty() {
+                    continue;
+                }
+                // A quoted value is the same value; the quotes are transport.
+                let value = value.trim();
+                let value = value.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')).unwrap_or(value);
+                cookies.insert(name.to_string(), value.to_string());
+            }
+            // A bare name with no value is not a cookie anyone can read.
+            None => continue,
+        }
+    }
+
+    return cookies;
+}
+
 /// The HTTP method of an outbound request. An enum rather than a string, so an
 /// unsupported method is a compile error instead of a runtime one.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]

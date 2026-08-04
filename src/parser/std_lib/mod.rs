@@ -13,6 +13,7 @@ pub mod error;
 pub mod float;
 pub mod fs;
 pub mod hashmap;
+pub mod hex;
 pub mod http;
 pub mod int;
 pub mod io;
