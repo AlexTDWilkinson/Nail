@@ -14,10 +14,12 @@ f label_source_file(path:s, source:s):s {
     r array_join([`// ===== `, path, ` =====`, `\n`, source], ``);
 }
 
-// Milliseconds as a human label, honest below the clock's resolution.
-f elapsed_label(elapsed_ms:i):s {
+// Microseconds as a human label: µs below a millisecond, otherwise
+// milliseconds with one decimal.
+f elapsed_label(elapsed_us:i):s {
     if {
-        elapsed_ms < 1 -> { r `under 1 ms`; },
-        else -> { r array_join([string_from(elapsed_ms), ` ms`], ``); }
+        elapsed_us < 1 -> { r `under 1 µs`; },
+        elapsed_us < 1000 -> { r array_join([string_from(elapsed_us), ` µs`], ``); },
+        else -> { r array_join([string_from(elapsed_us / 1000), `.`, string_from((elapsed_us % 1000) / 100), ` ms`], ``); }
     }
 }

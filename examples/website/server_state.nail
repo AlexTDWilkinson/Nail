@@ -51,7 +51,7 @@ concurrent_output:s = array_join([
     `{"output": "Language spec chars: `, string_from(string_length(spec_text)),
     `\\nREADME chars: `, string_from(string_length(readme_text)),
     `\\nWebsite source chars: `, string_from(string_length(website_text)),
-    `\\nEvery read finished together in `, elapsed_label(concurrent_elapsed_ms), run_note, `"}`
+    `\\nEvery read finished together in `, elapsed_label(concurrent_elapsed_us), run_note, `"}`
 ], ``);
 
 hashmap_set(state, `example_concurrent`, concurrent_output);
@@ -60,7 +60,7 @@ parallel_output:s = array_join([
     `{"output": "12! = `, string_from(fact_12),
     `\\nSum of 1 to 1,000,000 = `, string_from(sum_to_million),
     `\\nPrimes below 10,000 = `, string_from(prime_count),
-    `\\nAll three computed together in `, elapsed_label(parallel_elapsed_ms),
+    `\\nAll three computed together in `, elapsed_label(parallel_elapsed_us),
     run_note, `"}`
 ], ``);
 
@@ -69,6 +69,7 @@ hashmap_set(state, `example_parallel`, parallel_output);
 error_output:s = array_join([
     `{"output": "10 / 2 = `, string_from(div_ok),
     `\\nError occurred: Cannot divide by zero!\\nResult with error handling: `, string_from(div_fallback),
+    `\\nBoth paths handled in `, elapsed_label(error_elapsed_us),
     run_note, `"}`
 ], ``);
 
