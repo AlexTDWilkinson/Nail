@@ -817,7 +817,7 @@ f generate_hero(hero_code:s):s {
         html`</pre>
     </div>
     <p style="color: var(--text-secondary);">
-        This page is a Nail program — server, syntax highlighting and compiler output, all of it.
+        This page is a Nail program: server, syntax highlighting and compiler output, all of it.
         <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/nail_website.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
     </p>
 </section>`
@@ -890,7 +890,7 @@ f generate_features():s {
         html`<div class="feature-card">
             <div class="feature-icon">⚡</div>
             <h3>Many Things at Once, Safely</h3>
-            <p>A c block waits on files and networks together; a p block spreads CPU work over every
+            <p>A c block waits on files and networks together. A p block spreads CPU work over every
                core. You never touch a thread.</p>
         </div>`,
         html`<div class="feature-card">
@@ -951,10 +951,10 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
             </details>
             <pre id="concurrent-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
-                Everything inside c.../c starts at once and the block ends when all of it finishes;
-                the compiler emits tokio::join!. That's a hand-built Promise.all in JavaScript, or
-                goroutines plus a WaitGroup in Go. Past /c the values are ordinary and immutable —
-                no await left to forget.
+                Everything inside c.../c starts at once and the block ends when all of it finishes.
+                The compiler emits tokio::join!. That's a hand-built Promise.all in JavaScript, or
+                goroutines plus a WaitGroup in Go. Past /c the values are ordinary and immutable,
+                with no await left to forget.
             </p>
         </div>
         
@@ -998,7 +998,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
             </details>
             <pre id="error-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
-                divide returns i!e — an integer or an error — and Nail will not compile code that
+                divide returns i!e, an integer or an error, and Nail will not compile code that
                 ignores the error half. Handle it with safe() and a fallback, or accept the crash
                 with danger(). Every error path is written down, and the compiler checks that it is.
             </p>
@@ -1013,7 +1013,7 @@ f generate_get_started():s {
     r html`<section id="start" class="philosophy">
     <div class="section-header">
         <h2>Get Started</h2>
-        <p>A Rust toolchain and one clone. Rust does the building; the editor comes with the language.</p>
+        <p>A Rust toolchain and one clone. Rust does the building. The editor comes with the language.</p>
     </div>
     <div class="philosophy-content">
         <div class="code-example"><span class="code-label">Shell</span><pre>git clone https://github.com/AlexTDWilkinson/Nail.git
@@ -1030,13 +1030,13 @@ cargo run -- examples/hello_world.nail</pre></div>
         </p>
         <p>
             That standardisation is the feature. Nothing to install, no language server to keep in
-            sync, no formatter to argue about, no plugin that quietly disagrees with the compiler —
-            and the same compiler, as <strong>nailc</strong>, is what your build scripts call.
+            sync, no formatter to argue about, no plugin that quietly disagrees with the compiler.
+            The same compiler, as <strong>nailc</strong>, is what your build scripts call.
         </p>
         <p style="font-size: 0.95rem;">
             One command turns your file into a program you can run: Nail writes the Rust, picks the
             libraries it needs, and hands it to Rust to build. Nothing to configure. Rust is doing the
-            work underneath, so your program is as fast as Rust and runs anywhere Rust runs — and you
+            work underneath, so your program is as fast as Rust and runs anywhere Rust runs, and you
             can read the Rust it wrote whenever you want to. Linux is the supported platform for the
             editor itself.
         </p>
@@ -1055,7 +1055,7 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
         html`<section id="ide" class="ide">
     <div class="section-header">
         <h2>The Editor Is Part of the Language</h2>
-        <p>Real frames captured from a terminal — the compiler underneath them is the same one that
+        <p>Real frames captured from a terminal. The compiler underneath them is the same one that
            builds your program.</p>
     </div>
     <div class="philosophy-content" style="max-width: 1100px;">
@@ -1135,44 +1135,39 @@ f generate_performance():s {
     <div class="philosophy-content">
         <p>
             Most code is sequential because parallelism is painful: threads, locks, queues, races.
-            You write the obvious version; the compiler writes the fast one.
+            You write the obvious version. The compiler writes the fast one.
         </p>
         <div style="background: var(--bg-primary); border-radius: 0.75rem; padding: 1.5rem 2rem; margin: 2rem 0;">
             <p style="margin-bottom: 0.75rem;"><strong>Uses every core, automatically:</strong></p>
             <ul style="margin: 0 0 1rem 1.5rem;">
-                <li><strong>map</strong> and <strong>filter</strong> — spread across all cores</li>
-                <li><strong>find</strong>, <strong>all</strong>, <strong>any</strong> — every core searches, everyone stops at the answer</li>
-                <li><strong>sum</strong>, <strong>min</strong>, <strong>max</strong> — split across cores once the array is big enough to be worth it</li>
-                <li><strong>p blocks</strong> — one real thread per statement, for CPU work</li>
-                <li><strong>c blocks</strong> — three file reads take as long as the slowest one, instead of all three added together</li>
-                <li><strong>reduce</strong> — but only when the compiler can prove it is safe, below</li>
+                <li><strong>map</strong> and <strong>filter</strong>: spread across all cores</li>
+                <li><strong>find</strong>, <strong>all</strong>, <strong>any</strong>: every core searches, everyone stops at the answer</li>
+                <li><strong>sum</strong>, <strong>min</strong>, <strong>max</strong>: split across cores once the array is big enough to be worth it</li>
+                <li><strong>p blocks</strong>: one real thread per statement, for CPU work</li>
+                <li><strong>c blocks</strong>: three file reads take as long as the slowest one, instead of all three added together</li>
+                <li><strong>reduce</strong>: only when the compiler can prove it is safe, below</li>
             </ul>
             <p style="margin: 0.75rem 0 0 0;"><strong>Never:</strong> <strong>each</strong>, which exists to
-                run side effects, and those happen in the order you wrote them; and <strong>scan</strong>,
+                run side effects that happen in the order you wrote them, and <strong>scan</strong>,
                 where every value depends on the ones before it.</p>
         </div>
 
         <h3 style="margin-top: 2.5rem;">Why naming the operation is what makes it fast</h3>
         <p>
             A loop is opaque: the compiler can't tell whether order matters, so it stays sequential.
-            <strong>sum</strong> tells the compiler order doesn't matter, so it can use every core.
-            Clearer code and faster code are the same edit.
+            <strong>sum</strong> says order doesn't matter. Clearer code and faster code are the same edit.
         </p>
         <p>
-            <strong>reduce</strong> is the interesting case, because you write the step yourself.
-            Splitting a fold regroups it — <em>(a+b)+c</em> becomes <em>a+(b+c)</em> — fine for addition,
-            wrong for subtraction. So Nail reads your step. Add or multiply the running total by a whole
-            number, or keep the larger or smaller of the two, and regrouping provably cannot change the
-            answer: it runs on every core. <em>acc + num * num</em> and <em>acc + string_length(word)</em>
-            count too, and computing each contribution is divided up as well. Subtraction, division and
-            floats stay in order.
+            <strong>reduce</strong> is the interesting case, because you write the step yourself, and
+            splitting a fold regroups it: <em>(a+b)+c</em> becomes <em>a+(b+c)</em>. Fine for addition,
+            wrong for subtraction. So Nail reads the step. Add or multiply whole numbers into the total,
+            or keep the larger or smaller value, and regrouping provably cannot change the answer: it runs
+            on every core, with the per-element work (<em>acc + num * num</em>) split too. Subtraction,
+            division and floats stay in order. There is no flag to promise your step is safe. A wrong
+            promise is a number quietly wrong, and differently wrong each run.
         </p>
         <p>
-            There is no flag to override this and nothing for you to promise. A wrong promise buys the
-            worst kind of failure: a number quietly wrong, and differently wrong each run.
-        </p>
-        <p>
-            Threads aren't free, so this only pays above a size Nail measured rather than guessed:
+            Threads aren't free, so parallelism switches on above a measured size:
         </p>
         <div style="overflow-x: auto; margin: 1.5rem 0;">
             <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
@@ -1183,13 +1178,13 @@ f generate_performance():s {
                 </tr>
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 0.75rem 1rem;">200,000</td>
-                    <td style="text-align: right; padding: 0.75rem 1rem;">0.42x — slower</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem;">0.42x (slower)</td>
                     <td style="text-align: right; padding: 0.75rem 1rem;">slower</td>
                 </tr>
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 0.75rem 1rem;">1,000,000</td>
                     <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">1.23x</td>
-                    <td style="text-align: right; padding: 0.75rem 1rem;">0.63x — slower</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem;">0.63x (slower)</td>
                 </tr>
                 <tr>
                     <td style="padding: 0.75rem 1rem;">4,000,000</td>
@@ -1199,14 +1194,14 @@ f generate_performance():s {
             </table>
         </div>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            24-core machine, i64 elements — the cheapest case, so the hardest to win. Anything costlier to
-            compare crosses over sooner: minimum of a million strings is 2.69x at a fifth of that size. On
-            one core Nail skips the parallel path entirely.
+            24-core machine, i64 elements: the cheapest case, so the hardest to win. Costlier comparisons
+            cross over sooner: minimum of a million strings is 2.69x at a fifth of that size. On one core
+            Nail skips the parallel path entirely.
         </p>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            These are microbenchmarks of single operations, not whole programs, so we won't claim a number
-            for an application. Most software waits on I/O and gains nothing here. The floor is the promise:
-            with nothing to parallelize, Nail emits the sequential Rust you'd have written anyway.
+            Microbenchmarks of single operations, not whole programs. Most software waits on I/O and gains
+            nothing here. The floor is the promise: with nothing to parallelize, Nail emits the sequential
+            Rust you'd have written anyway.
         </p>
         <div style="overflow-x: auto; margin: 2rem 0;">
             <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
@@ -1218,18 +1213,18 @@ f generate_performance():s {
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 1rem;">Primes below 50,000 by trial division (CPU-heavy filter)</td>
                     <td style="text-align: right; padding: 1rem;">132 ms</td>
-                    <td style="text-align: right; padding: 1rem; color: var(--success); font-weight: 700;">12 ms — 11x faster</td>
+                    <td style="text-align: right; padding: 1rem; color: var(--success); font-weight: 700;">12 ms (11x faster)</td>
                 </tr>
                 <tr>
                     <td style="padding: 1rem;">Doubling 1,000,000 integers (trivial per-element work)</td>
                     <td style="text-align: right; padding: 1rem;">&lt;1 ms</td>
-                    <td style="text-align: right; padding: 1rem;">1 ms — same</td>
+                    <td style="text-align: right; padding: 1rem;">1 ms (same)</td>
                 </tr>
             </table>
         </div>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
             24-core Linux machine, both --release. Unless you parallelize by hand, your code runs on one
-            core; Nail uses the other 23 for free where the work justifies it.
+            core. Nail uses the other 23 for free where the work justifies it.
         </p>
     </div>
 </section>`;
@@ -1239,20 +1234,20 @@ f generate_versioning():s {
     r html`<section id="versioning" class="philosophy">
     <div class="section-header">
         <h2>Planned: Programs That Don't Rot</h2>
-        <p>Not built yet — this is what we're building next, and why</p>
+        <p>Not built yet. This is what we're building next, and why</p>
     </div>
     <div class="philosophy-content">
         <p>
-            You open an old project and it won't run any more. Nobody touched the code — the language
+            You open an old project and it won't run any more. Nobody touched the code. The language
             moved on, or something it depended on vanished. The fix: every Nail file records the
-            compiler it was written for. You never type it; the IDE stamps it on save.
+            compiler it was written for. You never type it. The IDE stamps it on save.
         </p>
         <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Nail</span><pre>nail 0.1</pre></div>
         <p>
             Open or save, and Nail reads that stamp, fetches that version if you don't have it, and edits
-            and builds the file with it — not the newest one, the one the file asked for. What arrives is
+            and builds the file with it: not the newest one, the one the file asked for. What arrives is
             that version of Nail itself, editor included, since the errors you see while typing must come
-            from the compiler that builds the program; the Rust toolchain underneath is shared, so
+            from the compiler that builds the program. The Rust toolchain underneath is shared, so
             switching is usually a small download. The stamp is plain text inside the file because source
             gets zipped, emailed, pasted and committed, and a version kept anywhere else is lost on the way.
         </p>
@@ -1263,7 +1258,7 @@ f generate_versioning():s {
         </p>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
             Status: a plan, not a feature. There is one version of Nail today, so there is nothing to pin
-            yet — the version line is reserved in the specification. It lands in three steps: tagged
+            yet. The version line is reserved in the specification. It lands in three steps: tagged
             releases, then a warning when a file's version doesn't match the compiler you're running, then
             the automatic fetch-and-run above.
         </p>
@@ -1347,7 +1342,7 @@ f generate_author(avatar_base64:s):s {
             Nail drops those features instead of giving me better tools for surviving them.
         </p>
         <p>
-            This page is a Nail program — one command turned it into the server you are reading it from. I also made
+            This page is a Nail program. One command turned it into the server you are reading it from. I also made
             <a href="https://sul.alex-wilkinson.ca" target="_blank">Simple Universal Language</a>,
             a spoken and written language built to still reach people who cannot see or hear it.
         </p>
@@ -1361,7 +1356,7 @@ f generate_footer():s {
     r html`<footer style="background: var(--text-primary); color: white; padding: 3rem 2rem; margin-top: 4rem;">
     <div style="max-width: 1200px; margin: 0 auto; text-align: center;">
         <p style="font-size: 1.1rem; margin-bottom: 1rem;">
-            Made with Nail 🔨 — this page is a Nail program.
+            Made with Nail 🔨. This page is a Nail program.
         </p>
         <div style="display: flex; gap: 2rem; justify-content: center; margin-top: 1.5rem;">
             <a href="https://github.com/AlexTDWilkinson/Nail" target="_blank" style="color: white; text-decoration: none;">
@@ -1455,7 +1450,7 @@ hashmap_set(state, `page_main`, website_html);
 
 // Routes for running examples. The outputs are built from values this server
 // actually computed at startup by executing the same code the examples show.
-run_note:s = `\\n\\n(Real output — computed by this server, itself a Nail program, by running the code above.)`;
+run_note:s = `\\n\\n(Real output: computed by this server, itself a Nail program, by running the code above.)`;
 
 concurrent_output:s = array_join([
     `{"output": "Language spec chars: `, string_from(string_length(spec_text)),
