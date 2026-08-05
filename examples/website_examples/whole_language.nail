@@ -22,12 +22,12 @@ f half_of(num:i):i!e {
     }
 }
 
-f zero(err:e):i {
+f return_zero_if_error(err:e):i {
     r 0;
 }
 
 distance:i = manhattan(Point { x_pos = 3, y_pos = 4 });
-half:i = safe(half_of(distance), zero);
+half:i = safe(half_of(distance), return_zero_if_error);
 heading:Direction = Direction::North;
 
 // map, filter and reduce are the loops, and they run on every core
