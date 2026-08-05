@@ -16,32 +16,11 @@
 //! Colours are strings: `#rrggbb`, `#rrggbbaa`, or a basic name like `red`.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, OnceLock};
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::num::NonZeroU32;
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::Arc;
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
-#[cfg(not(target_arch = "wasm32"))]
-use winit::application::ApplicationHandler;
-#[cfg(not(target_arch = "wasm32"))]
-use winit::dpi::PhysicalSize;
-#[cfg(not(target_arch = "wasm32"))]
-use winit::event::{ElementState, MouseButton, WindowEvent};
-#[cfg(not(target_arch = "wasm32"))]
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-#[cfg(not(target_arch = "wasm32"))]
-use winit::keyboard::{Key, NamedKey};
-#[cfg(not(target_arch = "wasm32"))]
-use winit::platform::pump_events::EventLoopExtPumpEvents;
-#[cfg(not(target_arch = "wasm32"))]
-use winit::window::{Window, WindowId};
 
 /// How the window starts out. A `target_fps` of 0 means unpaced - the loop
 /// runs as fast as update and view come back. `pixel_size` is how many
@@ -297,140 +276,6 @@ fn parse_color(name: &str) -> Result<tiny_skia::Color, String> {
     };
 }
 
-/// One name per key, shared by `keys_down` and `keys_pressed`. Letters and
-/// digits are themselves in lowercase, everything else is a word: `Up`,
-/// `Down`, `Left`, `Right`, `Space`, `Enter`, `Esc`, `Shift`, `Ctrl`, `Alt`,
-/// `Tab`, `Backspace`. Keys outside that set have no name and are not heard.
-#[cfg(not(target_arch = "wasm32"))]
-fn key_name(key: &Key) -> String {
-    return match key {
-        Key::Character(character) => character.to_string().to_lowercase(),
-        Key::Named(named) => match named {
-            NamedKey::ArrowUp => "Up".to_string(),
-            NamedKey::ArrowDown => "Down".to_string(),
-            NamedKey::ArrowLeft => "Left".to_string(),
-            NamedKey::ArrowRight => "Right".to_string(),
-            NamedKey::Space => "Space".to_string(),
-            NamedKey::Enter => "Enter".to_string(),
-            NamedKey::Escape => "Esc".to_string(),
-            NamedKey::Shift => "Shift".to_string(),
-            NamedKey::Control => "Ctrl".to_string(),
-            NamedKey::Alt => "Alt".to_string(),
-            NamedKey::Tab => "Tab".to_string(),
-            NamedKey::Backspace => "Backspace".to_string(),
-            _ => String::new(),
-        },
-        _ => String::new(),
-    };
-}
-
-/// The window and everything the player has done to it. winit drives this
-/// between frames through `pump_app_events`, the game loop reads and resets
-/// it after.
-#[cfg(not(target_arch = "wasm32"))]
-struct App {
-    title: String,
-    width: u32,
-    height: u32,
-    window: Option<Arc<Window>>,
-    surface: Option<softbuffer::Surface<Arc<Window>, Arc<Window>>>,
-    keys_down: HashSet<String>,
-    keys_pressed: Vec<String>,
-    mouse_x: f64,
-    mouse_y: f64,
-    mouse_down: bool,
-    mouse_right: bool,
-    scroll: f64,
-    close_requested: bool,
-    startup_error: Option<String>,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl App {
-    fn new(title: String, width: u32, height: u32) -> App {
-        return App {
-            title,
-            width,
-            height,
-            window: None,
-            surface: None,
-            keys_down: HashSet::new(),
-            keys_pressed: Vec::new(),
-            mouse_x: 0.0,
-            mouse_y: 0.0,
-            mouse_down: false,
-            mouse_right: false,
-            scroll: 0.0,
-            close_requested: false,
-            startup_error: None,
-        };
-    }
-
-    fn open_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
-        let attributes = Window::default_attributes().with_title(self.title.clone()).with_inner_size(PhysicalSize::new(self.width, self.height)).with_resizable(false);
-        let window = Arc::new(event_loop.create_window(attributes).map_err(|e| format!("game_run: could not open a window: {}", e))?);
-        let context = softbuffer::Context::new(window.clone()).map_err(|e| format!("game_run: could not reach the screen: {}", e))?;
-        let surface = softbuffer::Surface::new(&context, window.clone()).map_err(|e| format!("game_run: could not reach the screen: {}", e))?;
-        self.window = Some(window);
-        self.surface = Some(surface);
-        return Ok(());
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none() && self.startup_error.is_none() {
-            if let Err(error) = self.open_window(event_loop) {
-                self.startup_error = Some(error);
-            }
-        }
-    }
-
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
-        match event {
-            WindowEvent::CloseRequested => self.close_requested = true,
-            WindowEvent::KeyboardInput { event, .. } => {
-                let name = key_name(&event.logical_key);
-                if name.is_empty() {
-                    return;
-                }
-                match event.state {
-                    ElementState::Pressed => {
-                        if !event.repeat && self.keys_down.insert(name.clone()) {
-                            self.keys_pressed.push(name);
-                        }
-                    }
-                    ElementState::Released => {
-                        self.keys_down.remove(&name);
-                    }
-                }
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.mouse_x = position.x;
-                self.mouse_y = position.y;
-            }
-            WindowEvent::MouseInput { state, button, .. } => match button {
-                MouseButton::Left => self.mouse_down = state == ElementState::Pressed,
-                MouseButton::Right => self.mouse_right = state == ElementState::Pressed,
-                _ => {}
-            },
-            WindowEvent::MouseWheel { delta, .. } => {
-                // Lines and pixels arrive on different mice: fold both onto
-                // roughly line-sized units so a game reads one number.
-                self.scroll += match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, vertical) => vertical as f64,
-                    winit::event::MouseScrollDelta::PixelDelta(position) => position.y / 40.0,
-                };
-            }
-            // Losing focus releases every key, otherwise a key held across an
-            // alt-tab stays down forever because its release went elsewhere.
-            WindowEvent::Focused(false) => self.keys_down.clear(),
-            _ => {}
-        }
-    }
-}
-
 /// The clamped chunky-pixel factor from a config: at least 1, at most 8,
 /// and 0 (an unset-feeling value) means full resolution.
 fn pixel_size_of(config: &GAME_Config) -> u32 {
@@ -604,148 +449,383 @@ fn draw_text(pixmap: &mut tiny_skia::Pixmap, shape: &GAME_Shape, scale: f32) -> 
     return Ok(());
 }
 
-/// Copies the finished pixmap into the window, stretching nearest-neighbour
-/// if the window's real pixel size differs from the game's (a high-DPI screen
-/// does this).
-#[cfg(not(target_arch = "wasm32"))]
-fn present(app: &mut App, pixmap: &tiny_skia::Pixmap) -> Result<(), String> {
-    let window = app.window.as_ref().ok_or_else(|| "game_run: the window disappeared".to_string())?;
-    let real = window.inner_size();
-    let real_width = real.width.max(1);
-    let real_height = real.height.max(1);
-    let surface = app.surface.as_mut().ok_or_else(|| "game_run: the window disappeared".to_string())?;
-    surface
-        .resize(NonZeroU32::new(real_width).ok_or_else(|| "game_run: the window has no size".to_string())?, NonZeroU32::new(real_height).ok_or_else(|| "game_run: the window has no size".to_string())?)
-        .map_err(|e| format!("game_run: could not size the frame: {}", e))?;
-
-    let mut buffer = surface.buffer_mut().map_err(|e| format!("game_run: could not get the frame to draw into: {}", e))?;
-    let source = pixmap.pixels();
-    let source_width = pixmap.width() as usize;
-    let source_height = pixmap.height() as usize;
-    for y in 0..real_height as usize {
-        let from_y = (y * source_height / real_height as usize).min(source_height - 1);
-        for x in 0..real_width as usize {
-            let from_x = (x * source_width / real_width as usize).min(source_width - 1);
-            let pixel = source[from_y * source_width + from_x].demultiply();
-            buffer[y * real_width as usize + x] = ((pixel.red() as u32) << 16) | ((pixel.green() as u32) << 8) | pixel.blue() as u32;
-        }
-    }
-    buffer.present().map_err(|e| format!("game_run: could not put the frame on screen: {}", e))?;
-    return Ok(());
-}
-
 pub type ViewFuture = Pin<Box<dyn Future<Output = GAME_Frame> + Send>>;
 pub type UpdateFuture<S> = Pin<Box<dyn Future<Output = S> + Send>>;
 
-/// The whole-game answer to "is it fast enough": how many frames really
-/// showed per second, and how many it could draw flat out. Printed once
-/// when the game closes, only when a human's terminal is attached, so
-/// captured output never sees it.
-#[cfg(not(target_arch = "wasm32"))]
-fn report_frame_rate(frames: u64, work: Duration, started: Instant, target_fps: i64) {
-    use std::io::IsTerminal;
-    if frames == 0 || !std::io::stderr().is_terminal() {
-        return;
-    }
-    let wall = started.elapsed().as_secs_f64().max(f64::MIN_POSITIVE);
-    let actual = frames as f64 / wall;
-    let average_work = work.as_secs_f64() / frames as f64;
-    let possible = 1.0 / average_work.max(f64::MIN_POSITIVE);
-    let pacing = if target_fps > 0 { format!(", the rest waiting out the {} fps target", target_fps) } else { String::new() };
-    eprintln!("game frame rate: {:.0} fps shown, {:.0} fps possible, {:.2}ms of real work per frame{}", actual, possible, average_work * 1000.0, pacing);
+/// What one poll of the backend reported: whether the player asked to close,
+/// whether the drawing surface exists yet, and everything the player did
+/// since the last poll. `keys_down` arrives already sorted.
+struct Poll {
+    close_requested: bool,
+    ready: bool,
+    keys_down: Vec<String>,
+    keys_pressed: Vec<String>,
+    mouse_x: f64,
+    mouse_y: f64,
+    mouse_down: bool,
+    mouse_right: bool,
+    scroll: f64,
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+use native_backend as backend;
+#[cfg(target_arch = "wasm32")]
+use web_backend as backend;
 
 /// Opens the window and runs the game until its view reports `quit` or the
 /// player closes the window, and returns the state it finished with.
 ///
 /// The loop is: hand the player's input to `update`, draw what `view` says,
-/// wait out the rest of the frame, repeat. Waiting is async sleep, so the
-/// runtime this shares a thread with keeps serving anything else the program
-/// spawned.
-#[cfg(not(target_arch = "wasm32"))]
+/// wait out the rest of the frame, repeat. Waiting is async, so the runtime
+/// this shares a thread with keeps serving anything else the program spawned.
+///
+/// This one loop runs on every target. Everything platform-shaped sits
+/// behind the backend chosen at compile time: where the picture goes, where
+/// input comes from, what clock time is read from, and how the gap between
+/// frames is waited out.
 pub async fn run<S, V, U>(config: GAME_Config, initial: S, view: V, update: U) -> Result<S, String>
 where
     S: Clone + Send + 'static,
     V: Fn(S) -> ViewFuture + Send + Sync + 'static,
     U: Fn(S, GAME_Input) -> UpdateFuture<S> + Send + Sync + 'static,
 {
-    let width = u32::try_from(config.width).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a width a window can have", config.width))?;
-    let height = u32::try_from(config.height).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a height a window can have", config.height))?;
+    let width = u32::try_from(config.width).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a width a {} can have", config.width, backend::SURFACE_NOUN))?;
+    let height = u32::try_from(config.height).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a height a {} can have", config.height, backend::SURFACE_NOUN))?;
 
-    let mut event_loop = EventLoop::new().map_err(|e| format!("game_run: could not talk to the display - a game needs a desktop to draw on: {}", e))?;
-    event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::new(config.title.clone(), width, height);
+    let mut backend = backend::Backend::create(&config, width, height).await?;
     let pixel_size = pixel_size_of(&config);
     let mut pixmap = tiny_skia::Pixmap::new((width / pixel_size).max(1), (height / pixel_size).max(1)).ok_or_else(|| "game_run: could not make the frame".to_string())?;
 
     let mut state = initial;
-    let mut last_frame = Instant::now();
-    let frame_budget = if config.target_fps > 0 { Some(Duration::from_secs_f64(1.0 / config.target_fps as f64)) } else { None };
-    let started = Instant::now();
+    let started_ms = backend.now_ms();
+    let mut last_ms = started_ms;
     let mut frames: u64 = 0;
-    let mut work = Duration::ZERO;
+    let mut work_ms = 0.0_f64;
 
     loop {
-        event_loop.pump_app_events(Some(Duration::ZERO), &mut app);
-        if let Some(error) = app.startup_error.take() {
-            return Err(error);
-        }
-        if app.close_requested {
-            report_frame_rate(frames, work, started, config.target_fps);
+        let polled = backend.poll()?;
+        if polled.close_requested {
+            backend.report_close(frames, work_ms, backend.now_ms() - started_ms, config.target_fps);
             return Ok(state);
         }
-        if app.window.is_none() {
-            // The window is created by winit's first resumed call, which on
-            // some platforms arrives a few pumps in.
-            tokio::time::sleep(Duration::from_millis(5)).await;
+        if !polled.ready {
+            // The surface arrives through the platform's own first callback,
+            // which can take a few polls. Idle briefly and ask again.
+            backend.idle_wait().await;
             continue;
         }
 
-        let now = Instant::now();
-        let delta_ms = now.duration_since(last_frame).as_secs_f64() * 1000.0;
-        last_frame = now;
+        let frame_start_ms = backend.now_ms();
+        let delta_ms = frame_start_ms - last_ms;
+        last_ms = frame_start_ms;
 
-        let mut keys_down: Vec<String> = app.keys_down.iter().cloned().collect();
-        keys_down.sort();
         let input = GAME_Input {
-            keys_down,
-            keys_pressed: std::mem::take(&mut app.keys_pressed),
-            mouse_x: app.mouse_x,
-            mouse_y: app.mouse_y,
-            mouse_down: app.mouse_down,
-            mouse_right: app.mouse_right,
-            scroll: std::mem::take(&mut app.scroll),
+            keys_down: polled.keys_down,
+            keys_pressed: polled.keys_pressed,
+            mouse_x: polled.mouse_x,
+            mouse_y: polled.mouse_y,
+            mouse_down: polled.mouse_down,
+            mouse_right: polled.mouse_right,
+            scroll: polled.scroll,
             delta_ms,
         };
 
         state = update(state, input).await;
         let frame = view(state.clone()).await;
         rasterize(&mut pixmap, &frame, pixel_size)?;
-        present(&mut app, &pixmap)?;
-        let used = last_frame.elapsed();
+        backend.present(&pixmap)?;
+        let used_ms = backend.now_ms() - frame_start_ms;
         frames += 1;
-        work += used;
+        work_ms += used_ms;
         if frame.quit {
-            report_frame_rate(frames, work, started, config.target_fps);
+            backend.report_close(frames, work_ms, backend.now_ms() - started_ms, config.target_fps);
             return Ok(state);
         }
 
-        match frame_budget {
-            Some(budget) => {
-                if used < budget {
-                    tokio::time::sleep(budget - used).await;
+        backend.pace(used_ms, config.target_fps).await?;
+    }
+}
+
+/// The desktop backend: a winit window, softbuffer to put pixels in it,
+/// tokio sleeps to pace the loop, and a monotonic Instant for the clock.
+#[cfg(not(target_arch = "wasm32"))]
+mod native_backend {
+    use super::*;
+    use std::collections::HashSet;
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    use winit::application::ApplicationHandler;
+    use winit::dpi::PhysicalSize;
+    use winit::event::{ElementState, MouseButton, WindowEvent};
+    use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+    use winit::keyboard::{Key, NamedKey};
+    use winit::platform::pump_events::EventLoopExtPumpEvents;
+    use winit::window::{Window, WindowId};
+
+    /// The word the shared loop's size errors call the drawing surface.
+    pub const SURFACE_NOUN: &str = "window";
+
+    /// One name per key, shared by `keys_down` and `keys_pressed`. Letters and
+    /// digits are themselves in lowercase, everything else is a word: `Up`,
+    /// `Down`, `Left`, `Right`, `Space`, `Enter`, `Esc`, `Shift`, `Ctrl`, `Alt`,
+    /// `Tab`, `Backspace`. Keys outside that set have no name and are not heard.
+    fn key_name(key: &Key) -> String {
+        return match key {
+            Key::Character(character) => character.to_string().to_lowercase(),
+            Key::Named(named) => match named {
+                NamedKey::ArrowUp => "Up".to_string(),
+                NamedKey::ArrowDown => "Down".to_string(),
+                NamedKey::ArrowLeft => "Left".to_string(),
+                NamedKey::ArrowRight => "Right".to_string(),
+                NamedKey::Space => "Space".to_string(),
+                NamedKey::Enter => "Enter".to_string(),
+                NamedKey::Escape => "Esc".to_string(),
+                NamedKey::Shift => "Shift".to_string(),
+                NamedKey::Control => "Ctrl".to_string(),
+                NamedKey::Alt => "Alt".to_string(),
+                NamedKey::Tab => "Tab".to_string(),
+                NamedKey::Backspace => "Backspace".to_string(),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        };
+    }
+
+    /// The window and everything the player has done to it. winit drives this
+    /// between frames through `pump_app_events`, the game loop reads and resets
+    /// it after.
+    struct App {
+        title: String,
+        width: u32,
+        height: u32,
+        window: Option<Arc<Window>>,
+        surface: Option<softbuffer::Surface<Arc<Window>, Arc<Window>>>,
+        keys_down: HashSet<String>,
+        keys_pressed: Vec<String>,
+        mouse_x: f64,
+        mouse_y: f64,
+        mouse_down: bool,
+        mouse_right: bool,
+        scroll: f64,
+        close_requested: bool,
+        startup_error: Option<String>,
+    }
+
+    impl App {
+        fn new(title: String, width: u32, height: u32) -> App {
+            return App {
+                title,
+                width,
+                height,
+                window: None,
+                surface: None,
+                keys_down: HashSet::new(),
+                keys_pressed: Vec::new(),
+                mouse_x: 0.0,
+                mouse_y: 0.0,
+                mouse_down: false,
+                mouse_right: false,
+                scroll: 0.0,
+                close_requested: false,
+                startup_error: None,
+            };
+        }
+
+        fn open_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
+            let attributes = Window::default_attributes().with_title(self.title.clone()).with_inner_size(PhysicalSize::new(self.width, self.height)).with_resizable(false);
+            let window = Arc::new(event_loop.create_window(attributes).map_err(|e| format!("game_run: could not open a window: {}", e))?);
+            let context = softbuffer::Context::new(window.clone()).map_err(|e| format!("game_run: could not reach the screen: {}", e))?;
+            let surface = softbuffer::Surface::new(&context, window.clone()).map_err(|e| format!("game_run: could not reach the screen: {}", e))?;
+            self.window = Some(window);
+            self.surface = Some(surface);
+            return Ok(());
+        }
+    }
+
+    impl ApplicationHandler for App {
+        fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+            if self.window.is_none() && self.startup_error.is_none() {
+                if let Err(error) = self.open_window(event_loop) {
+                    self.startup_error = Some(error);
                 }
             }
-            // Unpaced still has to yield, or a fast game starves the runtime.
-            None => tokio::task::yield_now().await,
+        }
+
+        fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+            match event {
+                WindowEvent::CloseRequested => self.close_requested = true,
+                WindowEvent::KeyboardInput { event, .. } => {
+                    let name = key_name(&event.logical_key);
+                    if name.is_empty() {
+                        return;
+                    }
+                    match event.state {
+                        ElementState::Pressed => {
+                            if !event.repeat && self.keys_down.insert(name.clone()) {
+                                self.keys_pressed.push(name);
+                            }
+                        }
+                        ElementState::Released => {
+                            self.keys_down.remove(&name);
+                        }
+                    }
+                }
+                WindowEvent::CursorMoved { position, .. } => {
+                    self.mouse_x = position.x;
+                    self.mouse_y = position.y;
+                }
+                WindowEvent::MouseInput { state, button, .. } => match button {
+                    MouseButton::Left => self.mouse_down = state == ElementState::Pressed,
+                    MouseButton::Right => self.mouse_right = state == ElementState::Pressed,
+                    _ => {}
+                },
+                WindowEvent::MouseWheel { delta, .. } => {
+                    // Lines and pixels arrive on different mice: fold both onto
+                    // roughly line-sized units so a game reads one number.
+                    self.scroll += match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_, vertical) => vertical as f64,
+                        winit::event::MouseScrollDelta::PixelDelta(position) => position.y / 40.0,
+                    };
+                }
+                // Losing focus releases every key, otherwise a key held across an
+                // alt-tab stays down forever because its release went elsewhere.
+                WindowEvent::Focused(false) => self.keys_down.clear(),
+                _ => {}
+            }
+        }
+    }
+
+    /// A poll with no input in it, for the frames before the window exists
+    /// and for the one that carries the close request.
+    fn quiet_poll(close_requested: bool, ready: bool) -> Poll {
+        return Poll { close_requested, ready, keys_down: Vec::new(), keys_pressed: Vec::new(), mouse_x: 0.0, mouse_y: 0.0, mouse_down: false, mouse_right: false, scroll: 0.0 };
+    }
+
+    pub struct Backend {
+        event_loop: EventLoop<()>,
+        app: App,
+        epoch: Instant,
+    }
+
+    impl Backend {
+        /// Makes the event loop and the app that will hold the window. The
+        /// window itself arrives later, on winit's first resumed call.
+        pub async fn create(config: &GAME_Config, width: u32, height: u32) -> Result<Backend, String> {
+            let event_loop = EventLoop::new().map_err(|e| format!("game_run: could not talk to the display - a game needs a desktop to draw on: {}", e))?;
+            event_loop.set_control_flow(ControlFlow::Poll);
+            let app = App::new(config.title.clone(), width, height);
+            return Ok(Backend { event_loop, app, epoch: Instant::now() });
+        }
+
+        /// Pumps winit once and hands back what the player did. A startup
+        /// error from opening the window surfaces here as the Err.
+        pub fn poll(&mut self) -> Result<Poll, String> {
+            self.event_loop.pump_app_events(Some(Duration::ZERO), &mut self.app);
+            if let Some(error) = self.app.startup_error.take() {
+                return Err(error);
+            }
+            if self.app.close_requested {
+                return Ok(quiet_poll(true, true));
+            }
+            if self.app.window.is_none() {
+                // The window is created by winit's first resumed call, which
+                // on some platforms arrives a few pumps in.
+                return Ok(quiet_poll(false, false));
+            }
+            let mut keys_down: Vec<String> = self.app.keys_down.iter().cloned().collect();
+            keys_down.sort();
+            return Ok(Poll {
+                close_requested: false,
+                ready: true,
+                keys_down,
+                keys_pressed: std::mem::take(&mut self.app.keys_pressed),
+                mouse_x: self.app.mouse_x,
+                mouse_y: self.app.mouse_y,
+                mouse_down: self.app.mouse_down,
+                mouse_right: self.app.mouse_right,
+                scroll: std::mem::take(&mut self.app.scroll),
+            });
+        }
+
+        /// Copies the finished pixmap into the window, stretching nearest-neighbour
+        /// if the window's real pixel size differs from the game's (a high-DPI screen
+        /// does this).
+        pub fn present(&mut self, pixmap: &tiny_skia::Pixmap) -> Result<(), String> {
+            let window = self.app.window.as_ref().ok_or_else(|| "game_run: the window disappeared".to_string())?;
+            let real = window.inner_size();
+            let real_width = real.width.max(1);
+            let real_height = real.height.max(1);
+            let surface = self.app.surface.as_mut().ok_or_else(|| "game_run: the window disappeared".to_string())?;
+            surface
+                .resize(NonZeroU32::new(real_width).ok_or_else(|| "game_run: the window has no size".to_string())?, NonZeroU32::new(real_height).ok_or_else(|| "game_run: the window has no size".to_string())?)
+                .map_err(|e| format!("game_run: could not size the frame: {}", e))?;
+
+            let mut buffer = surface.buffer_mut().map_err(|e| format!("game_run: could not get the frame to draw into: {}", e))?;
+            let source = pixmap.pixels();
+            let source_width = pixmap.width() as usize;
+            let source_height = pixmap.height() as usize;
+            for y in 0..real_height as usize {
+                let from_y = (y * source_height / real_height as usize).min(source_height - 1);
+                for x in 0..real_width as usize {
+                    let from_x = (x * source_width / real_width as usize).min(source_width - 1);
+                    let pixel = source[from_y * source_width + from_x].demultiply();
+                    buffer[y * real_width as usize + x] = ((pixel.red() as u32) << 16) | ((pixel.green() as u32) << 8) | pixel.blue() as u32;
+                }
+            }
+            buffer.present().map_err(|e| format!("game_run: could not put the frame on screen: {}", e))?;
+            return Ok(());
+        }
+
+        /// Sleeps out whatever the frame budget left over, so the loop lands
+        /// on `target_fps`. Waiting is async sleep, so the runtime this
+        /// shares a thread with keeps serving whatever else the program spawned.
+        pub async fn pace(&mut self, frame_work_ms: f64, target_fps: i64) -> Result<(), String> {
+            if target_fps > 0 {
+                let budget_ms = 1000.0 / target_fps as f64;
+                if frame_work_ms < budget_ms {
+                    tokio::time::sleep(Duration::from_secs_f64((budget_ms - frame_work_ms) / 1000.0)).await;
+                }
+            } else {
+                // Unpaced still has to yield, or a fast game starves the runtime.
+                tokio::task::yield_now().await;
+            }
+            return Ok(());
+        }
+
+        /// Monotonic milliseconds since the backend was made.
+        pub fn now_ms(&self) -> f64 {
+            return self.epoch.elapsed().as_secs_f64() * 1000.0;
+        }
+
+        /// The whole-game answer to "is it fast enough": how many frames really
+        /// showed per second, and how many it could draw flat out. Printed once
+        /// when the game closes, only when a human's terminal is attached, so
+        /// captured output never sees it.
+        pub fn report_close(&self, frames: u64, work_ms: f64, wall_ms: f64, target_fps: i64) {
+            use std::io::IsTerminal;
+            if frames == 0 || !std::io::stderr().is_terminal() {
+                return;
+            }
+            let wall = (wall_ms / 1000.0).max(f64::MIN_POSITIVE);
+            let actual = frames as f64 / wall;
+            let average_work = (work_ms / 1000.0) / frames as f64;
+            let possible = 1.0 / average_work.max(f64::MIN_POSITIVE);
+            let pacing = if target_fps > 0 { format!(", the rest waiting out the {} fps target", target_fps) } else { String::new() };
+            eprintln!("game frame rate: {:.0} fps shown, {:.0} fps possible, {:.2}ms of real work per frame{}", actual, possible, average_work * 1000.0, pacing);
+        }
+
+        /// A short nap for the polls before the window exists.
+        pub async fn idle_wait(&self) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
         }
     }
 }
 
-/// The browser build of `game_run`. The game itself cannot tell the
-/// difference: same shapes, same callbacks, same input names. What changes is
-/// underneath - the picture goes to a canvas element instead of a window, the
-/// keyboard comes from DOM events, and the browser paces the loop with
+/// The browser backend. The game itself cannot tell the difference: same
+/// shapes, same callbacks, same input names. What changes is underneath -
+/// the picture goes to a canvas element instead of a window, the keyboard
+/// comes from DOM events, and the browser paces the loop with
 /// requestAnimationFrame, so `target_fps` is ignored on the web and
 /// `delta_ms` is how a game stays speed-correct.
 ///
@@ -790,9 +870,13 @@ mod web_backend {
 
     use super::*;
     use std::cell::RefCell;
+    use std::collections::HashSet;
     use std::rc::Rc;
     use wasm_bindgen::closure::Closure;
     use wasm_bindgen::{Clamped, JsCast};
+
+    /// The word the shared loop's size errors call the drawing surface.
+    pub const SURFACE_NOUN: &str = "canvas";
 
     #[derive(Default)]
     struct WebInput {
@@ -831,7 +915,7 @@ mod web_backend {
     }
 
     /// One requestAnimationFrame, awaitable. Resolves to the browser's
-    /// timestamp for the frame, which is what delta time is computed from.
+    /// timestamp for the frame, though the shared loop keeps its own clock.
     async fn next_frame(window: &web_sys::Window) -> Result<f64, String> {
         let promise = js_sys::Promise::new(&mut |resolve, _reject| {
             let _ = window.request_animation_frame(&resolve);
@@ -840,197 +924,227 @@ mod web_backend {
         return Ok(stamp.as_f64().unwrap_or(0.0));
     }
 
-    pub async fn run<S, V, U>(config: GAME_Config, initial: S, view: V, update: U) -> Result<S, String>
-    where
-        S: Clone + Send + 'static,
-        V: Fn(S) -> ViewFuture + Send + Sync + 'static,
-        U: Fn(S, GAME_Input) -> UpdateFuture<S> + Send + Sync + 'static,
-    {
-        let width = u32::try_from(config.width).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a width a canvas can have", config.width))?;
-        let height = u32::try_from(config.height).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a height a canvas can have", config.height))?;
+    type KeyClosure = Closure<dyn FnMut(web_sys::KeyboardEvent)>;
+    type MouseClosure = Closure<dyn FnMut(web_sys::MouseEvent)>;
+    type WheelClosure = Closure<dyn FnMut(web_sys::WheelEvent)>;
 
-        let window = web_sys::window().ok_or_else(|| "game_run: there is no browser window to draw in".to_string())?;
-        let document = window.document().ok_or_else(|| "game_run: the page has no document".to_string())?;
-        let canvas: web_sys::HtmlCanvasElement = match document.get_element_by_id("nail-game") {
-            Some(element) => element.dyn_into().map_err(|_| "game_run: the element with id nail-game is not a canvas".to_string())?,
-            None => {
-                let element = document.create_element("canvas").map_err(|_| "game_run: could not make a canvas".to_string())?;
-                element.set_id("nail-game");
-                document.body().ok_or_else(|| "game_run: the page has no body to put a canvas in".to_string())?.append_child(&element).map_err(|_| "game_run: could not add the canvas to the page".to_string())?;
-                element.dyn_into().map_err(|_| "game_run: could not make a canvas".to_string())?
-            }
-        };
-        // The canvas holds the small chunky-pixel buffer, CSS stretches it
-        // back to the configured size, and pixelated keeps the edges crisp
-        // instead of smeared.
-        let pixel_size = pixel_size_of(&config);
-        let buffer_width = (width / pixel_size).max(1);
-        let buffer_height = (height / pixel_size).max(1);
-        canvas.set_width(buffer_width);
-        canvas.set_height(buffer_height);
-        let style = canvas.style();
-        set_style(&style, CanvasStyle::Width, &format!("{}px", width));
-        set_style(&style, CanvasStyle::Height, &format!("{}px", height));
-        if pixel_size > 1 {
-            set_style(&style, CanvasStyle::ImageRendering, CanvasScaling::Pixelated.value());
-        }
-        let context: web_sys::CanvasRenderingContext2d = canvas
-            .get_context("2d")
-            .ok()
-            .flatten()
-            .ok_or_else(|| "game_run: the canvas would not give a 2d context".to_string())?
-            .dyn_into()
-            .map_err(|_| "game_run: the canvas would not give a 2d context".to_string())?;
+    fn listen(target: &web_sys::EventTarget, name: &str, callback: &wasm_bindgen::JsValue) {
+        let _ = target.add_event_listener_with_callback(name, callback.dyn_ref().unwrap());
+    }
 
-        let input = Rc::new(RefCell::new(WebInput::default()));
+    fn unlisten(target: &web_sys::EventTarget, name: &str, callback: &wasm_bindgen::JsValue) {
+        let _ = target.remove_event_listener_with_callback(name, callback.dyn_ref().unwrap());
+    }
 
-        let keydown = {
-            let input = input.clone();
-            Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |event: web_sys::KeyboardEvent| {
-                let name = web_key_name(&event.key());
-                if name.is_empty() {
-                    return;
-                }
-                // Arrows and space scroll the page otherwise, which makes a
-                // game unplayable inside any page tall enough to scroll.
-                if matches!(name.as_str(), "Up" | "Down" | "Left" | "Right" | "Space" | "Tab" | "Backspace") {
-                    event.prevent_default();
-                }
-                let mut state = input.borrow_mut();
-                if !event.repeat() && state.keys_down.insert(name.clone()) {
-                    state.keys_pressed.push(name);
-                }
-            })
-        };
-        let keyup = {
-            let input = input.clone();
-            Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |event: web_sys::KeyboardEvent| {
-                let name = web_key_name(&event.key());
-                if !name.is_empty() {
-                    input.borrow_mut().keys_down.remove(&name);
-                }
-            })
-        };
-        let mousemove = {
-            let input = input.clone();
-            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
-                let mut state = input.borrow_mut();
-                state.mouse_x = event.offset_x() as f64;
-                state.mouse_y = event.offset_y() as f64;
-            })
-        };
-        let mousedown = {
-            let input = input.clone();
-            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
-                let mut state = input.borrow_mut();
-                match event.button() {
-                    0 => state.mouse_down = true,
-                    2 => state.mouse_right = true,
-                    _ => {}
-                }
-            })
-        };
-        let mouseup = {
-            let input = input.clone();
-            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
-                let mut state = input.borrow_mut();
-                match event.button() {
-                    0 => state.mouse_down = false,
-                    2 => state.mouse_right = false,
-                    _ => {}
-                }
-            })
-        };
-        let wheel = {
-            let input = input.clone();
-            Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |event: web_sys::WheelEvent| {
-                event.prevent_default();
-                input.borrow_mut().scroll += event.delta_y() / -100.0;
-            })
-        };
-        let listen = |target: &web_sys::EventTarget, name: &str, callback: &wasm_bindgen::JsValue| {
-            let _ = target.add_event_listener_with_callback(name, callback.dyn_ref().unwrap());
-        };
-        listen(&window, "keydown", keydown.as_ref());
-        listen(&window, "keyup", keyup.as_ref());
-        listen(canvas.as_ref(), "mousemove", mousemove.as_ref());
-        listen(canvas.as_ref(), "mousedown", mousedown.as_ref());
-        listen(canvas.as_ref(), "mouseup", mouseup.as_ref());
-        listen(canvas.as_ref(), "wheel", wheel.as_ref());
+    pub struct Backend {
+        window: web_sys::Window,
+        canvas: web_sys::HtmlCanvasElement,
+        context: web_sys::CanvasRenderingContext2d,
+        input: Rc<RefCell<WebInput>>,
+        straight: Vec<u8>,
+        width: u32,
+        height: u32,
+        keydown: KeyClosure,
+        keyup: KeyClosure,
+        mousemove: MouseClosure,
+        mousedown: MouseClosure,
+        mouseup: MouseClosure,
+        wheel: WheelClosure,
+    }
 
-        let mut pixmap = tiny_skia::Pixmap::new(buffer_width, buffer_height).ok_or_else(|| "game_run: could not make the frame".to_string())?;
-        let mut straight = vec![0u8; buffer_width as usize * buffer_height as usize * 4];
-        let mut state = initial;
-        let mut last_stamp = next_frame(&window).await?;
-        let mut delta_ms = 0.0;
-
-        let finished = loop {
-            let frame_input = {
-                let mut pending = input.borrow_mut();
-                let mut keys_down: Vec<String> = pending.keys_down.iter().cloned().collect();
-                keys_down.sort();
-                GAME_Input {
-                    keys_down,
-                    keys_pressed: std::mem::take(&mut pending.keys_pressed),
-                    mouse_x: pending.mouse_x,
-                    mouse_y: pending.mouse_y,
-                    mouse_down: pending.mouse_down,
-                    mouse_right: pending.mouse_right,
-                    scroll: std::mem::take(&mut pending.scroll),
-                    delta_ms,
+    impl Backend {
+        /// Finds or makes the canvas, wires up the DOM listeners, and lets
+        /// one animation frame pass so the loop starts on the browser's own
+        /// cadence.
+        pub async fn create(config: &GAME_Config, width: u32, height: u32) -> Result<Backend, String> {
+            let window = web_sys::window().ok_or_else(|| "game_run: there is no browser window to draw in".to_string())?;
+            let document = window.document().ok_or_else(|| "game_run: the page has no document".to_string())?;
+            let canvas: web_sys::HtmlCanvasElement = match document.get_element_by_id("nail-game") {
+                Some(element) => element.dyn_into().map_err(|_| "game_run: the element with id nail-game is not a canvas".to_string())?,
+                None => {
+                    let element = document.create_element("canvas").map_err(|_| "game_run: could not make a canvas".to_string())?;
+                    element.set_id("nail-game");
+                    document.body().ok_or_else(|| "game_run: the page has no body to put a canvas in".to_string())?.append_child(&element).map_err(|_| "game_run: could not add the canvas to the page".to_string())?;
+                    element.dyn_into().map_err(|_| "game_run: could not make a canvas".to_string())?
                 }
             };
-
-            state = update(state, frame_input).await;
-            let frame = view(state.clone()).await;
-            if let Err(error) = rasterize(&mut pixmap, &frame, pixel_size) {
-                break Err(error);
+            // The canvas holds the small chunky-pixel buffer, CSS stretches it
+            // back to the configured size, and pixelated keeps the edges crisp
+            // instead of smeared.
+            let pixel_size = pixel_size_of(config);
+            let buffer_width = (width / pixel_size).max(1);
+            let buffer_height = (height / pixel_size).max(1);
+            canvas.set_width(buffer_width);
+            canvas.set_height(buffer_height);
+            let style = canvas.style();
+            set_style(&style, CanvasStyle::Width, &format!("{}px", width));
+            set_style(&style, CanvasStyle::Height, &format!("{}px", height));
+            if pixel_size > 1 {
+                set_style(&style, CanvasStyle::ImageRendering, CanvasScaling::Pixelated.value());
             }
+            let context: web_sys::CanvasRenderingContext2d = canvas
+                .get_context("2d")
+                .ok()
+                .flatten()
+                .ok_or_else(|| "game_run: the canvas would not give a 2d context".to_string())?
+                .dyn_into()
+                .map_err(|_| "game_run: the canvas would not give a 2d context".to_string())?;
 
+            let input = Rc::new(RefCell::new(WebInput::default()));
+
+            let keydown = {
+                let input = input.clone();
+                Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |event: web_sys::KeyboardEvent| {
+                    let name = web_key_name(&event.key());
+                    if name.is_empty() {
+                        return;
+                    }
+                    // Arrows and space scroll the page otherwise, which makes a
+                    // game unplayable inside any page tall enough to scroll.
+                    if matches!(name.as_str(), "Up" | "Down" | "Left" | "Right" | "Space" | "Tab" | "Backspace") {
+                        event.prevent_default();
+                    }
+                    let mut state = input.borrow_mut();
+                    if !event.repeat() && state.keys_down.insert(name.clone()) {
+                        state.keys_pressed.push(name);
+                    }
+                })
+            };
+            let keyup = {
+                let input = input.clone();
+                Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |event: web_sys::KeyboardEvent| {
+                    let name = web_key_name(&event.key());
+                    if !name.is_empty() {
+                        input.borrow_mut().keys_down.remove(&name);
+                    }
+                })
+            };
+            let mousemove = {
+                let input = input.clone();
+                Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
+                    let mut state = input.borrow_mut();
+                    state.mouse_x = event.offset_x() as f64;
+                    state.mouse_y = event.offset_y() as f64;
+                })
+            };
+            let mousedown = {
+                let input = input.clone();
+                Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
+                    let mut state = input.borrow_mut();
+                    match event.button() {
+                        0 => state.mouse_down = true,
+                        2 => state.mouse_right = true,
+                        _ => {}
+                    }
+                })
+            };
+            let mouseup = {
+                let input = input.clone();
+                Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
+                    let mut state = input.borrow_mut();
+                    match event.button() {
+                        0 => state.mouse_down = false,
+                        2 => state.mouse_right = false,
+                        _ => {}
+                    }
+                })
+            };
+            let wheel = {
+                let input = input.clone();
+                Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |event: web_sys::WheelEvent| {
+                    event.prevent_default();
+                    input.borrow_mut().scroll += event.delta_y() / -100.0;
+                })
+            };
+            listen(&window, "keydown", keydown.as_ref());
+            listen(&window, "keyup", keyup.as_ref());
+            listen(canvas.as_ref(), "mousemove", mousemove.as_ref());
+            listen(canvas.as_ref(), "mousedown", mousedown.as_ref());
+            listen(canvas.as_ref(), "mouseup", mouseup.as_ref());
+            listen(canvas.as_ref(), "wheel", wheel.as_ref());
+
+            let straight = vec![0u8; buffer_width as usize * buffer_height as usize * 4];
+
+            next_frame(&window).await?;
+
+            return Ok(Backend { window, canvas, context, input, straight, width, height, keydown, keyup, mousemove, mousedown, mouseup, wheel });
+        }
+
+        /// Hands back what the DOM listeners collected since the last poll.
+        /// The canvas is always ready and a page has no close button.
+        pub fn poll(&mut self) -> Result<Poll, String> {
+            let mut pending = self.input.borrow_mut();
+            let mut keys_down: Vec<String> = pending.keys_down.iter().cloned().collect();
+            keys_down.sort();
+            return Ok(Poll {
+                close_requested: false,
+                ready: true,
+                keys_down,
+                keys_pressed: std::mem::take(&mut pending.keys_pressed),
+                mouse_x: pending.mouse_x,
+                mouse_y: pending.mouse_y,
+                mouse_down: pending.mouse_down,
+                mouse_right: pending.mouse_right,
+                scroll: std::mem::take(&mut pending.scroll),
+            });
+        }
+
+        /// Copies the finished pixmap onto the canvas.
+        pub fn present(&mut self, pixmap: &tiny_skia::Pixmap) -> Result<(), String> {
             // The canvas wants straight alpha, the pixmap holds premultiplied.
             for (index, pixel) in pixmap.pixels().iter().enumerate() {
                 let color = pixel.demultiply();
-                straight[index * 4] = color.red();
-                straight[index * 4 + 1] = color.green();
-                straight[index * 4 + 2] = color.blue();
-                straight[index * 4 + 3] = color.alpha();
+                self.straight[index * 4] = color.red();
+                self.straight[index * 4 + 1] = color.green();
+                self.straight[index * 4 + 2] = color.blue();
+                self.straight[index * 4 + 3] = color.alpha();
             }
-            let image = match web_sys::ImageData::new_with_u8_clamped_array_and_sh(Clamped(&straight), width, height) {
-                Ok(image) => image,
-                Err(_) => break Err("game_run: could not build the frame image".to_string()),
+            // The image is the pixmap's size, which is smaller than the
+            // configured size when pixel_size shrinks the buffer. CSS does
+            // the stretching, the ImageData must match the actual pixels.
+            let image = web_sys::ImageData::new_with_u8_clamped_array_and_sh(Clamped(&self.straight), pixmap.width(), pixmap.height()).map_err(|_| "game_run: could not build the frame image".to_string())?;
+            if self.context.put_image_data(&image, 0.0, 0.0).is_err() {
+                return Err("game_run: could not put the frame on the canvas".to_string());
+            }
+            return Ok(());
+        }
+
+        /// Awaits the next requestAnimationFrame. The browser decides the
+        /// cadence, so the frame budget and `target_fps` have nothing to say.
+        pub async fn pace(&mut self, _frame_work_ms: f64, _target_fps: i64) -> Result<(), String> {
+            next_frame(&self.window).await?;
+            return Ok(());
+        }
+
+        /// Monotonic milliseconds from the browser's performance clock.
+        pub fn now_ms(&self) -> f64 {
+            return match self.window.performance() {
+                Some(performance) => performance.now(),
+                None => js_sys::Date::now(),
             };
-            if context.put_image_data(&image, 0.0, 0.0).is_err() {
-                break Err("game_run: could not put the frame on the canvas".to_string());
-            }
+        }
 
-            if frame.quit {
-                break Ok(state.clone());
-            }
+        /// A browser tab has no terminal to print a closing line to.
+        pub fn report_close(&self, _frames: u64, _work_ms: f64, _wall_ms: f64, _target_fps: i64) {}
 
-            let stamp = match next_frame(&window).await {
-                Ok(stamp) => stamp,
-                Err(error) => break Err(error),
-            };
-            delta_ms = stamp - last_stamp;
-            last_stamp = stamp;
-        };
+        /// Waits a frame. The canvas never reports not ready, so this only
+        /// exists to complete the backend surface.
+        pub async fn idle_wait(&self) {
+            let _ = next_frame(&self.window).await;
+        }
+    }
 
-        let unlisten = |target: &web_sys::EventTarget, name: &str, callback: &wasm_bindgen::JsValue| {
-            let _ = target.remove_event_listener_with_callback(name, callback.dyn_ref().unwrap());
-        };
-        unlisten(&window, "keydown", keydown.as_ref());
-        unlisten(&window, "keyup", keyup.as_ref());
-        unlisten(canvas.as_ref(), "mousemove", mousemove.as_ref());
-        unlisten(canvas.as_ref(), "mousedown", mousedown.as_ref());
-        unlisten(canvas.as_ref(), "mouseup", mouseup.as_ref());
-        unlisten(canvas.as_ref(), "wheel", wheel.as_ref());
-
-        return finished;
+    impl Drop for Backend {
+        fn drop(&mut self) {
+            unlisten(&self.window, "keydown", self.keydown.as_ref());
+            unlisten(&self.window, "keyup", self.keyup.as_ref());
+            unlisten(self.canvas.as_ref(), "mousemove", self.mousemove.as_ref());
+            unlisten(self.canvas.as_ref(), "mousedown", self.mousedown.as_ref());
+            unlisten(self.canvas.as_ref(), "mouseup", self.mouseup.as_ref());
+            unlisten(self.canvas.as_ref(), "wheel", self.wheel.as_ref());
+        }
     }
 }
-
-#[cfg(target_arch = "wasm32")]
-pub use web_backend::run;
 
 #[cfg(test)]
 mod tests {
