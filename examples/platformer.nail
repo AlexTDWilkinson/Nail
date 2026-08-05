@@ -297,11 +297,11 @@ f backdrop_shapes(camera_x:f):a:GAME_Shape {
         game_rect(40.0 - slide, 340.0, 120.0, 260.0, `#251e30`),
         game_rect(230.0 - slide, 290.0, 90.0, 310.0, `#2b2339`),
         game_rect(360.0 - slide, 380.0, 140.0, 220.0, `#251e30`),
-        game_rect(585.0 - slide, 260.0, 26.0, 340.0, `#2b2339`),
+        game_rect(560.0 - slide, 260.0, 70.0, 340.0, `#2b2339`),
         game_rect(640.0 - slide, 320.0, 110.0, 280.0, `#2b2339`),
         game_rect(830.0 - slide, 360.0, 130.0, 240.0, `#251e30`),
         game_rect(1010.0 - slide, 280.0, 90.0, 320.0, `#2b2339`),
-        game_rect(1170.0 - slide, 240.0, 26.0, 360.0, `#2b2339`),
+        game_rect(1150.0 - slide, 240.0, 76.0, 360.0, `#2b2339`),
         game_rect(1230.0 - slide, 330.0, 150.0, 270.0, `#2b2339`),
         game_rect(1450.0 - slide, 300.0, 100.0, 300.0, `#251e30`),
         game_rect(1600.0 - slide, 360.0, 120.0, 240.0, `#2b2339`)
@@ -321,18 +321,22 @@ f backdrop_shapes(camera_x:f):a:GAME_Shape {
         game_rect(1636.0 - slide, 396.0, 6.0, 8.0, `#b08d4a`)
     ];
     near:a:GAME_Shape = [
-        game_rect(120.0 - near_slide, 200.0, 18.0, 400.0, `#3b3150`),
+        game_rect(90.0 - near_slide, 220.0, 80.0, 380.0, `#3b3150`),
+        game_rect(114.0 - near_slide, 260.0, 8.0, 10.0, `#8a6d3f`),
         game_rect(430.0 - near_slide, 300.0, 90.0, 300.0, `#332a42`),
         game_rect(454.0 - near_slide, 336.0, 8.0, 10.0, `#9a7b45`),
         game_rect(486.0 - near_slide, 390.0, 8.0, 10.0, `#8a6d3f`),
-        game_rect(760.0 - near_slide, 170.0, 18.0, 430.0, `#3b3150`),
+        game_rect(730.0 - near_slide, 190.0, 74.0, 410.0, `#3b3150`),
+        game_rect(756.0 - near_slide, 234.0, 8.0, 10.0, `#9a7b45`),
         game_rect(1080.0 - near_slide, 280.0, 110.0, 320.0, `#332a42`),
         game_rect(1108.0 - near_slide, 316.0, 8.0, 10.0, `#8a6d3f`),
         game_rect(1150.0 - near_slide, 370.0, 8.0, 10.0, `#9a7b45`),
-        game_rect(1420.0 - near_slide, 190.0, 18.0, 410.0, `#3b3150`),
+        game_rect(1390.0 - near_slide, 210.0, 84.0, 390.0, `#3b3150`),
+        game_rect(1418.0 - near_slide, 252.0, 8.0, 10.0, `#8a6d3f`),
         game_rect(1760.0 - near_slide, 320.0, 130.0, 280.0, `#332a42`),
         game_rect(1794.0 - near_slide, 356.0, 8.0, 10.0, `#8a6d3f`),
-        game_rect(2100.0 - near_slide, 210.0, 18.0, 390.0, `#3b3150`),
+        game_rect(2070.0 - near_slide, 230.0, 78.0, 370.0, `#3b3150`),
+        game_rect(2096.0 - near_slide, 270.0, 8.0, 10.0, `#9a7b45`),
         game_rect(2400.0 - near_slide, 290.0, 100.0, 310.0, `#332a42`),
         game_rect(2428.0 - near_slide, 328.0, 8.0, 10.0, `#9a7b45`)
     ];
