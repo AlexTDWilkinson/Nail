@@ -4,8 +4,10 @@
 // If a read fails, safe() hands the error here instead of crashing.
 // There is deliberately no safe(expr, `default`) shortcut: a bare default
 // would hide the error, and the moment you need to see what went wrong you
-// would be rewriting it as a function anyway. So it starts as one.
+// would be rewriting it as a function anyway. So it starts as one - and it
+// shows what went wrong before it substitutes.
 f read_fallback(err:e):s {
+    print(`read failed:`, err);
     r `(file unavailable)`;
 }
 

@@ -70,6 +70,7 @@ f zero_fallback(err:e):i {
 }
 
 f read_fallback(err:e):s {
+    print(`read failed:`, err);
     r `(file unavailable)`;
 }
 
