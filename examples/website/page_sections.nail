@@ -579,7 +579,7 @@ f generate_insert_safe(helper_html:s, entry_html:s, verdict_html:s):s {
     hashmap_set(values, `verdict`, verdict_html);
     r danger(template_render(html`<section id="insertsafe" class="insertsafe">
     <div class="section-header">
-        <h2>Use a Stranger's Code Without Trusting It</h2>
+        <h2>Use a Stranger's Code Safely</h2>
         <p>insert_safe pulls a file into your program, seals it and sandboxes it: it can compute anything and touch nothing</p>
     </div>
     <div class="sandbox-points">
