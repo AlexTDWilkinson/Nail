@@ -267,6 +267,22 @@ pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation
             continue;
         }
 
+        // Grow each triangle half a pixel outward from its centroid. The
+        // rasterizer antialiases every edge, and two neighbours sharing an
+        // edge each feather it, letting the background bleed through as a
+        // hairline seam. The overlap swallows the feather.
+        let center_x = (points[0][0] + points[1][0] + points[2][0]) / 3.0;
+        let center_y = (points[0][1] + points[1][1] + points[2][1]) / 3.0;
+        for point in points.iter_mut() {
+            let dx = point[0] - center_x;
+            let dy = point[1] - center_y;
+            let length = (dx * dx + dy * dy).sqrt();
+            if length > 1e-6 {
+                point[0] += dx / length * 0.5;
+                point[1] += dy / length * 0.5;
+            }
+        }
+
         flat.push(Projected { depth, points, color: tint.unwrap_or(triangle.color), brightness });
     }
 
