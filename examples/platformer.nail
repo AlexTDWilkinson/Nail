@@ -185,6 +185,26 @@ f collect_coin(coin:Coin, pos_x:f, pos_y:f):Coin {
     }
 }
 
+// Four notes climbing a major chord. The whole tune is queued in one go and
+// the sound system keeps its time, so no frame waits on it. Each note says
+// which beat it lands on rather than carrying a hand-added offset, and the
+// silence between notes is simply the gap between their beats.
+f play_win_tune():v {
+    beat:f = 0.13;
+    danger(audio_tone_after(523.0, 0.14, 0.14, beat * 0.0));
+    danger(audio_tone_after(659.0, 0.14, 0.14, beat * 1.0));
+    danger(audio_tone_after(784.0, 0.14, 0.14, beat * 2.0));
+    danger(audio_tone_after(1047.0, 0.30, 0.16, beat * 3.0));
+}
+
+// The same shape upside down and slower, which is what sad sounds like.
+f play_fall_tune():v {
+    beat:f = 0.15;
+    danger(audio_tone_after(392.0, 0.16, 0.13, beat * 0.0));
+    danger(audio_tone_after(311.0, 0.16, 0.13, beat * 1.0));
+    danger(audio_tone_after(233.0, 0.34, 0.14, beat * 2.0));
+}
+
 // The three on-screen pads, in the coordinates both the drawing and the
 // touching use. A finger or a mouse inside one counts as that control.
 f left_pad():a:f { r [20.0, 480.0, 74.0, 74.0]; }
@@ -239,7 +259,10 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
     // The pits are the floor of the world. Falling out costs the run but
     // keeps every coin already taken.
     if {
-        landing.land_y > 700.0 -> { r respawn(state.coins); },
+        landing.land_y > 700.0 -> {
+            play_fall_tune();
+            r respawn(state.coins);
+        },
         else -> {}
     }
 
@@ -247,6 +270,10 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
         y collect_coin(coin, pos_x, landing.land_y);
     };
     won:b = pos_x > 3050.0;
+    if {
+        won && (state.won == false) -> { play_win_tune(); },
+        else -> {}
+    }
 
     // Sounds mark moments, not states: a coin the instant it is taken, a
     // jump as it leaves the ground, a thud on landing from a real fall.

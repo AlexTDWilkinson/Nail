@@ -42,6 +42,15 @@ fn check_tone(hertz: f64, seconds: f64, volume: f64, what: &str) -> Result<(), S
     return Ok(());
 }
 
+/// A wait before a tone starts. Backwards is meaningless and a minute is
+/// long past the point where a program should be keeping its own time.
+fn check_wait(wait_seconds: f64, what: &str) -> Result<(), String> {
+    if wait_seconds < 0.0 || wait_seconds > 60.0 {
+        return Err(format!("{}: a wait of {} seconds is not something to schedule", what, wait_seconds));
+    }
+    return Ok(());
+}
+
 /// Everything needed to make a sound, opened fresh each time.
 ///
 /// Holding the device open between calls would be faster, and would also mean
@@ -102,10 +111,10 @@ pub fn play_tone(hertz: f64, seconds: f64, volume: f64) -> Result<(), String> {
 /// comes out as tones that vary in loudness or drop entirely. One device
 /// mixes them properly, and the tone still costs the caller nothing.
 #[cfg(not(target_arch = "wasm32"))]
-fn tone_player() -> &'static std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64, f64)>> {
-    static PLAYER: OnceLock<std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64, f64)>>> = OnceLock::new();
+fn tone_player() -> &'static std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64, f64, f64)>> {
+    static PLAYER: OnceLock<std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64, f64, f64)>>> = OnceLock::new();
     return PLAYER.get_or_init(|| {
-        let (sender, receiver) = std::sync::mpsc::channel::<(f64, f64, f64)>();
+        let (sender, receiver) = std::sync::mpsc::channel::<(f64, f64, f64, f64)>();
         std::thread::spawn(move || {
             let Ok((_stream, handle)) = open_output() else {
                 // No sound device. Take the requests and drop them, so a
@@ -114,8 +123,13 @@ fn tone_player() -> &'static std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64,
                 return;
             };
             use rodio::Source;
-            for (hertz, seconds, volume) in receiver {
-                let tone = rodio::source::SineWave::new(hertz as f32).take_duration(std::time::Duration::from_secs_f64(seconds)).amplify(volume as f32);
+            for (hertz, seconds, volume, wait) in receiver {
+                // The wait rides inside the sound itself, so a tune queued in
+                // one go keeps its timing without this thread standing still.
+                let tone = rodio::source::SineWave::new(hertz as f32)
+                    .take_duration(std::time::Duration::from_secs_f64(seconds))
+                    .amplify(volume as f32)
+                    .delay(std::time::Duration::from_secs_f64(wait));
                 let _ = handle.play_raw(tone);
             }
         });
@@ -131,9 +145,19 @@ fn tone_player() -> &'static std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64,
 /// game carries on.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn tone_start(hertz: f64, seconds: f64, volume: f64) -> Result<(), String> {
-    check_tone(hertz, seconds, volume, "audio_tone_start")?;
+    return tone_after(hertz, seconds, volume, 0.0);
+}
+
+/// Starts a tone after a wait and returns at once.
+///
+/// Several of these with growing waits are a short tune, queued in one go and
+/// played in time without the program keeping a clock of its own.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn tone_after(hertz: f64, seconds: f64, volume: f64, wait_seconds: f64) -> Result<(), String> {
+    check_tone(hertz, seconds, volume, "audio_tone_after")?;
+    check_wait(wait_seconds, "audio_tone_after")?;
     if let Ok(sender) = tone_player().lock() {
-        let _ = sender.send((hertz, seconds, volume));
+        let _ = sender.send((hertz, seconds, volume, wait_seconds));
     }
     return Ok(());
 }
@@ -181,7 +205,14 @@ mod browser {
     }
 
     pub fn tone_start(hertz: f64, seconds: f64, volume: f64) -> Result<(), String> {
-        super::check_tone(hertz, seconds, volume, "audio_tone_start")?;
+        return tone_after(hertz, seconds, volume, 0.0);
+    }
+
+    /// Web audio schedules sound against its own clock, so a tune queued in
+    /// one go plays in time whatever the frame rate does.
+    pub fn tone_after(hertz: f64, seconds: f64, volume: f64, wait_seconds: f64) -> Result<(), String> {
+        super::check_tone(hertz, seconds, volume, "audio_tone_after")?;
+        super::check_wait(wait_seconds, "audio_tone_after")?;
 
         with_context(|context| {
             let (Ok(oscillator), Ok(gain)) = (context.create_oscillator(), context.create_gain()) else { return };
@@ -190,7 +221,7 @@ mod browser {
 
             // A tone that starts and stops at full volume clicks, so it opens
             // fast and fades to nearly nothing by the end.
-            let start = context.current_time();
+            let start = context.current_time() + wait_seconds;
             let level = gain.gain();
             let _ = level.set_value_at_time(0.0, start);
             let _ = level.linear_ramp_to_value_at_time(volume as f32, start + 0.005);
@@ -199,7 +230,7 @@ mod browser {
             if oscillator.connect_with_audio_node(&gain).is_err() || gain.connect_with_audio_node(&context.destination()).is_err() {
                 return;
             }
-            let _ = oscillator.start();
+            let _ = oscillator.start_with_when(start);
             let _ = oscillator.stop_with_when(start + seconds);
         });
         return Ok(());
@@ -227,7 +258,7 @@ mod browser {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use browser::{is_available, play_file, play_tone, tone_start};
+pub use browser::{is_available, play_file, play_tone, tone_after, tone_start};
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {

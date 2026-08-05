@@ -19,6 +19,9 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "audio_tone_start" [Rodio] => "std_lib::audio::tone_start", (hertz: f, seconds: f, volume: f) -> (v!e),
             "Starts a tone and returns at once, without waiting for it to finish. This is the one a game loop can call, since waiting out a sound would stutter the picture. In a browser the page stays silent until the player has first touched or clicked it, which is the browser's rule, not an error.",
             "danger(audio_tone_start(880.0, 0.06, 0.15));";
+        "audio_tone_after" [Rodio] => "std_lib::audio::tone_after", (hertz: f, seconds: f, volume: f, wait_seconds: f) -> (v!e),
+            "Starts a tone after a wait and returns at once. Several of these with growing waits are a short tune, queued in one go and played in time without the program keeping a clock of its own.",
+            "danger(audio_tone_after(659.0, 0.12, 0.14, 0.11));";
         "audio_is_available" [Rodio] => "std_lib::audio::is_available", () -> b,
             "Returns whether this machine has a sound device to play through. Ask before playing anything on a server, where the answer is usually no.",
             "can_beep:b = audio_is_available();";
