@@ -48,6 +48,7 @@ pub mod linalg;
 pub mod log;
 pub mod markdown;
 pub mod math;
+pub mod mcp;
 pub mod mime;
 pub mod ml;
 pub mod money;

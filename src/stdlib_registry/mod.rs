@@ -132,6 +132,7 @@ mod linalg;
 mod log;
 mod markdown;
 mod math;
+mod mcp;
 mod mime;
 mod ml;
 mod money;
@@ -313,6 +314,7 @@ macro_rules! stdlib_modules {
 
 stdlib_modules! {
     Http => "std_lib::http", "http_",
+    Mcp => "std_lib::mcp", "mcp_",
     Fs => "std_lib::fs", "fs_",
     Json => "std_lib::json", "json_",
     Toml => "std_lib::toml", "toml_",
@@ -497,6 +499,7 @@ lazy_static! {
         log::register(&mut m);
         markdown::register(&mut m);
         math::register(&mut m);
+        mcp::register(&mut m);
         mime::register(&mut m);
         ml::register(&mut m);
         money::register(&mut m);
@@ -660,7 +663,7 @@ pub fn is_stdlib_fn_async(name: &str) -> bool {
     }
     matches!(
         get_stdlib_function(name).map(|f| &f.module),
-        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx | StdlibModule::Sched | StdlibModule::Valkey)
+        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx | StdlibModule::Sched | StdlibModule::Valkey | StdlibModule::Mcp)
     )
 }
 
@@ -846,6 +849,18 @@ lazy_static! {
                 let mut fields = HashMap::new();
                 fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
                 fields.insert("url".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // MCP_Tool struct
+        m.insert("MCP_Tool", StdlibTypeInfo {
+            name: "MCP_Tool".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("description".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("input_schema".to_string(), NailDataTypeDescriptor::String);
                 fields
             }
         });
@@ -1381,6 +1396,13 @@ lazy_static! {
             parameter_types: vec![NailDataTypeDescriptor::String],
             return_type: NailDataTypeDescriptor::String,
         }]);
+        // The Ok text is the tool's answer and the error is a tool error the
+        // model reads, so the callback itself returns a result.
+        m.insert("mcp_serve", vec![HandlerCallback {
+            function_name: "handle_tool",
+            parameter_types: vec![NailDataTypeDescriptor::String, NailDataTypeDescriptor::String],
+            return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+        }]);
         m
     };
 }
@@ -1633,6 +1655,7 @@ mod stdlib_types_drift_tests {
         assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Handle>("PROCESS_Handle");
         assert_matches_registry::<crate::parser::std_lib::sched::SCHED_Job>("SCHED_Job");
         assert_matches_registry::<crate::parser::std_lib::geo::GEO_Point>("GEO_Point");
+        assert_matches_registry::<crate::parser::std_lib::mcp::MCP_Tool>("MCP_Tool");
         #[cfg(feature = "postgres")]
         {
             assert_matches_registry::<crate::parser::std_lib::postgres::DB_Postgres>("DB_Postgres");
@@ -1656,7 +1679,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

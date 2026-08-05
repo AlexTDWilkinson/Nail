@@ -1,0 +1,44 @@
+// An MCP server in Nail: declare the tools, answer the calls, done.
+// Point any MCP client (Claude Code, Claude Desktop) at the compiled
+// binary and the model can roll dice and measure the world.
+
+tools:a:MCP_Tool = [
+    MCP_Tool {
+        name = `roll_dice`,
+        description = `Roll some dice and see every result`,
+        input_schema = `{"type":"object","properties":{"sides":{"type":"integer"},"count":{"type":"integer"}},"required":["sides","count"]}`
+    },
+    MCP_Tool {
+        name = `distance_km`,
+        description = `Great-circle distance in kilometers between two points`,
+        input_schema = `{"type":"object","properties":{"lat1":{"type":"number"},"lon1":{"type":"number"},"lat2":{"type":"number"},"lon2":{"type":"number"}},"required":["lat1","lon1","lat2","lon2"]}`
+    }
+];
+
+f handle_tool(tool_name:s, arguments_json:s):s!e {
+    if {
+        tool_name == `roll_dice` -> {
+            sides:i = danger(json_get_int(arguments_json, `sides`));
+            count:i = danger(json_get_int(arguments_json, `count`));
+            rolls:a:i = map roll_number in array_range(0, count) {
+                y danger(rand_int(1, sides));
+            };
+            r string_from_array_i64(rolls);
+        },
+        tool_name == `distance_km` -> {
+            lat1:f = danger(json_get_float(arguments_json, `lat1`));
+            lon1:f = danger(json_get_float(arguments_json, `lon1`));
+            lat2:f = danger(json_get_float(arguments_json, `lat2`));
+            lon2:f = danger(json_get_float(arguments_json, `lon2`));
+            km:f = danger(geo_distance_km(lat1, lon1, lat2, lon2));
+            r string_from(danger(math_round_to(km, 1)));
+        },
+        else -> {
+            r e(string_concat([`no tool called `, tool_name]));
+        }
+    }
+}
+
+// Everything for a person goes to stderr through log, stdout is the protocol.
+log_info(`nail-tools MCP server starting`);
+danger(mcp_serve(`nail-tools`, `1.0.0`, tools));

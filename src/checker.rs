@@ -2422,6 +2422,13 @@ fn unify_types(expected: &NailDataTypeDescriptor, actual: &NailDataTypeDescripto
         (_, NailDataTypeDescriptor::Any) | (_, NailDataTypeDescriptor::FailedToResolve) | (_, NailDataTypeDescriptor::OneOf(_)) => true,
 
         (NailDataTypeDescriptor::TypeVar(name, bounds), _) => {
+            // A result never binds a bare type variable: errors are handled
+            // with danger or safe before a value flows anywhere generic. A
+            // signature that really takes a result says so with the (T!e)
+            // shape, which unifies through the Result arm below instead.
+            if matches!(actual, NailDataTypeDescriptor::Result(_)) {
+                return false;
+            }
             if let Some(existing) = bindings.get(name).cloned() {
                 type_compatible(&existing, actual)
             } else if !bounds.is_empty() && !bounds.contains(actual) {
