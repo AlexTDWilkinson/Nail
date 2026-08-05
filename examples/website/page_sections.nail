@@ -720,7 +720,7 @@ f generate_stdlib_page(page_title:s, page_description:s, functions:a:STDLIB_Func
             <span style="font-size: 1.5rem;">🔨</span>
             <span>Nail</span>
         </a>
-        <div class="nav-links"><a href="/" class="nav-link">Back to the front page</a></div>
+        <div class="nav-links"><a href="/" class="nav-link">Back to the home page</a></div>
     </div>
 </nav>`,
         listing,
