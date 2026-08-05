@@ -584,6 +584,23 @@ fn present(app: &mut App, pixmap: &tiny_skia::Pixmap) -> Result<(), String> {
 pub type ViewFuture = Pin<Box<dyn Future<Output = GAME_Frame> + Send>>;
 pub type UpdateFuture<S> = Pin<Box<dyn Future<Output = S> + Send>>;
 
+/// The whole-program answer to "is it fast enough": how many frames really
+/// showed per second, and how many could have if the loop never paced.
+/// Printed once when the game closes, only when a human's terminal is
+/// attached, so captured output never sees it.
+#[cfg(not(target_arch = "wasm32"))]
+fn report_frame_rate(frames: u64, work: Duration, started: Instant) {
+    use std::io::IsTerminal;
+    if frames == 0 || !std::io::stderr().is_terminal() {
+        return;
+    }
+    let wall = started.elapsed().as_secs_f64().max(f64::MIN_POSITIVE);
+    let actual = frames as f64 / wall;
+    let average_work = work.as_secs_f64() / frames as f64;
+    let possible = 1.0 / average_work.max(f64::MIN_POSITIVE);
+    eprintln!("game frame rate: {:.0} fps actual, {:.0} fps possible unpaced, {:.2}ms of work per frame", actual, possible, average_work * 1000.0);
+}
+
 /// Opens the window and runs the game until its view reports `quit` or the
 /// player closes the window, and returns the state it finished with.
 ///
@@ -609,6 +626,9 @@ where
     let mut state = initial;
     let mut last_frame = Instant::now();
     let frame_budget = if config.target_fps > 0 { Some(Duration::from_secs_f64(1.0 / config.target_fps as f64)) } else { None };
+    let started = Instant::now();
+    let mut frames: u64 = 0;
+    let mut work = Duration::ZERO;
 
     loop {
         event_loop.pump_app_events(Some(Duration::ZERO), &mut app);
@@ -616,6 +636,7 @@ where
             return Err(error);
         }
         if app.close_requested {
+            report_frame_rate(frames, work, started);
             return Ok(state);
         }
         if app.window.is_none() {
@@ -646,13 +667,16 @@ where
         let frame = view(state.clone()).await;
         rasterize(&mut pixmap, &frame)?;
         present(&mut app, &pixmap)?;
+        let used = last_frame.elapsed();
+        frames += 1;
+        work += used;
         if frame.quit {
+            report_frame_rate(frames, work, started);
             return Ok(state);
         }
 
         match frame_budget {
             Some(budget) => {
-                let used = last_frame.elapsed();
                 if used < budget {
                     tokio::time::sleep(budget - used).await;
                 }

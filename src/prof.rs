@@ -239,6 +239,7 @@ mod real {
             assert_eq!(format_duration(1_230_000_000), "1.23s");
         }
 
+
         #[test]
         fn test_sheet_sorts_by_total_and_skips_uncalled() {
             let sheet = render_sheet(&sample_snapshot());
