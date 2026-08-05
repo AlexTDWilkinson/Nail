@@ -2,7 +2,7 @@
 // values it computes at startup by really running the code the page displays.
 
 // Website configuration
-site_title:s = `Nail - a small language with a huge standard library`;
+site_title:s = `Nail - a simple language with a huge standard library`;
 site_description:s = `Few constructs, a thousand built-in functions. No null, no mutation, no package manager, no unsafe. Errors you cannot ignore, and iteration that uses every core without being asked.`;
 
 // Navigation structure
@@ -93,6 +93,7 @@ ide_shot_docs:s = danger(fs_read(`examples/website_screenshots/ide_docs.html`));
 
 hero_snippet:s = `// Nothing here is mutable, so nothing here can race.
 // map and filter are language operations, so they run on every core.
+// y yields one value per element, a:i is an array of integers.
 evens:a:i = filter num in array_range(1, 1000000) { y num % 2 == 0; };
 squares:a:i = map num in evens { y num * num; };
 total:i = array_sum(squares);`;

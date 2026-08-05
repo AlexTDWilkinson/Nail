@@ -1,5 +1,9 @@
 // Every construct Nail has, on one screen. If it is not here, the language
 // does not have it.
+//
+// The short tokens, once: f declares a function, r returns, y yields one
+// element to a collection operation, p opens a parallel block. The type
+// letters: i integer, s string, b boolean, a array, e error, v void.
 
 struct Point {
     x_pos:i,
