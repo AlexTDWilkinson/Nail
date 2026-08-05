@@ -267,23 +267,38 @@ pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation
             continue;
         }
 
-        // Grow each triangle half a pixel outward from its centroid. The
-        // rasterizer antialiases every edge, and two neighbours sharing an
-        // edge each feather it, letting the background bleed through as a
-        // hairline seam. The overlap swallows the feather.
-        let center_x = (points[0][0] + points[1][0] + points[2][0]) / 3.0;
-        let center_y = (points[0][1] + points[1][1] + points[2][1]) / 3.0;
-        for point in points.iter_mut() {
-            let dx = point[0] - center_x;
-            let dy = point[1] - center_y;
-            let length = (dx * dx + dy * dy).sqrt();
-            if length > 1e-6 {
-                point[0] += dx / length * 0.5;
-                point[1] += dy / length * 0.5;
-            }
+        // Push every EDGE outward by half a pixel, corners mitered. The
+        // rasterizer antialiases each edge, and two neighbours sharing an
+        // edge both feather it, letting the background bleed through as a
+        // hairline seam. Offsetting the edges themselves swallows the
+        // feather however large or skinny the triangle is, which growing
+        // vertices away from the centroid does not: on a huge half-quad
+        // triangle the vertex directions run mostly along the diagonal and
+        // the diagonal itself barely moves. Miters are capped so a
+        // needle-thin triangle cannot grow a spike.
+        let mut grown = points;
+        for index in 0..3 {
+            let here = points[index];
+            let previous = points[(index + 2) % 3];
+            let next = points[(index + 1) % 3];
+            let outward = |from: [f64; 2], to: [f64; 2], opposite: [f64; 2]| -> [f64; 2] {
+                let edge_x = to[0] - from[0];
+                let edge_y = to[1] - from[1];
+                let length = (edge_x * edge_x + edge_y * edge_y).sqrt().max(1e-9);
+                let mut normal = [edge_y / length, -edge_x / length];
+                if normal[0] * (opposite[0] - from[0]) + normal[1] * (opposite[1] - from[1]) > 0.0 {
+                    normal = [-normal[0], -normal[1]];
+                }
+                return normal;
+            };
+            let normal_in = outward(previous, here, next);
+            let normal_out = outward(here, next, previous);
+            let sum = [normal_in[0] + normal_out[0], normal_in[1] + normal_out[1]];
+            let denominator = (1.0 + (normal_in[0] * normal_out[0] + normal_in[1] * normal_out[1])).max(0.2);
+            grown[index] = [here[0] + 0.5 * sum[0] / denominator, here[1] + 0.5 * sum[1] / denominator];
         }
 
-        flat.push(Projected { depth, points, color: tint.unwrap_or(triangle.color), brightness });
+        flat.push(Projected { depth, points: grown, color: tint.unwrap_or(triangle.color), brightness });
     }
 
     // Painter's algorithm: the far triangles go first so near ones cover them.
