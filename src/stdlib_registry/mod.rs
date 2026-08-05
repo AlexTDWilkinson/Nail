@@ -788,7 +788,6 @@ pub fn is_stdlib_fn_wasm_safe(name: &str) -> bool {
         get_stdlib_function(name).map(|f| &f.module),
         Some(
             StdlibModule::Archive
-                | StdlibModule::Audio
                 | StdlibModule::Cache
                 | StdlibModule::Code
                 | StdlibModule::Compress

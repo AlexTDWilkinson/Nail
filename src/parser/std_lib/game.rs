@@ -886,6 +886,7 @@ mod web_backend {
     enum CanvasStyle {
         Width,
         Height,
+        TouchAction,
     }
 
     impl CanvasStyle {
@@ -893,6 +894,21 @@ mod web_backend {
             match self {
                 CanvasStyle::Width => "width",
                 CanvasStyle::Height => "height",
+                CanvasStyle::TouchAction => "touch-action",
+            }
+        }
+    }
+
+    /// What the browser may do with a finger on the canvas. A game wants the
+    /// finger for itself, not for scrolling and zooming the page.
+    enum TouchAction {
+        Off,
+    }
+
+    impl TouchAction {
+        fn value(&self) -> &'static str {
+            match self {
+                TouchAction::Off => "none",
             }
         }
     }
@@ -920,6 +936,9 @@ mod web_backend {
         mouse_down: bool,
         mouse_right: bool,
         scroll: f64,
+        /// How far apart two fingers were last time they both touched, so a
+        /// pinch can be turned into scrolling. Zero means no pinch underway.
+        pinch_span: f64,
     }
 
     /// The DOM's names for keys, folded onto the same names the native build
@@ -960,6 +979,28 @@ mod web_backend {
     type KeyClosure = Closure<dyn FnMut(web_sys::KeyboardEvent)>;
     type MouseClosure = Closure<dyn FnMut(web_sys::MouseEvent)>;
     type WheelClosure = Closure<dyn FnMut(web_sys::WheelEvent)>;
+    type TouchClosure = Closure<dyn FnMut(web_sys::TouchEvent)>;
+
+    /// Where a finger is in the game's own coordinates. The canvas may be
+    /// displayed at any size the page likes, so the position inside its
+    /// bounding box is scaled back to the size the game thinks it has.
+    fn touch_position(canvas: &web_sys::HtmlCanvasElement, touch: &web_sys::Touch, game_width: f64, game_height: f64) -> (f64, f64) {
+        let box_on_screen = canvas.get_bounding_client_rect();
+        let shown_width = box_on_screen.width().max(1.0);
+        let shown_height = box_on_screen.height().max(1.0);
+        let across = (touch.client_x() as f64 - box_on_screen.left()) * game_width / shown_width;
+        let down = (touch.client_y() as f64 - box_on_screen.top()) * game_height / shown_height;
+        return (across, down);
+    }
+
+    /// How far apart the first two fingers are, or zero when fewer than two
+    /// are touching.
+    fn touch_span(touches: &web_sys::TouchList) -> f64 {
+        let (Some(first), Some(second)) = (touches.get(0), touches.get(1)) else { return 0.0 };
+        let across = first.client_x() as f64 - second.client_x() as f64;
+        let down = first.client_y() as f64 - second.client_y() as f64;
+        return (across * across + down * down).sqrt();
+    }
 
     fn listen(target: &web_sys::EventTarget, name: &str, callback: &wasm_bindgen::JsValue) {
         let _ = target.add_event_listener_with_callback(name, callback.dyn_ref().unwrap());
@@ -983,6 +1024,9 @@ mod web_backend {
         mousedown: MouseClosure,
         mouseup: MouseClosure,
         wheel: WheelClosure,
+        touch_start: TouchClosure,
+        touch_move: TouchClosure,
+        touch_end: TouchClosure,
     }
 
     impl Backend {
@@ -1018,6 +1062,7 @@ mod web_backend {
             let style = canvas.style();
             set_style(&style, CanvasStyle::Width, &format!("{}px", width));
             set_style(&style, CanvasStyle::Height, &format!("{}px", height));
+            set_style(&style, CanvasStyle::TouchAction, TouchAction::Off.value());
             let context: web_sys::CanvasRenderingContext2d = canvas
                 .get_context("2d")
                 .ok()
@@ -1092,18 +1137,78 @@ mod web_backend {
                     input.borrow_mut().scroll += event.delta_y() / -100.0;
                 })
             };
+            // Fingers arrive as the same press and drag a mouse would make,
+            // so a game that reads the mouse is playable on a phone without
+            // knowing touch exists. Two fingers pinching feed the scroll.
+            let touch_start = {
+                let input = input.clone();
+                let canvas = canvas.clone();
+                let game_width = width as f64;
+                let game_height = height as f64;
+                Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |event: web_sys::TouchEvent| {
+                    event.prevent_default();
+                    let touches = event.touches();
+                    let mut state = input.borrow_mut();
+                    if let Some(finger) = touches.get(0) {
+                        let (across, down) = touch_position(&canvas, &finger, game_width, game_height);
+                        state.mouse_x = across;
+                        state.mouse_y = down;
+                        state.mouse_down = true;
+                    }
+                    state.pinch_span = touch_span(&touches);
+                })
+            };
+            let touch_move = {
+                let input = input.clone();
+                let canvas = canvas.clone();
+                let game_width = width as f64;
+                let game_height = height as f64;
+                Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |event: web_sys::TouchEvent| {
+                    event.prevent_default();
+                    let touches = event.touches();
+                    let mut state = input.borrow_mut();
+                    if let Some(finger) = touches.get(0) {
+                        let (across, down) = touch_position(&canvas, &finger, game_width, game_height);
+                        state.mouse_x = across;
+                        state.mouse_y = down;
+                    }
+                    // Spreading two fingers scrolls the same way a wheel
+                    // scrolls up, which is what zooming in means to a game.
+                    let span = touch_span(&touches);
+                    if span > 0.0 && state.pinch_span > 0.0 {
+                        state.scroll += (span - state.pinch_span) / 50.0;
+                    }
+                    state.pinch_span = span;
+                })
+            };
+            let touch_end = {
+                let input = input.clone();
+                Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |event: web_sys::TouchEvent| {
+                    event.prevent_default();
+                    let touches = event.touches();
+                    let mut state = input.borrow_mut();
+                    state.pinch_span = touch_span(&touches);
+                    if touches.length() == 0 {
+                        state.mouse_down = false;
+                    }
+                })
+            };
             listen(&window, "keydown", keydown.as_ref());
             listen(&window, "keyup", keyup.as_ref());
             listen(canvas.as_ref(), "mousemove", mousemove.as_ref());
             listen(canvas.as_ref(), "mousedown", mousedown.as_ref());
             listen(canvas.as_ref(), "mouseup", mouseup.as_ref());
             listen(canvas.as_ref(), "wheel", wheel.as_ref());
+            listen(canvas.as_ref(), "touchstart", touch_start.as_ref());
+            listen(canvas.as_ref(), "touchmove", touch_move.as_ref());
+            listen(canvas.as_ref(), "touchend", touch_end.as_ref());
+            listen(canvas.as_ref(), "touchcancel", touch_end.as_ref());
 
             let straight = vec![0u8; canvas_width as usize * canvas_height as usize * 4];
 
             next_frame(&window).await?;
 
-            return Ok(Backend { window, canvas, context, input, straight, width, height, keydown, keyup, mousemove, mousedown, mouseup, wheel });
+            return Ok(Backend { window, canvas, context, input, straight, width, height, keydown, keyup, mousemove, mousedown, mouseup, wheel, touch_start, touch_move, touch_end });
         }
 
         /// Hands back what the DOM listeners collected since the last poll.
@@ -1215,6 +1320,10 @@ mod web_backend {
             unlisten(self.canvas.as_ref(), "mousedown", self.mousedown.as_ref());
             unlisten(self.canvas.as_ref(), "mouseup", self.mouseup.as_ref());
             unlisten(self.canvas.as_ref(), "wheel", self.wheel.as_ref());
+            unlisten(self.canvas.as_ref(), "touchstart", self.touch_start.as_ref());
+            unlisten(self.canvas.as_ref(), "touchmove", self.touch_move.as_ref());
+            unlisten(self.canvas.as_ref(), "touchend", self.touch_end.as_ref());
+            unlisten(self.canvas.as_ref(), "touchcancel", self.touch_end.as_ref());
         }
     }
 }

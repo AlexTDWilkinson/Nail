@@ -59,7 +59,6 @@ diffy = "0.4"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 encoding_rs = "0.8"
 datafusion = { version = "50", optional = true }
-rodio = { version = "0.19", optional = true }
 scraper = { version = "0.20", optional = true }
 tokio-postgres = { version = "0.7", optional = true }
 printpdf = { version = "0.7", optional = true }
@@ -98,6 +97,10 @@ crossterm = "0.28"
 dirs = "5"
 winit = { version = "0.30", optional = true }
 softbuffer = { version = "0.4", optional = true }
+# The browser has its own audio machinery, so rodio and the cpal stack under
+# it stay out of the wasm dependency graph entirely. The `audio` feature still
+# names dep:rodio, which cargo treats as a no-op on targets without it.
+rodio = { version = "0.19", optional = true }
 
 # The browser build. tokio shrinks to the executor-free subset wasm supports,
 # getrandom's js feature is what lets the rand module work at all, and web-sys
@@ -111,7 +114,7 @@ getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "CssStyleDeclaration", "HtmlCanvasElement", "CanvasRenderingContext2d", "ImageData", "KeyboardEvent", "MouseEvent", "WheelEvent", "EventTarget", "console", "Performance", "Response"] }
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "CssStyleDeclaration", "HtmlCanvasElement", "CanvasRenderingContext2d", "HtmlAudioElement", "ImageData", "KeyboardEvent", "MouseEvent", "WheelEvent", "TouchEvent", "TouchList", "Touch", "DomRect", "EventTarget", "console", "Performance", "Response", "AudioContext", "BaseAudioContext", "AudioNode", "AudioScheduledSourceNode", "AudioParam", "AudioDestinationNode", "OscillatorNode", "OscillatorType", "GainNode"] }
 
 [features]
 default = []

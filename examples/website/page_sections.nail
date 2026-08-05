@@ -957,8 +957,9 @@ f generate_games_section():s {
         <div style="width: 100%; max-width: 940px;">
             <h3 style="margin: 0 0 0.5rem 0;">Platformer</h3>
             <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
-                Click it, then arrows or A and D move, Space jumps, R restarts. A scrolling
-                level, pits, coins and a flag, all pure functions over one struct.
+                Click it, then arrows or A and D move, Space jumps, R restarts. On a phone the
+                pads in the corners do the same. A scrolling level, pits, coins and a flag, all
+                pure functions over one struct, with sound.
                 <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/platformer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
             </p>
             <iframe src="/games/platformer-embed" title="Platformer written in Nail" style="width: 100%; aspect-ratio: 800 / 600; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
@@ -966,7 +967,8 @@ f generate_games_section():s {
         <div style="width: 100%; max-width: 940px;">
             <h3 style="margin: 0 0 0.5rem 0;">3D model viewer</h3>
             <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
-                Drag to orbit, scroll to zoom. The monument is a glTF file the program fetches,
+                Drag to orbit, scroll to zoom, or on a phone drag and pinch. The monument is a
+                glTF file the program fetches,
                 projected and lit by the standard library on the CPU - no graphics card, no
                 JavaScript renderer.
                 <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/model_viewer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>

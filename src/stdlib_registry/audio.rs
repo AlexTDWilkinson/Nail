@@ -16,6 +16,9 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "audio_play_tone" [Rodio] => "std_lib::audio::play_tone", (hertz: f, seconds: f, volume: f) -> (v!e),
             "Plays a single tone and returns when it has finished. 440.0 hertz is a concert A. A volume of 0.2 is a better starting point for a notification than 1.0.",
             "danger(audio_play_tone(440.0, 0.2, 0.2));";
+        "audio_tone_start" [Rodio] => "std_lib::audio::tone_start", (hertz: f, seconds: f, volume: f) -> (v!e),
+            "Starts a tone and returns at once, without waiting for it to finish. This is the one a game loop can call, since waiting out a sound would stutter the picture. In a browser the page stays silent until the player has first touched or clicked it, which is the browser's rule, not an error.",
+            "danger(audio_tone_start(880.0, 0.06, 0.15));";
         "audio_is_available" [Rodio] => "std_lib::audio::is_available", () -> b,
             "Returns whether this machine has a sound device to play through. Ask before playing anything on a server, where the answer is usually no.",
             "can_beep:b = audio_is_available();";
