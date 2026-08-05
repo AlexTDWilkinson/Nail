@@ -1407,6 +1407,14 @@ f generate_stdlib(functions:a:STDLIB_Function, modules:a:s):s {
         the compiler for the list and printed it, so it is exactly what the compiler serving this
         page can call.
     </p>
+    <p class="stdlib-intro">
+        When you need code that is not here, you copy it in, and that is the whole installation.
+        A Nail function is plain source over these same types with no dependency tree underneath,
+        so a shared file pastes into your program complete: nothing to resolve, nothing to update,
+        nothing that changes under you later. People will pass around handy functions the way they
+        pass around recipes, and whatever everyone keeps reaching for gets added to this list. The
+        library grows by paving the paths people already walk.
+    </p>
     <div class="stdlib-controls">
         <button class="btn btn-secondary stdlib-toggle" onclick="var open=this.dataset.open!=='1';document.querySelectorAll('#stdlib .stdlib-module').forEach(function(d){d.open=open});this.dataset.open=open?'1':'0';this.textContent=open?'Collapse all':'Expand all'">Expand all</button>
     </div>
