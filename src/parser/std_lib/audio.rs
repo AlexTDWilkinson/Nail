@@ -240,12 +240,16 @@ mod browser {
             oscillator.frequency().set_value(hertz as f32);
 
             // A tone that starts and stops at full volume clicks, so it opens
-            // fast and fades to nearly nothing by the end.
+            // fast and fades away by the end. The fade is a straight line to
+            // silence, matching the desktop side: an exponential fall sounds
+            // far weaker for the same numbers, since it gives up most of its
+            // loudness in the first fifth of a very short sound.
             let start = context.current_time() + wait_seconds;
+            let attack = (seconds * 0.2).min(0.01);
             let level = gain.gain();
             let _ = level.set_value_at_time(0.0, start);
-            let _ = level.linear_ramp_to_value_at_time(volume as f32, start + 0.005);
-            let _ = level.exponential_ramp_to_value_at_time(0.0001, start + seconds);
+            let _ = level.linear_ramp_to_value_at_time(volume as f32, start + attack);
+            let _ = level.linear_ramp_to_value_at_time(0.0, start + seconds);
 
             if oscillator.connect_with_audio_node(&gain).is_err() || gain.connect_with_audio_node(&context.destination()).is_err() {
                 return;
