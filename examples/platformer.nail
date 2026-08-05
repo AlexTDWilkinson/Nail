@@ -306,13 +306,16 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
         walking -> { r state.step_phase + ground_covered; },
         else -> { r 0.0; }
     };
-    stepped:b = walked > 84.0;
+    stepped:b = walked > 62.0;
     step_phase:f = if {
-        stepped -> { r walked - 84.0; },
+        stepped -> { r walked - 62.0; },
         else -> { r walked; }
     };
+    // Louder than the numbers suggest it needs to be: the sound decays across
+    // its whole length, so the volume asked for is the peak at the very start
+    // and the ear hears roughly half of it.
     if {
-        stepped -> { danger(audio_tone_start(220.0, 0.045, 0.11)); },
+        stepped -> { danger(audio_tone_start(210.0, 0.05, 0.24)); },
         else -> {}
     }
 
