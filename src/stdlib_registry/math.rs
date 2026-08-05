@@ -127,6 +127,15 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "math_tanh" => "std_lib::math::tanh", (value: f) -> f,
             "Returns the hyperbolic tangent.",
             "value:f = math_tanh(1.0);";
+        "math_asinh" => "std_lib::math::asinh", (value: f) -> f,
+            "Returns the inverse hyperbolic sine.",
+            "value:f = math_asinh(1.0);";
+        "math_acosh" => "std_lib::math::acosh", (value: f) -> (f!e),
+            "Returns the inverse hyperbolic cosine. Errors if the input is below 1.0, where the function has no real answer.",
+            "value:f = danger(math_acosh(2.0));";
+        "math_atanh" => "std_lib::math::atanh", (value: f) -> (f!e),
+            "Returns the inverse hyperbolic tangent. Errors at or outside -1.0 and 1.0, where the function has no finite answer.",
+            "value:f = danger(math_atanh(0.5));";
         "math_modulo" => "std_lib::math::modulo", (value: f, divisor: f) -> (f!e),
             "Returns the remainder with the sign of the divisor, so -1 modulo 12 is 11. What clock arithmetic and wrapping an index round an array need, and what % does not give.",
             "wrapped:f = danger(math_modulo(-1.0, 12.0));";

@@ -1,5 +1,5 @@
-// Pure helper functions for the insert_safe tests. Everything here only
-// computes, so a program can include this file with insert_safe.
+// Pure helper functions for the import tests. Everything here only
+// computes, so a program can bring this file in with import.
 sandboxed_prefix:s = string_to_uppercase(`ok`);
 
 f shout_greeting(name:s):s {

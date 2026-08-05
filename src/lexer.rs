@@ -94,10 +94,10 @@ pub enum TokenType {
     FunctionSignature(Vec<Token>),           // For function declarations ie "fn"
     Dot,                                     // For dot operator (.)
     IfDeclaration,                           // For if keyword
-    InsertKeyword,                           // For insert keyword (file insertion)
-    InsertSafeKeyword,                       // For insert_safe keyword (sandboxed file insertion)
-    SandboxStart,                             // Marks where tokens spliced by insert_safe begin
-    SandboxEnd,                               // Marks where tokens spliced by insert_safe end
+    ImportKeyword,                           // For import keyword (sandboxed file inclusion)
+    ImportDangerousKeyword,                  // For import_dangerous keyword (unsandboxed file inclusion)
+    SandboxStart,                             // Marks where tokens spliced by import begin
+    SandboxEnd,                               // Marks where tokens spliced by import end
     ElseDeclaration,                         // For else keyword
     ParallelStart,                           // For p keyword
     ParallelEnd,                             // For /p keyword
@@ -189,10 +189,10 @@ impl TokenType {
             TokenType::Comment(_) => "a comment".to_string(),
             TokenType::IfDeclaration => "the 'if' keyword".to_string(),
             TokenType::ElseDeclaration => "the 'else' keyword".to_string(),
-            TokenType::InsertKeyword => "the 'insert' keyword".to_string(),
-            TokenType::InsertSafeKeyword => "the 'insert_safe' keyword".to_string(),
-            TokenType::SandboxStart => "the start of a sandboxed insert_safe inclusion".to_string(),
-            TokenType::SandboxEnd => "the end of a sandboxed insert_safe inclusion".to_string(),
+            TokenType::ImportKeyword => "the 'import' keyword".to_string(),
+            TokenType::ImportDangerousKeyword => "the 'import_dangerous' keyword".to_string(),
+            TokenType::SandboxStart => "the start of a sandboxed import inclusion".to_string(),
+            TokenType::SandboxEnd => "the end of a sandboxed import inclusion".to_string(),
             TokenType::ParallelStart => "the 'p' (parallel) keyword".to_string(),
             TokenType::ParallelEnd => "the '/p' (end parallel) keyword".to_string(),
             TokenType::ConcurrentStart => "the 'c' (concurrent) keyword".to_string(),
@@ -329,12 +329,12 @@ pub fn collect_lexer_errors(tokens: &[Token]) -> Vec<crate::common::CodeError> {
     errors
 }
 
-/// What the lexer does when it meets insert() or insert_safe(). Compiling a
+/// What the lexer does when it meets import() or import_dangerous(). Compiling a
 /// program splices the included file in. A tool that displays one file must
 /// not, since the spliced tokens carry the other file's line and column
 /// numbers and would paint the wrong characters.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum InsertMode {
+pub enum ImportMode {
     Expand,
     Keep,
 }
@@ -346,18 +346,18 @@ pub fn lexer(input: &str) -> Vec<Token> {
 pub fn lexer_with_context(input: &str, current_file: Option<&Path>) -> Vec<Token> {
     let mut state = LexerState { line: 1, column: 1 };
     let mut included_files = HashSet::new();
-    lexer_inner(input, &mut state, current_file, &mut included_files, InsertMode::Expand)
+    lexer_inner(input, &mut state, current_file, &mut included_files, ImportMode::Expand)
 }
 
-/// Lex one file's own text: insert lines stay ordinary tokens, so every span
+/// Lex one file's own text: import lines stay ordinary tokens, so every span
 /// belongs to the text that was handed in. For highlighting and formatting.
-pub fn lexer_without_inserts(input: &str) -> Vec<Token> {
+pub fn lexer_without_imports(input: &str) -> Vec<Token> {
     let mut state = LexerState { line: 1, column: 1 };
     let mut included_files = HashSet::new();
-    lexer_inner(input, &mut state, None, &mut included_files, InsertMode::Keep)
+    lexer_inner(input, &mut state, None, &mut included_files, ImportMode::Keep)
 }
 
-fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>, included_files: &mut HashSet<PathBuf>, insert_mode: InsertMode) -> Vec<Token> {
+fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>, included_files: &mut HashSet<PathBuf>, import_mode: ImportMode) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
     let mut chars = input.chars().peekable();
 
@@ -458,12 +458,12 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
             _ if is_identifier_or_keyword(c) => {
                 let lexer_output = lex_identifier_or_keyword(&mut chars, state);
                 
-                // Check if this is an insert or insert_safe keyword followed by a
-                // file path. Both splice the included file's tokens in place.
-                // insert_safe additionally wraps the splice in SandboxStart and
+                // Check if this is an import or import_dangerous keyword followed
+                // by a file path. Both splice the included file's tokens in place.
+                // import additionally wraps the splice in SandboxStart and
                 // SandboxEnd markers so later stages know the code is untrusted.
-                if insert_mode == InsertMode::Expand && (lexer_output.token_type == TokenType::InsertKeyword || lexer_output.token_type == TokenType::InsertSafeKeyword) {
-                    let sandboxed = lexer_output.token_type == TokenType::InsertSafeKeyword;
+                if import_mode == ImportMode::Expand && (lexer_output.token_type == TokenType::ImportKeyword || lexer_output.token_type == TokenType::ImportDangerousKeyword) {
+                    let sandboxed = lexer_output.token_type == TokenType::ImportKeyword;
                     // Skip whitespace
                     while let Some(&c) = chars.peek() {
                         if c.is_whitespace() {
@@ -524,10 +524,10 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                     chars.next();
                                     state.column += 1;
                                     
-                                    // Now handle the file insertion
-                                    match handle_insert(&filepath, current_file, included_files, state) {
+                                    // Now handle the file inclusion
+                                    match handle_import(&filepath, current_file, included_files, state) {
                                         Ok(inserted_tokens) => {
-                                            // A plain insert nested inside a safe-inserted
+                                            // An import_dangerous nested inside an imported
                                             // file already lands between the outer markers,
                                             // so the whole subtree is sandboxed either way.
                                             if sandboxed {
@@ -546,7 +546,7 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                         }
                                         Err(error) => {
                                             tokens.push(Token {
-                                                token_type: TokenType::LexerError(format!("Insert error: {}", error)),
+                                                token_type: TokenType::LexerError(format!("Import error: {}", error)),
                                                 code_span: CodeSpan { 
                                                     start_line: lexer_output.start_line, 
                                                     end_line: state.line, 
@@ -558,7 +558,7 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                     }
                                 } else {
                                     tokens.push(Token {
-                                        token_type: TokenType::LexerError("Expected ')' after insert filepath".to_string()),
+                                        token_type: TokenType::LexerError("Expected ')' after import filepath".to_string()),
                                         code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column },
                                     });
                                 }
@@ -569,7 +569,7 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                 });
                             }
                         } else {
-                            // Not an insert statement, push the keyword token
+                            // Not an import statement, push the keyword token
                             tokens.push(Token {
                                 token_type: lexer_output.token_type,
                                 code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
@@ -1358,8 +1358,8 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "use" => TokenType::LexerError("'use' is a reserved keyword and cannot be used as an identifier".to_string()),
         "fn" => TokenType::LexerError("'fn' is a reserved keyword and cannot be used as an identifier".to_string()),
         "let" => TokenType::LexerError("'let' is a reserved keyword and cannot be used as an identifier".to_string()),
-        "insert" => TokenType::InsertKeyword,
-        "insert_safe" => TokenType::InsertSafeKeyword,
+        "import" => TokenType::ImportKeyword,
+        "import_dangerous" => TokenType::ImportDangerousKeyword,
         "mut" => TokenType::LexerError("'mut' is a reserved keyword and cannot be used as an identifier".to_string()),
         "const" => TokenType::LexerError("'const' is a reserved keyword and cannot be used as an identifier".to_string()),
         "static" => TokenType::LexerError("'static' is a reserved keyword and cannot be used as an identifier".to_string()),
@@ -1945,7 +1945,7 @@ fn lex_enum_variant(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mu
     }
 }
 
-fn handle_insert(
+fn handle_import(
     filepath: &str,
     current_file: Option<&Path>,
     included_files: &mut HashSet<PathBuf>,
@@ -1977,7 +1977,7 @@ fn handle_insert(
     
     // Lex the included file with its own context
     let mut sub_state = LexerState { line: state.line, column: 1 };
-    let tokens = lexer_inner(&content, &mut sub_state, Some(&canonical_path), included_files, InsertMode::Expand);
+    let tokens = lexer_inner(&content, &mut sub_state, Some(&canonical_path), included_files, ImportMode::Expand);
     
     // Remove the file from included set after processing (allows same file in different branches)
     included_files.remove(&canonical_path);

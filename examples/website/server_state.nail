@@ -13,7 +13,7 @@ website_html:s = array_join([
     generate_refusals(refused_error_html, refused_error_verdict, refused_field_html, refused_field_verdict, refused_nothing_html, refused_nothing_verdict),
     generate_features(),
     generate_examples(concurrent_example_html, parallel_example_html, error_example_html, concurrent_rust_html, parallel_rust_html, error_rust_html),
-    generate_insert_safe(jailbreak_html, sandbox_demo_html, sandbox_verdict_html),
+    generate_import_section(jailbreak_html, sandbox_demo_html, sandbox_verdict_html),
     generate_mcp(mcp_example_html),
     generate_stdlib_teaser(array_length(stdlib_function_list), array_length(stdlib_module_list), battery_rows),
     generate_get_started(),

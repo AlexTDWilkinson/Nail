@@ -319,6 +319,24 @@ pub fn tanh(x: f64) -> f64 {
     return x.tanh();
 }
 
+pub fn asinh(x: f64) -> f64 {
+    return x.asinh();
+}
+
+pub fn acosh(x: f64) -> Result<f64, String> {
+    if x < 1.0 {
+        return Err(format!("math_acosh: input must be at least 1, got {}", x));
+    }
+    return Ok(x.acosh());
+}
+
+pub fn atanh(x: f64) -> Result<f64, String> {
+    if x <= -1.0 || x >= 1.0 {
+        return Err(format!("math_atanh: input must be strictly between -1 and 1, got {}", x));
+    }
+    return Ok(x.atanh());
+}
+
 /// The remainder, always with the sign of the divisor, so the answer for a
 /// positive divisor is never negative: -1 modulo 12 is 11, not -1.
 ///
@@ -668,6 +686,19 @@ mod added_tests {
 
     fn close(left: f64, right: f64) -> bool {
         return (left - right).abs() < 1e-9;
+    }
+
+    #[test]
+    fn inverse_hyperbolics_undo_their_forward_twins() {
+        assert!(close(asinh(sinh(1.25)), 1.25));
+        assert!(close(acosh(cosh(1.25)).unwrap(), 1.25));
+        assert!(close(atanh(tanh(1.25)).unwrap(), 1.25));
+        // asinh is total, including the negative side.
+        assert!(close(asinh(sinh(-3.0)), -3.0));
+        // The others refuse the inputs that have no real answer.
+        assert!(acosh(0.5).unwrap_err().contains("at least 1"));
+        assert!(atanh(1.0).unwrap_err().contains("strictly between"));
+        assert!(atanh(-1.5).unwrap_err().contains("strictly between"));
     }
 
     #[test]

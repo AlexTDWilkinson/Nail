@@ -1,0 +1,82 @@
+// A game, described rather than drawn.
+//
+// Exactly like the TUI: the whole game is a state struct and two pure
+// functions. `view` says what the frame looks like, `update` says what the
+// state becomes. A frame is an array of shape values, so everything a game
+// would put on screen can be checked without a window to put it on.
+
+struct Paddle {
+    paddle_y:f,
+    score:i,
+    done:b
+}
+
+f view(state:Paddle):GAME_Frame {
+    court:GAME_Shape = game_rect_outline(0.0, 0.0, 800.0, 600.0, 4.0, `gray`);
+    paddle:GAME_Shape = game_rect(10.0, state.paddle_y, 16.0, 100.0, `white`);
+    ball:GAME_Shape = game_circle(400.0, 300.0, 8.0, `#fdd835`);
+    net:GAME_Shape = game_line(400.0, 0.0, 400.0, 600.0, 2.0, `#757575`);
+    score:GAME_Shape = game_text(string_from(state.score), 360.0, 20.0, 32.0, `white`);
+
+    r GAME_Frame {
+        shapes = [court, paddle, ball, net, score],
+        background = `#101018`,
+        quit = state.done
+    };
+}
+
+f update(state:Paddle, input:GAME_Input):Paddle {
+    if {
+        array_contains(input.keys_pressed, `Esc`) -> {
+            r Paddle { paddle_y = state.paddle_y, score = state.score, done = true };
+        },
+        array_contains(input.keys_down, `Up`) -> {
+            r Paddle { paddle_y = state.paddle_y - (0.5 * input.delta_ms), score = state.score, done = false };
+        },
+        array_contains(input.keys_down, `Down`) -> {
+            r Paddle { paddle_y = state.paddle_y + (0.5 * input.delta_ms), score = state.score, done = false };
+        },
+        else -> {
+            r state;
+        }
+    }
+}
+
+start:Paddle = Paddle { paddle_y = 250.0, score = 3, done = false };
+
+// A held key moves by time, not by frames, so speed survives any frame rate.
+held:GAME_Input = GAME_Input { keys_down = [`Up`], keys_pressed = [], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, delta_ms = 16.0 };
+moved:Paddle = update(start, held);
+test_assert_equal_float(moved.paddle_y, 242.0, 0.0001, `sixteen milliseconds of Up moves eight pixels`);
+test_assert_equal_bool(moved.done, false, `moving does not end the game`);
+
+quit_press:GAME_Input = GAME_Input { keys_down = [], keys_pressed = [`Esc`], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, delta_ms = 16.0 };
+over:Paddle = update(moved, quit_press);
+test_assert_equal_bool(over.done, true, `Esc ends the game`);
+
+idle:GAME_Input = GAME_Input { keys_down = [], keys_pressed = [], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, delta_ms = 16.0 };
+same:Paddle = update(start, idle);
+test_assert_equal_float(same.paddle_y, 250.0, 0.0001, `no input changes nothing`);
+
+// The frame is data, so what would be drawn can be checked.
+drawn:GAME_Frame = view(moved);
+test_assert_equal_int(array_length(drawn.shapes), 5, `five shapes on the frame`);
+test_assert_equal_bool(drawn.quit, false, `it is not over yet`);
+test_assert_equal_string(drawn.background, `#101018`, `the background colour`);
+
+first:GAME_Shape = danger(array_get(drawn.shapes, 0));
+test_assert_equal_string(first.kind, `rect_outline`, `the court is painted first, so everything else is over it`);
+
+paddle_shape:GAME_Shape = danger(array_get(drawn.shapes, 1));
+test_assert_equal_float(paddle_shape.y_coordinate, 242.0, 0.0001, `the paddle is drawn where the state says it is`);
+
+ending:GAME_Frame = view(over);
+test_assert_equal_bool(ending.quit, true, `the state, not the library, decides when it is over`);
+
+print(`every game check held`);
+
+// Running it for real opens a window, so it is not done here. It would be:
+//
+//   config:GAME_Config = GAME_Config { title = `Pong`, width = 800, height = 600, target_fps = 60 };
+//   final_state:Paddle = danger(game_run(config, start));
+//   print(string_from(final_state.score));

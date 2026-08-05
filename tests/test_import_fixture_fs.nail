@@ -1,0 +1,6 @@
+// Fixture for the import checker unit tests. Valid on its own, but a
+// program that brings it in with import must be rejected, because the
+// sandboxed function reads the disk.
+f sandboxed_read_config():s {
+    r danger(fs_read(`config.txt`));
+}

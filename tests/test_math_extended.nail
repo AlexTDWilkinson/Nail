@@ -40,6 +40,12 @@ identity:f = math_cosh(1.5) * math_cosh(1.5) - math_sinh(1.5) * math_sinh(1.5);
 test_assert_equal_float(identity, 1.0, 0.000001, `the hyperbolic identity`);
 test_assert_equal_float(math_tanh(0.0), 0.0, 0.000001, `tanh at zero`);
 
+// The inverse hyperbolics undo their forward twins. acosh and atanh refuse
+// inputs with no real answer, so they come back through danger.
+test_assert_equal_float(math_asinh(math_sinh(1.25)), 1.25, 0.000001, `asinh undoes sinh`);
+test_assert_equal_float(danger(math_acosh(math_cosh(1.25))), 1.25, 0.000001, `acosh undoes cosh`);
+test_assert_equal_float(danger(math_atanh(math_tanh(1.25))), 1.25, 0.000001, `atanh undoes tanh`);
+
 // Whether a computed value is an ordinary number. A not-a-number value is the
 // one value not equal to itself, so == cannot be used to ask.
 ordinary:f = 1.5;

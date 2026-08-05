@@ -1,4 +1,4 @@
-// Sandboxed with insert_safe: the compiler proves this file only computes.
+// Sandboxed with import: the compiler proves this file only computes.
 // A file like this could be downloaded from the internet and inserted unread,
 // nothing in it can touch the machine it runs on.
 //

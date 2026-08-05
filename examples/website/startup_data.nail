@@ -49,7 +49,7 @@ p
 parallel_elapsed_us:i = time_now_micros() - parallel_started;
 
 // Same concurrent file reads as the concurrent example. This program's own
-// source is split across files by insert(), so every part is read here too.
+// source is split across files by import_dangerous(), so every part is read here too.
 // Timed: the block takes as long as its slowest read, not their sum.
 concurrent_started:i = time_now_micros();
 c
@@ -67,8 +67,8 @@ c
 /c
 concurrent_elapsed_us:i = time_now_micros() - concurrent_started;
 
-// The listing of this site's source: the entry file, then each inserted part
-// under a labeled header, in insert order.
+// The listing of this site's source: the entry file, then each imported part
+// under a labeled header, in import order.
 website_text:s = array_join([
     label_source_file(`examples/nail_website.nail`, website_entry_text),
     label_source_file(`examples/website/safe/demo_math.nail`, demo_math_text),

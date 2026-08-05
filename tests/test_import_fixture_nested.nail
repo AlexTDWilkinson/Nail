@@ -1,0 +1,9 @@
+// Fixture for the import checker unit tests. It dangerously imports a file
+// whose function reads the disk. On its own that is fine, but when this file
+// arrives through import the whole subtree is sandboxed, nested unsandboxed
+// inserts included, so the disk read must still be rejected.
+import_dangerous(`test_import_fixture_fs.nail`)
+
+f sandboxed_wrapper():s {
+    r sandboxed_read_config();
+}

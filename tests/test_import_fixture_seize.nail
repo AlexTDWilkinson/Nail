@@ -1,5 +1,5 @@
-// Fixture for the insert_safe checker unit tests. Valid on its own, but a
-// program that includes it with insert_safe must be rejected twice: sandboxed
+// Fixture for the import checker unit tests. Valid on its own, but a
+// program that brings it in with import must be rejected twice: sandboxed
 // code may not block the program with time_sleep and may not seize stdout
 // with print. The log_line function is the allowed case, stderr logging.
 f sandboxed_wait():v {

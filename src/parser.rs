@@ -260,9 +260,9 @@ pub struct ParserState {
     tokens: Peekable<IntoIter<Token>>,
     current_token: Option<Token>,
     previous_token: Option<Token>,
-    // How many insert_safe inclusions the parser is currently inside. The
-    // lexer wraps each safe-inserted file's tokens in SandboxStart/SandboxEnd
-    // markers, and nesting simply nests the marker pairs.
+    // How many import inclusions the parser is currently inside. The lexer
+    // wraps each imported file's tokens in SandboxStart/SandboxEnd markers,
+    // and nesting simply nests the marker pairs.
     sandbox_depth: usize,
 }
 
@@ -297,22 +297,22 @@ fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     Ok(ASTNode::Program { statements: program, code_span: CodeSpan::default(), scope: GLOBAL_SCOPE })
 }
 
-/// A file included with insert_safe may only declare things: functions,
-/// structs, enums, and constants. Anything that runs at the top level is
-/// rejected, so the including program alone decides when sandboxed code executes.
+/// An imported file may only declare things: functions, structs, enums, and
+/// constants. Anything that runs at the top level is rejected, so the
+/// importing program alone decides when sandboxed code executes.
 fn check_sandboxed_statement(statement: &ASTNode) -> Result<(), CodeError> {
     match statement {
         ASTNode::FunctionDeclaration { .. } | ASTNode::StructDeclaration { .. } | ASTNode::EnumDeclaration { .. } | ASTNode::ConstDeclaration { .. } => Ok(()),
         other => Err(CodeError {
-            help: Some("move the statement into a function so your program decides when it runs, or include the file with plain insert if you trust it".to_string()),
-            message: format!("A file included with insert_safe may only declare functions, structs, enums, and constants, but this file has {} at the top level", describe_statement(other)),
+            help: Some("move the statement into a function so your program decides when it runs, or bring the file in with import_dangerous if you trust it".to_string()),
+            message: format!("An imported file may only declare functions, structs, enums, and constants, but this file has {} at the top level", describe_statement(other)),
             code_span: other.code_span(),
         }),
     }
 }
 
-/// Plain-language name for a statement kind, used by the insert_safe
-/// top-level restriction error.
+/// Plain-language name for a statement kind, used by the import top-level
+/// restriction error.
 fn describe_statement(statement: &ASTNode) -> String {
     match statement {
         ASTNode::FunctionCall { name, .. } => format!("a call to '{}'", name),

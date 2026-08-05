@@ -18,25 +18,24 @@
 
 port:i = 8080;
 
-// insert() trusts a file completely: it is for code you wrote yourself.
-// insert_safe() is for code you did not write. The compiler sandboxes the file so
+// import() is the default way to bring a file in: the compiler sandboxes it so
 // it can compute anything and touch nothing: no network, no disk, no
 // environment, no processes, no global state, checked at compile time and
 // enforced through every function the sandboxed code reaches. The three files
-// below could be downloaded from the internet and inserted unread, nothing in
+// below could be downloaded from the internet and imported unread, nothing in
 // them can act on this machine. If Nail ever grows a package repository, it
 // will be a folder of simple files brought in exactly like this.
-insert_safe(`website/safe/demo_math.nail`)
-insert_safe(`website/safe/stdlib_listing.nail`)
-insert_safe(`website/safe/text_helpers.nail`)
+import(`website/safe/demo_math.nail`)
+import(`website/safe/stdlib_listing.nail`)
+import(`website/safe/text_helpers.nail`)
 
 // The rest of the program is our own code and stays fully trusted: these
 // files read the disk, hold the server state, and answer requests.
-insert(`website/startup_data.nail`)
-insert(`website/styles.nail`)
-insert(`website/page_sections.nail`)
-insert(`website/server_state.nail`)
-insert(`website/routes.nail`)
+import_dangerous(`website/startup_data.nail`)
+import_dangerous(`website/styles.nail`)
+import_dangerous(`website/page_sections.nail`)
+import_dangerous(`website/server_state.nail`)
+import_dangerous(`website/routes.nail`)
 
 // Serve the website
 config:HTTP_Config = HTTP_Config {

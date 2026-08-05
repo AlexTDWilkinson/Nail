@@ -173,7 +173,7 @@ f generate_features():s {
         html`<div class="feature-card">
             <div class="feature-icon">🛡️</div>
             <h3>Foreign code runs sandboxed</h3>
-            <p>insert_safe puts downloaded code in a compile-time sandbox: no network, no disk,
+            <p>import puts downloaded code in a compile-time sandbox: no network, no disk,
                no way to phone home. The compiler enforces it.</p>
         </div>`,
         html`<div class="feature-card">
@@ -563,18 +563,18 @@ f generate_mcp(mcp_source:s):s {
 // The library list is not written here: the server asks the compiler what it
 // can call and prints the answer, so this section is the standard library of
 // the compiler that built this page, not a list someone kept up to date.
-// The insert_safe section: a real break-in attempt and the real refusal.
+// The import section: a real break-in attempt and the real refusal.
 // The three values arrive precomputed: the two files highlighted, and the
 // verdict this server got from its own compiler at startup.
-f generate_insert_safe(helper_html:s, entry_html:s, verdict_html:s):s {
+f generate_import_section(helper_html:s, entry_html:s, verdict_html:s):s {
     values:h<s,s> = hashmap_new();
     hashmap_set(values, `helper`, helper_html);
     hashmap_set(values, `entry`, entry_html);
     hashmap_set(values, `verdict`, verdict_html);
-    r danger(template_render(html`<section id="insertsafe" class="insertsafe">
+    r danger(template_render(html`<section id="sandbox" class="sandbox">
     <div class="section-header">
         <h2>Use a stranger's code safely</h2>
-        <p>insert_safe pulls a file into your program, seals it and sandboxes it: it can compute anything and touch nothing</p>
+        <p>import pulls a file into your program and sandboxes it: it can compute anything and touch nothing</p>
     </div>
     <div class="sandbox-points">
         <span class="sandbox-point">No network</span>
@@ -604,9 +604,11 @@ f generate_insert_safe(helper_html:s, entry_html:s, verdict_html:s):s {
         reaches, so nothing gets laundered through a helper.
     </p>
     <p class="sandbox-note">
-        insert is for your own files and trusts them completely. insert_safe is for everyone
-        else's. A package repository for Nail would be a shelf of plain files brought in like
-        this: nothing to resolve, nothing to update, nothing to lock.
+        import is the default and it sandboxes what it brings in, so a stranger's file
+        never needs your trust. import_dangerous is for your own files and trusts them
+        completely, which is why its name makes you say so. A package repository for Nail
+        would be a shelf of plain files imported like this: nothing to resolve, nothing to
+        update, nothing to lock.
     </p>
 </section>`, values));
 }

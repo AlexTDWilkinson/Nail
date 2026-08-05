@@ -1,9 +1,0 @@
-// Fixture for the insert_safe checker unit tests. It plain-inserts a file
-// whose function reads the disk. On its own that is fine, but when this file
-// arrives through insert_safe the whole subtree is sandboxed, nested plain
-// inserts included, so the disk read must still be rejected.
-insert(`test_insert_safe_fixture_fs.nail`)
-
-f sandboxed_wrapper():s {
-    r sandboxed_read_config();
-}

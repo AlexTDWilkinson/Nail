@@ -116,6 +116,7 @@ mod feed;
 mod finance;
 mod format;
 mod fs;
+mod game;
 mod geo;
 mod hashmap;
 mod hex;
@@ -266,6 +267,10 @@ crate_dependencies! {
     Ammonia => { cargo: "ammonia = \"4\"", name: "ammonia", import: "use ammonia;", feature: "html" },
     TokioTungstenite => { cargo: "tokio-tungstenite = { version = \"0.23\", features = [\"rustls-tls-webpki-roots\"] }", name: "tokio-tungstenite", import: "use tokio_tungstenite;", feature: "websocket" },
     ValkeyClient => { cargo: "redis = { version = \"0.27\", features = [\"tokio-comp\"] }", name: "redis", import: "use redis;", feature: "valkey" },
+    Winit => { cargo: "winit = \"0.30\"", name: "winit", import: "use winit;", feature: "game" },
+    Softbuffer => { cargo: "softbuffer = \"0.4\"", name: "softbuffer", import: "use softbuffer;", feature: "game" },
+    TinySkia => { cargo: "tiny-skia = \"0.11\"", name: "tiny-skia", import: "use tiny_skia;", feature: "game" },
+    Fontdue => { cargo: "fontdue = \"0.9\"", name: "fontdue", import: "use fontdue;", feature: "game" },
 }
 
 /// Defines the StdlibModule enum, its runtime module path, the namespace
@@ -369,6 +374,7 @@ stdlib_modules! {
     Image => "std_lib::image", "image_",
     Chart => "std_lib::chart", "chart_",
     Audio => "std_lib::audio", "audio_",
+    Game => "std_lib::game", "game_",
     Code => "std_lib::code", "code_",
     Crypto => "std_lib::crypto", "crypto_",
     Email => "std_lib::email", "email_",
@@ -483,6 +489,7 @@ lazy_static! {
         finance::register(&mut m);
         format::register(&mut m);
         fs::register(&mut m);
+        game::register(&mut m);
         geo::register(&mut m);
         hashmap::register(&mut m);
         hex::register(&mut m);
@@ -696,7 +703,7 @@ const SANDBOX_ALLOWED_FUNCTIONS: &[&str] = &[
     "print_error",
 ];
 
-/// Why a stdlib function is denied inside sandboxed (insert_safe) code, as a
+/// Why a stdlib function is denied inside sandboxed (import) code, as a
 /// short phrase for error messages, or None when the function is safe there.
 /// Sandboxed code may only compute: module-level defaults with per-function
 /// overrides, so all policy lives here and the checker asks one question.
@@ -743,14 +750,14 @@ pub fn sandbox_deny_reason(name: &str) -> Option<&'static str> {
     }
 }
 
-/// Whether sandboxed (insert_safe) code may call this stdlib function.
+/// Whether sandboxed (import) code may call this stdlib function.
 pub fn is_sandbox_safe(name: &str) -> bool {
     sandbox_deny_reason(name).is_none()
 }
 
 pub fn is_stdlib_fn_async(name: &str) -> bool {
     // Per-function overrides of the module default
-    if name == "time_sleep" || name == "tui_run" || name == "crypto_hash_file_sha256" || name == "crypto_hash_file_blake3" || name == "csv_write" || name == "sys_cpu_usage_percent" || name == "sys_process_cpu_percent" {
+    if name == "time_sleep" || name == "tui_run" || name == "game_run" || name == "crypto_hash_file_sha256" || name == "crypto_hash_file_blake3" || name == "csv_write" || name == "sys_cpu_usage_percent" || name == "sys_process_cpu_percent" {
         return true;
     }
     if SYNC_STDLIB_FUNCTIONS.contains(&name) {
@@ -1227,6 +1234,67 @@ lazy_static! {
             }
         });
 
+        // The game structs. A frame is data the same way a TUI screen is, so
+        // what a game would draw can be checked without a window to draw in.
+        m.insert("GAME_Config", StdlibTypeInfo {
+            name: "GAME_Config".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("title".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("width".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("height".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("target_fps".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        m.insert("GAME_Shape", StdlibTypeInfo {
+            name: "GAME_Shape".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("kind".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("x_coordinate".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("y_coordinate".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("width".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("height".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("end_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("end_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("radius".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("thickness".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("color".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("text".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("size".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("sprite".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        m.insert("GAME_Frame", StdlibTypeInfo {
+            name: "GAME_Frame".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("shapes".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct("GAME_Shape".to_string()))));
+                fields.insert("background".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("quit".to_string(), NailDataTypeDescriptor::Boolean);
+                fields
+            }
+        });
+
+        m.insert("GAME_Input", StdlibTypeInfo {
+            name: "GAME_Input".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("keys_down".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("keys_pressed".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("mouse_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("mouse_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("mouse_down".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("mouse_right".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("delta_ms".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
         // The linear algebra structs. A vector is its components and nothing
         // else, so a program can build one as a literal and read x and y back
         // without going through a function.
@@ -1466,6 +1534,20 @@ lazy_static! {
             HandlerCallback {
                 function_name: "update",
                 parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]), NailDataTypeDescriptor::Struct("TUI_Event".to_string())],
+                return_type: NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
+            },
+        ]);
+        // game_run mirrors tui_run exactly: same callback names, same type
+        // variable binding, a window instead of a terminal.
+        m.insert("game_run", vec![
+            HandlerCallback {
+                function_name: "view",
+                parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![])],
+                return_type: NailDataTypeDescriptor::Struct("GAME_Frame".to_string()),
+            },
+            HandlerCallback {
+                function_name: "update",
+                parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]), NailDataTypeDescriptor::Struct("GAME_Input".to_string())],
                 return_type: NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
             },
         ]);
@@ -1845,6 +1927,13 @@ mod stdlib_types_drift_tests {
             assert_matches_registry::<crate::parser::std_lib::email::EMAIL_Server>("EMAIL_Server");
             assert_matches_registry::<crate::parser::std_lib::email::EMAIL_Attachment>("EMAIL_Attachment");
         }
+        #[cfg(feature = "game")]
+        {
+            assert_matches_registry::<crate::parser::std_lib::game::GAME_Config>("GAME_Config");
+            assert_matches_registry::<crate::parser::std_lib::game::GAME_Shape>("GAME_Shape");
+            assert_matches_registry::<crate::parser::std_lib::game::GAME_Frame>("GAME_Frame");
+            assert_matches_registry::<crate::parser::std_lib::game::GAME_Input>("GAME_Input");
+        }
         #[cfg(feature = "valkey")]
         assert_matches_registry::<crate::parser::std_lib::valkey::DB_Valkey>("DB_Valkey");
         #[cfg(feature = "websocket")]
@@ -1876,7 +1965,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

@@ -3110,12 +3110,12 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_safe_transpiles_identically_to_insert() {
+    fn test_import_transpiles_identically_to_import_dangerous() {
         // Sandboxing is a compile-time proof with zero runtime cost: a compliant
         // file must produce byte-identical Rust either way it is included.
         let trusted_side = "greeting:s = shout_greeting(`world`);\nprint(greeting);";
-        let via_insert = format!("insert(`tests/test_insert_safe_helper.nail`)\n{}", trusted_side);
-        let via_insert_safe = format!("insert_safe(`tests/test_insert_safe_helper.nail`)\n{}", trusted_side);
-        assert_eq!(transpile_source(&via_insert), transpile_source(&via_insert_safe));
+        let via_import_dangerous = format!("import_dangerous(`tests/test_import_helper.nail`)\n{}", trusted_side);
+        let via_import = format!("import(`tests/test_import_helper.nail`)\n{}", trusted_side);
+        assert_eq!(transpile_source(&via_import_dangerous), transpile_source(&via_import));
     }
 }

@@ -30,6 +30,8 @@ pub mod format;
 pub mod feed;
 pub mod finance;
 pub mod fs;
+#[cfg(feature = "game")]
+pub mod game;
 pub mod geo;
 pub mod hashmap;
 pub mod hex;

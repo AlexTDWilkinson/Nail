@@ -1,5 +1,5 @@
 // Test file insertion
-insert(`test_helper.nail`)
+import_dangerous(`test_helper.nail`)
 
 // Now use the inserted functions
 sum:i = add_numbers(5, 3);

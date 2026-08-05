@@ -824,81 +824,59 @@ user_input:s = safe(lib_io_readline(), handle_input_error);
 
 ## File Inclusion
 
-Nail supports compile-time file inclusion through the `insert()` keyword. This allows you to include the contents of one Nail file directly into another, as if the code was typed in place.
+Nail brings other files in at compile time through the `import()` keyword,
+which splices the file's contents in place as if the code was typed there.
+Imported code is sandboxed by default: it may only compute, never touch the
+world, and the compiler proves it. For your own trusted files there is
+`import_dangerous()`, which includes a file the same way but lets it do
+anything your own code can do.
+
+The default is the safe one on purpose. A library that only computes needs no
+trust and no explanation: you import it, the compiler proves it cannot phone
+home. A library that genuinely needs the network or the file system has to ask
+you for `import_dangerous`, and its documentation has to say why, before you
+have granted it anything.
 
 ### Syntax
 
 ```nail
-insert(`filename.nail`)
+import(`downloaded_library.nail`)
+import_dangerous(`your_own_helpers.nail`)
 ```
 
 ### Behavior
 
-- The `insert()` statement must appear at the beginning of a line (no indentation)
+Both forms include a file the same way:
+
+- The statement must appear at the beginning of a line (no indentation)
 - The file path is resolved relative to the current file's directory
-- The entire contents of the specified file are inserted at the location of the `insert()` statement
-- This happens at compile-time during lexical analysis
+- The entire contents of the specified file are spliced in at the location of
+  the statement, at compile time during lexical analysis
 - Circular includes are detected and prevented
+- There is no runtime cost, and the generated Rust is byte for byte identical
+  between the two forms. They differ only in what the compiler will prove
+  about the code
 
-### Example
+### The sandbox: what import proves
 
-```nail
-// math_helpers.nail
-f add(a:i, b:i):i {
-    r a + b;
-}
-
-f multiply(a:i, b:i):i {
-    r a * b;
-}
-```
+Everything from an imported file may only compute. The compiler guarantees it
+cannot phone home, read your disk or environment, spy on global state, or
+seize resources like stdout. This is Nail's supply chain answer: downloaded
+code is pasted in with `import`, and the guarantee comes from the compiler,
+not from the code's author.
 
 ```nail
-// main.nail
-insert(`math_helpers.nail`)
-
-result:i = add(5, 3);
-product:i = multiply(result, 2);
-print(product); // Outputs: 16
-```
-
-### Use Cases
-
-- Sharing common functions across multiple files
-- Organizing large programs into separate files
-- Building libraries of reusable code
-
-### Restrictions
-
-- Cannot include files from outside the project directory
-- File paths must be string literals (not variables)
-- Included files must contain valid Nail code
-- No conditional includes (includes always happen)
-
-### Sandboxed Inclusion: insert_safe
-
-`insert_safe()` includes a file exactly like `insert()`, with the same path
-resolution and the same circular include detection, but everything from that
-file is sandboxed: it may only compute, never touch the world. The compiler
-proves this at compile time. There is no runtime cost and the generated Rust
-is byte for byte identical to what plain `insert()` produces.
-
-This is Nail's supply chain answer. Downloaded code is pasted in with
-`insert_safe`, and the compiler guarantees it cannot phone home, read your
-disk or environment, spy on global state, or seize resources like stdout.
-
-```nail
-insert_safe(`downloaded_library.nail`)
+import(`downloaded_library.nail`)
 
 result:s = library_function(`input`);
 print(result);
 ```
 
-#### Rules for sandboxed files
+#### Rules for imported files
 
-1. **Only declarations at the top level.** A safe-inserted file may declare
+1. **Only declarations at the top level.** An imported file may declare
    functions, structs, enums, and constants. Any other top-level statement is
-   a compile error: your program decides when sandboxed code runs, the sandboxed
+   a compile error: your program decides when sandboxed code runs, the imported
    file never runs anything by itself.
 2. **Sandboxed code may only call computation.** Inside sandboxed functions and
    sandboxed constant initializers, standard library calls are checked against a
@@ -917,7 +895,7 @@ print(result);
    helper and that helper performs a network call, the program is rejected:
 
    ```nail
-   // downloaded.nail (included with insert_safe)
+   // downloaded.nail (brought in with import)
    f sandboxed_summary():s {
        r fetch_report(); // fetch_report is now reachable from sandboxed code
    }
@@ -925,20 +903,49 @@ print(result);
 
    ```nail
    // main.nail
-   insert_safe(`downloaded.nail`)
+   import(`downloaded.nail`)
 
    f fetch_report():s {
        // Rejected: reachable from sandboxed code, and http touches the machine
        r danger(http_download_file(`https://example.com/r`, `r.bin`));
    }
    ```
-4. **Nesting stays sandboxed.** A plain `insert()` inside a safe-inserted file
-   is sandboxed too, the whole subtree is. An `insert_safe()` nested deeper
-   simply stays sandboxed.
+4. **Nesting stays sandboxed.** An `import_dangerous()` inside an imported file
+   is sandboxed too, the whole subtree is. An `import()` nested deeper simply
+   stays sandboxed.
 
-If you trust a file and want it to touch the world, include it with plain
-`insert()`. The two forms differ only in what the compiler will prove about
-the code.
+### Trusted inclusion: import_dangerous
+
+`import_dangerous()` is for files you wrote yourself: splitting a large
+program across files, or sharing helpers between your own programs. The name
+is deliberately heavy. Reaching for it is how you say out loud that this file
+may touch the world.
+
+```nail
+// math_helpers.nail
+f add(a:i, b:i):i {
+    r a + b;
+}
+
+f multiply(a:i, b:i):i {
+    r a * b;
+}
+```
+
+```nail
+// main.nail
+import_dangerous(`math_helpers.nail`)
+
+result:i = add(5, 3);
+product:i = multiply(result, 2);
+print(product); // Outputs: 16
+```
+
+### Restrictions
+
+- File paths must be string literals (not variables)
+- Included files must contain valid Nail code
+- No conditional includes (includes always happen)
 
 ## Error Message Style Guide
 
@@ -1298,6 +1305,8 @@ through; `math_round_to_int` is the one that leaves the number line of floats.
 - `math_atan(value:f):f` - Arc tangent of a ratio
 - `math_atan2(y:f, x:f):f` - The angle to the point (x, y), from -pi to pi. **Use this, not `math_atan`, for angles** - a ratio alone cannot tell the second quadrant from the fourth
 - `math_sinh(value:f):f` / `math_cosh` / `math_tanh` - Hyperbolic functions
+- `math_asinh(value:f):f` - Inverse hyperbolic sine
+- `math_acosh(value:f):f!e` / `math_atanh(value:f):f!e` - The other inverses, erroring where no real answer exists (below 1.0, and at or outside -1.0..1.0)
 - `math_to_degrees(radians:f):f` / `math_to_radians(degrees:f):f` - Angle conversion
 - `math_log(value:f):f!e` / `math_log2` / `math_log10` - Logarithms; error at or below zero
 - `math_log_base(value:f, base:f):f!e` - Logarithm in a base of your choosing
