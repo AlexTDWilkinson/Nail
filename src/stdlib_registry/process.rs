@@ -72,5 +72,103 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "spawn" [Tokio] => "std_lib::process::spawn", () -> v,
             "Runs a block concurrently in the background (used via the spawn keyword).",
             "spawn { print(`background work`); }";
+        "process_open_browser" [Tokio] => "std_lib::process::open_browser", (url: s) -> (v!e),
+            "Opens a URL in the person's browser through the desktop's own opener. For local tools that want to show the page they just made.",
+            "danger(process_open_browser(`http://localhost:8080`));";
     }
+
+    let handle_parameter = || StdlibParameter { name: "process".to_string(), param_type: NailDataTypeDescriptor::Struct("PROCESS_Handle".to_string()), pass_by_reference: true };
+    let handle_import = || vec![("PROCESS_Handle", "nail::std_lib::process")];
+    let streaming_deps = || vec![CrateDependency::Tokio, CrateDependency::DashMap, CrateDependency::Uuid, CrateDependency::Serde];
+
+    m.insert("process_spawn", StdlibFunction {
+        rust_path: "std_lib::process::spawn_process".to_string(),
+        crate_deps: streaming_deps(),
+        struct_derives: vec![],
+        custom_type_imports: handle_import(),
+        module: StdlibModule::Process,
+        parameters: vec![nail_param!(command: s), nail_param!(arguments: [s])],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("PROCESS_Handle".to_string()))),
+        diverging: false,
+        description: "Starts a program and keeps it running - what process_run cannot do, because it collects everything at the end. Output streams out through process_next_line; process_wait collects the exit code.",
+        example: "ffmpeg:PROCESS_Handle = danger(process_spawn(`ffmpeg`, [`-i`, input_path, output_path]));",
+    });
+
+    m.insert("process_next_line", StdlibFunction {
+        rust_path: "std_lib::process::next_line".to_string(),
+        crate_deps: streaming_deps(),
+        struct_derives: vec![],
+        custom_type_imports: handle_import(),
+        module: StdlibModule::Process,
+        parameters: vec![handle_parameter()],
+        return_type: nail_type!((s!e)),
+        diverging: false,
+        description: "The next line the process printed, stdout and stderr together in arrival order. Waits for one if none is ready; an error means the output is over. The shape of a tail loop is: ask for lines with safe(), stop on the error.",
+        example: "line:s = danger(process_next_line(ffmpeg));",
+    });
+
+    m.insert("process_write_stdin", StdlibFunction {
+        rust_path: "std_lib::process::write_stdin".to_string(),
+        crate_deps: streaming_deps(),
+        struct_derives: vec![],
+        custom_type_imports: handle_import(),
+        module: StdlibModule::Process,
+        parameters: vec![handle_parameter(), nail_param!(text: s)],
+        return_type: nail_type!((v!e)),
+        diverging: false,
+        description: "Writes text to the process's stdin, exactly as given - add a newline yourself when the program reads lines.",
+        example: "danger(process_write_stdin(repl, `help\\n`));",
+    });
+
+    m.insert("process_close_stdin", StdlibFunction {
+        rust_path: "std_lib::process::close_stdin".to_string(),
+        crate_deps: streaming_deps(),
+        struct_derives: vec![],
+        custom_type_imports: handle_import(),
+        module: StdlibModule::Process,
+        parameters: vec![handle_parameter()],
+        return_type: nail_type!((v!e)),
+        diverging: false,
+        description: "Closes the process's stdin - the end-of-input many programs wait for before finishing.",
+        example: "danger(process_close_stdin(sort));",
+    });
+
+    m.insert("process_is_running", StdlibFunction {
+        rust_path: "std_lib::process::is_running".to_string(),
+        crate_deps: streaming_deps(),
+        struct_derives: vec![],
+        custom_type_imports: handle_import(),
+        module: StdlibModule::Process,
+        parameters: vec![handle_parameter()],
+        return_type: nail_type!((b!e)),
+        diverging: false,
+        description: "Whether the process is still going.",
+        example: "alive:b = danger(process_is_running(ffmpeg));",
+    });
+
+    m.insert("process_wait", StdlibFunction {
+        rust_path: "std_lib::process::wait_process".to_string(),
+        crate_deps: streaming_deps(),
+        struct_derives: vec![],
+        custom_type_imports: handle_import(),
+        module: StdlibModule::Process,
+        parameters: vec![handle_parameter()],
+        return_type: nail_type!((i!e)),
+        diverging: false,
+        description: "Waits for the process to end and returns its exit code. Read the lines you want first - waiting forgets the handle, and any unread output with it.",
+        example: "code:i = danger(process_wait(ffmpeg));",
+    });
+
+    m.insert("process_kill", StdlibFunction {
+        rust_path: "std_lib::process::kill_process".to_string(),
+        crate_deps: streaming_deps(),
+        struct_derives: vec![],
+        custom_type_imports: handle_import(),
+        module: StdlibModule::Process,
+        parameters: vec![handle_parameter()],
+        return_type: nail_type!((v!e)),
+        diverging: false,
+        description: "Stops the process now and forgets its handle.",
+        example: "danger(process_kill(stuck_job));",
+    });
 }

@@ -1,8 +1,8 @@
 // E2E: continue skips indexes divisible by three, break at eight
 loop idx {
     if {
-        idx >= 8 => { break; },
-        idx % 3 == 0 => { continue; },
-        else => { print(idx); }
+        idx >= 8 -> { break; },
+        idx % 3 == 0 -> { continue; },
+        else -> { print(idx); }
     }
 }

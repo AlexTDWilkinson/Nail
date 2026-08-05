@@ -43,5 +43,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "validate_json" [SerdeJson] => "std_lib::validate::json", (text: (&s)) -> b,
             "Returns true if the text is a JSON document, answered by parsing it.",
             "readable:b = validate_json(request.body);";
+        "validate_schema" [JsonSchema, SerdeJson] => "std_lib::validate::schema", (json: s, schema: s) -> ([s]!e),
+            "Checks a JSON document against a JSON Schema - types, ranges, required fields, formats. The answer is the list of problems with the path where each sits; an empty list means the document passes. The error case is a schema or document that does not even parse.",
+            "problems:a:s = danger(validate_schema(request.body, order_schema));";
     }
 }

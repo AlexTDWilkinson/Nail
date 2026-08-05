@@ -917,3 +917,38 @@ mod watch_tests {
         assert!(watch_start("/tmp/nail_no_such_directory_to_watch".to_string()).await.is_err());
     }
 }
+
+/// Read a file that is not UTF-8 - the windows-1252 CSV a bank exports, the
+/// shift_jis page an old site serves. The label is WHATWG style: try
+/// `windows-1252`, `shift_jis`, `utf-16le`, `euc-kr`.
+pub async fn read_with_encoding(path: String, encoding_label: String) -> Result<String, String> {
+    let encoding = encoding_rs::Encoding::for_label(encoding_label.trim().as_bytes())
+        .ok_or_else(|| format!("fs_read_with_encoding: `{}` is not an encoding label - try `windows-1252`, `shift_jis` or `utf-16le`", encoding_label.trim()))?;
+    let bytes = tokio::fs::read(&path).await.map_err(|e| format!("fs_read_with_encoding: could not read `{}`: {}", path, e))?;
+    let (text, _, had_errors) = encoding.decode(&bytes);
+    if had_errors {
+        return Err(format!("fs_read_with_encoding: `{}` does not decode cleanly as {}", path, encoding.name()));
+    }
+    return Ok(text.into_owned());
+}
+
+#[cfg(test)]
+mod encoding_tests {
+    use super::read_with_encoding;
+
+    #[tokio::test]
+    async fn a_windows_1252_file_reads_as_text() {
+        let path = std::env::temp_dir().join("nail_encoding_test.csv");
+        // `café` with the é as windows-1252 byte 0xE9, which is not valid UTF-8.
+        tokio::fs::write(&path, [b'c', b'a', b'f', 0xE9]).await.unwrap();
+        let text = read_with_encoding(path.to_string_lossy().to_string(), "windows-1252".to_string()).await.unwrap();
+        assert_eq!(text, "café");
+        tokio::fs::remove_file(&path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_made_up_label_is_refused() {
+        let failure = read_with_encoding("/tmp/whatever".to_string(), "klingon-8".to_string()).await.unwrap_err();
+        assert!(failure.contains("not an encoding label"));
+    }
+}

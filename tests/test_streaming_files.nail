@@ -11,12 +11,12 @@ ERROR still full
 
 // A fold over the lines is reduce pointed at a file - nothing to open or close.
 f count_errors(total:i, line:s):i {
-    r if { string_contains(line, `ERROR`) => { r total + 1; }, else => { r total; } };
+    r if { string_contains(line, `ERROR`) -> { r total + 1; }, else -> { r total; } };
 }
 test_assert_equal_int(danger(fs_reduce_lines(log_file, 0, count_errors)), 2, `two errors in the log`);
 
 f longest_line(best:i, line:s):i {
-    r if { string_length(line) > best => { r string_length(line); }, else => { r best; } };
+    r if { string_length(line) > best -> { r string_length(line); }, else -> { r best; } };
 }
 test_assert_equal_int(danger(fs_reduce_lines(log_file, 0, longest_line)), 16, `the longest line`);
 

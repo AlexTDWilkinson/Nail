@@ -1,8 +1,8 @@
 pub static IF_STATEMENT: &str = r#"
   if x:i {
-     x:i >= 0:i => { return 4; },
-     x:i < 123:i => { return 5; },
-     else => { return 6; },
+     x:i >= 0:i -> { return 4; },
+     x:i < 123:i -> { return 5; },
+     else -> { return 6; },
  };
  "#;
 

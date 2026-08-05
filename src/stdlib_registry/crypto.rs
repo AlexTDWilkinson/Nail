@@ -49,5 +49,26 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "crypto_hash_file_sha256" [Sha2, Tokio] => "std_lib::crypto::hash_file_sha256", (path: s) -> (s!e),
             "The SHA-256 of a file's contents as hex, read in blocks so the file never has to fit in memory. The checksum a download is verified against.",
             "digest:s = danger(crypto_hash_file_sha256(`release.tar.gz`));";
+        "crypto_crc32" [Crc32Fast] => "std_lib::crypto::crc32", (text: s) -> s,
+            "The CRC32 of text as 8 hex digits - the fast checksum zip and png use. A checksum catches accidents, not tampering; for tampering use a hash.",
+            "checksum:s = crypto_crc32(payload);";
+        "crypto_hash_sha1" [Sha1] => "std_lib::crypto::hash_sha1", (input: s) -> s,
+            "The SHA-1 of text as hex. Broken for new designs, still what git objects, OAuth 1 and older webhook signatures speak.",
+            "digest:s = crypto_hash_sha1(content);";
+        "crypto_hmac_sha1" [Sha1, Hmac] => "std_lib::crypto::hmac_sha1", (message: s, key: s) -> s,
+            "HMAC-SHA1 of a message as hex, for the older signature schemes that still ask for it. New designs use crypto_hmac_sha256.",
+            "signature:s = crypto_hmac_sha1(payload, secret);";
+        "crypto_hash_blake3" [Blake3] => "std_lib::crypto::hash_blake3", (input: s) -> s,
+            "The BLAKE3 of text as hex - the modern hash that is faster than the SHA family at the same strength. Good for content addressing and dedup keys.",
+            "key:s = crypto_hash_blake3(document);";
+        "crypto_totp_now" [Sha1, Hmac] => "std_lib::crypto::totp_now", (secret_base32: s) -> (s!e),
+            "The six-digit authenticator code a base32 secret makes right now, RFC 6238 - the same one the phone app shows.",
+            "code:s = danger(crypto_totp_now(user_secret));";
+        "crypto_totp_at" [Sha1, Hmac] => "std_lib::crypto::totp_at", (secret_base32: s, timestamp: i) -> (s!e),
+            "The code a secret made at a particular moment - what tests and audits ask for.",
+            "code:s = danger(crypto_totp_at(user_secret, moment));";
+        "crypto_totp_verify" [Sha1, Hmac] => "std_lib::crypto::totp_verify", (secret_base32: s, code: s) -> (b!e),
+            "Whether a code someone typed is the secret's current one. One clock step of drift on either side is forgiven, since phones and servers disagree by seconds.",
+            "valid:b = danger(crypto_totp_verify(user_secret, typed_code));";
     }
 }

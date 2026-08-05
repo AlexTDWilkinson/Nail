@@ -152,10 +152,10 @@ f compare_prices(product_id:s):PriceComparison {
     // Determine best price
     best_price:f = float_min(float_min(amazon, ebay), walmart);
     best_vendor:s = if {
-        best_price == amazon => { `Amazon`; },
-        best_price == ebay => { `eBay`; },
-        best_price == walmart => { `Walmart`; },
-        else => { `Unknown`; }
+        best_price == amazon -> { `Amazon`; },
+        best_price == ebay -> { `eBay`; },
+        best_price == walmart -> { `Walmart`; },
+        else -> { `Unknown`; }
     };
     
     r PriceComparison {

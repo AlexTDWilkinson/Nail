@@ -1,8 +1,8 @@
 // E2E: danger unwraps success value from result-returning function
 f half_of(value:i):i!e {
     if {
-        value % 2 == 0 => { r value / 2; },
-        else => { r e(`odd number`); }
+        value % 2 == 0 -> { r value / 2; },
+        else -> { r e(`odd number`); }
     }
 }
 print(danger(half_of(10)));

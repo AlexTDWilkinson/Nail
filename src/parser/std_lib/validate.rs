@@ -339,3 +339,62 @@ mod tests {
         assert!(!json(&text("not json")));
     }
 }
+
+/// Check a JSON document against a JSON Schema. The answer is the list of
+/// problems, one message each with the path where it sits - an empty list
+/// means the document passes. The error case is for a schema or document that
+/// does not even parse.
+#[cfg(feature = "jsonschema")]
+pub fn schema(json_text: String, schema_text: String) -> Result<Vec<String>, String> {
+    let schema_value: serde_json::Value = serde_json::from_str(&schema_text).map_err(|e| format!("validate_schema: the schema is not JSON: {}", e))?;
+    let instance: serde_json::Value = serde_json::from_str(&json_text).map_err(|e| format!("validate_schema: the document is not JSON: {}", e))?;
+    let compiled = jsonschema::JSONSchema::compile(&schema_value).map_err(|e| format!("validate_schema: the schema is not a JSON Schema: {}", e))?;
+    let problems = match compiled.validate(&instance) {
+        Ok(()) => Vec::new(),
+        Err(failures) => failures
+            .map(|failure| {
+                let place = failure.instance_path.to_string();
+                if place.is_empty() {
+                    failure.to_string()
+                } else {
+                    format!("{}: {}", place, failure)
+                }
+            })
+            .collect(),
+    };
+    return Ok(problems);
+}
+
+#[cfg(all(test, feature = "jsonschema"))]
+mod schema_tests {
+    use super::schema;
+
+    const PERSON: &str = r#"{
+        "type": "object",
+        "required": ["name", "age"],
+        "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "age": {"type": "integer", "minimum": 0}
+        }
+    }"#;
+
+    #[test]
+    fn a_good_document_has_no_problems() {
+        let problems = schema(r#"{"name": "Ada", "age": 36}"#.to_string(), PERSON.to_string()).unwrap();
+        assert!(problems.is_empty());
+    }
+
+    #[test]
+    fn each_failure_names_its_place() {
+        let problems = schema(r#"{"name": "", "age": -3}"#.to_string(), PERSON.to_string()).unwrap();
+        assert_eq!(problems.len(), 2);
+        assert!(problems.iter().any(|p| p.contains("/name")));
+        assert!(problems.iter().any(|p| p.contains("/age")));
+    }
+
+    #[test]
+    fn broken_inputs_are_errors_not_problem_lists() {
+        assert!(schema("not json".to_string(), PERSON.to_string()).unwrap_err().contains("document is not JSON"));
+        assert!(schema("{}".to_string(), "not json".to_string()).unwrap_err().contains("schema is not JSON"));
+    }
+}

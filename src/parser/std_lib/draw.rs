@@ -356,3 +356,27 @@ mod tests {
         assert!(document.contains("0,70"), "the first point plots upward: {}", document);
     }
 }
+
+/// A QR code of the text as an SVG document, black on white, sized to scale
+/// cleanly. Put a URL in it and a phone camera opens the page.
+pub fn qr_svg(text: String) -> Result<String, String> {
+    if text.is_empty() {
+        return Err("draw_qr_svg: there is nothing to encode in an empty string".to_string());
+    }
+    let code = qrcode::QrCode::new(text.as_bytes()).map_err(|e| format!("draw_qr_svg: could not build the code: {}", e))?;
+    let document = code.render::<qrcode::render::svg::Color>().min_dimensions(240, 240).build();
+    return Ok(document);
+}
+
+#[cfg(test)]
+mod qr_tests {
+    use super::qr_svg;
+
+    #[test]
+    fn a_url_becomes_an_svg_document() {
+        let document = qr_svg("https://nail-lang.org".to_string()).unwrap();
+        assert!(document.starts_with("<?xml"));
+        assert!(document.contains("<svg"));
+        assert!(qr_svg("".to_string()).unwrap_err().contains("nothing to encode"));
+    }
+}

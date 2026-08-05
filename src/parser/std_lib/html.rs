@@ -226,3 +226,28 @@ mod tests {
         assert_eq!(links(String::new()).expect("a document"), Vec::<String>::new());
     }
 }
+
+/// Clean untrusted HTML so it is safe to serve: scripts, event handlers and
+/// javascript: links are removed, ordinary formatting is kept. Anything a
+/// person typed must pass through here (or markdown_to_html's output of it)
+/// before being put in a page.
+pub fn sanitize(dirty: String) -> String {
+    return ammonia::clean(&dirty);
+}
+
+#[cfg(test)]
+mod sanitize_tests {
+    use super::sanitize;
+
+    #[test]
+    fn scripts_die_and_formatting_lives() {
+        let cleaned = sanitize("<p>hi <b>there</b><script>alert('xss')</script></p>".to_string());
+        assert_eq!(cleaned, "<p>hi <b>there</b></p>");
+        let cleaned = sanitize(r#"<a href="javascript:alert(1)" onclick="x()">link</a>"#.to_string());
+        assert!(!cleaned.contains("javascript:"));
+        assert!(!cleaned.contains("onclick"));
+        assert!(cleaned.contains("link"));
+        let cleaned = sanitize(r#"<img src=x onerror=alert(1)>"#.to_string());
+        assert!(!cleaned.contains("onerror"));
+    }
+}

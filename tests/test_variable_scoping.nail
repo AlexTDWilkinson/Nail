@@ -5,11 +5,11 @@ outer_value:i = 100;
 print(outer_value);
 
 result:i = if {
-    true => {
+    true -> {
         inner_value:i = 200;
         r inner_value;
     },
-    else => { r outer_value; }
+    else -> { r outer_value; }
 };
 print(result);
 

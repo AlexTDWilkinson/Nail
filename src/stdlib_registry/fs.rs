@@ -194,4 +194,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         description: "Ends a watch and forgets its handle. Stopping one twice is not an error.",
         example: "danger(fs_watch_stop(watcher));",
     });
+
+    simple_fns! { m, Fs:
+        "fs_read_with_encoding" [EncodingRs, Tokio] => "std_lib::fs::read_with_encoding", (path: s, encoding_label: s) -> (s!e),
+            "Reads a file that is not UTF-8 - the windows-1252 CSV a bank exports, the shift_jis page an old site serves. Labels are WHATWG style: `windows-1252`, `shift_jis`, `utf-16le`, `euc-kr`.",
+            "text:s = danger(fs_read_with_encoding(`export.csv`, `windows-1252`));";
+    }
 }

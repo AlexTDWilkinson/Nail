@@ -1,4 +1,4 @@
 // E2E: loop idx accumulating longer output each iteration
 loop idx {
-    if { idx >= 3 => { break; }, else => { print(string_repeat(`ab`, idx + 1)); } }
+    if { idx >= 3 -> { break; }, else -> { print(string_repeat(`ab`, idx + 1)); } }
 }

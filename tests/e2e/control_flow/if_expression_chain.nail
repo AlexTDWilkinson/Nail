@@ -1,10 +1,10 @@
 // E2E: if expression with multiple branches
 f letter_grade(score:i):s {
     r if {
-        score >= 90 => { r `A`; },
-        score >= 80 => { r `B`; },
-        score >= 70 => { r `C`; },
-        else => { r `F`; }
+        score >= 90 -> { r `A`; },
+        score >= 80 -> { r `B`; },
+        score >= 70 -> { r `C`; },
+        else -> { r `F`; }
     };
 }
 print(letter_grade(95));

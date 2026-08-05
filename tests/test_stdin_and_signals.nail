@@ -10,8 +10,8 @@ f serve():v {
 f read_input():s {
     piped:b = io_is_piped();
     r if {
-        piped => { r danger(io_read_all()); },
-        else => { r danger(io_read_line_prompt(`name: `)); }
+        piped -> { r danger(io_read_all()); },
+        else -> { r danger(io_read_line_prompt(`name: `)); }
     };
 }
 

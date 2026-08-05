@@ -91,8 +91,11 @@ mod archive;
 mod args;
 mod array;
 mod audio;
+mod base32;
 mod base64;
+mod binary;
 mod bits;
+mod cache;
 mod chart;
 mod code;
 mod compress;
@@ -100,6 +103,7 @@ mod crypto;
 mod csv;
 mod database;
 mod datafusion;
+mod diff;
 mod draw;
 mod email;
 mod env;
@@ -110,6 +114,7 @@ mod format;
 mod fs;
 mod hashmap;
 mod hex;
+mod i18n;
 mod html;
 mod http;
 mod image;
@@ -132,11 +137,14 @@ mod postgres;
 mod print;
 mod process;
 mod rand;
+mod redis;
 mod regex;
 mod semver;
+mod sched;
 mod stats;
 mod stdlib;
 mod string;
+mod sys;
 mod template;
 mod term;
 mod test;
@@ -234,6 +242,23 @@ crate_dependencies! {
     Image => { cargo: "image = { version = \"0.25\", default-features = false, features = [\"png\", \"jpeg\", \"gif\", \"webp\", \"bmp\", \"tiff\"] }", name: "image", import: "use image;", feature: "image" },
     Scraper => { cargo: "scraper = \"0.20\"", name: "scraper", import: "use scraper;", feature: "html" },
     Lettre => { cargo: "lettre = { version = \"0.11\", default-features = false, features = [\"smtp-transport\", \"tokio1-rustls-tls\", \"builder\"] }", name: "lettre", import: "use lettre;", feature: "email" },
+    Crc32Fast => { cargo: "crc32fast = \"1.4\"", name: "crc32fast", import: "use crc32fast;" },
+    Sha1 => { cargo: "sha1 = \"0.10\"", name: "sha1", import: "use sha1;" },
+    Blake3 => { cargo: "blake3 = \"1.5\"", name: "blake3", import: "use blake3;" },
+    UnicodeSegmentation => { cargo: "unicode-segmentation = \"1.11\"", name: "unicode-segmentation", import: "use unicode_segmentation;" },
+    UnicodeNormalization => { cargo: "unicode-normalization = \"0.1\"", name: "unicode-normalization", import: "use unicode_normalization;" },
+    Dirs => { cargo: "dirs = \"5\"", name: "dirs", import: "use dirs;" },
+    Diffy => { cargo: "diffy = \"0.4\"", name: "diffy", import: "use diffy;" },
+    QrCode => { cargo: "qrcode = { version = \"0.14\", default-features = false, features = [\"svg\"] }", name: "qrcode", import: "use qrcode;" },
+    EncodingRs => { cargo: "encoding_rs = \"0.8\"", name: "encoding_rs", import: "use encoding_rs;" },
+    Zstd => { cargo: "zstd = \"0.13\"", name: "zstd", import: "use zstd;", feature: "compress" },
+    Brotli => { cargo: "brotli = \"6\"", name: "brotli", import: "use brotli;", feature: "compress" },
+    JsonSchema => { cargo: "jsonschema = { version = \"0.18\", default-features = false }", name: "jsonschema", import: "use jsonschema;", feature: "jsonschema" },
+    ChronoTz => { cargo: "chrono-tz = \"0.9\"", name: "chrono-tz", import: "use chrono_tz;", feature: "timezones" },
+    SysInfo => { cargo: "sysinfo = \"0.31\"", name: "sysinfo", import: "use sysinfo;", feature: "sys" },
+    Ammonia => { cargo: "ammonia = \"4\"", name: "ammonia", import: "use ammonia;", feature: "html" },
+    TokioTungstenite => { cargo: "tokio-tungstenite = { version = \"0.23\", features = [\"rustls-tls-webpki-roots\"] }", name: "tokio-tungstenite", import: "use tokio_tungstenite;", feature: "websocket" },
+    Redis => { cargo: "redis = { version = \"0.27\", features = [\"tokio-comp\"] }", name: "redis", import: "use redis;", feature: "redis" },
 }
 
 /// Defines the StdlibModule enum, its runtime module path, the namespace
@@ -242,7 +267,7 @@ crate_dependencies! {
 /// space, so `csv_open` and `CSV_Options` say which library they belong to
 /// without an import list.
 macro_rules! stdlib_modules {
-    ($($variant:ident => $path:literal, $prefix:literal, $display:literal),* $(,)?) => {
+    ($($variant:ident => $path:literal, $prefix:literal),* $(,)?) => {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub enum StdlibModule {
             $($variant,)*
@@ -260,8 +285,17 @@ macro_rules! stdlib_modules {
 
             /// What the module is called anywhere a person reads it - the IDE's
             /// library browser, the website's function list, documentation.
+            /// It is the namespace the programmer actually types: the function
+            /// prefix up to its first underscore, so `db_`, `db_postgres_` and
+            /// `db_datafusion_` all read `db`. Derived rather than written by
+            /// hand so the name a listing shows can never drift from the name
+            /// a program calls.
             pub fn display_name(&self) -> &'static str {
-                match self { $(StdlibModule::$variant => $display,)* }
+                let prefix = self.name_prefix();
+                match prefix.split_once('_') {
+                    Some((namespace, _)) => namespace,
+                    None => prefix,
+                }
             }
 
             pub fn all() -> &'static [StdlibModule] {
@@ -272,67 +306,75 @@ macro_rules! stdlib_modules {
 }
 
 stdlib_modules! {
-    Http => "std_lib::http", "http_", "HTTP",
-    Fs => "std_lib::fs", "fs_", "File System",
-    Json => "std_lib::json", "json_", "JSON",
-    Toml => "std_lib::toml", "toml_", "TOML",
-    Yaml => "std_lib::yaml", "yaml_", "YAML",
-    Xml => "std_lib::xml", "xml_", "XML",
-    Feed => "std_lib::feed", "feed_", "Feeds",
-    Pdf => "std_lib::pdf", "pdf_", "PDFs",
-    Xlsx => "std_lib::xlsx", "xlsx_", "Spreadsheets",
-    String => "std_lib::string", "string_", "Strings",
-    Int => "std_lib::int", "int_", "Integers",
-    Float => "std_lib::float", "float_", "Floats",
-    Format => "std_lib::format", "format_", "Formatting Numbers for People",
-    Array => "std_lib::array", "array_", "Arrays",
-    Math => "std_lib::math", "math_", "Math",
-    Linalg => "std_lib::linalg", "linalg_", "Vectors and Matrices",
-    Money => "std_lib::money", "money_", "Money",
-    Stats => "std_lib::stats", "stats_", "Statistics",
-    Semver => "std_lib::semver", "semver_", "Version Numbers",
-    Ml => "std_lib::ml", "ml_", "Machine Learning",
-    Bits => "std_lib::bits", "bits_", "Bits",
-    Rand => "std_lib::rand", "rand_", "Randomness",
-    Time => "std_lib::time", "time_", "Time",
-    Env => "std_lib::env", "env_", "Environment",
-    Process => "std_lib::process", "process_", "Processes",
-    Path => "std_lib::path", "path_", "Paths",
-    Error => "std_lib::error", "error_", "Errors",
-    Panic => "std_lib::panic", "panic_", "Panics",
-    HashMap => "std_lib::hashmap", "hashmap_", "Hashmaps",
-    IO => "std_lib::io", "io_", "Input and Output",
-    Print => "std_lib::print", "print", "Printing",
-    Log => "std_lib::log", "log_", "Logging",
-    Term => "std_lib::term", "term_", "Terminals",
-    Tui => "std_lib::tui", "tui_", "Terminal Interfaces",
-    Test => "std_lib::test", "test_", "Testing",
-    Html => "std_lib::html", "html_", "Reading HTML",
-    Markdown => "std_lib::markdown", "markdown_", "Markdown",
-    Mime => "std_lib::mime", "mime_", "Media Types",
-    Template => "std_lib::template", "template_", "Templates",
-    Draw => "std_lib::draw", "draw_", "Drawing",
-    Image => "std_lib::image", "image_", "Pictures",
-    Chart => "std_lib::chart", "chart_", "Charts",
-    Audio => "std_lib::audio", "audio_", "Audio",
-    Code => "std_lib::code", "code_", "Nail Source Code",
-    Crypto => "std_lib::crypto", "crypto_", "Crypto",
-    Email => "std_lib::email", "email_", "Email",
-    Jwt => "std_lib::jwt", "jwt_", "Signed Tokens",
-    Validate => "std_lib::validate", "validate_", "Validation",
-    Regex => "std_lib::regex", "regex_", "Regular Expressions",
-    Args => "std_lib::args", "args_", "Command Line Arguments",
-    Url => "std_lib::url", "url_", "URLs",
-    Base64 => "std_lib::base64", "base64_", "Base64",
-    Hex => "std_lib::hex", "hex_", "Hex",
-    Csv => "std_lib::csv", "csv_", "CSV",
-    Compress => "std_lib::compress", "compress_", "Compression",
-    Archive => "std_lib::archive", "archive_", "Archives",
-    Net => "std_lib::net", "net_", "Networks",
-    Database => "std_lib::database", "db_", "Databases",
-    DataFusion => "std_lib::datafusion", "db_datafusion_", "DataFusion",
-    Postgres => "std_lib::postgres", "db_postgres_", "Postgres",
-    Stdlib => "std_lib::stdlib", "stdlib_", "The Standard Library Itself",
+    Http => "std_lib::http", "http_",
+    Fs => "std_lib::fs", "fs_",
+    Json => "std_lib::json", "json_",
+    Toml => "std_lib::toml", "toml_",
+    Yaml => "std_lib::yaml", "yaml_",
+    Xml => "std_lib::xml", "xml_",
+    Feed => "std_lib::feed", "feed_",
+    Pdf => "std_lib::pdf", "pdf_",
+    Xlsx => "std_lib::xlsx", "xlsx_",
+    String => "std_lib::string", "string_",
+    Int => "std_lib::int", "int_",
+    Float => "std_lib::float", "float_",
+    Format => "std_lib::format", "format_",
+    Array => "std_lib::array", "array_",
+    Math => "std_lib::math", "math_",
+    Linalg => "std_lib::linalg", "linalg_",
+    Money => "std_lib::money", "money_",
+    Stats => "std_lib::stats", "stats_",
+    Semver => "std_lib::semver", "semver_",
+    Ml => "std_lib::ml", "ml_",
+    Bits => "std_lib::bits", "bits_",
+    Rand => "std_lib::rand", "rand_",
+    Time => "std_lib::time", "time_",
+    Env => "std_lib::env", "env_",
+    Sys => "std_lib::sys", "sys_",
+    Sched => "std_lib::sched", "sched_",
+    I18n => "std_lib::i18n", "i18n_",
+    Process => "std_lib::process", "process_",
+    Path => "std_lib::path", "path_",
+    Error => "std_lib::error", "error_",
+    Panic => "std_lib::panic", "panic_",
+    HashMap => "std_lib::hashmap", "hashmap_",
+    IO => "std_lib::io", "io_",
+    Print => "std_lib::print", "print",
+    Log => "std_lib::log", "log_",
+    Term => "std_lib::term", "term_",
+    Tui => "std_lib::tui", "tui_",
+    Test => "std_lib::test", "test_",
+    Html => "std_lib::html", "html_",
+    Markdown => "std_lib::markdown", "markdown_",
+    Mime => "std_lib::mime", "mime_",
+    Template => "std_lib::template", "template_",
+    Draw => "std_lib::draw", "draw_",
+    Image => "std_lib::image", "image_",
+    Chart => "std_lib::chart", "chart_",
+    Audio => "std_lib::audio", "audio_",
+    Code => "std_lib::code", "code_",
+    Crypto => "std_lib::crypto", "crypto_",
+    Email => "std_lib::email", "email_",
+    Jwt => "std_lib::jwt", "jwt_",
+    Validate => "std_lib::validate", "validate_",
+    Regex => "std_lib::regex", "regex_",
+    Args => "std_lib::args", "args_",
+    Url => "std_lib::url", "url_",
+    Diff => "std_lib::diff", "diff_",
+    Base64 => "std_lib::base64", "base64_",
+    Base32 => "std_lib::base32", "base32_",
+    Hex => "std_lib::hex", "hex_",
+    Binary => "std_lib::binary", "binary_",
+    Cache => "std_lib::cache", "cache_",
+    Csv => "std_lib::csv", "csv_",
+    Compress => "std_lib::compress", "compress_",
+    Archive => "std_lib::archive", "archive_",
+    Net => "std_lib::net", "net_",
+    Database => "std_lib::database", "db_",
+    DataFusion => "std_lib::datafusion", "db_datafusion_",
+    Postgres => "std_lib::postgres", "db_postgres_",
+    Redis => "std_lib::redis", "db_redis_",
+    Stdlib => "std_lib::stdlib", "stdlib_",
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -402,11 +444,15 @@ lazy_static! {
         bits::register(&mut m);
         chart::register(&mut m);
         code::register(&mut m);
+        base32::register(&mut m);
+        binary::register(&mut m);
+        cache::register(&mut m);
         compress::register(&mut m);
         crypto::register(&mut m);
         csv::register(&mut m);
         database::register(&mut m);
         datafusion::register(&mut m);
+        diff::register(&mut m);
         draw::register(&mut m);
         email::register(&mut m);
         env::register(&mut m);
@@ -417,6 +463,7 @@ lazy_static! {
         fs::register(&mut m);
         hashmap::register(&mut m);
         hex::register(&mut m);
+        i18n::register(&mut m);
         html::register(&mut m);
         http::register(&mut m);
         image::register(&mut m);
@@ -439,11 +486,14 @@ lazy_static! {
         print::register(&mut m);
         process::register(&mut m);
         rand::register(&mut m);
+        redis::register(&mut m);
         regex::register(&mut m);
         semver::register(&mut m);
+        sched::register(&mut m);
         stats::register(&mut m);
         stdlib::register(&mut m);
         string::register(&mut m);
+        sys::register(&mut m);
         template::register(&mut m);
         term::register(&mut m);
         test::register(&mut m);
@@ -523,7 +573,24 @@ pub fn get_iterator_form(name: &str) -> Option<&'static str> {
 /// Functions whose Rust implementations are synchronous even though their
 /// module is otherwise async, so no `.await` may be emitted for them.
 const SYNC_STDLIB_FUNCTIONS: &[&str] =
-    &["http_path_matches", "http_path_params", "http_default_cookie", "http_build_cookie", "http_parse_cookies", "http_default_config", "http_default_retry", "http_part_text", "http_part_file", "process_default_options"];
+    &[
+        "http_path_matches",
+        "http_path_params",
+        "http_default_cookie",
+        "http_build_cookie",
+        "http_parse_cookies",
+        "http_default_config",
+        "http_default_retry",
+        "http_part_text",
+        "http_part_file",
+        "process_default_options",
+        "net_ip_in_cidr",
+        "net_ip_is_private",
+        "net_ip_is_loopback",
+        "net_ip_version",
+        "net_ip_to_int",
+        "net_ip_from_int",
+    ];
 
 /// Stdlib functions whose second argument is a Nail function producing one key
 /// per element - `array_sort_by(books, book_year)` and the rest of the `_by`
@@ -563,7 +630,7 @@ pub fn file_fold(name: &str) -> Option<FileFold> {
 
 pub fn is_stdlib_fn_async(name: &str) -> bool {
     // Per-function overrides of the module default
-    if name == "time_sleep" || name == "tui_run" || name == "crypto_hash_file_sha256" || name == "csv_write" {
+    if name == "time_sleep" || name == "tui_run" || name == "crypto_hash_file_sha256" || name == "csv_write" || name == "sys_cpu_usage_percent" || name == "sys_process_cpu_percent" {
         return true;
     }
     if SYNC_STDLIB_FUNCTIONS.contains(&name) {
@@ -571,7 +638,7 @@ pub fn is_stdlib_fn_async(name: &str) -> bool {
     }
     matches!(
         get_stdlib_function(name).map(|f| &f.module),
-        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx)
+        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx | StdlibModule::Sched | StdlibModule::Redis)
     )
 }
 
@@ -724,6 +791,62 @@ lazy_static! {
                 let mut fields = HashMap::new();
                 fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
                 fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // PROCESS_Handle struct
+        m.insert("PROCESS_Handle", StdlibTypeInfo {
+            name: "PROCESS_Handle".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("command".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // HTTP_Websocket struct
+        m.insert("HTTP_Websocket", StdlibTypeInfo {
+            name: "HTTP_Websocket".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("url".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // SCHED_Job struct
+        m.insert("SCHED_Job", StdlibTypeInfo {
+            name: "SCHED_Job".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("cron".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // DB_Redis struct
+        m.insert("DB_Redis", StdlibTypeInfo {
+            name: "DB_Redis".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("url".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // EMAIL_Attachment struct
+        m.insert("EMAIL_Attachment", StdlibTypeInfo {
+            name: "EMAIL_Attachment".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("file_name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("mime_type".to_string(), NailDataTypeDescriptor::String);
                 fields
             }
         });
@@ -1014,6 +1137,10 @@ lazy_static! {
                 fields.insert("max_body_bytes".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("timeout_seconds".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("state".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("cors_origins".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("security_headers".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("rate_limit_per_minute".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("rate_limit_message".to_string(), NailDataTypeDescriptor::String);
                 fields
             }
         });
@@ -1199,6 +1326,28 @@ lazy_static! {
                 return_type: NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
             },
         ]);
+        // Both schedulers dispatch to the same handle_job, so one function
+        // hears every job and branches on the name it is given.
+        m.insert("sched_run", vec![HandlerCallback {
+            function_name: "handle_job",
+            parameter_types: vec![NailDataTypeDescriptor::String],
+            return_type: NailDataTypeDescriptor::Void,
+        }]);
+        m.insert("sched_every", vec![HandlerCallback {
+            function_name: "handle_job",
+            parameter_types: vec![NailDataTypeDescriptor::String],
+            return_type: NailDataTypeDescriptor::Void,
+        }]);
+        m.insert("net_tcp_serve", vec![HandlerCallback {
+            function_name: "handle_line",
+            parameter_types: vec![NailDataTypeDescriptor::String],
+            return_type: NailDataTypeDescriptor::String,
+        }]);
+        m.insert("net_udp_serve", vec![HandlerCallback {
+            function_name: "handle_packet",
+            parameter_types: vec![NailDataTypeDescriptor::String],
+            return_type: NailDataTypeDescriptor::String,
+        }]);
         m
     };
 }
@@ -1440,7 +1589,16 @@ mod stdlib_types_drift_tests {
         assert_matches_registry::<crate::parser::std_lib::linalg::LINALG_Vec3>("LINALG_Vec3");
         assert_matches_registry::<crate::parser::std_lib::linalg::LINALG_Mat3>("LINALG_Mat3");
         #[cfg(feature = "email")]
-        assert_matches_registry::<crate::parser::std_lib::email::EMAIL_Server>("EMAIL_Server");
+        {
+            assert_matches_registry::<crate::parser::std_lib::email::EMAIL_Server>("EMAIL_Server");
+            assert_matches_registry::<crate::parser::std_lib::email::EMAIL_Attachment>("EMAIL_Attachment");
+        }
+        #[cfg(feature = "redis")]
+        assert_matches_registry::<crate::parser::std_lib::redis::DB_Redis>("DB_Redis");
+        #[cfg(feature = "websocket")]
+        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Websocket>("HTTP_Websocket");
+        assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Handle>("PROCESS_Handle");
+        assert_matches_registry::<crate::parser::std_lib::sched::SCHED_Job>("SCHED_Job");
         #[cfg(feature = "postgres")]
         {
             assert_matches_registry::<crate::parser::std_lib::postgres::DB_Postgres>("DB_Postgres");
@@ -1464,7 +1622,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Redis", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

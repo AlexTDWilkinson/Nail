@@ -471,3 +471,114 @@ mod encryption_tests {
         assert_eq!(decrypt(sealed, "key".to_string()).expect("the key"), long);
     }
 }
+
+/// The CRC32 of text as 8 hex digits - the fast checksum zip and png use.
+/// A checksum catches accidents, not tampering; for tampering use a hash.
+pub fn crc32(text: String) -> String {
+    return format!("{:08x}", crc32fast::hash(text.as_bytes()));
+}
+
+/// The SHA-1 of text as hex. Broken for new designs, still what git objects,
+/// OAuth 1 and older webhook signatures speak.
+pub fn hash_sha1(input: String) -> String {
+    use sha1::Digest;
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(input.as_bytes());
+    return format!("{:x}", hasher.finalize());
+}
+
+/// HMAC-SHA1 of a message as hex, for the older signature schemes that ask for it.
+pub fn hmac_sha1(message: String, key: String) -> String {
+    use hmac::Mac;
+    let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(key.as_bytes()).expect("an hmac key can be any length");
+    mac.update(message.as_bytes());
+    return mac.finalize().into_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+}
+
+/// The BLAKE3 of text as hex - the modern fast hash for content addressing.
+pub fn hash_blake3(input: String) -> String {
+    return blake3::hash(input.as_bytes()).to_hex().to_string();
+}
+
+fn totp_from(secret_base32: &str, timestamp: i64, what: &str) -> Result<String, String> {
+    let secret = super::base32::decode_to_bytes(secret_base32, what)?;
+    if secret.is_empty() {
+        return Err(format!("{}: the secret is empty", what));
+    }
+    if timestamp < 0 {
+        return Err(format!("{}: a timestamp before 1970 makes no code", what));
+    }
+    use hmac::Mac;
+    let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(&secret).expect("an hmac key can be any length");
+    mac.update(&((timestamp / 30) as u64).to_be_bytes());
+    let digest = mac.finalize().into_bytes();
+    let offset = (digest[19] & 0x0f) as usize;
+    let value = u32::from_be_bytes([digest[offset] & 0x7f, digest[offset + 1], digest[offset + 2], digest[offset + 3]]);
+    return Ok(format!("{:06}", value % 1_000_000));
+}
+
+fn unix_now(what: &str) -> Result<i64, String> {
+    return std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .map_err(|_| format!("{}: the system clock reads before 1970", what));
+}
+
+/// The six-digit authenticator code a base32 secret makes right now, RFC 6238.
+pub fn totp_now(secret_base32: String) -> Result<String, String> {
+    return totp_from(&secret_base32, unix_now("crypto_totp_now")?, "crypto_totp_now");
+}
+
+/// The code a secret made at a particular moment - what tests and audits ask.
+pub fn totp_at(secret_base32: String, timestamp: i64) -> Result<String, String> {
+    return totp_from(&secret_base32, timestamp, "crypto_totp_at");
+}
+
+/// Whether a code someone typed is the secret's current one. The clock step
+/// on either side counts too, since phones and servers drift.
+pub fn totp_verify(secret_base32: String, code: String) -> Result<bool, String> {
+    let typed = code.trim();
+    let now = unix_now("crypto_totp_verify")?;
+    for drift in [-1i64, 0, 1] {
+        let expected = totp_from(&secret_base32, now + drift * 30, "crypto_totp_verify")?;
+        if constant_time_str_eq(&expected, typed) {
+            return Ok(true);
+        }
+    }
+    return Ok(false);
+}
+
+fn constant_time_str_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut difference = 0u8;
+    for (x, y) in a.bytes().zip(b.bytes()) {
+        difference |= x ^ y;
+    }
+    return difference == 0;
+}
+
+#[cfg(test)]
+mod checksum_tests {
+    use super::*;
+
+    #[test]
+    fn the_known_answers_come_out() {
+        assert_eq!(crc32("The quick brown fox jumps over the lazy dog".to_string()), "414fa339");
+        assert_eq!(hash_sha1("abc".to_string()), "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_eq!(hash_blake3("".to_string()), "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262");
+        assert_eq!(hmac_sha1("what do ya want for nothing?".to_string(), "Jefe".to_string()), "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79");
+    }
+
+    #[test]
+    fn the_rfc_6238_vector_holds() {
+        // The RFC's SHA-1 secret is `12345678901234567890`; at T=59 the
+        // eight-digit code is 94287082, so the six-digit one is 287082.
+        let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_string();
+        assert_eq!(totp_at(secret.clone(), 59).unwrap(), "287082");
+        assert_eq!(totp_at(secret.clone(), 1111111109).unwrap(), "081804");
+        assert!(totp_at(secret, -5).is_err());
+        assert!(totp_at("".to_string(), 59).unwrap_err().contains("empty"));
+    }
+}

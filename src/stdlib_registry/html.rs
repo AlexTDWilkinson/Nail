@@ -34,5 +34,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "html_meta" [Scraper] => "std_lib::html::meta", (html: s, meta_name: s) -> (s!e),
             "Returns the content of a meta tag by name, checking both the name and property spellings so Open Graph tags are found too.",
             "summary:s = danger(html_meta(page, `description`));";
+        "html_sanitize" [Ammonia] => "std_lib::html::sanitize", (dirty: s) -> s,
+            "Cleans untrusted HTML so it is safe to serve: scripts, event handlers and javascript: links are removed, ordinary formatting is kept. Anything a person typed must pass through here - including markdown_to_html's rendering of it - before being put in a page.",
+            "safe:s = html_sanitize(markdown_to_html(comment));";
     }
 }

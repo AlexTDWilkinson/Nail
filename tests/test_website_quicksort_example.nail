@@ -3,8 +3,8 @@
 f quicksort(arr:a:i):a:i {
     len:i = array_length(arr);
     result:a:i = if {
-        len <= 1 => { r arr; },
-        else => {
+        len <= 1 -> { r arr; },
+        else -> {
             pivot:i = danger(array_get(arr, 0));
             rest:a:i = danger(array_slice(arr, 1, len));
             

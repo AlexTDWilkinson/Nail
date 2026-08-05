@@ -1,8 +1,8 @@
 // E2E: early return from an if branch before later code
 f describe_num(num:i):s {
     if {
-        num < 0 => { r `negative`; },
-        else => { print(`checking further`); }
+        num < 0 -> { r `negative`; },
+        else -> { print(`checking further`); }
     }
     r `non-negative`;
 }

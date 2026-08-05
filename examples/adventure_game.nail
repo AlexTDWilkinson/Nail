@@ -36,20 +36,20 @@ print(`You encounter a goblin!`);
 choice1:s = danger(io_read_line_prompt(`Fight (f) or run (r)? `));
 
 health_after_fight:i = if {
-    string_contains(choice1, `f`) => {
+    string_contains(choice1, `f`) -> {
         print(`You defeat the goblin and earn 20 gold!`);
         print(`But you take 10 damage.`);
         player.health - 10;
     },
-    else => {
+    else -> {
         print(`You run away safely.`);
         player.health;
     }
 };
 
 gold_after_fight:i = if {
-    string_contains(choice1, `f`) => { player.gold + 20; },
-    else => { player.gold; }
+    string_contains(choice1, `f`) -> { player.gold + 20; },
+    else -> { player.gold; }
 };
 
 current_name:s = player.name;
@@ -84,32 +84,32 @@ choice3:s = danger(io_read_line_prompt(`Accept (y) or decline (n)? `));
 can_afford:b = player_turn2.gold >= 20;
 
 final_health:i = if {
-    string_contains(choice3, `y`) => {
+    string_contains(choice3, `y`) -> {
         if {
-            can_afford => {
+            can_afford -> {
                 print(`You are fully healed!`);
                 max_health;
             },
-            else => {
+            else -> {
                 print(`Not enough gold!`);
                 player_turn2.health;
             }
         };
     },
-    else => {
+    else -> {
         print(`You decline the offer.`);
         player_turn2.health;
     }
 };
 
 final_gold:i = if {
-    string_contains(choice3, `y`) => {
+    string_contains(choice3, `y`) -> {
         if {
-            can_afford => { player_turn2.gold - 20; },
-            else => { player_turn2.gold; }
+            can_afford -> { player_turn2.gold - 20; },
+            else -> { player_turn2.gold; }
         };
     },
-    else => { player_turn2.gold; }
+    else -> { player_turn2.gold; }
 };
 
 final_name:s = player_turn2.name;

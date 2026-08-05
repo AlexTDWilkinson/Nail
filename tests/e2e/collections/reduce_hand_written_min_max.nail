@@ -1,7 +1,7 @@
 // E2E: min and max written out by hand as a fold, which the compiler proves
 // associative and may split across cores
 numbers:a:i = [3, 17, 8, 42, 11];
-biggest:i = reduce acc num in numbers from 0 { y if { num > acc => { r num; }, else => { r acc; } }; };
-smallest:i = reduce acc num in numbers from 100 { y if { acc < num => { r acc; }, else => { r num; } }; };
+biggest:i = reduce acc num in numbers from 0 { y if { num > acc -> { r num; }, else -> { r acc; } }; };
+smallest:i = reduce acc num in numbers from 100 { y if { acc < num -> { r acc; }, else -> { r num; } }; };
 print(biggest);
 print(smallest);

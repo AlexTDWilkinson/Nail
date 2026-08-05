@@ -3,8 +3,8 @@
 // Function that can return an error
 f divide(dividend:i, divisor:i):i!e {
     if {
-        divisor == 0 => { r e(`Division by zero`); },
-        else => { r dividend / divisor; }
+        divisor == 0 -> { r e(`Division by zero`); },
+        else -> { r dividend / divisor; }
     }
 }
 

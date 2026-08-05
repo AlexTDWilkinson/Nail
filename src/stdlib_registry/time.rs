@@ -136,5 +136,23 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "time_cron_next" [Chrono] => "std_lib::time::cron_next", (expression: s, after_timestamp: i) -> (i!e),
             "The next moment after the given time that a cron expression matches. A scheduler asks this, sleeps until then with time_sleep, does the work, and asks again.",
             "next_run:i = danger(time_cron_next(`0 3 * * *`, time_now()));";
+        "time_parse_duration" => "std_lib::time::parse_duration", (text: s) -> (i!e),
+            "A human duration - `90s`, `2h30m`, `1.5h`, `2 days` - as whole seconds. A bare number is already seconds. The other direction is time_format_duration.",
+            "ttl:i = danger(time_parse_duration(`2h30m`));";
+        "time_format_in_zone" [ChronoTz, Chrono] => "std_lib::time::format_in_zone", (timestamp: i, zone: s, layout: s) -> (s!e),
+            "A moment shown on the wall clock of a place, in your strftime layout. Zones are IANA names like `America/Edmonton`; daylight saving is the zone database's problem, not yours.",
+            "shown:s = danger(time_format_in_zone(time_now(), `America/Edmonton`, `%Y-%m-%d %H:%M`));";
+        "time_parse_in_zone" [ChronoTz, Chrono] => "std_lib::time::parse_in_zone", (text: s, layout: s, zone: s) -> (i!e),
+            "Reads a wall-clock time as seen in a place back into a timestamp. The repeated hour when clocks fall back takes the earlier reading; the skipped hour is an error.",
+            "starts:i = danger(time_parse_in_zone(`2026-09-01 09:00`, `%Y-%m-%d %H:%M`, `America/Edmonton`));";
+        "time_zone_offset" [ChronoTz, Chrono] => "std_lib::time::zone_offset", (timestamp: i, zone: s) -> (i!e),
+            "How far ahead of UTC a place is at a moment, in seconds. Negative is behind. The answer changes with daylight saving, which is why a moment is asked for.",
+            "offset:i = danger(time_zone_offset(time_now(), `Asia/Tokyo`));";
+        "time_zone_valid" [ChronoTz] => "std_lib::time::zone_valid", (zone: s) -> b,
+            "Whether a zone name is in the IANA database.",
+            "known:b = time_zone_valid(user_zone);";
+        "time_list_zones" [ChronoTz] => "std_lib::time::list_zones", () -> [s],
+            "Every zone name the database knows, for picking lists.",
+            "zones:a:s = time_list_zones();";
     }
 }

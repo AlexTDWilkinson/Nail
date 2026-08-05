@@ -862,7 +862,7 @@ fn parse_if_statement_expr(state: &mut ParserState, is_expression: bool) -> Resu
     let _ = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
     // #[test]
     // fn test_if_statement() {
-    //     let input = "if { a > 5 => {} };";
+    //     let input = "if { a > 5 -> {} };";
     //     let result = lexer(input);
     //     println!("RESULT: {:#?}", result);
     //     assert_eq!(
@@ -1538,7 +1538,7 @@ mod tests {
 
     #[test]
     fn test_if_statement() {
-        let input = "if { a > 5 => {} };";
+        let input = "if { a > 5 -> {} };";
         let result = parse(lexer(input)).unwrap();
         let expected = r#"
       Program([
@@ -1632,7 +1632,7 @@ mod tests {
 
     #[test]
     fn test_if_else_statement() {
-        let input = "if { a > 5 => {}, else => {} };";
+        let input = "if { a > 5 -> {}, else -> {} };";
         let result = parse(lexer(input)).unwrap();
         let expected = r#"
         Program([IfStatement{condition_branches:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)
@@ -1643,7 +1643,7 @@ mod tests {
 
     #[test]
     fn test_if_else_if_else_statement() {
-        let input = "if { a > 5 => {}, b < 5 => {}, else => {} };";
+        let input = "if { a > 5 -> {}, b < 5 -> {}, else -> {} };";
         let result = parse(lexer(input)).unwrap();
         let expected = r#"
         Program([IfStatement{condition_branches:[(BinaryOperation{left:Identifier("a",),operator:Gt,right:NumberLiteral("5",),},Block([],),),(BinaryOperation{left:Identifier("b",),operator:Lt,right:NumberLiteral("5",),},Block([],),),],else_branch:Some(Block([],),),},],)

@@ -5,8 +5,8 @@
 f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
     // A text body arrives in `body` as usual; a binary one arrives as a path.
     saved:s = if {
-        string_is_empty(request.body_path) => { r `nothing to save`; },
-        else => { r request.body_path; }
+        string_is_empty(request.body_path) -> { r `nothing to save`; },
+        else -> { r request.body_path; }
     };
 
     // What a real handler does with it: check it is what it claims to be, then

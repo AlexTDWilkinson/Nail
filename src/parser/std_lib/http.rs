@@ -191,6 +191,18 @@ pub struct HTTP_Config {
     pub timeout_seconds: i64,
     /// Passed through to handle_request untouched.
     pub state: DashMap<String, String>,
+    /// Origins browser pages may call this server from. Empty sends no CORS
+    /// headers; a list of ["*"] allows any origin.
+    pub cors_origins: Vec<String>,
+    /// Adds the standard protective headers - nosniff, no framing, a tight
+    /// referrer policy - to every response.
+    pub security_headers: bool,
+    /// Requests per client per minute before 429. 0 turns limiting off. The
+    /// client is told apart by x-forwarded-for, so behind a reverse proxy this
+    /// is per visitor, not per proxy.
+    pub rate_limit_per_minute: i64,
+    /// The page a rate-limited client sees, as HTML. Empty uses a plain one.
+    pub rate_limit_message: String,
 }
 
 /// The defaults, since Nail has no default field values.
@@ -200,7 +212,108 @@ pub fn http_default_config() -> HTTP_Config {
         max_body_bytes: 0,
         timeout_seconds: 0,
         state: DashMap::new(),
+        cors_origins: Vec::new(),
+        security_headers: false,
+        rate_limit_per_minute: 0,
+        rate_limit_message: String::new(),
     }
+}
+
+/// The page a rate-limited client sees.
+fn rate_limit_page(message: &str) -> axum::response::Response {
+    let body = if message.is_empty() { "<pre>429 - too many requests, slow down</pre>".to_string() } else { message.to_string() };
+    return (StatusCode::TOO_MANY_REQUESTS, Html(body)).into_response();
+}
+
+lazy_static::lazy_static! {
+    /// One counting window per client for the rate limit.
+    static ref RATE_WINDOWS: DashMap<String, (i64, i64)> = DashMap::new();
+}
+
+/// The client's address as the reverse proxy reports it, or `direct` when
+/// nothing is in front of the server.
+fn client_key(headers: &axum::http::HeaderMap) -> String {
+    if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|value| value.to_str().ok()) {
+        if let Some(first) = forwarded.split(',').next() {
+            let first = first.trim();
+            if !first.is_empty() {
+                return first.to_string();
+            }
+        }
+    }
+    if let Some(real) = headers.get("x-real-ip").and_then(|value| value.to_str().ok()) {
+        let real = real.trim();
+        if !real.is_empty() {
+            return real.to_string();
+        }
+    }
+    return "direct".to_string();
+}
+
+/// Count a request against its client's minute window; true means over the cap.
+fn over_rate_limit(limit_per_minute: i64, headers: &axum::http::HeaderMap) -> bool {
+    if limit_per_minute <= 0 {
+        return false;
+    }
+    let minute = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64 / 60).unwrap_or(0);
+    let mut window = RATE_WINDOWS.entry(client_key(headers)).or_insert((minute, 0));
+    if window.0 != minute {
+        *window = (minute, 0);
+    }
+    window.1 += 1;
+    let over = window.1 > limit_per_minute;
+    drop(window);
+    // The table would otherwise grow one entry per client forever.
+    if RATE_WINDOWS.len() > 100_000 {
+        RATE_WINDOWS.retain(|_, (window_minute, _)| *window_minute == minute);
+    }
+    return over;
+}
+
+/// The Access-Control-Allow-Origin value this request has earned, if any.
+fn cors_origin_for(request_origin: Option<&str>, allowed: &[String]) -> Option<String> {
+    if allowed.is_empty() {
+        return None;
+    }
+    if allowed.iter().any(|origin| origin == "*") {
+        return Some("*".to_string());
+    }
+    let origin = request_origin?;
+    if allowed.iter().any(|candidate| candidate == origin) {
+        return Some(origin.to_string());
+    }
+    return None;
+}
+
+/// Stamp the config-driven headers on a finished response.
+fn apply_response_headers(response: &mut axum::response::Response, cors_origin: Option<String>, security_headers: bool) {
+    let headers = response.headers_mut();
+    if let Some(origin) = cors_origin {
+        if let Ok(value) = axum::http::HeaderValue::from_str(&origin) {
+            if origin != "*" {
+                headers.insert("vary", axum::http::HeaderValue::from_static("Origin"));
+            }
+            headers.insert("access-control-allow-origin", value);
+        }
+    }
+    if security_headers {
+        headers.insert("x-content-type-options", axum::http::HeaderValue::from_static("nosniff"));
+        headers.insert("x-frame-options", axum::http::HeaderValue::from_static("DENY"));
+        headers.insert("referrer-policy", axum::http::HeaderValue::from_static("strict-origin-when-cross-origin"));
+    }
+}
+
+/// The whole answer to a CORS preflight, headers stamped.
+fn preflight_response(cors_origin: Option<String>, security_headers: bool) -> axum::response::Response {
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    {
+        let headers = response.headers_mut();
+        headers.insert("access-control-allow-methods", axum::http::HeaderValue::from_static("GET, POST, PUT, DELETE, PATCH, OPTIONS"));
+        headers.insert("access-control-allow-headers", axum::http::HeaderValue::from_static("*"));
+        headers.insert("access-control-max-age", axum::http::HeaderValue::from_static("86400"));
+    }
+    apply_response_headers(&mut response, cors_origin, security_headers);
+    return response;
 }
 
 /// What reading a request body produced: text for the handler, or a file it was
@@ -440,12 +553,27 @@ where
     let timeout = Duration::from_secs(if config.timeout_seconds > 0 { config.timeout_seconds as u64 } else { DEFAULT_TIMEOUT_SECONDS });
     let static_mounts = config.static_mounts.clone();
     let state = config.state.clone();
+    let cors_origins = config.cors_origins.clone();
+    let security_headers = config.security_headers;
+    let rate_limit_per_minute = config.rate_limit_per_minute;
+    let rate_limit_message = config.rate_limit_message.clone();
 
     let dispatch = move |request: axum::extract::Request| {
         let handler = handler.clone();
         let state = state.clone();
+        let cors_origins = cors_origins.clone();
+        let rate_limit_message = rate_limit_message.clone();
         async move {
             let (parts, body) = request.into_parts();
+
+            if over_rate_limit(rate_limit_per_minute, &parts.headers) {
+                return rate_limit_page(&rate_limit_message);
+            }
+            let request_origin = parts.headers.get("origin").and_then(|value| value.to_str().ok()).map(|origin| origin.to_string());
+            let cors_origin = cors_origin_for(request_origin.as_deref(), &cors_origins);
+            if parts.method == axum::http::Method::OPTIONS && cors_origin.is_some() {
+                return preflight_response(cors_origin, security_headers);
+            }
 
             // Read the body under a cap: without one, a single request can push
             // megabytes through a handler on a small box.
@@ -489,7 +617,7 @@ where
                 let _ = tokio::fs::remove_file(&spooled_body).await;
             }
 
-            match answer {
+            let mut finished = match answer {
                 Ok(response) => build_response(response),
                 Err(_) => (
                     StatusCode::GATEWAY_TIMEOUT,
@@ -498,7 +626,9 @@ where
                     Html(format!("<pre>504 - handler timed out after {}s: {}</pre>", timeout.as_secs(), escape_html(&requested_path))),
                 )
                     .into_response(),
-            }
+            };
+            apply_response_headers(&mut finished, cors_origin, security_headers);
+            finished
         }
     };
 
@@ -1528,14 +1658,28 @@ where
     let timeout = Duration::from_secs(if config.timeout_seconds > 0 { config.timeout_seconds as u64 } else { DEFAULT_TIMEOUT_SECONDS });
     let static_mounts = config.static_mounts.clone();
     let state = config.state.clone();
+    let cors_origins = config.cors_origins.clone();
+    let security_headers = config.security_headers;
+    let rate_limit_per_minute = config.rate_limit_per_minute;
+    let rate_limit_message = config.rate_limit_message.clone();
 
     // The same dispatch `http_server` uses, wrapped the same way.
     let dispatch_state = state.clone();
     let dispatch = move |request: axum::extract::Request| {
         let handler = handler.clone();
         let state = dispatch_state.clone();
+        let cors_origins = cors_origins.clone();
+        let rate_limit_message = rate_limit_message.clone();
         async move {
             let (parts, body) = request.into_parts();
+            if over_rate_limit(rate_limit_per_minute, &parts.headers) {
+                return rate_limit_page(&rate_limit_message);
+            }
+            let request_origin = parts.headers.get("origin").and_then(|value| value.to_str().ok()).map(|origin| origin.to_string());
+            let cors_origin = cors_origin_for(request_origin.as_deref(), &cors_origins);
+            if parts.method == axum::http::Method::OPTIONS && cors_origin.is_some() {
+                return preflight_response(cors_origin, security_headers);
+            }
             let (body_text, body_path) = match receive_body(body, max_body_bytes, &std::env::temp_dir()).await {
                 Ok(ReceivedBody::Text(text)) => (text, String::new()),
                 Ok(ReceivedBody::File(path)) => (String::new(), path),
@@ -1564,10 +1708,12 @@ where
             if !spooled_body.is_empty() {
                 let _ = tokio::fs::remove_file(&spooled_body).await;
             }
-            match answer {
+            let mut finished = match answer {
                 Ok(response) => build_response(response),
                 Err(_) => (StatusCode::GATEWAY_TIMEOUT, Html(format!("<pre>504 - handler timed out after {}s: {}</pre>", timeout.as_secs(), escape_html(&requested_path)))).into_response(),
-            }
+            };
+            apply_response_headers(&mut finished, cors_origin, security_headers);
+            finished
         }
     };
 
@@ -1708,5 +1854,123 @@ mod live_tests {
         assert_eq!(requested_channel(&params), "chat");
         params.insert("channel".to_string(), String::new());
         assert_eq!(requested_channel(&params), "main");
+    }
+}
+
+/// An outbound websocket connection, held by handle like an open file: the
+/// other half of http_server_realtime. This is how a program consumes a
+/// streaming API - an exchange feed, a chat bridge, another Nail program.
+#[cfg(feature = "websocket")]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct HTTP_Websocket {
+    pub handle: String,
+    pub url: String,
+}
+
+#[cfg(feature = "websocket")]
+lazy_static::lazy_static! {
+    static ref OPEN_WEBSOCKETS: DashMap<String, tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>> = DashMap::new();
+}
+
+/// Open a websocket to a ws:// or wss:// URL.
+#[cfg(feature = "websocket")]
+pub async fn ws_connect(url: String) -> Result<HTTP_Websocket, String> {
+    let trimmed = url.trim().to_string();
+    if !(trimmed.starts_with("ws://") || trimmed.starts_with("wss://")) {
+        return Err(format!("http_ws_connect: `{}` is not a ws:// or wss:// URL", trimmed));
+    }
+    let (stream, _) = tokio_tungstenite::connect_async(&trimmed).await.map_err(|e| format!("http_ws_connect: could not connect to `{}`: {}", trimmed, e))?;
+    let handle = format!("websocket_{}", uuid::Uuid::new_v4());
+    OPEN_WEBSOCKETS.insert(handle.clone(), stream);
+    return Ok(HTTP_Websocket { handle, url: trimmed });
+}
+
+/// Send one text frame.
+#[cfg(feature = "websocket")]
+pub async fn ws_send(socket: &HTTP_Websocket, text: String) -> Result<(), String> {
+    use futures::SinkExt;
+    let mut stream = OPEN_WEBSOCKETS.get_mut(&socket.handle).ok_or_else(|| format!("http_ws_send: the connection to `{}` is closed", socket.url))?;
+    return stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(text.into()))
+        .await
+        .map_err(|e| format!("http_ws_send: the connection to `{}` failed: {}", socket.url, e));
+}
+
+/// The next text frame the other side sends. Waits up to the timeout, or
+/// forever when the timeout is 0. Pings are answered quietly; binary frames
+/// are skipped; a closed connection is an error and forgets the handle.
+#[cfg(feature = "websocket")]
+pub async fn ws_receive(socket: &HTTP_Websocket, timeout_milliseconds: i64) -> Result<String, String> {
+    use futures::StreamExt;
+    let mut stream = OPEN_WEBSOCKETS.get_mut(&socket.handle).ok_or_else(|| format!("http_ws_receive: the connection to `{}` is closed", socket.url))?;
+    loop {
+        let frame = if timeout_milliseconds > 0 {
+            match tokio::time::timeout(Duration::from_millis(timeout_milliseconds as u64), stream.next()).await {
+                Ok(frame) => frame,
+                Err(_) => return Err(format!("http_ws_receive: nothing arrived from `{}` within {}ms", socket.url, timeout_milliseconds)),
+            }
+        } else {
+            stream.next().await
+        };
+        match frame {
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) => return Ok(text.to_string()),
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) | None => {
+                drop(stream);
+                OPEN_WEBSOCKETS.remove(&socket.handle);
+                return Err(format!("http_ws_receive: `{}` closed the connection", socket.url));
+            }
+            Some(Ok(_)) => continue,
+            Some(Err(e)) => {
+                drop(stream);
+                OPEN_WEBSOCKETS.remove(&socket.handle);
+                return Err(format!("http_ws_receive: the connection to `{}` failed: {}", socket.url, e));
+            }
+        }
+    }
+}
+
+/// Say goodbye properly and forget the handle. Closing twice is not an error.
+#[cfg(feature = "websocket")]
+pub async fn ws_close(socket: &HTTP_Websocket) -> Result<(), String> {
+    use futures::SinkExt;
+    if let Some((_, mut stream)) = OPEN_WEBSOCKETS.remove(&socket.handle) {
+        let _ = stream.send(tokio_tungstenite::tungstenite::Message::Close(None)).await;
+    }
+    return Ok(());
+}
+
+#[cfg(all(test, feature = "websocket"))]
+mod ws_client_tests {
+    use super::*;
+
+    /// The client talks to Nail's own realtime server: the two halves prove
+    /// each other.
+    #[tokio::test]
+    async fn the_client_and_the_realtime_server_shake_hands() {
+        let port = 41895;
+        let config = http_default_config();
+        tokio::spawn(async move {
+            let _ = http_server_realtime(
+                port,
+                config,
+                "/live".to_string(),
+                |_request, _state| {
+                    Box::pin(async {
+                        HTTP_Response { status: 200, body: "ok".to_string(), content_type: "text/plain".to_string(), headers: DashMap::new() }
+                    }) as HandlerFuture
+                },
+                |message, _state| Box::pin(async move { format!("echo {}", message) }) as MessageFuture,
+            )
+            .await;
+        });
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let socket = ws_connect(format!("ws://127.0.0.1:{}/live", port)).await.expect("the server is up");
+        ws_send(&socket, "hello".to_string()).await.expect("a frame goes out");
+        let answer = ws_receive(&socket, 2000).await.expect("a frame comes back");
+        assert_eq!(answer, "echo hello");
+        ws_close(&socket).await.expect("goodbye is easy");
+        assert!(ws_send(&socket, "again".to_string()).await.unwrap_err().contains("closed"));
+        assert!(ws_connect("http://not-a-ws-url".to_string()).await.unwrap_err().contains("not a ws://"));
     }
 }

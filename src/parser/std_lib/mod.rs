@@ -3,8 +3,11 @@ pub mod args;
 pub mod array;
 #[cfg(feature = "audio")]
 pub mod audio;
+pub mod base32;
 pub mod base64;
+pub mod binary;
 pub mod bits;
+pub mod cache;
 pub mod chart;
 pub mod code;
 pub mod compress;
@@ -13,6 +16,7 @@ pub mod csv;
 pub mod database;
 #[cfg(feature = "datafusion")]
 pub mod datafusion;
+pub mod diff;
 pub mod draw;
 #[cfg(feature = "email")]
 pub mod email;
@@ -24,6 +28,7 @@ pub mod feed;
 pub mod fs;
 pub mod hashmap;
 pub mod hex;
+pub mod i18n;
 #[cfg(feature = "html")]
 pub mod html;
 #[cfg(feature = "image")]
@@ -52,11 +57,16 @@ pub mod postgres;
 pub mod print;
 pub mod process;
 pub mod rand;
+#[cfg(feature = "redis")]
+pub mod redis;
 pub mod regex;
 pub mod semver;
+pub mod sched;
 pub mod stats;
 pub mod stdlib;
 pub mod string;
+#[cfg(feature = "sys")]
+pub mod sys;
 pub mod template;
 pub mod term;
 pub mod test;

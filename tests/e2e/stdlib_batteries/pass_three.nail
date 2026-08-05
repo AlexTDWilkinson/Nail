@@ -1,0 +1,59 @@
+// E2E: the third batteries pass in one sitting - durations, IP arithmetic,
+// hex packing, base32, checksums and one-time codes, unicode-correct text,
+// diffs, in-memory caches, and message catalogs.
+
+// Durations read like a person writes them.
+print(danger(time_parse_duration(`2h30m`)));
+print(danger(time_parse_duration(`90`)));
+
+// IP addresses are checkable and countable.
+print(danger(net_ip_in_cidr(`10.1.2.3`, `10.0.0.0/8`)));
+print(danger(net_ip_in_cidr(`11.1.2.3`, `10.0.0.0/8`)));
+print(danger(net_ip_to_int(`1.2.3.4`)));
+print(danger(net_ip_from_int(16909060)));
+print(danger(net_ip_version(`::1`)));
+
+// Numbers pack into hex bytes and come back out.
+packed:s = danger(binary_pack_int(4660, 2, true));
+print(packed);
+print(danger(binary_unpack_int(packed, 0, 2, true, false)));
+print(danger(binary_concat([`dead`, `beef`])));
+print(danger(binary_byte_length(`deadbeef`)));
+
+// Base32, the authenticator alphabet - and the RFC 6238 test vector itself.
+print(base32_encode(`foobar`));
+print(danger(base32_decode(`MZXW6YTBOI======`)));
+print(danger(crypto_totp_at(`GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ`, 59)));
+
+// Checksums with published answers.
+print(crypto_crc32(`The quick brown fox jumps over the lazy dog`));
+print(crypto_hash_sha1(`abc`));
+print(crypto_hash_blake3(``));
+
+// Text as a person sees it.
+print(string_grapheme_length(`🇨🇦`));
+print(string_remove_accents(`café`));
+print(string_normalize_nfkc(`Ｎａｉｌ`));
+
+// A diff renders, reports, and replays.
+old_text:s = `one\ntwo\nthree\n`;
+new_text:s = `one\n2\nthree\n`;
+patch:s = diff_lines(old_text, new_text);
+print(diff_changed(old_text, new_text));
+print(danger(diff_apply(old_text, patch)) == new_text);
+
+// The cache keeps things between moments, and expiry is quiet.
+cache_set(`e2e`, `greeting`, `hello`);
+print(danger(cache_get(`e2e`, `greeting`)));
+cache_set_ttl(`e2e`, `flash`, `now`, 0);
+print(cache_get_or(`e2e`, `flash`, `already gone`));
+print(cache_len(`e2e`));
+
+// Message catalogs load from disk and fall back sensibly.
+danger(fs_create_dir(`locales`));
+danger(fs_write(`locales/en.json`, `{"greeting": "Hello", "items.one": "{count} item", "items.other": "{count} items"}`));
+danger(fs_write(`locales/fr.json`, `{"greeting": "Bonjour"}`));
+print(danger(i18n_load(`locales`)));
+print(i18n_translate(`fr`, `greeting`));
+print(i18n_translate(`de`, `greeting`));
+print(i18n_translate_count(`en`, `items`, 7));

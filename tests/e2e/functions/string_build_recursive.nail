@@ -1,8 +1,8 @@
 // E2E: recursive string building
 f repeat_word(word:s, count:i):s {
     r if {
-        count <= 0 => { r ``; },
-        else => { r string_concat([word, repeat_word(word, count - 1)]); }
+        count <= 0 -> { r ``; },
+        else -> { r string_concat([word, repeat_word(word, count - 1)]); }
     };
 }
 print(repeat_word(`ab`, 3));

@@ -208,5 +208,20 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_mask" => "std_lib::string::mask", (input: s, visible_tail: i, mask_character: s) -> s,
             "Replaces all but the last few characters, for showing which secret is in use without printing it.",
             "shown:s = string_mask(api_key, 4, `*`);";
+        "string_graphemes" [UnicodeSegmentation] => "std_lib::string::graphemes", (input: s) -> [s],
+            "The characters a person sees, one string each. An emoji with skin tone or a flag is one grapheme even though it is several code points.",
+            "seen:a:s = string_graphemes(message);";
+        "string_grapheme_length" [UnicodeSegmentation] => "std_lib::string::grapheme_length", (input: s) -> i,
+            "How many characters a person sees - what a length limit on human text should count, where string_length overcounts emoji and accents.",
+            "shown:i = string_grapheme_length(username);";
+        "string_normalize_nfc" [UnicodeNormalization] => "std_lib::string::normalize_nfc", (input: s) -> s,
+            "Unicode NFC normalization, the composed form. Two spellings of `café` compare equal after both pass through here - normalize before comparing or storing anything people typed.",
+            "stored:s = string_normalize_nfc(typed_name);";
+        "string_normalize_nfkc" [UnicodeNormalization] => "std_lib::string::normalize_nfkc", (input: s) -> s,
+            "Unicode NFKC normalization, the compatibility form. Fullwidth letters, ligatures and font tricks collapse to plain equivalents - what searching and usernames want.",
+            "searchable:s = string_normalize_nfkc(query);";
+        "string_remove_accents" [UnicodeNormalization] => "std_lib::string::remove_accents", (input: s) -> s,
+            "The text with its accents dropped: `café` becomes `cafe`. What slugs and diacritic-blind search ask for.",
+            "plain:s = string_remove_accents(city_name);";
     }
 }

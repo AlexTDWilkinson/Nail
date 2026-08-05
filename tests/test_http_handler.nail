@@ -49,7 +49,7 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
     headers:h<s,s> = hashmap_new();
     site_name:s = danger(hashmap_get(state, `site_name`));
     if {
-        request.path == `/` => {
+        request.path == `/` -> {
             r HTTP_Response {
                 status = 200,
                 body = array_join([`<h1>`, site_name, `</h1>`], ``),
@@ -57,16 +57,16 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 headers = headers
             };
         },
-        http_path_matches(`/dictionary/:word`, request.path) => {
+        http_path_matches(`/dictionary/:word`, request.path) -> {
             r word_page(request, headers);
         },
-        request.method == `POST` && request.path == `/submit` => {
+        request.method == `POST` && request.path == `/submit` -> {
             r submit_page(request, headers);
         },
-        request.path == `/old-home` => {
+        request.path == `/old-home` -> {
             r redirect_page();
         },
-        else => {
+        else -> {
             r not_found(headers);
         }
     }
@@ -79,7 +79,11 @@ config:HTTP_Config = HTTP_Config {
     static_mounts = [HTTP_Static { prefix = `/static`, directory = `static` }],
     max_body_bytes = 16384,
     timeout_seconds = 0,
-    state = state
+    state = state,
+    cors_origins = [],
+    security_headers = false,
+    rate_limit_per_minute = 0,
+    rate_limit_message = ``
 };
 
 http_server(8080, config);

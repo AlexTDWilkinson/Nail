@@ -1,8 +1,8 @@
 // E2E: recursive integer power
 f power(base:i, exp:i):i {
     r if {
-        exp == 0 => { r 1; },
-        else => { r base * power(base, exp - 1); }
+        exp == 0 -> { r 1; },
+        else -> { r base * power(base, exp - 1); }
     };
 }
 print(power(2, 10));

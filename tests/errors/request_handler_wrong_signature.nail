@@ -7,6 +7,10 @@ config:HTTP_Config = HTTP_Config {
     static_mounts = [],
     max_body_bytes = 0,
     timeout_seconds = 0,
-    state = hashmap_new()
+    state = hashmap_new(),
+    cors_origins = [],
+    security_headers = false,
+    rate_limit_per_minute = 0,
+    rate_limit_message = ``
 };
 http_server(8080, config);

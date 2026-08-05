@@ -8,12 +8,12 @@ ERROR still full
 
 // A fold is reduce pointed at a file: no handle, nothing to close.
 f count_errors(total:i, line:s):i {
-    r if { string_contains(line, `ERROR`) => { r total + 1; }, else => { r total; } };
+    r if { string_contains(line, `ERROR`) -> { r total + 1; }, else -> { r total; } };
 }
 print(danger(fs_reduce_lines(`app.log`, 0, count_errors)));
 
 f longest_line(best:i, line:s):i {
-    r if { string_length(line) > best => { r string_length(line); }, else => { r best; } };
+    r if { string_length(line) > best -> { r string_length(line); }, else -> { r best; } };
 }
 print(danger(fs_reduce_lines(`app.log`, 0, longest_line)));
 
@@ -21,7 +21,7 @@ print(danger(fs_reduce_lines(`app.log`, 0, longest_line)));
 // rather than refused.
 danger(fs_write(`INFO start`, `x`));
 f count_lines_that_name_a_file(total:i, line:s):i {
-    r if { path_exists(line) => { r total + 1; }, else => { r total; } };
+    r if { path_exists(line) -> { r total + 1; }, else -> { r total; } };
 }
 print(danger(fs_reduce_lines(`app.log`, 0, count_lines_that_name_a_file)));
 

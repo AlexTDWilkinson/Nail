@@ -738,3 +738,153 @@ mod calendar_tests {
         assert_eq!(ago(now + 60, now), "in 1 minute");
     }
 }
+
+/// Parse a human duration - `90s`, `2h30m`, `1.5h`, `2 days` - into whole
+/// seconds. A bare number is already seconds.
+pub fn parse_duration(text: String) -> Result<i64, String> {
+    let cleaned = text.trim().to_lowercase();
+    if cleaned.is_empty() {
+        return Err("time_parse_duration: there is no duration in an empty string".to_string());
+    }
+    let mut total = 0.0f64;
+    let mut rest = cleaned.as_str();
+    let mut saw_any = false;
+    while !rest.trim_start().is_empty() {
+        rest = rest.trim_start();
+        let number_len = rest.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(rest.len());
+        if number_len == 0 {
+            return Err(format!("time_parse_duration: expected a number where `{}` begins", rest));
+        }
+        let value: f64 = rest[..number_len].parse().map_err(|_| format!("time_parse_duration: `{}` is not a number", &rest[..number_len]))?;
+        rest = rest[number_len..].trim_start();
+        let unit_len = rest.find(|c: char| !c.is_ascii_alphabetic()).unwrap_or(rest.len());
+        let unit = &rest[..unit_len];
+        rest = &rest[unit_len..];
+        let seconds_per = match unit {
+            "" if !saw_any && rest.trim_start().is_empty() => 1.0,
+            "s" | "sec" | "secs" | "second" | "seconds" => 1.0,
+            "m" | "min" | "mins" | "minute" | "minutes" => 60.0,
+            "h" | "hr" | "hrs" | "hour" | "hours" => 3600.0,
+            "d" | "day" | "days" => 86400.0,
+            "w" | "week" | "weeks" => 604800.0,
+            "" => return Err("time_parse_duration: a number in a longer duration needs a unit - s, m, h, d or w".to_string()),
+            other => return Err(format!("time_parse_duration: `{}` is not a unit this reads - use s, m, h, d or w", other)),
+        };
+        total += value * seconds_per;
+        saw_any = true;
+    }
+    return Ok(total.round() as i64);
+}
+
+#[cfg(test)]
+mod duration_tests {
+    use super::parse_duration;
+
+    #[test]
+    fn the_usual_shapes_all_read() {
+        assert_eq!(parse_duration("90s".to_string()).unwrap(), 90);
+        assert_eq!(parse_duration("2h30m".to_string()).unwrap(), 9000);
+        assert_eq!(parse_duration("1.5h".to_string()).unwrap(), 5400);
+        assert_eq!(parse_duration("1d".to_string()).unwrap(), 86400);
+        assert_eq!(parse_duration("2 weeks".to_string()).unwrap(), 1209600);
+        assert_eq!(parse_duration("1h 30min".to_string()).unwrap(), 5400);
+    }
+
+    #[test]
+    fn a_bare_number_is_seconds() {
+        assert_eq!(parse_duration("90".to_string()).unwrap(), 90);
+        assert_eq!(parse_duration(" 45 ".to_string()).unwrap(), 45);
+    }
+
+    #[test]
+    fn nonsense_is_refused_with_its_reason() {
+        assert!(parse_duration("".to_string()).unwrap_err().contains("empty"));
+        assert!(parse_duration("soon".to_string()).unwrap_err().contains("expected a number"));
+        assert!(parse_duration("10x".to_string()).unwrap_err().contains("not a unit"));
+        assert!(parse_duration("1h 30".to_string()).unwrap_err().contains("needs a unit"));
+    }
+}
+
+#[cfg(feature = "timezones")]
+fn parse_zone(zone: &str, what: &str) -> Result<chrono_tz::Tz, String> {
+    return zone.trim().parse::<chrono_tz::Tz>().map_err(|_| format!("{}: `{}` is not an IANA zone name - try the `America/Edmonton` form, or time_list_zones()", what, zone.trim()));
+}
+
+/// A moment shown on the wall clock of a place, in your strftime layout.
+/// Zones are IANA names; daylight saving is the zone database's problem, not yours.
+#[cfg(feature = "timezones")]
+pub fn format_in_zone(timestamp: i64, zone: String, layout: String) -> Result<String, String> {
+    let tz = parse_zone(&zone, "time_format_in_zone")?;
+    let moment = chrono::DateTime::from_timestamp(timestamp, 0).ok_or_else(|| format!("time_format_in_zone: {} is not a moment", timestamp))?;
+    if chrono::format::StrftimeItems::new(&layout).any(|item| matches!(item, chrono::format::Item::Error)) {
+        return Err(format!("time_format_in_zone: '{}' is not a valid layout - see the strftime notation, such as %Y-%m-%d %H:%M", layout));
+    }
+    return Ok(moment.with_timezone(&tz).format(&layout).to_string());
+}
+
+/// Read a wall-clock time as seen in a place back into a timestamp. An
+/// ambiguous time (the repeated hour when clocks fall back) takes the earlier
+/// reading; a time that never happens (the skipped hour) is an error.
+#[cfg(feature = "timezones")]
+pub fn parse_in_zone(text: String, layout: String, zone: String) -> Result<i64, String> {
+    use chrono::TimeZone;
+    let tz = parse_zone(&zone, "time_parse_in_zone")?;
+    let naive = chrono::NaiveDateTime::parse_from_str(text.trim(), &layout).map_err(|e| format!("time_parse_in_zone: `{}` does not read as `{}`: {}", text.trim(), layout, e))?;
+    return match tz.from_local_datetime(&naive) {
+        chrono::offset::LocalResult::Single(moment) => Ok(moment.timestamp()),
+        chrono::offset::LocalResult::Ambiguous(earlier, _) => Ok(earlier.timestamp()),
+        chrono::offset::LocalResult::None => Err(format!("time_parse_in_zone: `{}` never happens in {} - the clock jumps over it", text.trim(), zone.trim())),
+    };
+}
+
+/// How far ahead of UTC a place is at a moment, in seconds. Negative is behind.
+#[cfg(feature = "timezones")]
+pub fn zone_offset(timestamp: i64, zone: String) -> Result<i64, String> {
+    use chrono::Offset;
+    let tz = parse_zone(&zone, "time_zone_offset")?;
+    let moment = chrono::DateTime::from_timestamp(timestamp, 0).ok_or_else(|| format!("time_zone_offset: {} is not a moment", timestamp))?;
+    return Ok(moment.with_timezone(&tz).offset().fix().local_minus_utc() as i64);
+}
+
+/// Whether a zone name is in the IANA database.
+#[cfg(feature = "timezones")]
+pub fn zone_valid(zone: String) -> bool {
+    return zone.trim().parse::<chrono_tz::Tz>().is_ok();
+}
+
+/// Every zone name the database knows, for picking lists.
+#[cfg(feature = "timezones")]
+pub fn list_zones() -> Vec<String> {
+    return chrono_tz::TZ_VARIANTS.iter().map(|tz| tz.name().to_string()).collect();
+}
+
+#[cfg(all(test, feature = "timezones"))]
+mod zone_tests {
+    use super::*;
+
+    // 2024-01-15 12:00:00 UTC, deep in mountain standard time.
+    const WINTER_NOON_UTC: i64 = 1705320000;
+
+    #[test]
+    fn edmonton_reads_seven_hours_behind_in_winter() {
+        assert_eq!(format_in_zone(WINTER_NOON_UTC, "America/Edmonton".to_string(), "%H:%M".to_string()).unwrap(), "05:00");
+        assert_eq!(zone_offset(WINTER_NOON_UTC, "America/Edmonton".to_string()).unwrap(), -7 * 3600);
+        assert_eq!(zone_offset(WINTER_NOON_UTC, "UTC".to_string()).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_wall_clock_time_comes_back_as_the_same_moment() {
+        let stamp = parse_in_zone("2024-01-15 05:00".to_string(), "%Y-%m-%d %H:%M".to_string(), "America/Edmonton".to_string()).unwrap();
+        assert_eq!(stamp, WINTER_NOON_UTC);
+    }
+
+    #[test]
+    fn zone_names_are_checked_and_listable() {
+        assert!(zone_valid("Asia/Tokyo".to_string()));
+        assert!(!zone_valid("Mars/Olympus_Mons".to_string()));
+        assert!(format_in_zone(0, "Mars/Olympus_Mons".to_string(), "%H".to_string()).unwrap_err().contains("not an IANA zone name"));
+        let zones = list_zones();
+        assert!(zones.iter().any(|z| z == "America/Edmonton"));
+        assert!(zones.len() > 400);
+    }
+}

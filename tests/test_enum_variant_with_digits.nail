@@ -9,9 +9,9 @@ enum HTTP_Protocol {
 
 f protocol_label(protocol:HTTP_Protocol):s {
     if {
-        protocol == HTTP_Protocol::Http1 => { r `HTTP/1.1`; },
-        protocol == HTTP_Protocol::Http2 => { r `HTTP/2`; },
-        else => { r `HTTP/3`; }
+        protocol == HTTP_Protocol::Http1 -> { r `HTTP/1.1`; },
+        protocol == HTTP_Protocol::Http2 -> { r `HTTP/2`; },
+        else -> { r `HTTP/3`; }
     }
 }
 

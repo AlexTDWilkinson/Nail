@@ -2,8 +2,8 @@
 // give sequentially — sum, product, max and min over the same array
 numbers:a:i = array_range(1, 4000001);
 total:i = reduce acc num in numbers from 0 { y acc + num; };
-biggest:i = reduce acc num in numbers from 0 { y if { num > acc => { r num; }, else => { r acc; } }; };
-smallest:i = reduce acc num in numbers from 4000001 { y if { num < acc => { r num; }, else => { r acc; } }; };
+biggest:i = reduce acc num in numbers from 0 { y if { num > acc -> { r num; }, else -> { r acc; } }; };
+smallest:i = reduce acc num in numbers from 4000001 { y if { num < acc -> { r num; }, else -> { r acc; } }; };
 small_numbers:a:i = array_range(1, 21);
 product:i = reduce acc num in small_numbers from 1 { y acc * num; };
 print(total);

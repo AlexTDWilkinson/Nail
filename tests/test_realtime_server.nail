@@ -9,8 +9,8 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
 // A frame arrives, an answer goes back to that client; empty means no reply.
 f handle_message(message:s, state:h<s,s>):s {
     r if {
-        message == `ping` => { r `pong`; },
-        else => { r ``; }
+        message == `ping` -> { r `pong`; },
+        else -> { r ``; }
     };
 }
 
@@ -18,13 +18,13 @@ port_text:s = safe(env_get(`NAIL_TEST_REALTIME_PORT`), no_port);
 f no_port(err:e):s { r ``; }
 
 if {
-    string_is_empty(port_text) => {
+    string_is_empty(port_text) -> {
         heard:i = http_live_send(`chat`, `nobody is listening yet`);
         test_assert_equal_int(heard, 0, `sending to nobody is zero`);
         test_assert_equal_int(http_live_count(`chat`), 0, `and the room is empty`);
         print(`realtime shapes held`);
     },
-    else => {
+    else -> {
         config:HTTP_Config = http_default_config();
         http_server_realtime(danger(int_from(port_text)), config, `/live`);
     }

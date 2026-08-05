@@ -1,8 +1,8 @@
 // E2E: recursive digit counting
 f digit_count(num:i):i {
     r if {
-        num < 10 => { r 1; },
-        else => { r 1 + digit_count(num / 10); }
+        num < 10 -> { r 1; },
+        else -> { r 1 + digit_count(num / 10); }
     };
 }
 print(digit_count(5));

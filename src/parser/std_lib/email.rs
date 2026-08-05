@@ -107,6 +107,47 @@ pub async fn send_html(server: EMAIL_Server, to: String, subject: String, html: 
     return Ok(());
 }
 
+/// A file on its way out with a message. An empty file_name shows the reader
+/// the file's own name; an empty mime_type is guessed from the extension.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct EMAIL_Attachment {
+    pub path: String,
+    pub file_name: String,
+    pub mime_type: String,
+}
+
+/// Sends a plain text message with files attached - the invoice, the export,
+/// the report just made.
+pub async fn send_with_attachments(server: EMAIL_Server, to: String, subject: String, body: String, attachments: Vec<EMAIL_Attachment>) -> Result<(), String> {
+    use lettre::message::{Attachment as LettreAttachment, MultiPart, SinglePart};
+
+    let from = if server.from_name.is_empty() { server.from_address.clone() } else { format!("{} <{}>", server.from_name, server.from_address) };
+    let mut multipart = MultiPart::mixed().singlepart(SinglePart::plain(body));
+    for attachment in &attachments {
+        let content = tokio::fs::read(&attachment.path)
+            .await
+            .map_err(|failure| format!("email_send_with_attachments: could not read `{}`: {}", attachment.path, failure))?;
+        let shown_name = if attachment.file_name.is_empty() {
+            std::path::Path::new(&attachment.path).file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_else(|| "attachment".to_string())
+        } else {
+            attachment.file_name.clone()
+        };
+        let mime_type = if attachment.mime_type.is_empty() { super::mime::for_path(&attachment.path) } else { attachment.mime_type.clone() };
+        let content_type = ContentType::parse(&mime_type).map_err(|_| format!("email_send_with_attachments: `{}` is not a media type", mime_type))?;
+        multipart = multipart.singlepart(LettreAttachment::new(shown_name).body(content, content_type));
+    }
+
+    let message = Message::builder()
+        .from(from.parse().map_err(|failure| format!("email_send_with_attachments: `{}` is not an address mail can be sent from: {}", from, failure))?)
+        .to(to.parse().map_err(|failure| format!("email_send_with_attachments: `{}` is not an address mail can be sent to: {}", to, failure))?)
+        .subject(&subject)
+        .multipart(multipart)
+        .map_err(|failure| format!("email_send_with_attachments: the message could not be assembled: {}", failure))?;
+    let sender = transport(&server, "email_send_with_attachments")?;
+    sender.send(message).await.map_err(|failure| format!("email_send_with_attachments: {} refused the message: {}", server.host, failure))?;
+    return Ok(());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

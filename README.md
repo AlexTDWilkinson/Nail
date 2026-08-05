@@ -101,9 +101,9 @@ user:User = User {
 
 // Pattern matching
 message:s = if {
-    user.age > 40 => { `Senior Grug`; },
-    user.age > 20 => { `Adult Grug`; },
-    else => { `Baby Grug`; }
+    user.age > 40 -> { `Senior Grug`; },
+    user.age > 20 -> { `Adult Grug`; },
+    else -> { `Baby Grug`; }
 };
 
 // Functional programming

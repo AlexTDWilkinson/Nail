@@ -22,8 +22,8 @@ active_users:a:User = filter user in users {
 // Transform data functionally
 high_scorers:a:s = map user in active_users {
     result:s = if {
-        user.score > 90 => { r array_join([user.name, ` (Elite!)`], ``); },
-        else => { r user.name; }
+        user.score > 90 -> { r array_join([user.name, ` (Elite!)`], ``); },
+        else -> { r user.name; }
     };
     y result;
 };

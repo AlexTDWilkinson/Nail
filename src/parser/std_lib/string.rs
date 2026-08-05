@@ -985,3 +985,68 @@ mod trim_split_and_code_tests {
         assert!(from_char_code(0xD800).unwrap_err().contains("not a Unicode code point"));
     }
 }
+
+/// The characters a person sees, one string each. An emoji with skin tone or
+/// a flag is one grapheme even though it is several code points.
+pub fn graphemes(input: String) -> Vec<String> {
+    use unicode_segmentation::UnicodeSegmentation;
+    return input.graphemes(true).map(|g| g.to_string()).collect();
+}
+
+/// How many characters a person sees - the length string_length can overcount
+/// when emoji and accents are involved.
+pub fn grapheme_length(input: String) -> i64 {
+    use unicode_segmentation::UnicodeSegmentation;
+    return input.graphemes(true).count() as i64;
+}
+
+/// Unicode NFC normalization - the composed form. Two spellings of `café`
+/// compare equal after both pass through here; normalize before comparing or
+/// storing anything people typed.
+pub fn normalize_nfc(input: String) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    return input.nfc().collect();
+}
+
+/// Unicode NFKC normalization - compatibility form. Fullwidth letters,
+/// ligatures and font variants all collapse to their plain equivalents, which
+/// is what searching and usernames usually want.
+pub fn normalize_nfkc(input: String) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    return input.nfkc().collect();
+}
+
+/// The text with its accents dropped: `café` becomes `cafe`. Decomposes,
+/// removes the combining marks, and recomposes what is left.
+pub fn remove_accents(input: String) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    return input.nfd().filter(|c| !unicode_normalization::char::is_combining_mark(*c)).collect::<String>().nfc().collect();
+}
+
+#[cfg(test)]
+mod unicode_tests {
+    use super::*;
+
+    #[test]
+    fn graphemes_count_what_a_person_sees() {
+        assert_eq!(grapheme_length("héllo".to_string()), 5);
+        assert_eq!(grapheme_length("🇨🇦".to_string()), 1);
+        assert_eq!(graphemes("a👍b".to_string()), vec!["a", "👍", "b"]);
+    }
+
+    #[test]
+    fn the_two_spellings_of_cafe_meet_in_the_middle() {
+        let composed = "caf\u{e9}".to_string();
+        let decomposed = "cafe\u{301}".to_string();
+        assert_ne!(composed, decomposed);
+        assert_eq!(normalize_nfc(decomposed.clone()), composed);
+        assert_eq!(remove_accents(composed), "cafe");
+        assert_eq!(remove_accents(decomposed), "cafe");
+    }
+
+    #[test]
+    fn nfkc_flattens_the_fancy_forms() {
+        assert_eq!(normalize_nfkc("ﬁle".to_string()), "file");
+        assert_eq!(normalize_nfkc("Ｎａｉｌ".to_string()), "Nail");
+    }
+}

@@ -57,8 +57,8 @@ users:a:User = get_all_users();
 first_user:User = users[0];
 oldest_user:User = reduce oldest current in users from first_user {
     if {
-        current.age > oldest.age => { y current; },
-        else => { y oldest; }
+        current.age > oldest.age -> { y current; },
+        else -> { y oldest; }
     };
 };
 ```
@@ -161,8 +161,8 @@ highest_sale:Sales = reduce best sale in sales_data from first_sale {
     best_quantity:f = safe(float_from(best.quantity), default_zero);
     best_value:f = best_quantity * best.price;
     if {
-        current_value > best_value => { y sale; },
-        else => { y best; }
+        current_value > best_value -> { y sale; },
+        else -> { y best; }
     };
 };
 ```

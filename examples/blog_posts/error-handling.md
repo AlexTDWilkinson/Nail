@@ -90,14 +90,14 @@ struct User {
 f register_user(username_input:s, email_input:s, age_input:s):User!e {
     // Validate username
     if {
-        string_len(username_input) < 3 => {
+        string_len(username_input) < 3 -> {
             r e(`Username must be at least 3 characters`);
         }
     };
     
     // Validate email
     if {
-        !string_contains(email_input, `@`) => {
+        !string_contains(email_input, `@`) -> {
             r e(`Invalid email format`);
         }
     };
@@ -112,8 +112,8 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
     
     // Check age range
     if {
-        age < 13 => { r e(`Must be 13 or older to register`); },
-        age > 120 => { r e(`Invalid age provided`); }
+        age < 13 -> { r e(`Must be 13 or older to register`); },
+        age > 120 -> { r e(`Invalid age provided`); }
     };
     
     // Check if username already exists
@@ -124,7 +124,7 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
     );
     
     if {
-        existing_check => { r e(`Username already taken`); }
+        existing_check -> { r e(`Username already taken`); }
     };
     
     // Create user
@@ -205,8 +205,8 @@ p
 // During development
 debug_mode:b = true;
 config:Config = if {
-    debug_mode => { danger(load_config()); },
-    else => { 
+    debug_mode -> { danger(load_config()); },
+    else -> { 
         safe(load_config(), (e:s):Config { r default_config(); })
     }
 };
@@ -217,14 +217,14 @@ config:Config = if {
 ```nail
 f validate_price(price:f):f!e {
     if {
-        price < 0.0 => { 
+        price < 0.0 -> { 
             r e(array_join([
                 `Invalid price: `, 
                 string_from(price), 
                 `. Price must be non-negative`
             ])); 
         },
-        price > 1000000.0 => { 
+        price > 1000000.0 -> { 
             r e(`Price exceeds maximum allowed value of 1,000,000`); 
         }
     };

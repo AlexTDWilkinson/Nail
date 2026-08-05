@@ -9,10 +9,10 @@ priority_low:i = 1;
 // Function to format a task with priority
 f format_task(task_name:s, priority:i, priority_high:i, priority_medium:i, priority_low:i):s {
     priority_text:s = if {
-        priority == priority_high => { r `[HIGH]`; },
-        priority == priority_medium => { r `[MED] `; },
-        priority == priority_low => { r `[LOW] `; },
-        else => { r ``; }
+        priority == priority_high -> { r `[HIGH]`; },
+        priority == priority_medium -> { r `[MED] `; },
+        priority == priority_low -> { r `[LOW] `; },
+        else -> { r ``; }
     };
 
     formatted:s = array_join([priority_text, ` `, task_name], ``);
@@ -64,8 +64,8 @@ medium_priority_line:s = array_join([`Has Medium Priority: `, string_from(has_me
 // Build task list using collection operations
 task_list:s = reduce acc task in all_tasks from `` {
     y if {
-        acc == `` => { r task; },
-        else => { r array_join([acc, `\n`, task], ``); }
+        acc == `` -> { r task; },
+        else -> { r array_join([acc, `\n`, task], ``); }
     };
 };
 

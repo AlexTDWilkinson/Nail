@@ -51,7 +51,7 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
         // Split it into two separate lines
         // Lines containing string literals are never split: the brace may be inside the string.
         let needs_split = (trimmed.contains("}") && !trimmed.starts_with("}") &&
-                          !trimmed.contains("{") && !trimmed.contains("=>") &&
+                          !trimmed.contains("{") && !trimmed.contains("->") &&
                           !trimmed.contains('`') &&
                           !trimmed.starts_with("//")) &&
                           trimmed.chars().filter(|&c| c != '}' && c != ' ').count() > 0;
@@ -229,10 +229,6 @@ pub fn format_nail_line(line: &str) -> String {
                     // ==
                     formatted.push_str(" == ");
                     chars.next();
-                } else if chars.peek() == Some(&'>') {
-                    // =>
-                    formatted.push_str(" => ");
-                    chars.next();
                 } else if in_struct_init {
                     // = in struct initialization - no space before, one space after
                     formatted.push_str("= ");
@@ -302,8 +298,15 @@ pub fn format_nail_line(line: &str) -> String {
                 }
             }
             '+' | '-' | '*' | '%' => {
-                // Don't add spaces around - if it's a negative number
-                if ch == '-' && formatted.chars().last().map_or(true, |c| !c.is_alphanumeric() && c != ')') {
+                if ch == '-' && chars.peek() == Some(&'>') {
+                    // ->
+                    while formatted.ends_with(' ') {
+                        formatted.pop();
+                    }
+                    formatted.push_str(" -> ");
+                    chars.next();
+                } else if ch == '-' && formatted.chars().last().map_or(true, |c| !c.is_alphanumeric() && c != ')') {
+                    // Don't add spaces around - if it's a negative number
                     formatted.push(ch);
                 } else {
                     // Trim trailing space before adding operator with spaces
@@ -430,8 +433,8 @@ mod tests {
 
     #[test]
     fn test_arrow_operator() {
-        assert_eq!(format_nail_line("if x => y"), "if x => y");
-        assert_eq!(format_nail_line("case=>result"), "case => result");
+        assert_eq!(format_nail_line("if x -> y"), "if x -> y");
+        assert_eq!(format_nail_line("case->result"), "case -> result");
     }
 
     #[test]
@@ -526,10 +529,10 @@ mod tests {
     fn test_nested_indentation() {
         let input = vec![
             "if {".to_string(),
-            "x > 0 => {".to_string(),
+            "x > 0 -> {".to_string(),
             "print(`positive`);".to_string(),
             "},".to_string(),
-            "else => {".to_string(),
+            "else -> {".to_string(),
             "print(`negative`);".to_string(),
             "}".to_string(),
             "}".to_string(),
@@ -537,10 +540,10 @@ mod tests {
 
         let expected = vec![
             "if {".to_string(),
-            "    x > 0 => {".to_string(),
+            "    x > 0 -> {".to_string(),
             "        print(`positive`);".to_string(),
             "    },".to_string(),
-            "    else => {".to_string(),
+            "    else -> {".to_string(),
             "        print(`negative`);".to_string(),
             "    }".to_string(),
             "}".to_string(),

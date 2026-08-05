@@ -212,3 +212,198 @@ mod tests {
         assert!(which("/etc/hostname".to_string()).await.unwrap_err().contains("not a program"));
     }
 }
+
+/// Open a URL in the person's browser - the desktop's own opener does the
+/// work, so this succeeds when the opener started, not when the page loaded.
+pub async fn open_browser(url: String) -> Result<(), String> {
+    let trimmed = url.trim().to_string();
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://") || trimmed.starts_with("file://")) {
+        return Err(format!("process_open_browser: `{}` is not an http, https or file URL", trimmed));
+    }
+    let mut command = if cfg!(target_os = "macos") {
+        let mut c = tokio::process::Command::new("open");
+        c.arg(&trimmed);
+        c
+    } else if cfg!(target_os = "windows") {
+        let mut c = tokio::process::Command::new("cmd");
+        c.args(["/C", "start", ""]).arg(&trimmed);
+        c
+    } else {
+        let mut c = tokio::process::Command::new("xdg-open");
+        c.arg(&trimmed);
+        c
+    };
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("process_open_browser: could not start the system opener: {}", e))?;
+    return Ok(());
+}
+
+/// A process kept running, read a line at a time - what process_run cannot
+/// give, because it collects everything at the end. The thing itself holds a
+/// child and pipes, so the program holds a handle for it, the way fs_open works.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct PROCESS_Handle {
+    pub handle: String,
+    pub command: String,
+}
+
+struct RunningProcess {
+    child: tokio::process::Child,
+    stdin: Option<tokio::process::ChildStdin>,
+    lines: tokio::sync::mpsc::UnboundedReceiver<String>,
+}
+
+lazy_static::lazy_static! {
+    static ref RUNNING_PROCESSES: dashmap::DashMap<String, RunningProcess> = dashmap::DashMap::new();
+}
+
+/// Start a program and keep it running. Its stdout and stderr arrive merged,
+/// line by line, through process_next_line; process_wait collects the exit
+/// code at the end.
+pub async fn spawn_process(command: String, arguments: Vec<String>) -> Result<PROCESS_Handle, String> {
+    let mut child = tokio::process::Command::new(&command)
+        .args(&arguments)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("process_spawn: could not start `{}`: {}", command, e))?;
+
+    let (sender, lines) = tokio::sync::mpsc::unbounded_channel();
+    if let Some(stdout) = child.stdout.take() {
+        let sender = sender.clone();
+        tokio::spawn(async move {
+            use tokio::io::AsyncBufReadExt;
+            let mut reader = tokio::io::BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        let sender = sender.clone();
+        tokio::spawn(async move {
+            use tokio::io::AsyncBufReadExt;
+            let mut reader = tokio::io::BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    drop(sender);
+
+    let stdin = child.stdin.take();
+    let handle = format!("process_{}", uuid::Uuid::new_v4());
+    RUNNING_PROCESSES.insert(handle.clone(), RunningProcess { child, stdin, lines });
+    return Ok(PROCESS_Handle { handle, command });
+}
+
+/// The next line the process printed, stdout and stderr together in arrival
+/// order. Waits for one if none is ready; an error means the output is over.
+pub async fn next_line(process: &PROCESS_Handle) -> Result<String, String> {
+    let mut running = RUNNING_PROCESSES
+        .get_mut(&process.handle)
+        .ok_or_else(|| format!("process_next_line: `{}` is not running - it was waited on, killed, or never started", process.command))?;
+    return match running.lines.recv().await {
+        Some(line) => Ok(line),
+        None => Err(format!("process_next_line: `{}` has no more output", process.command)),
+    };
+}
+
+/// Write text to the process's stdin, exactly as given - add a newline
+/// yourself when the program reads lines.
+pub async fn write_stdin(process: &PROCESS_Handle, text: String) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    let mut running = RUNNING_PROCESSES
+        .get_mut(&process.handle)
+        .ok_or_else(|| format!("process_write_stdin: `{}` is not running", process.command))?;
+    let stdin = running.stdin.as_mut().ok_or_else(|| format!("process_write_stdin: `{}`'s stdin is closed", process.command))?;
+    stdin.write_all(text.as_bytes()).await.map_err(|e| format!("process_write_stdin: `{}` is not reading: {}", process.command, e))?;
+    stdin.flush().await.map_err(|e| format!("process_write_stdin: `{}` is not reading: {}", process.command, e))?;
+    return Ok(());
+}
+
+/// Close the process's stdin - the end-of-input many programs wait for.
+pub async fn close_stdin(process: &PROCESS_Handle) -> Result<(), String> {
+    let mut running = RUNNING_PROCESSES
+        .get_mut(&process.handle)
+        .ok_or_else(|| format!("process_close_stdin: `{}` is not running", process.command))?;
+    running.stdin = None;
+    return Ok(());
+}
+
+/// Whether the process is still going.
+pub async fn is_running(process: &PROCESS_Handle) -> Result<bool, String> {
+    let mut running = RUNNING_PROCESSES
+        .get_mut(&process.handle)
+        .ok_or_else(|| format!("process_is_running: `{}` was already waited on or killed", process.command))?;
+    return match running.child.try_wait() {
+        Ok(None) => Ok(true),
+        Ok(Some(_)) => Ok(false),
+        Err(e) => Err(format!("process_is_running: could not ask after `{}`: {}", process.command, e)),
+    };
+}
+
+/// Wait for the process to end and return its exit code. Read the lines you
+/// want first - waiting forgets the handle, and any unread output with it.
+pub async fn wait_process(process: &PROCESS_Handle) -> Result<i64, String> {
+    let (_, mut running) = RUNNING_PROCESSES
+        .remove(&process.handle)
+        .ok_or_else(|| format!("process_wait: `{}` was already waited on or killed", process.command))?;
+    running.stdin = None;
+    let status = running.child.wait().await.map_err(|e| format!("process_wait: could not wait for `{}`: {}", process.command, e))?;
+    return Ok(status.code().map(|code| code as i64).unwrap_or(-1));
+}
+
+/// Stop the process now and forget its handle.
+pub async fn kill_process(process: &PROCESS_Handle) -> Result<(), String> {
+    let (_, mut running) = RUNNING_PROCESSES
+        .remove(&process.handle)
+        .ok_or_else(|| format!("process_kill: `{}` was already waited on or killed", process.command))?;
+    running.child.kill().await.map_err(|e| format!("process_kill: could not stop `{}`: {}", process.command, e))?;
+    return Ok(());
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn lines_stream_out_and_the_exit_code_comes_last() {
+        let child = spawn_process("sh".to_string(), vec!["-c".to_string(), "echo one; echo two >&2; echo three; exit 7".to_string()]).await.expect("sh starts");
+        let mut seen = Vec::new();
+        while let Ok(line) = next_line(&child).await {
+            seen.push(line);
+        }
+        assert_eq!(seen.len(), 3, "got: {:?}", seen);
+        assert!(seen.contains(&"two".to_string()), "stderr arrives too: {:?}", seen);
+        assert_eq!(wait_process(&child).await.expect("an exit code"), 7);
+        assert!(next_line(&child).await.unwrap_err().contains("not running"));
+    }
+
+    #[tokio::test]
+    async fn stdin_feeds_the_process_and_closing_it_ends_cat() {
+        let child = spawn_process("cat".to_string(), vec![]).await.expect("cat starts");
+        assert!(is_running(&child).await.expect("cat is askable"));
+        write_stdin(&child, "hello\n".to_string()).await.expect("cat reads");
+        assert_eq!(next_line(&child).await.expect("cat echoes"), "hello");
+        close_stdin(&child).await.expect("stdin closes");
+        assert_eq!(wait_process(&child).await.expect("cat ends"), 0);
+    }
+
+    #[tokio::test]
+    async fn a_killed_process_is_gone() {
+        let child = spawn_process("sleep".to_string(), vec!["30".to_string()]).await.expect("sleep starts");
+        kill_process(&child).await.expect("sleep dies");
+        assert!(wait_process(&child).await.unwrap_err().contains("already waited on or killed"));
+        assert!(spawn_process("nail_no_such_binary".to_string(), vec![]).await.unwrap_err().contains("could not start"));
+    }
+}

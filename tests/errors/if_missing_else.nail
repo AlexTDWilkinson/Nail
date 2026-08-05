@@ -1,5 +1,5 @@
 // Error test: if used as a value must have an else branch
 flag:b = true;
 value:i = if {
-    flag => { r 1; }
+    flag -> { r 1; }
 };

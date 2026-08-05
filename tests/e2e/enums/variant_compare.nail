@@ -2,6 +2,6 @@
 enum Direction { North, South, East, West }
 heading:Direction = Direction::North;
 if {
-    heading == Direction::North => { print(`going north`); },
-    else => { print(`going elsewhere`); }
+    heading == Direction::North -> { print(`going north`); },
+    else -> { print(`going elsewhere`); }
 }

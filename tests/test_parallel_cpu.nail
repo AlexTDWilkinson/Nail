@@ -4,8 +4,8 @@
 // CPU-intensive computation function
 f compute_factorial(num:i):i {
     if {
-        num <= 1 => { r 1; },
-        else => { 
+        num <= 1 -> { r 1; },
+        else -> { 
             result:i = num * compute_factorial(num - 1);
             r result;
         }

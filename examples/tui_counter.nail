@@ -37,13 +37,13 @@ f view(state:App):TUI_Screen {
 
 f update(state:App, event:TUI_Event):App {
     if {
-        event.key == `q` => { r App { count = state.count, message = `bye`, finished = true }; },
-        event.key == `Esc` => { r App { count = state.count, message = `bye`, finished = true }; },
-        event.key == `Ctrl+c` => { r App { count = state.count, message = `bye`, finished = true }; },
-        event.key == `Up` => { r App { count = state.count + 1, message = `up`, finished = false }; },
-        event.key == `Down` => { r App { count = state.count - 1, message = `down`, finished = false }; },
-        event.key == `r` => { r App { count = 0, message = `reset`, finished = false }; },
-        else => { r state; }
+        event.key == `q` -> { r App { count = state.count, message = `bye`, finished = true }; },
+        event.key == `Esc` -> { r App { count = state.count, message = `bye`, finished = true }; },
+        event.key == `Ctrl+c` -> { r App { count = state.count, message = `bye`, finished = true }; },
+        event.key == `Up` -> { r App { count = state.count + 1, message = `up`, finished = false }; },
+        event.key == `Down` -> { r App { count = state.count - 1, message = `down`, finished = false }; },
+        event.key == `r` -> { r App { count = 0, message = `reset`, finished = false }; },
+        else -> { r state; }
     }
 }
 
@@ -58,11 +58,11 @@ f without_a_terminal(err:e):App {
 }
 
 if {
-    args_flag(`interactive`) => {
+    args_flag(`interactive`) -> {
         finished:App = safe(tui_run(start), without_a_terminal);
         print(`finished on:`, finished.count);
     },
-    else => {
+    else -> {
         // Everything is data and pure functions, so what the program would
         // have drawn can be printed without drawing it.
         drawn:TUI_Screen = view(start);

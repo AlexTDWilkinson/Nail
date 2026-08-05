@@ -23,7 +23,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
 
     simple_fns! { m, Stdlib:
         "stdlib_modules" => "std_lib::stdlib::modules", () -> [s],
-            "The names of the standard library's modules, in the order stdlib_functions lists their functions.",
+            "The standard library's namespaces, spelled the way calls spell them (db, string, net), in the order stdlib_functions lists their functions.",
             "modules:a:s = stdlib_modules();";
     }
 }

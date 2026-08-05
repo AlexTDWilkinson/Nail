@@ -19,8 +19,8 @@ long_names:a:s = filter name in names {
 // Outer variable captured inside an if branch of a map body
 labels:a:s = map name in names {
     label:s = if {
-        string_length(name) > threshold => { r array_join([name, `long`], `-`); },
-        else => { r array_join(prefixes, `-`); }
+        string_length(name) > threshold -> { r array_join([name, `long`], `-`); },
+        else -> { r array_join(prefixes, `-`); }
     };
     y label;
 };

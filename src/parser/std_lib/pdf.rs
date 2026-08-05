@@ -51,7 +51,7 @@ pub async fn from_text(path: String, title: String, body: String) -> Result<(), 
             lines.push(String::new());
             continue;
         }
-        let wrapped = crate::std_lib::string::word_wrap(paragraph.to_string(), CHARACTERS_PER_LINE as i64);
+        let wrapped = crate::parser::std_lib::string::word_wrap(paragraph.to_string(), CHARACTERS_PER_LINE as i64);
         lines.extend(wrapped.lines().map(|line| line.to_string()));
     }
 

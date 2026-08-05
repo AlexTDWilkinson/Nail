@@ -1,7 +1,7 @@
 // Error test: y (yield) is only valid inside collection operation blocks
 f pick_one(flag:b):i {
     if {
-        flag => { y 1; },
-        else => { y 2; }
+        flag -> { y 1; },
+        else -> { y 2; }
     }
 }

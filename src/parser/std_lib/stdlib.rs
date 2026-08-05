@@ -11,7 +11,8 @@ use crate::stdlib_registry::{StdlibModule, STDLIB_FUNCTIONS};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct STDLIB_Function {
     pub name: String,
-    /// The module the function belongs to, by its display name (`Strings`).
+    /// The namespace the function belongs to, spelled the way a call spells
+    /// it (`string`, `db`).
     pub module: String,
     /// The call as a Nail declaration reads it: `string_split(input:s, delimiter:s):a:s`.
     pub signature: String,
@@ -44,9 +45,46 @@ pub fn functions() -> Vec<STDLIB_Function> {
     functions.into_iter().map(|(_, function)| function).collect()
 }
 
-/// The modules that actually export something, by display name, in the order
-/// `functions` lists them.
+/// The namespaces that actually export something, in the order `functions`
+/// lists them. Modules that share a namespace (SQLite, Postgres and DataFusion
+/// are all `db`) appear once.
 pub fn modules() -> Vec<String> {
     let exported: Vec<&StdlibModule> = STDLIB_FUNCTIONS.values().map(|function| &function.module).collect();
-    StdlibModule::all().iter().filter(|module| exported.contains(module)).map(|module| module.display_name().to_string()).collect()
+    let mut names: Vec<String> = Vec::new();
+    for module in StdlibModule::all().iter().filter(|module| exported.contains(module)) {
+        let name = module.display_name().to_string();
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_function_belongs_to_a_listed_module_and_no_module_is_listed_twice() {
+        let modules = modules();
+        let mut seen = std::collections::HashSet::new();
+        for module in &modules {
+            assert!(seen.insert(module.clone()), "module {} listed twice - dedup display names that several modules share", module);
+        }
+        for function in functions() {
+            assert!(modules.contains(&function.module), "function {} claims module {} which modules() does not list", function.name, function.module);
+        }
+    }
+
+    #[test]
+    fn functions_that_share_a_module_sit_together_in_the_listing() {
+        let listed = functions();
+        let mut last_position: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (position, function) in listed.iter().enumerate() {
+            if let Some(previous) = last_position.get(&function.module) {
+                assert_eq!(position, previous + 1, "module {} is split - {} appears after functions from another module", function.module, function.name);
+            }
+            last_position.insert(function.module.clone(), position);
+        }
+    }
 }

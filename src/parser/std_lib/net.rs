@@ -194,3 +194,227 @@ mod tests {
         assert!(failure.contains("no answer came"), "got: {}", failure);
     }
 }
+
+fn parse_ip(text: &str, what: &str) -> Result<std::net::IpAddr, String> {
+    return text.trim().parse::<std::net::IpAddr>().map_err(|_| format!("{}: `{}` is not an IP address", what, text.trim()));
+}
+
+/// Whether an address sits inside a CIDR range like `10.0.0.0/8` or `fd00::/8`.
+/// An address of the other family is simply outside the range, not an error.
+pub fn ip_in_cidr(ip: String, cidr: String) -> Result<bool, String> {
+    let address = parse_ip(&ip, "net_ip_in_cidr")?;
+    let trimmed = cidr.trim();
+    let (base_text, prefix_text) = trimmed.split_once('/').ok_or_else(|| format!("net_ip_in_cidr: `{}` is not CIDR notation - it needs a /prefix", trimmed))?;
+    let base = parse_ip(base_text, "net_ip_in_cidr")?;
+    let prefix: u32 = prefix_text.trim().parse().map_err(|_| format!("net_ip_in_cidr: `{}` is not a prefix length", prefix_text))?;
+    return match (address, base) {
+        (std::net::IpAddr::V4(a), std::net::IpAddr::V4(b)) => {
+            if prefix > 32 {
+                return Err(format!("net_ip_in_cidr: a v4 prefix runs 0 to 32, not {}", prefix));
+            }
+            let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
+            Ok(u32::from(a) & mask == u32::from(b) & mask)
+        }
+        (std::net::IpAddr::V6(a), std::net::IpAddr::V6(b)) => {
+            if prefix > 128 {
+                return Err(format!("net_ip_in_cidr: a v6 prefix runs 0 to 128, not {}", prefix));
+            }
+            let mask = if prefix == 0 { 0 } else { u128::MAX << (128 - prefix) };
+            Ok(u128::from(a) & mask == u128::from(b) & mask)
+        }
+        _ => Ok(false),
+    };
+}
+
+/// Whether an address is private - RFC 1918 space for v4, unique-local for v6.
+pub fn ip_is_private(ip: String) -> Result<bool, String> {
+    return match parse_ip(&ip, "net_ip_is_private")? {
+        std::net::IpAddr::V4(v4) => Ok(v4.is_private()),
+        std::net::IpAddr::V6(v6) => Ok((v6.segments()[0] & 0xfe00) == 0xfc00),
+    };
+}
+
+/// Whether an address points back at the machine itself.
+pub fn ip_is_loopback(ip: String) -> Result<bool, String> {
+    return Ok(parse_ip(&ip, "net_ip_is_loopback")?.is_loopback());
+}
+
+/// 4 or 6, after checking the address really is one.
+pub fn ip_version(ip: String) -> Result<i64, String> {
+    return match parse_ip(&ip, "net_ip_version")? {
+        std::net::IpAddr::V4(_) => Ok(4),
+        std::net::IpAddr::V6(_) => Ok(6),
+    };
+}
+
+/// A v4 address as the integer it is - what log databases store and range
+/// comparisons sort. A v6 address does not fit and says so.
+pub fn ip_to_int(ip: String) -> Result<i64, String> {
+    return match parse_ip(&ip, "net_ip_to_int")? {
+        std::net::IpAddr::V4(v4) => Ok(u32::from(v4) as i64),
+        std::net::IpAddr::V6(_) => Err("net_ip_to_int: only a v4 address fits in an integer".to_string()),
+    };
+}
+
+/// The integer back to its dotted v4 form.
+pub fn ip_from_int(value: i64) -> Result<String, String> {
+    if value < 0 || value > u32::MAX as i64 {
+        return Err(format!("net_ip_from_int: {} is outside the v4 address space", value));
+    }
+    return Ok(std::net::Ipv4Addr::from(value as u32).to_string());
+}
+
+#[cfg(test)]
+mod ip_tests {
+    use super::*;
+
+    #[test]
+    fn cidr_membership_reads_correctly() {
+        assert!(ip_in_cidr("10.1.2.3".to_string(), "10.0.0.0/8".to_string()).unwrap());
+        assert!(!ip_in_cidr("11.1.2.3".to_string(), "10.0.0.0/8".to_string()).unwrap());
+        assert!(ip_in_cidr("192.168.1.7".to_string(), "192.168.1.0/24".to_string()).unwrap());
+        assert!(ip_in_cidr("fd12::1".to_string(), "fd00::/8".to_string()).unwrap());
+        assert!(!ip_in_cidr("10.0.0.1".to_string(), "fd00::/8".to_string()).unwrap());
+        assert!(ip_in_cidr("8.8.8.8".to_string(), "0.0.0.0/0".to_string()).unwrap());
+        assert!(ip_in_cidr("10.9.9.9".to_string(), "10.128.0.0/8".to_string()).unwrap(), "the base's host bits are masked off");
+    }
+
+    #[test]
+    fn bad_cidr_text_is_refused() {
+        assert!(ip_in_cidr("10.0.0.1".to_string(), "10.0.0.0".to_string()).unwrap_err().contains("needs a /prefix"));
+        assert!(ip_in_cidr("10.0.0.1".to_string(), "10.0.0.0/33".to_string()).unwrap_err().contains("0 to 32"));
+        assert!(ip_in_cidr("not-an-ip".to_string(), "10.0.0.0/8".to_string()).unwrap_err().contains("not an IP address"));
+    }
+
+    #[test]
+    fn the_private_and_loopback_families_are_known() {
+        assert!(ip_is_private("192.168.0.1".to_string()).unwrap());
+        assert!(ip_is_private("10.0.0.1".to_string()).unwrap());
+        assert!(ip_is_private("fd00::1".to_string()).unwrap());
+        assert!(!ip_is_private("8.8.8.8".to_string()).unwrap());
+        assert!(ip_is_loopback("127.0.0.1".to_string()).unwrap());
+        assert!(ip_is_loopback("::1".to_string()).unwrap());
+        assert_eq!(ip_version("8.8.8.8".to_string()).unwrap(), 4);
+        assert_eq!(ip_version("::1".to_string()).unwrap(), 6);
+    }
+
+    #[test]
+    fn v4_addresses_round_trip_through_integers() {
+        let as_int = ip_to_int("1.2.3.4".to_string()).unwrap();
+        assert_eq!(as_int, 16909060);
+        assert_eq!(ip_from_int(as_int).unwrap(), "1.2.3.4");
+        assert!(ip_to_int("::1".to_string()).is_err());
+        assert!(ip_from_int(-1).is_err());
+    }
+}
+
+pub type LineFuture = std::pin::Pin<Box<dyn std::future::Future<Output = String> + Send>>;
+
+fn check_port(port: i64, what: &str) -> Result<u16, String> {
+    if !(1..=65535).contains(&port) {
+        return Err(format!("{}: a port runs 1 to 65535, not {}", what, port));
+    }
+    return Ok(port as u16);
+}
+
+/// Accept TCP connections and speak a line-at-a-time protocol: each line a
+/// client sends is answered by the program's handle_line function, and an
+/// empty reply sends nothing back. Blocks forever, so it runs in a spawn
+/// block. Bind `127.0.0.1` to stay behind a reverse proxy, `0.0.0.0` to face
+/// the world.
+pub async fn tcp_serve<F>(host: String, port: i64, handler: F) -> Result<(), String>
+where
+    F: Fn(String) -> LineFuture + Clone + Send + Sync + 'static,
+{
+    let port = check_port(port, "net_tcp_serve")?;
+    let listener = tokio::net::TcpListener::bind((host.trim(), port))
+        .await
+        .map_err(|e| format!("net_tcp_serve: could not listen on {}:{}: {}", host.trim(), port, e))?;
+    loop {
+        let (stream, _) = match listener.accept().await {
+            Ok(accepted) => accepted,
+            Err(_) => continue,
+        };
+        let handler = handler.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+            let (read_half, mut write_half) = stream.into_split();
+            let mut lines = tokio::io::BufReader::new(read_half).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let reply = handler(line).await;
+                if !reply.is_empty() {
+                    if write_half.write_all(reply.as_bytes()).await.is_err() {
+                        break;
+                    }
+                    if write_half.write_all(b"\n").await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// Answer UDP datagrams: each one that arrives is passed as text to the
+/// program's handle_packet function, and a non-empty reply is sent back to
+/// whoever asked. Blocks forever, so it runs in a spawn block.
+pub async fn udp_serve<F>(host: String, port: i64, handler: F) -> Result<(), String>
+where
+    F: Fn(String) -> LineFuture + Clone + Send + Sync + 'static,
+{
+    let port = check_port(port, "net_udp_serve")?;
+    let socket = tokio::net::UdpSocket::bind((host.trim(), port))
+        .await
+        .map_err(|e| format!("net_udp_serve: could not listen on {}:{}: {}", host.trim(), port, e))?;
+    let mut buffer = vec![0u8; 65536];
+    loop {
+        let (size, source) = match socket.recv_from(&mut buffer).await {
+            Ok(received) => received,
+            Err(_) => continue,
+        };
+        let text = String::from_utf8_lossy(&buffer[..size]).to_string();
+        let reply = handler(text).await;
+        if !reply.is_empty() {
+            let _ = socket.send_to(reply.as_bytes(), source).await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod serve_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_tcp_server_answers_line_for_line() {
+        let port = 41893;
+        tokio::spawn(async move {
+            let _ = tcp_serve("127.0.0.1".to_string(), port, |line| {
+                Box::pin(async move { format!("echo {}", line) }) as LineFuture
+            })
+            .await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let answer = tcp_request("127.0.0.1".to_string(), port, "hello\n".to_string(), 1000).await.expect("an answer");
+        assert!(answer.starts_with("echo hello"), "got: {}", answer);
+    }
+
+    #[tokio::test]
+    async fn a_udp_server_answers_datagrams() {
+        let port = 41894;
+        tokio::spawn(async move {
+            let _ = udp_serve("127.0.0.1".to_string(), port, |text| {
+                Box::pin(async move { text.to_uppercase() }) as LineFuture
+            })
+            .await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let answer = udp_request("127.0.0.1".to_string(), port, "ping".to_string(), 1000).await.expect("an answer");
+        assert_eq!(answer, "PING");
+    }
+
+    #[tokio::test]
+    async fn a_bad_port_is_refused() {
+        let failure = tcp_serve("127.0.0.1".to_string(), 700000, |_| Box::pin(async { String::new() }) as LineFuture).await.unwrap_err();
+        assert!(failure.contains("1 to 65535"));
+    }
+}

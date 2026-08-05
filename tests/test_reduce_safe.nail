@@ -44,8 +44,8 @@ highest_sale:Sale = reduce best sale in sales from first_sale {
     best_quantity:f = safe(float_from(best.quantity), default_zero);
     best_value:f = best_quantity * best.price;
     result:Sale = if {
-        current_value > best_value => { r sale; },
-        else => { r best; }
+        current_value > best_value -> { r sale; },
+        else -> { r best; }
     };
     y result;
 };

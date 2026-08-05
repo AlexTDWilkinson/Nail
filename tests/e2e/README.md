@@ -95,8 +95,8 @@ Types: `i` int, `f` float, `s` string, `b` bool, `a:T` array, `h<K,V>` hashmap,
 // functions ('f', return with 'r'; result types with !e; errors via e(...))
 f divide(dividend:i, divisor:i):i!e {
     if {
-        divisor == 0 => { r e(`Division by zero`); },
-        else => { r dividend / divisor; }
+        divisor == 0 -> { r e(`Division by zero`); },
+        else -> { r dividend / divisor; }
     }
 }
 val_ok:i = danger(divide(10, 2));          // unwrap or crash
@@ -104,7 +104,7 @@ f on_err(error_msg:e):i { r -1; }
 val_safe:i = safe(divide(1, 0), on_err);   // unwrap or fallback
 
 // if is an expression; branch bodies use 'r' for their value
-grade:s = if { score >= 90 => { r `A`; }, score >= 80 => { r `B`; }, else => { r `C`; } };
+grade:s = if { score >= 90 -> { r `A`; }, score >= 80 -> { r `B`; }, else -> { r `C`; } };
 
 // collection expressions; 'y' yields; optional index param after iterator
 nums:a:i = [1, 2, 3, 4, 5];
@@ -119,7 +119,7 @@ with_idx:a:i = map num idx in nums { y num + idx; };
 // loops
 for num in nums { print(num); }
 for num in nums when num > 2 { print(num); }
-loop idx { if { idx >= 3 => { break; }, else => { print(idx); } } }
+loop idx { if { idx >= 3 -> { break; }, else -> { print(idx); } } }
 
 // structs and enums
 struct Point { x_coord:i, y_coord:i }

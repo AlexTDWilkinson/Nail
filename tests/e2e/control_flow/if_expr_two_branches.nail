@@ -1,4 +1,4 @@
 // E2E: if expression with two branches assigned to a variable
 score:i = 42;
-label:s = if { score > 50 => { r `high`; }, else => { r `low`; } };
+label:s = if { score > 50 -> { r `high`; }, else -> { r `low`; } };
 print(label);

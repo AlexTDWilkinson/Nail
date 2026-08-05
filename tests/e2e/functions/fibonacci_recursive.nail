@@ -1,8 +1,8 @@
 // E2E: recursive function
 f fib(num:i):i {
     r if {
-        num <= 1 => { r num; },
-        else => { r fib(num - 1) + fib(num - 2); }
+        num <= 1 -> { r num; },
+        else -> { r fib(num - 1) + fib(num - 2); }
     };
 }
 sequence:a:i = map idx in array_range(0, 10) { y fib(idx); };

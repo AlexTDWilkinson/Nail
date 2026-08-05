@@ -41,5 +41,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "draw_scale" => "std_lib::draw::scale", (value: f, from_low: f, from_high: f, to_low: f, to_high: f) -> (f!e),
             "Moves a value from one range into another - the arithmetic every chart needs. To plot upward on a screen whose y grows downward, pass the height as to_low and 0.0 as to_high.",
             "y:f = danger(draw_scale(value, 0.0, 100.0, 300.0, 0.0));";
+        "draw_qr_svg" [QrCode] => "std_lib::draw::qr_svg", (text: s) -> (s!e),
+            "A QR code of the text as an SVG document, black on white. Put a URL in it and a phone camera opens the page - tickets, table menus, 2FA enrolment.",
+            "badge:s = danger(draw_qr_svg(`https://nail-lang.org`));";
     }
 }

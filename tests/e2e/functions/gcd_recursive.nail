@@ -1,8 +1,8 @@
 // E2E: recursive greatest common divisor
 f gcd_calc(first:i, second:i):i {
     r if {
-        second == 0 => { r first; },
-        else => { r gcd_calc(second, first % second); }
+        second == 0 -> { r first; },
+        else -> { r gcd_calc(second, first % second); }
     };
 }
 print(gcd_calc(48, 18));

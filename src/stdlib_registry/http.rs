@@ -274,4 +274,60 @@ m.insert("http_request", StdlibFunction {
             "How many live subscribers a channel has right now.",
             "watching:i = http_live_count(`chat`);";
     }
+
+    let websocket_parameter = || StdlibParameter { name: "socket".to_string(), param_type: NailDataTypeDescriptor::Struct("HTTP_Websocket".to_string()), pass_by_reference: true };
+    let websocket_import = || vec![("HTTP_Websocket", "nail::std_lib::http")];
+    let websocket_deps = || vec![CrateDependency::TokioTungstenite, CrateDependency::Tokio, CrateDependency::DashMap, CrateDependency::Uuid, CrateDependency::Serde, CrateDependency::Futures];
+
+    m.insert("http_ws_connect", StdlibFunction {
+        rust_path: "std_lib::http::ws_connect".to_string(),
+        crate_deps: websocket_deps(),
+        struct_derives: vec![],
+        custom_type_imports: websocket_import(),
+        module: StdlibModule::Http,
+        parameters: vec![nail_param!(url: s)],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("HTTP_Websocket".to_string()))),
+        diverging: false,
+        description: "Opens a websocket to a ws:// or wss:// URL - the client half of http_server_realtime. This is how a program consumes a streaming API: an exchange feed, a chat bridge, another Nail program.",
+        example: "feed:HTTP_Websocket = danger(http_ws_connect(`wss://stream.example.com/live`));",
+    });
+
+    m.insert("http_ws_send", StdlibFunction {
+        rust_path: "std_lib::http::ws_send".to_string(),
+        crate_deps: websocket_deps(),
+        struct_derives: vec![],
+        custom_type_imports: websocket_import(),
+        module: StdlibModule::Http,
+        parameters: vec![websocket_parameter(), nail_param!(text: s)],
+        return_type: nail_type!((v!e)),
+        diverging: false,
+        description: "Sends one text frame.",
+        example: "danger(http_ws_send(feed, subscribe_message));",
+    });
+
+    m.insert("http_ws_receive", StdlibFunction {
+        rust_path: "std_lib::http::ws_receive".to_string(),
+        crate_deps: websocket_deps(),
+        struct_derives: vec![],
+        custom_type_imports: websocket_import(),
+        module: StdlibModule::Http,
+        parameters: vec![websocket_parameter(), nail_param!(timeout_milliseconds: i)],
+        return_type: nail_type!((s!e)),
+        diverging: false,
+        description: "The next text frame the other side sends. Waits up to the timeout, or forever when the timeout is 0. Pings are answered quietly; a closed connection is an error and forgets the handle.",
+        example: "update:s = danger(http_ws_receive(feed, 30000));",
+    });
+
+    m.insert("http_ws_close", StdlibFunction {
+        rust_path: "std_lib::http::ws_close".to_string(),
+        crate_deps: websocket_deps(),
+        struct_derives: vec![],
+        custom_type_imports: websocket_import(),
+        module: StdlibModule::Http,
+        parameters: vec![websocket_parameter()],
+        return_type: nail_type!((v!e)),
+        diverging: false,
+        description: "Says goodbye properly and forgets the handle. Closing twice is not an error.",
+        example: "danger(http_ws_close(feed));",
+    });
 }

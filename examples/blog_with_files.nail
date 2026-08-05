@@ -128,7 +128,7 @@ blog_html:s = array_join([`
 f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
     headers:h<s,s> = hashmap_new();
     if {
-        request.path == `/` => {
+        request.path == `/` -> {
             r HTTP_Response {
                 status = 200,
                 body = danger(hashmap_get(state, `page_home`)),
@@ -136,7 +136,7 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 headers = headers
             };
         },
-        else => {
+        else -> {
             r HTTP_Response {
                 status = 404,
                 body = html`<pre>404 - not found</pre>`,
@@ -154,7 +154,11 @@ config:HTTP_Config = HTTP_Config {
     static_mounts = [],
     max_body_bytes = 0,
     timeout_seconds = 0,
-    state = state
+    state = state,
+    cors_origins = [],
+    security_headers = false,
+    rate_limit_per_minute = 0,
+    rate_limit_message = ``
 };
 
 // Start the server

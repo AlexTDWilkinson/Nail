@@ -1,9 +1,9 @@
 // E2E: composing helper functions in nested calls
 f max_of(first:i, second:i):i {
-    r if { first >= second => { r first; }, else => { r second; } };
+    r if { first >= second -> { r first; }, else -> { r second; } };
 }
 f min_of(first:i, second:i):i {
-    r if { first <= second => { r first; }, else => { r second; } };
+    r if { first <= second -> { r first; }, else -> { r second; } };
 }
 f clamp_val(num:i, low:i, high:i):i {
     r max_of(low, min_of(num, high));

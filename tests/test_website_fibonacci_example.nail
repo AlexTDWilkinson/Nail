@@ -3,8 +3,8 @@
 // Calculate fibonacci sequence
 f fib(num:i):i {
     result:i = if {
-        num <= 1 => { r num; },
-        else => { r fib(num - 1) + fib(num - 2); }
+        num <= 1 -> { r num; },
+        else -> { r fib(num - 1) + fib(num - 2); }
     };
     r result;
 }

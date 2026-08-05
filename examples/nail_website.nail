@@ -38,15 +38,15 @@ factorial_test:s = danger(fs_read(`tests/test_website_factorial_example.nail`));
 // code as the displayed examples at startup and builds responses from the results.
 f factorial(num:i):i {
     if {
-        num <= 1 => { r 1; },
-        else => { r num * factorial(num - 1); }
+        num <= 1 -> { r 1; },
+        else -> { r num * factorial(num - 1); }
     }
 }
 
 f is_prime(num:i):b {
     if {
-        num < 2 => { r false; },
-        else => {
+        num < 2 -> { r false; },
+        else -> {
             has_divisor:b = any div in array_range(2, num) { y num % div == 0; };
             r !has_divisor;
         }
@@ -60,13 +60,17 @@ f count_primes_below(limit:i):i {
 
 f divide(numerator:i, denominator:i):i!e {
     if {
-        denominator == 0 => { r e(`Cannot divide by zero!`); },
-        else => { r numerator / denominator; }
+        denominator == 0 -> { r e(`Cannot divide by zero!`); },
+        else -> { r numerator / denominator; }
     }
 }
 
 f zero_fallback(err:e):i {
     r 0;
+}
+
+f read_fallback(err:e):s {
+    r `(file unavailable)`;
 }
 
 // Same CPU-heavy work as the parallel example, on separate OS threads
@@ -79,8 +83,8 @@ p
 // Same concurrent file reads as the concurrent example
 c
     spec_text:s = danger(fs_read(`nail_language_spec.md`));
-    readme_text:s = danger(fs_read(`README.md`));
-    website_text:s = danger(fs_read(`examples/nail_website.nail`));
+    readme_text:s = expect(fs_read(`README.md`));
+    website_text:s = safe(fs_read(`examples/nail_website.nail`), read_fallback);
 /c
 
 // Same error-handling paths as the error example
@@ -435,9 +439,8 @@ f generate_css():s {
     .tok-fn { color: #60a5fa; }
     .tok-ty { color: #2dd4bf; }
     .tok-str { color: #86efac; }
-    /* A string carrying a language tag is marked so embedded markup reads as
-       markup instead of as one flat colour. */
-    .tok-str-html { color: #fdba74; }
+    /* A tagged string keeps the plain string colour for its tag, backticks and
+       untokenized text; the language shows only in the pieces below. */
     /* Pieces of the language inside a tagged string: an element name in html,
        a selector in css, a keyword in js - one set of colours for all of them */
     .tok-md-punct { color: #94a3b8; }
@@ -449,9 +452,6 @@ f generate_css():s {
     .tok-md-val { color: #fdba74; }
     .tok-md-num { color: #fbbf24; }
     .tok-md-com { color: #64748b; font-style: italic; }
-    .tok-str-css { color: #f0abfc; }
-    .tok-str-js { color: #fcd34d; }
-    .tok-str-sql { color: #67e8f9; }
     .tok-num { color: #fbbf24; }
     .tok-com { color: #64748b; font-style: italic; }
     .tok-op { color: #cbd5e1; }
@@ -552,6 +552,13 @@ f generate_css():s {
         font-weight: 500;
     }
 
+    .stdlib-module-name {
+        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
     .stdlib-fn {
         border-top: 1px solid var(--border);
         padding: 0.85rem 0;
@@ -648,18 +655,19 @@ f generate_css():s {
 
     .lang-tags {
         margin: 0 0 2rem;
-        border: 1px solid #313244;
+        border: 1px solid var(--border);
         border-radius: 0.75rem;
         overflow: hidden;
+        background: var(--bg-primary);
     }
 
     .lang-row {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5rem 1rem;
-        align-items: baseline;
-        padding: 0.6rem 1rem;
-        border-bottom: 1px solid #313244;
+        gap: 0.4rem 1rem;
+        align-items: center;
+        padding: 0.75rem 1.25rem;
+        border-bottom: 1px solid var(--border);
     }
 
     .lang-row:last-child {
@@ -667,25 +675,29 @@ f generate_css():s {
     }
 
     .lang-name {
-        flex: 0 0 9rem;
-        color: var(--text-primary);
-        font-size: 0.9rem;
+        flex: 0 0 8.5rem;
+        color: var(--text-secondary);
+        font-size: 0.78rem;
         font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .lang-list {
         flex: 1 1 16rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
     }
 
     .lang-list code {
-        display: inline-block;
-        margin: 0.15rem 0.3rem 0.15rem 0;
-        padding: 0.1rem 0.4rem;
-        border-radius: 0.3rem;
-        background: #11111b;
-        color: #86efac;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        color: var(--text-primary);
         font-family: 'Cascadia Code', 'Fira Code', monospace;
-        font-size: 0.8rem;
+        font-size: 0.78rem;
     }`;
 
     philosophy_styles:s = css`
@@ -783,11 +795,11 @@ f generate_hero(hero_code:s):s {
     <p class="hero-tagline">A small language that transpiles to Rust and uses every core without being asked</p>
     <p class="hero-description">
         No null. No mutation. No package manager. No unsafe. Errors you can't ignore, and iteration
-        that runs in parallel because you named what you meant.
+        that runs in parallel whenever it's safe to.
     </p>
     <p class="hero-description">
         Rust does the heavy lifting underneath: one command turns your file into a real program, so
-        you get Rust's speed whether or not you know Rust.
+        you get Rust's speed and memory safety whether or not you know Rust.
     </p>
     <div class="hero-actions">
         <a href="#start" class="btn btn-primary">Get Started</a>
@@ -1137,8 +1149,8 @@ f generate_performance():s {
         <h3 style="margin-top: 2.5rem;">Why naming the operation is what makes it fast</h3>
         <p>
             A loop is opaque: the compiler can't tell whether order matters, so it stays sequential.
-            <strong>sum</strong> says what you meant, so it can use every core. Clearer code and faster
-            code are the same edit.
+            <strong>sum</strong> tells the compiler order doesn't matter, so it can use every core.
+            Clearer code and faster code are the same edit.
         </p>
         <p>
             <strong>reduce</strong> is the interesting case, because you write the step yourself.
@@ -1286,7 +1298,7 @@ f generate_stdlib(functions:a:STDLIB_Function, modules:a:s):s {
         hashmap_set(block_values, `module`, module_name);
         hashmap_set(block_values, `count`, string_from(array_length(module_functions)));
         hashmap_set(block_values, `entries`, entries);
-        y danger(template_render(html`<details class="stdlib-module"><summary>{{module}} <span class="stdlib-count">{{count}} functions</span></summary>{{{entries}}}</details>`, block_values));
+        y danger(template_render(html`<details class="stdlib-module"><summary><code class="stdlib-module-name">{{module}}</code> <span class="stdlib-count">{{count}} functions</span></summary>{{{entries}}}</details>`, block_values));
     };
 
     section_values:h<s,s> = hashmap_new();
@@ -1485,7 +1497,7 @@ spawn {
 f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
     headers:h<s,s> = hashmap_new();
     if {
-        request.path == `/` => {
+        request.path == `/` -> {
             r HTTP_Response {
                 status = 200,
                 body = danger(hashmap_get(state, `page_main`)),
@@ -1493,10 +1505,10 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 headers = headers
             };
         },
-        request.path == `/run-example` => {
+        request.path == `/run-example` -> {
             r run_example_response(request, state, headers);
         },
-        else => {
+        else -> {
             r HTTP_Response {
                 status = 404,
                 body = html`<pre>404 - not found</pre>`,
@@ -1518,7 +1530,7 @@ f run_example_response(request:HTTP_Request, state:h<s,s>, headers:h<s,s>):HTTP_
     requested:s = safe(hashmap_get(request.query, `name`), missing_example_name);
     config_key:s = array_join([`example_`, requested], ``);
     if {
-        hashmap_contains_key(state, config_key) => {
+        hashmap_contains_key(state, config_key) -> {
             r HTTP_Response {
                 status = 200,
                 body = danger(hashmap_get(state, config_key)),
@@ -1526,7 +1538,7 @@ f run_example_response(request:HTTP_Request, state:h<s,s>, headers:h<s,s>):HTTP_
                 headers = headers
             };
         },
-        else => {
+        else -> {
             r HTTP_Response {
                 status = 404,
                 body = `{"output": "No such example."}`,
@@ -1542,7 +1554,11 @@ config:HTTP_Config = HTTP_Config {
     static_mounts = [],
     max_body_bytes = 0,
     timeout_seconds = 0,
-    state = state
+    state = state,
+    cors_origins = [],
+    security_headers = false,
+    rate_limit_per_minute = 0,
+    rate_limit_message = ``
 };
 http_server(port, config);
 print(`Server running on http://localhost:`, port);

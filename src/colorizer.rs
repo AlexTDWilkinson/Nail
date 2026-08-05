@@ -394,7 +394,7 @@ fn tokenize_code(content: &str) -> Vec<String> {
                 let mut op = ch.to_string();
                 // Check for two-character operators
                 if let Some(&next_ch) = chars.peek() {
-                    if (ch == '=' && next_ch == '=') || (ch == '!' && next_ch == '=') || (ch == '<' && next_ch == '=') || (ch == '>' && next_ch == '=') || (ch == '=' && next_ch == '>') {
+                    if (ch == '=' && next_ch == '=') || (ch == '!' && next_ch == '=') || (ch == '<' && next_ch == '=') || (ch == '>' && next_ch == '=') || (ch == '-' && next_ch == '>') {
                         op.push(chars.next().unwrap());
                     }
                 }
@@ -551,7 +551,7 @@ fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: 
             if token_end < chars.len() {
                 let next_ch = chars[token_end];
                 if (ch == '=' && next_ch == '=') ||
-                   (ch == '=' && next_ch == '>') ||
+                   (ch == '-' && next_ch == '>') ||
                    (ch == '!' && next_ch == '=') ||
                    (ch == '<' && next_ch == '=') ||
                    (ch == '>' && next_ch == '=') ||
@@ -670,7 +670,7 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
 
         // Operators
         "==" | "!=" | "<" | ">" | "<=" | ">=" | "=" | "+" | "-" | "*" | "/" => Span::styled(word.to_string(), Style::default().fg(theme.operator)),
-        "=>" => Span::styled(word.to_string(), Style::default().fg(theme.arrow_decl)),
+        "->" => Span::styled(word.to_string(), Style::default().fg(theme.arrow_decl)),
 
         // Punctuation
         "(" | ")" => Span::styled(word.to_string(), Style::default().fg(theme.parenthesis)),
@@ -1146,7 +1146,7 @@ mod tests {
         assert!(tokens3.contains(&"s!e".to_string()), "s!e should be a single token, got: {:?}", tokens3);
 
         // Test that regular ! operators are still handled correctly
-        let content4 = "if { x != 0 => { print(`ok`); } }";
+        let content4 = "if { x != 0 -> { print(`ok`); } }";
         let tokens4 = tokenize_code(content4);
         assert!(tokens4.contains(&"!=".to_string()), "!= should be a single token, got: {:?}", tokens4);
     }

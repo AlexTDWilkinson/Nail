@@ -2,7 +2,7 @@
 struct Peak { height:i }
 peaks:a:Peak = [Peak { height = 300 }, Peak { height = 950 }, Peak { height = 620 }];
 tallest:i = reduce acc peak in peaks from 0 {
-    bigger:i = if { peak.height > acc => { r peak.height; }, else => { r acc; } };
+    bigger:i = if { peak.height > acc -> { r peak.height; }, else -> { r acc; } };
     y bigger;
 };
 print(tallest);

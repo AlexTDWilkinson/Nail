@@ -298,19 +298,19 @@ Nail uses a unique match-like syntax for if statements. Traditional if-else synt
 status:i = get_http_status_code(response);
 
 if {
-    status == 200 => { print(`OK`); },
-    status == 404 => { print(`Not Found`); },
-    else => { print(`Unknown Status`); }
+    status == 200 -> { print(`OK`); },
+    status == 404 -> { print(`Not Found`); },
+    else -> { print(`Unknown Status`); }
 }
 
 // If as an expression (returns a value)
 result:s = if {
-    status == 200 => { r `Success`; },
-    else => { r `Error`; }
+    status == 200 -> { r `Success`; },
+    else -> { r `Error`; }
 };
 ```
 
-**Important**: All branches use `=>` followed by blocks. When used as an expression, use `r` (return) to produce the value.
+**Important**: All branches use `->` followed by blocks. When used as an expression, use `r` (return) to produce the value.
 
 ### 6.2 Collection Operations
 
@@ -366,7 +366,7 @@ sum:i = reduce acc num in numbers from 0 {
 
 // Find maximum (with index access)
 max_val:i = reduce acc num idx in numbers from danger(array_get(numbers, 0)) {
-    y if { num > acc => { num }, else => { acc } };
+    y if { num > acc -> { num }, else -> { acc } };
 };
 
 // Build string ('+' adds numbers only, so text is joined with string_concat)
@@ -539,9 +539,9 @@ loop {
 loop index {
     print(string_from(index)); // index starts at 0, auto-increments each iteration
     if {
-        index >= 10 => { break; },     // Exits the loop
-        index == 5 => { continue; },   // Skips to next iteration (index becomes 6)
-        else => { /* keep looping */ }
+        index >= 10 -> { break; },     // Exits the loop
+        index == 5 -> { continue; },   // Skips to next iteration (index becomes 6)
+        else -> { /* keep looping */ }
     }
 }
 
@@ -723,8 +723,8 @@ f add(num_a:i, num_b:i):i {
 
 f process_data(data:s):s!e {
     if {
-        string_length(data) == 0 => { r e(`Empty data`); },
-        else => { r data; }
+        string_length(data) == 0 -> { r e(`Empty data`); },
+        else -> { r data; }
     }
 }
 ```
@@ -781,23 +781,23 @@ Functions must use `r` for return statements. Functions that can fail must retur
 ```js
 f calculate_monthly_payment(principal:i, annual_rate:i, years:i):f!e {
     if {
-        annual_rate == 0 => { 
+        annual_rate == 0 -> { 
             r e(`Annual rate cannot be zero`); 
         },
-        years <= 0 => { 
+        years <= 0 -> { 
             r e(`Loan term must be positive`); 
         },
-        else => {
+        else -> {
             monthly_rate:f = expect(float_from(annual_rate)) / 12.0 / 100.0;
             payments:i = years * 12;
             
             // Division by zero check
             denominator:f = 1.0 - pow(1.0 + monthly_rate, -payments);
             if {
-                denominator == 0.0 => { 
+                denominator == 0.0 -> { 
                     r e(`Cannot calculate payment: invalid parameters`);
                 },
-                else => {
+                else -> {
                     payment:f = expect(float_from(principal)) * monthly_rate / denominator;
                     r payment;
                 }
@@ -1457,7 +1457,7 @@ larger than the machine's memory. Three ways to read one without holding it:
 
 ```nail
 f count_errors(total:i, line:s):i {
-    r if { string_contains(line, `ERROR`) => { r total + 1; }, else => { r total; } };
+    r if { string_contains(line, `ERROR`) -> { r total + 1; }, else -> { r total; } };
 }
 errors:i = danger(fs_reduce_lines(`app.log`, 0, count_errors));
 ```
@@ -1539,17 +1539,17 @@ function the program must define:
 f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
     headers:h<s,s> = hashmap_new();
     if {
-        http_path_matches(`/dictionary/:word`, request.path) => {
+        http_path_matches(`/dictionary/:word`, request.path) -> {
             params:h<s,s> = http_path_params(`/dictionary/:word`, request.path);
             word:s = danger(hashmap_get(params, `word`));
             r HTTP_Response { status = 200, body = word, content_type = `text/html`, headers = headers };
         },
-        request.method == `POST` => {
+        request.method == `POST` -> {
             // A form body uses the same encoding as a query string
             form:h<s,s> = url_parse_query(request.body);
             r HTTP_Response { status = 200, body = danger(hashmap_get(form, `message`)), content_type = `text/plain`, headers = headers };
         },
-        else => {
+        else -> {
             r HTTP_Response { status = 404, body = `Not found`, content_type = `text/html`, headers = headers };
         }
     }
@@ -1832,9 +1832,9 @@ f view(state:App):TUI_Screen {
 
 f update(state:App, event:TUI_Event):App {
     if {
-        event.key == `q` => { r App { count = state.count, finished = true }; },
-        event.key == `Up` => { r App { count = state.count + 1, finished = false }; },
-        else => { r state; }
+        event.key == `q` -> { r App { count = state.count, finished = true }; },
+        event.key == `Up` -> { r App { count = state.count + 1, finished = false }; },
+        else -> { r state; }
     }
 }
 
@@ -2251,7 +2251,7 @@ expression :=
     function_call             // Invoking a function (e.g., `foo(a, b)`)
     binary_expression         // Binary operations (e.g., `a + b`)
     unary_expression          // Unary operations (e.g., `-a`, `!b`)
-    if_expression             // Conditional expression (e.g., `if { condition => { block } }`)
+    if_expression             // Conditional expression (e.g., `if { condition -> { block } }`)
     match_expression          // Pattern matching (e.g., `match x { ... }`)
     block                     // A sequence of statements inside `{}` (e.g., `{ stmt1; stmt2 }`)
     for_loop                  // For loop construct (e.g., `for i in array_range(0, 10) { ... }`)
@@ -2342,15 +2342,15 @@ today:DaysOfWeek = DaysOfWeek::Wednesday;
 
 // if statement that must cover all enum cases since it has no else branch
 if {
-   current_light == TrafficLight::Red => { print(`Stop!`); },
-   current_light == TrafficLight::Yellow => { print(`Prepare to stop`); },
-   current_light == TrafficLight::Green => { print(`Go!`); }
+   current_light == TrafficLight::Red -> { print(`Stop!`); },
+   current_light == TrafficLight::Yellow -> { print(`Prepare to stop`); },
+   current_light == TrafficLight::Green -> { print(`Go!`); }
 }
 
 // If you have an else branch, you don't need to cover all cases
 if {
-   current_light == TrafficLight::Red => { print(`Stop!`); },
-   else => { print(`It could be yellow or green...`); }
+   current_light == TrafficLight::Red -> { print(`Stop!`); },
+   else -> { print(`It could be yellow or green...`); }
 }
 ```
 
@@ -2387,16 +2387,16 @@ if current_light == TrafficLight::Red {
 
 ```ebnf
 if_expression :=
-    "if" "{" if_branch {"," if_branch} ["else" "=>" block] "}"
+    "if" "{" if_branch {"," if_branch} ["else" "->" block] "}"
 
 if_branch :=
-    expression "=>" block
+    expression "->" block
 ```
 
 ### Notes:
 
-- `if_expression`: Begins with the keyword `if`, followed by a list of branches enclosed in curly braces. Each branch consists of an expression, which is followed by a `=>` and a block of code. If none of the conditions are met, the optional `else` branch will execute its block.
-- `if_branch`: Each branch consists of an expression followed by a `=>` and a block, which represents the code that should be executed if the condition is true.
+- `if_expression`: Begins with the keyword `if`, followed by a list of branches enclosed in curly braces. Each branch consists of an expression, which is followed by a `->` and a block of code. If none of the conditions are met, the optional `else` branch will execute its block.
+- `if_branch`: Each branch consists of an expression followed by a `->` and a block, which represents the code that should be executed if the condition is true.
 
 ### Usage in Nail
 
@@ -2405,13 +2405,13 @@ In Nail, if expressions are used similarly to other languages, but they offer co
 ```js
 // Basic if statement in Nail
 if {
-    today == DaysOfWeek::Monday => {
+    today == DaysOfWeek::Monday -> {
         print(`Start of the week.`);
     },
-    today == DaysOfWeek::Friday => {
+    today == DaysOfWeek::Friday -> {
         print(`End of the workweek!`);
     },
-    else => {
+    else -> {
         print(`It's a regular day.`);
     }
 }
@@ -2442,13 +2442,13 @@ In Nail, when using an if statement with an enum, you must ensure that all possi
 
 ```js
 if {
-    current_light == TrafficLight::Red => {
+    current_light == TrafficLight::Red -> {
         print(`Stop!`);
     },
-    current_light == TrafficLight::Yellow => {
+    current_light == TrafficLight::Yellow -> {
         print(`Prepare to stop.`);
     },
-    current_light == TrafficLight::Green => {
+    current_light == TrafficLight::Green -> {
         print(`Go!`);
     }
 }
@@ -2475,9 +2475,9 @@ One important aspect of if expressions in Nail is that all branches must return 
 ```js
 // Example where all branches return the same type (in this case, a string)
 message:s = if {
-    today == DaysOfWeek::Monday => { r `Start of the week`; },
-    today == DaysOfWeek::Friday => { r `End of the workweek`; },
-    else => { r `It's a regular day`; }
+    today == DaysOfWeek::Monday -> { r `Start of the week`; },
+    today == DaysOfWeek::Friday -> { r `End of the workweek`; },
+    else -> { r `It's a regular day`; }
 };
 
 // This will work because all branches return a string.
@@ -2488,9 +2488,9 @@ However, if branches return different types, Nail will produce an error:
 ```js
 // Example where branches return different types (this will cause an error)
 message:s = if {
-    today == DaysOfWeek::Monday => { r `Start of the week`; },  // String
-    today == DaysOfWeek::Friday => { r 5; },  // Integer - ERROR!
-    else => { r `It's a regular day`; }  // String
+    today == DaysOfWeek::Monday -> { r `Start of the week`; },  // String
+    today == DaysOfWeek::Friday -> { r 5; },  // Integer - ERROR!
+    else -> { r `It's a regular day`; }  // String
 };
 
 // This will fail because one branch returns a string and another returns an integer.
@@ -2596,8 +2596,8 @@ f print_message(msg:s):v {
 // Result type for error handling
 f divide(a:i, b:i):i!e {
     if {
-        b == 0 => { r e(`Division by zero`); },
-        else => { r a / b; }
+        b == 0 -> { r e(`Division by zero`); },
+        else -> { r a / b; }
     }
 }
 ```
@@ -2928,8 +2928,8 @@ if count > 0 {
 
 // Correct
 if {
-    count > 0 => { print(`Positive`); },
-    else => { print(`Non-positive`); }
+    count > 0 -> { print(`Positive`); },
+    else -> { print(`Non-positive`); }
 }
 ```
 
@@ -3001,8 +3001,8 @@ loop {
 loop index {
     print(string_from(index));
     if {
-        index >= 10 => { break; },
-        else => { /* continue */ }
+        index >= 10 -> { break; },
+        else -> { /* continue */ }
     }
 }
 ```

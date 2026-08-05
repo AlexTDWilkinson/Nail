@@ -2,8 +2,8 @@
 
 f divide(numerator:i, denominator:i):i!e {
     if {
-        denominator == 0 => { r e(`Cannot divide by zero!`); },
-        else => { r numerator / denominator; }
+        denominator == 0 -> { r e(`Cannot divide by zero!`); },
+        else -> { r numerator / denominator; }
     }
 }
 
@@ -12,7 +12,8 @@ result:i = danger(divide(10, 2));
 print(`10 / 2 = `);
 print(result);
 
-// Safe handling with fallback function
+// Safe handling with fallback function. The handler always receives the
+// error, so logging it is one line — a bare default value never could.
 f handle_div_error(err:e):i {
     print(`Error occurred: `);
     print(err);

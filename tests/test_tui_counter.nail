@@ -36,19 +36,19 @@ f view(state:App):TUI_Screen {
 // of the terminal - so a resize needs no special handling at all.
 f update(state:App, event:TUI_Event):App {
     if {
-        event.key == `q` => {
+        event.key == `q` -> {
             r App { count = state.count, message = `bye`, finished = true };
         },
-        event.key == `Ctrl+c` => {
+        event.key == `Ctrl+c` -> {
             r App { count = state.count, message = `bye`, finished = true };
         },
-        event.key == `Up` => {
+        event.key == `Up` -> {
             r App { count = state.count + 1, message = `up`, finished = false };
         },
-        event.key == `Down` => {
+        event.key == `Down` -> {
             r App { count = state.count - 1, message = `down`, finished = false };
         },
-        else => {
+        else -> {
             r state;
         }
     }

@@ -122,7 +122,7 @@ pub enum TokenType {
     Range,                                   // For .. operator
     RangeInclusive,                          // For ..= operator
     Assignment,                              // For assignment ie =
-    ArrowAssignment,                         // For arrow assignment ie =>
+    ArrowAssignment,                         // For arrow assignment ie ->
     Identifier(String),                      // For variable names, etc.
     Float(String),                           // For float numbers
     Integer(String),                         // For integer numbers
@@ -162,7 +162,7 @@ impl TokenType {
             TokenType::Comma => "','".to_string(),
             TokenType::EndStatementOrExpression => "';'".to_string(),
             TokenType::Assignment => "'='".to_string(),
-            TokenType::ArrowAssignment => "'=>'".to_string(),
+            TokenType::ArrowAssignment => "'->'".to_string(),
             TokenType::Dot => "'.'".to_string(),
             TokenType::EndOfFile => "the end of the file".to_string(),
             TokenType::Identifier(name) => format!("the name '{}'", name),
@@ -1389,7 +1389,10 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
             }
             
             // Check what follows the whitespace
-            match lookahead.peek() {
+            let next_after_whitespace = lookahead.peek().copied();
+            lookahead.next();
+            let second_after_whitespace = lookahead.peek().copied();
+            match next_after_whitespace {
                 None => {
                     // End of input after whitespace - treat as identifier
                     match validate_identifier_name(&identifier) {
@@ -1397,13 +1400,17 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
                         None => TokenType::Identifier(identifier),
                     }
                 }
-                Some(&c) => {
+                Some(c) => {
+                    // A '/' can open a comment ('p  // note'), which is a
+                    // statement context, or be division ('p / 2'), which is not
+                    let starts_comment = c == '/' && second_after_whitespace == Some('/');
                     // These characters indicate 'p' is being used as a variable/identifier
-                    let is_identifier_context = matches!(c, 
-                        '.' | ':' | '(' | '+' | '-' | '*' | '/' | '=' | 
-                        '<' | '>' | ';' | ',' | ')' | ']' | '}' | '|'
-                    );
-                    
+                    let is_identifier_context = !starts_comment
+                        && matches!(c,
+                            '.' | ':' | '(' | '+' | '-' | '*' | '/' | '=' |
+                            '<' | '>' | ';' | ',' | ')' | ']' | '}' | '|'
+                        );
+
                     if is_identifier_context {
                         match validate_identifier_name(&identifier) {
                             Some(error) => TokenType::LexerError(error),
@@ -1448,7 +1455,10 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
             }
             
             // Check what follows the whitespace
-            match lookahead.peek() {
+            let next_after_whitespace = lookahead.peek().copied();
+            lookahead.next();
+            let second_after_whitespace = lookahead.peek().copied();
+            match next_after_whitespace {
                 None => {
                     // End of input after whitespace - treat as identifier
                     match validate_identifier_name(&identifier) {
@@ -1456,13 +1466,17 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
                         None => TokenType::Identifier(identifier),
                     }
                 }
-                Some(&c) => {
+                Some(c) => {
+                    // A '/' can open a comment ('c  // note'), which is a
+                    // statement context, or be division ('c / 2'), which is not
+                    let starts_comment = c == '/' && second_after_whitespace == Some('/');
                     // These characters indicate 'c' is being used as a variable/identifier
-                    let is_identifier_context = matches!(c, 
-                        '.' | ':' | '(' | '+' | '-' | '*' | '/' | '=' | 
-                        '<' | '>' | ';' | ',' | ')' | ']' | '}' | '|'
-                    );
-                    
+                    let is_identifier_context = !starts_comment
+                        && matches!(c,
+                            '.' | ':' | '(' | '+' | '-' | '*' | '/' | '=' |
+                            '<' | '>' | ';' | ',' | ')' | ']' | '}' | '|'
+                        );
+
                     if is_identifier_context {
                         match validate_identifier_name(&identifier) {
                             Some(error) => TokenType::LexerError(error),
@@ -1933,6 +1947,9 @@ fn is_double_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -
     match lookahead.next() {
         Some('=') => match lookahead.peek() {
             Some('=') => true,
+            _ => false,
+        },
+        Some('-') => match lookahead.peek() {
             Some('>') => true,
             _ => false,
         },
@@ -1973,6 +1990,9 @@ fn lex_double_character_token(chars: &mut std::iter::Peekable<std::str::Chars>, 
     let token_type = match operator {
         '=' => match advance(chars, state) {
             Some('=') => TokenType::Operator(Operation::Eq),
+            _ => panic!("Unrecognized operator: {}", operator),
+        },
+        '-' => match advance(chars, state) {
             Some('>') => TokenType::ArrowAssignment,
             _ => panic!("Unrecognized operator: {}", operator),
         },

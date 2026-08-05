@@ -49,5 +49,14 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "env_load_dotenv" [DashMap] => "std_lib::env::load_dotenv", (path: s) -> ((h s s)!e),
             "Reads a .env file, sets every variable in it that is not already set, and returns what it read. Variables the process was started with always win.",
             "settings:h<s,s> = danger(env_load_dotenv(`.env`));";
+        "env_config_dir" [Dirs] => "std_lib::env::config_dir", (app_name: s) -> (s!e),
+            "Where an app's configuration belongs on this system - ~/.config/<app> on Linux, the platform's own convention elsewhere. Not created automatically; fs_create_dir does that.",
+            "settings_dir:s = danger(env_config_dir(`my_tool`));";
+        "env_data_dir" [Dirs] => "std_lib::env::data_dir", (app_name: s) -> (s!e),
+            "Where an app's own data belongs - state worth keeping that is not configuration.",
+            "state_dir:s = danger(env_data_dir(`my_tool`));";
+        "env_cache_dir" [Dirs] => "std_lib::env::cache_dir", (app_name: s) -> (s!e),
+            "Where an app's disposable cache belongs - what can be deleted without losing anything.",
+            "scratch_dir:s = danger(env_cache_dir(`my_tool`));";
     }
 }

@@ -62,6 +62,15 @@ serde_rusqlite = "0.35"
 arboard = "3.2"
 crossterm = "0.28"
 chrono = "0.4"
+crc32fast = "1.4"
+sha1 = "0.10"
+blake3 = "1.5"
+unicode-segmentation = "1.11"
+unicode-normalization = "0.1"
+dirs = "5"
+diffy = "0.4"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+encoding_rs = "0.8"
 datafusion = { version = "50", optional = true }
 rodio = { version = "0.19", optional = true }
 scraper = { version = "0.20", optional = true }
@@ -72,13 +81,27 @@ calamine = { version = "0.24", optional = true }
 rust_xlsxwriter = { version = "0.64", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"], optional = true }
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1-rustls-tls", "builder"], optional = true }
+zstd = { version = "0.13", optional = true }
+brotli = { version = "6", optional = true }
+jsonschema = { version = "0.18", default-features = false, optional = true }
+chrono-tz = { version = "0.9", optional = true }
+sysinfo = { version = "0.31", optional = true }
+ammonia = { version = "4", optional = true }
+tokio-tungstenite = { version = "0.23", features = ["rustls-tls-webpki-roots"], optional = true }
+redis = { version = "0.27", features = ["tokio-comp"], optional = true }
 
 [features]
 default = []
 datafusion = ["dep:datafusion"]
 audio = ["dep:rodio"]
 email = ["dep:lettre"]
-html = ["dep:scraper"]
+html = ["dep:scraper", "dep:ammonia"]
+compress = ["dep:zstd", "dep:brotli"]
+jsonschema = ["dep:jsonschema"]
+timezones = ["dep:chrono-tz"]
+sys = ["dep:sysinfo"]
+websocket = ["dep:tokio-tungstenite"]
+redis = ["dep:redis"]
 postgres = ["dep:tokio-postgres"]
 image = ["dep:image"]
 pdf = ["dep:printpdf", "dep:pdf-extract"]

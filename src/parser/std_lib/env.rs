@@ -286,3 +286,28 @@ mod machine_tests {
         remove("NAIL_ENV_ROUND_TRIP".to_string()).expect("removing works");
     }
 }
+
+fn app_dir(base: Option<std::path::PathBuf>, app_name: &str, what: &str) -> Result<String, String> {
+    let trimmed = app_name.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{}: the app needs a name to get its own directory", what));
+    }
+    let base = base.ok_or_else(|| format!("{}: this system does not say where such files live", what))?;
+    return Ok(base.join(trimmed).to_string_lossy().to_string());
+}
+
+/// Where an app's configuration belongs on this system - ~/.config/<app> on
+/// Linux, the platform's own convention elsewhere. Not created automatically.
+pub fn config_dir(app_name: String) -> Result<String, String> {
+    return app_dir(dirs::config_dir(), &app_name, "env_config_dir");
+}
+
+/// Where an app's own data belongs - state that is not configuration.
+pub fn data_dir(app_name: String) -> Result<String, String> {
+    return app_dir(dirs::data_dir(), &app_name, "env_data_dir");
+}
+
+/// Where an app's disposable cache belongs - what can be deleted without loss.
+pub fn cache_dir(app_name: String) -> Result<String, String> {
+    return app_dir(dirs::cache_dir(), &app_name, "env_cache_dir");
+}
