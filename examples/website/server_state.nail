@@ -52,10 +52,6 @@ hashmap_set(state, `page_platformer_embed`, generate_game_embed_page(
     `A platformer, written in Nail`,
     `/wasm/platformer/pkg/platformer_wasm.js`
 ));
-hashmap_set(state, `page_pong_embed`, generate_game_embed_page(
-    `Pong, written in Nail`,
-    `/wasm/pong/pkg/pong_wasm.js`
-));
 hashmap_set(state, `page_viewer_embed`, generate_game_embed_page(
     `A 3D model viewer, written in Nail`,
     `/wasm/viewer/pkg/viewer_wasm.js`

@@ -174,7 +174,10 @@ pub fn mesh_cube() -> Result<i64, String> {
 }
 
 /// The one light in the world, heading mostly down and a little sideways.
-const LIGHT: [f64; 3] = [0.45, -0.8, 0.35];
+// Direction toward the light source, an overhead sun a little to the side,
+// so faces pointing up catch the most of it. The shading dots face normals
+// against this directly.
+const LIGHT: [f64; 3] = [-0.45, 0.8, -0.35];
 
 fn parse_tint(color: &str) -> Option<(u8, u8, u8)> {
     let hex = color.strip_prefix('#')?;
@@ -229,7 +232,7 @@ pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation
         let edge_two = subtract(world[2], world[0]);
         let normal = normalized(cross(edge_one, edge_two));
         let facing = dot(normal, light).max(0.0);
-        let brightness = 0.35 + 0.65 * facing;
+        let brightness = 0.45 + 0.55 * facing;
 
         let mut points = [[0.0f64; 2]; 3];
         let mut depth = 0.0;

@@ -959,15 +959,6 @@ f generate_games_section():s {
             </p>
             <iframe src="/games/viewer-embed" title="3D model viewer written in Nail" style="width: 100%; aspect-ratio: 900 / 640; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
         </div>
-        <div style="width: 100%; max-width: 940px;">
-            <h3 style="margin: 0 0 0.5rem 0;">Pong</h3>
-            <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
-                Click it first, then Up and Down move the paddle. Sixty frames a second of
-                pure functions.
-                <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/pong.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
-            </p>
-            <iframe src="/games/pong-embed" title="Pong written in Nail" style="width: 100%; aspect-ratio: 800 / 600; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
-        </div>
     </div>
 </section>`;
 }

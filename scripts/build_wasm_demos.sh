@@ -5,7 +5,6 @@
 #   ./scripts/build_wasm_demos.sh
 #
 # Output lands in wasm_demos/ (gitignored, regenerated at will):
-#   wasm_demos/pong/pkg/       pong compiled for the browser
 #   wasm_demos/viewer/pkg/     the 3D model viewer compiled for the browser
 #   wasm_demos/examples/monument.glb   the model the viewer fetches, at the path
 #                                  the program names, resolved from /games/
@@ -39,7 +38,6 @@ build_demo() {
 }
 
 build_demo platformer examples/platformer.nail
-build_demo pong examples/pong.nail
 build_demo viewer examples/model_viewer.nail
 
 # The viewer program fetches examples/monument.glb relative to its page under
