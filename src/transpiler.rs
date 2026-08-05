@@ -804,66 +804,10 @@ impl Transpiler {
 
     /// Every direct child expression/statement node of an AST node, used by the
     /// move-analysis walks below. Binder names (iterators, params) are handled
-    /// by the callers, not here.
+    /// by the callers, not here. The enumeration itself lives on ASTNode so
+    /// other passes (like the checker's sealed-code walk) share one definition.
     fn ast_children(node: &ASTNode) -> Vec<&ASTNode> {
-        match node {
-            ASTNode::Program { statements, .. }
-            | ASTNode::Block { statements, .. }
-            | ASTNode::ParallelBlock { statements, .. }
-            | ASTNode::ConcurrentBlock { statements, .. } => statements.iter().collect(),
-            ASTNode::FunctionDeclaration { body, .. } | ASTNode::LambdaDeclaration { body, .. } => vec![body.as_ref()],
-            ASTNode::FunctionCall { args, .. } => args.iter().collect(),
-            ASTNode::ConstDeclaration { value, .. } => vec![value.as_ref()],
-            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
-                let mut children: Vec<&ASTNode> = Vec::new();
-                for (condition, branch) in condition_branches {
-                    children.push(condition.as_ref());
-                    children.push(branch.as_ref());
-                }
-                if let Some(else_branch) = else_branch {
-                    children.push(else_branch.as_ref());
-                }
-                children
-            }
-            ASTNode::ForLoop { iterable, initial_value, filter, body, .. } => {
-                let mut children = vec![iterable.as_ref()];
-                children.extend(initial_value.as_deref());
-                children.extend(filter.as_deref());
-                children.push(body.as_ref());
-                children
-            }
-            ASTNode::MapExpression { iterable, body, .. }
-            | ASTNode::FilterExpression { iterable, body, .. }
-            | ASTNode::EachExpression { iterable, body, .. }
-            | ASTNode::FindExpression { iterable, body, .. }
-            | ASTNode::AllExpression { iterable, body, .. }
-            | ASTNode::AnyExpression { iterable, body, .. } => vec![iterable.as_ref(), body.as_ref()],
-            ASTNode::ReduceExpression { iterable, initial_value, body, .. } | ASTNode::ScanExpression { iterable, initial_value, body, .. } => vec![iterable.as_ref(), initial_value.as_ref(), body.as_ref()],
-            ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
-                let mut children = vec![condition.as_ref()];
-                children.extend(initial_value.as_deref());
-                children.extend(max_iterations.as_deref());
-                children.push(body.as_ref());
-                children
-            }
-            ASTNode::Loop { body, .. } | ASTNode::SpawnBlock { body, .. } => vec![body.as_ref()],
-            ASTNode::BinaryOperation { left, right, .. } | ASTNode::Assignment { left, right, .. } => vec![left.as_ref(), right.as_ref()],
-            ASTNode::UnaryOperation { operand, .. } => vec![operand.as_ref()],
-            ASTNode::StructDeclaration { fields, .. } | ASTNode::StructInstantiation { fields, .. } | ASTNode::EnumDeclaration { variants: fields, .. } => fields.iter().collect(),
-            ASTNode::StructInstantiationField { value, .. } => vec![value.as_ref()],
-            ASTNode::NestedFieldAccess { object, .. } => vec![object.as_ref()],
-            ASTNode::ArrayLiteral { elements, .. } => elements.iter().collect(),
-            ASTNode::ReturnDeclaration { statement, .. } | ASTNode::YieldDeclaration { statement, .. } => vec![statement.as_ref()],
-            ASTNode::StructDeclarationField { .. }
-            | ASTNode::StructFieldAccess { .. }
-            | ASTNode::EnumVariant { .. }
-            | ASTNode::Identifier { .. }
-            | ASTNode::NumberLiteral { .. }
-            | ASTNode::StringLiteral { .. }
-            | ASTNode::BooleanLiteral { .. }
-            | ASTNode::BreakStatement { .. }
-            | ASTNode::ContinueStatement { .. } => Vec::new(),
-        }
+        node.children()
     }
 
     /// Count how many times each binding is referenced, in the same shape the
@@ -3141,4 +3085,29 @@ fn insert_semicolons(code: String) -> String {
     }
 
     result.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::checker::checker;
+    use crate::lexer::lexer;
+    use crate::parser::parse;
+
+    fn transpile_source(code: &str) -> String {
+        let tokens = lexer(code);
+        let mut ast = parse(tokens).expect("Parse should succeed");
+        checker(&mut ast).expect("Type check should succeed");
+        Transpiler::new().transpile(&ast).expect("Transpilation should succeed")
+    }
+
+    #[test]
+    fn test_insert_safe_transpiles_identically_to_insert() {
+        // Sealing is a compile-time proof with zero runtime cost: a compliant
+        // file must produce byte-identical Rust either way it is included.
+        let trusted_side = "greeting:s = shout_greeting(`world`);\nprint(greeting);";
+        let via_insert = format!("insert(`tests/test_insert_safe_helper.nail`)\n{}", trusted_side);
+        let via_insert_safe = format!("insert_safe(`tests/test_insert_safe_helper.nail`)\n{}", trusted_side);
+        assert_eq!(transpile_source(&via_insert), transpile_source(&via_insert_safe));
+    }
 }

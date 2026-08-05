@@ -1,0 +1,8 @@
+// Fixture for the insert_safe parser unit tests. Valid on its own, but a
+// program that includes it with insert_safe must be rejected, because a
+// safe-inserted file may only declare things and this one runs a statement.
+f harmless_add(a:i, b:i):i {
+    r a + b;
+}
+
+print(`this line runs at the top level`);

@@ -1,0 +1,12 @@
+// Test sealed file insertion: the helper is included with insert_safe, so
+// the compiler proves it only computes. Calling it and printing results
+// happens here, on the trusted side.
+insert_safe(`test_insert_safe_helper.nail`)
+
+greeting:s = shout_greeting(`world`);
+doubled:i = double_sum([1, 2, 3]);
+distance:f = distance_from_zero(-4.5);
+print(greeting);
+print(`Doubled: `, doubled);
+print(`Distance: `, distance);
+print(`Prefix: `, sealed_prefix);

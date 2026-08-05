@@ -1,0 +1,18 @@
+// Pure helper functions for the insert_safe tests. Everything here only
+// computes, so a program can include this file with insert_safe.
+sealed_prefix:s = string_to_uppercase(`ok`);
+
+f shout_greeting(name:s):s {
+    upper:s = string_to_uppercase(name);
+    log_info(`sealed helper computed a greeting`);
+    r string_concat([`HELLO, `, upper, `!`]);
+}
+
+f double_sum(values:a:i):i {
+    total:i = array_sum(values);
+    r total * 2;
+}
+
+f distance_from_zero(value:f):f {
+    r math_abs(value);
+}

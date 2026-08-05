@@ -150,10 +150,137 @@ pub fn checker(ast: &mut ASTNode) -> Result<(), Vec<CodeError>> {
     visit_node(ast, &mut state);
     check_recursive_structs(&mut state);
     check_unused_symbols(&mut state);
+    check_sealed_code(ast, &mut state);
     if state.errors.is_empty() {
         Ok(())
     } else {
         Err(state.errors)
+    }
+}
+
+/// Enforcement for insert_safe: code that arrived sealed may only compute,
+/// never touch the world. The taint set starts with the bodies of sealed
+/// functions and the initializers of sealed constants, then closes
+/// transitively over the user function call graph, so sealed code cannot
+/// launder an effect through an unsealed helper defined elsewhere. Every
+/// stdlib call reachable from sealed code must satisfy the registry's single
+/// policy question, is_sealed_safe. The checker itself knows no function or
+/// module names.
+fn check_sealed_code(ast: &ASTNode, state: &mut AnalyzerState) {
+    let mut functions: HashMap<&str, (&ASTNode, bool)> = HashMap::new();
+    collect_function_declarations(ast, &mut functions);
+
+    let mut worklist: Vec<&str> = functions.iter().filter(|(_, (_, sealed))| *sealed).map(|(name, _)| *name).collect();
+
+    // Sealed constant initializers run when the program starts, so they are
+    // checked directly and any user function they mention becomes tainted
+    let mut sealed_const_initializers: Vec<&ASTNode> = Vec::new();
+    collect_sealed_const_initializers(ast, &mut sealed_const_initializers);
+    for initializer in sealed_const_initializers {
+        let mut calls = Vec::new();
+        let mut references = HashSet::new();
+        collect_calls_and_references(initializer, &mut calls, &mut references);
+        for (call_name, code_span) in calls {
+            check_sealed_stdlib_call(call_name, code_span, None, state);
+        }
+        for reference in references {
+            if functions.contains_key(reference) {
+                worklist.push(reference);
+            }
+        }
+    }
+
+    // Close the taint set transitively and check each tainted body once
+    let mut visited: HashSet<&str> = HashSet::new();
+    while let Some(function_name) = worklist.pop() {
+        if !visited.insert(function_name) {
+            continue;
+        }
+        let Some((body, directly_sealed)) = functions.get(function_name).copied() else { continue };
+        let mut calls = Vec::new();
+        let mut references = HashSet::new();
+        collect_calls_and_references(body, &mut calls, &mut references);
+        let caller = if directly_sealed { None } else { Some(function_name) };
+        for (call_name, code_span) in calls {
+            check_sealed_stdlib_call(call_name, code_span, caller, state);
+        }
+        for reference in references {
+            if functions.contains_key(reference) {
+                worklist.push(reference);
+            }
+        }
+    }
+}
+
+/// One tainted call site: if it is a stdlib call the registry denies to
+/// sealed code, report it. Unknown names are skipped, the main visit already
+/// reported those, so one bad call does not cascade. `unsealed_caller` names
+/// the function holding the call when it is only reachable from sealed code
+/// rather than sealed itself, which changes how the error reads.
+fn check_sealed_stdlib_call(call_name: &str, code_span: CodeSpan, unsealed_caller: Option<&str>, state: &mut AnalyzerState) {
+    if crate::stdlib_registry::get_stdlib_function(call_name).is_none() {
+        return;
+    }
+    if crate::stdlib_registry::is_sealed_safe(call_name) {
+        return;
+    }
+    let reason = crate::stdlib_registry::sealed_deny_reason(call_name).unwrap_or("is not allowed in sealed code");
+    let module = crate::stdlib_registry::get_stdlib_function(call_name).map(|function| function.module.display_name()).unwrap_or("stdlib");
+    let mut span = code_span;
+    match unsealed_caller {
+        None => add_error_with_help(
+            state,
+            format!("Sealed code cannot call '{}': the '{}' module {}", call_name, module, reason),
+            Some(format!("call '{}' from your own trusted code instead, or include the file with plain insert if you trust it", call_name)),
+            &mut span,
+        ),
+        Some(caller) => add_error_with_help(
+            state,
+            format!("'{}' is reachable from sealed code, so it cannot call '{}': the '{}' module {}", caller, call_name, module, reason),
+            Some(format!("keep '{}' out of reach of code included with insert_safe, or include that file with plain insert if you trust it", caller)),
+            &mut span,
+        ),
+    }
+}
+
+/// Every function declaration in the program, by name. The first declaration
+/// of a name wins, matching how duplicate definitions are already reported
+/// during signature hoisting.
+fn collect_function_declarations<'a>(node: &'a ASTNode, functions: &mut HashMap<&'a str, (&'a ASTNode, bool)>) {
+    if let ASTNode::FunctionDeclaration { name, body, sealed, .. } = node {
+        functions.entry(name.as_str()).or_insert((body.as_ref(), *sealed));
+    }
+    for child in node.children() {
+        collect_function_declarations(child, functions);
+    }
+}
+
+/// Initializer expressions of constants that arrived through insert_safe.
+fn collect_sealed_const_initializers<'a>(node: &'a ASTNode, initializers: &mut Vec<&'a ASTNode>) {
+    if let ASTNode::ConstDeclaration { value, sealed: true, .. } = node {
+        initializers.push(value.as_ref());
+    }
+    for child in node.children() {
+        collect_sealed_const_initializers(child, initializers);
+    }
+}
+
+/// Function calls (with call-site spans) and identifier references inside a
+/// subtree. References matter because naming a function, for example passing
+/// an error handler to safe(), reaches it just as surely as calling it.
+fn collect_calls_and_references<'a>(node: &'a ASTNode, calls: &mut Vec<(&'a str, CodeSpan)>, references: &mut HashSet<&'a str>) {
+    match node {
+        ASTNode::FunctionCall { name, code_span, .. } => {
+            calls.push((name.as_str(), code_span.clone()));
+            references.insert(name.as_str());
+        }
+        ASTNode::Identifier { name, .. } => {
+            references.insert(name.as_str());
+        }
+        _ => {}
+    }
+    for child in node.children() {
+        collect_calls_and_references(child, calls, references);
     }
 }
 
@@ -2796,5 +2923,114 @@ mod tests {
 
         let result_string = NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String));
         assert_eq!(format!("{}", result_string), "s!e");
+    }
+
+    // The insert_safe tests lex real fixture files from tests/, resolved
+    // relative to the crate root, which is where cargo test runs.
+    fn check_errors(code: &str) -> Vec<String> {
+        let tokens = lexer(code);
+        let lexer_errors = crate::lexer::collect_lexer_errors(&tokens);
+        assert!(lexer_errors.is_empty(), "Lexer errors: {:?}", lexer_errors);
+        let mut ast = parse(tokens).expect("Parse should succeed");
+        match checker(&mut ast) {
+            Ok(()) => Vec::new(),
+            Err(errors) => errors.into_iter().map(|error| error.message).collect(),
+        }
+    }
+
+    #[test]
+    fn test_insert_safe_pure_helper_passes() {
+        let code = "insert_safe(`tests/test_insert_safe_helper.nail`)\n\
+                    greeting:s = shout_greeting(`world`);\n\
+                    print(greeting);";
+        let errors = check_errors(code);
+        assert!(errors.is_empty(), "Pure sealed helper should pass, got: {:?}", errors);
+    }
+
+    #[test]
+    fn test_insert_safe_rejects_fs_read_in_sealed_function() {
+        let code = "insert_safe(`tests/test_insert_safe_fixture_fs.nail`)\n\
+                    content:s = sealed_read_config();\n\
+                    print(content);";
+        let errors = check_errors(code);
+        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'fs_read'")), "Expected a sealed fs_read rejection, got: {:?}", errors);
+    }
+
+    #[test]
+    fn test_insert_safe_rejects_laundering_through_unsealed_helper() {
+        // The sealed file calls fetch_report, which the trusted side defines
+        // and which performs a network call. Reachability from sealed code
+        // must taint it.
+        let code = "insert_safe(`tests/test_insert_safe_fixture_launder.nail`)\n\
+                    f fetch_report():s {\n\
+                        written:i = danger(http_download_file(`https://example.com/x`, `x.bin`));\n\
+                        r string_from(written);\n\
+                    }\n\
+                    report:s = sealed_launder();\n\
+                    print(report);";
+        let errors = check_errors(code);
+        assert!(
+            errors.iter().any(|message| message.contains("'fetch_report' is reachable from sealed code") && message.contains("http_download_file")),
+            "Expected a laundering rejection through fetch_report, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_insert_safe_seals_nested_plain_insert() {
+        // The sealed file plain-inserts another file whose function reads the
+        // disk. The whole subtree is sealed, so the read is still rejected.
+        let code = "insert_safe(`tests/test_insert_safe_fixture_nested.nail`)\n\
+                    value:s = sealed_wrapper();\n\
+                    print(value);";
+        let errors = check_errors(code);
+        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'fs_read'")), "Expected the nested plain insert to stay sealed, got: {:?}", errors);
+    }
+
+    #[test]
+    fn test_insert_safe_rejects_time_sleep_and_print_but_allows_log() {
+        let code = "insert_safe(`tests/test_insert_safe_fixture_seize.nail`)\n\
+                    sealed_wait();\n\
+                    sealed_shout();\n\
+                    log_line();";
+        let errors = check_errors(code);
+        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'time_sleep'")), "Expected time_sleep to be denied, got: {:?}", errors);
+        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'print'")), "Expected print to be denied, got: {:?}", errors);
+        assert!(!errors.iter().any(|message| message.contains("log_info")), "log_info must stay allowed in sealed code, got: {:?}", errors);
+    }
+
+    #[test]
+    fn test_insert_safe_rejects_sealed_const_initializer_effect() {
+        let code = "insert_safe(`tests/test_insert_safe_fixture_const.nail`)\n\
+                    print(sealed_home);";
+        let errors = check_errors(code);
+        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'env_get'")), "Expected the sealed const initializer to be rejected, got: {:?}", errors);
+    }
+
+    #[test]
+    fn test_insert_safe_rejects_top_level_statement() {
+        let code = "insert_safe(`tests/test_insert_safe_fixture_toplevel.nail`)\n\
+                    result:i = harmless_add(1, 2);\n\
+                    print(result);";
+        let tokens = lexer(code);
+        let parse_result = parse(tokens);
+        match parse_result {
+            Ok(_) => panic!("A top-level statement in a safe-inserted file should be a parse error"),
+            Err(error) => {
+                assert!(error.message.contains("may only declare functions, structs, enums, and constants"), "Unexpected message: {}", error.message);
+                assert!(error.message.contains("a call to 'print'"), "The error should name what was found, got: {}", error.message);
+            }
+        }
+    }
+
+    #[test]
+    fn test_plain_insert_is_not_sealed() {
+        // The fs-reading fixture is fine through plain insert: trust is the
+        // programmer's call there, insert_safe is the sealed variant.
+        let code = "insert(`tests/test_insert_safe_fixture_fs.nail`)\n\
+                    content:s = sealed_read_config();\n\
+                    print(content);";
+        let errors = check_errors(code);
+        assert!(errors.is_empty(), "Plain insert must not seal anything, got: {:?}", errors);
     }
 }

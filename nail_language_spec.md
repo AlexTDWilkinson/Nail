@@ -875,6 +875,71 @@ print(product); // Outputs: 16
 - Included files must contain valid Nail code
 - No conditional includes (includes always happen)
 
+### Sealed Inclusion: insert_safe
+
+`insert_safe()` includes a file exactly like `insert()`, with the same path
+resolution and the same circular include detection, but everything from that
+file is sealed: it may only compute, never touch the world. The compiler
+proves this at compile time. There is no runtime cost and the generated Rust
+is byte for byte identical to what plain `insert()` produces.
+
+This is Nail's supply chain answer. Downloaded code is pasted in with
+`insert_safe`, and the compiler guarantees it cannot phone home, read your
+disk or environment, spy on global state, or seize resources like stdout.
+
+```nail
+insert_safe(`downloaded_library.nail`)
+
+result:s = library_function(`input`);
+print(result);
+```
+
+#### Rules for sealed files
+
+1. **Only declarations at the top level.** A safe-inserted file may declare
+   functions, structs, enums, and constants. Any other top-level statement is
+   a compile error: your program decides when sealed code runs, the sealed
+   file never runs anything by itself.
+2. **Sealed code may only call computation.** Inside sealed functions and
+   sealed constant initializers, standard library calls are checked against a
+   deny list. Denied: anything that touches the machine (files, network,
+   databases, processes, email), anything that reads machine or invocation
+   state (environment, system facts, arguments, stdin), anything holding
+   process-global state (cache, i18n), and anything that seizes a resource
+   (stdout and print, the terminal, the scheduler, sleeping). Allowed: all
+   pure computation (math, strings, arrays, parsing, crypto, regex,
+   compression, and the rest), plus `log_*` and `print_error`, because stderr
+   cannot exfiltrate anything to the code's author and keeps sealed code
+   debuggable.
+3. **Enforcement is transitive.** Any function reachable from sealed code is
+   checked by the same rules, so sealed code cannot launder an effect through
+   an unsealed helper. If a sealed function calls your `fetch_report()`
+   helper and that helper performs a network call, the program is rejected:
+
+   ```nail
+   // downloaded.nail (included with insert_safe)
+   f sealed_summary():s {
+       r fetch_report(); // fetch_report is now reachable from sealed code
+   }
+   ```
+
+   ```nail
+   // main.nail
+   insert_safe(`downloaded.nail`)
+
+   f fetch_report():s {
+       // Rejected: reachable from sealed code, and http touches the machine
+       r danger(http_download_file(`https://example.com/r`, `r.bin`));
+   }
+   ```
+4. **Nesting stays sealed.** A plain `insert()` inside a safe-inserted file
+   is sealed too, the whole subtree is. An `insert_safe()` nested deeper
+   simply stays sealed.
+
+If you trust a file and want it to touch the world, include it with plain
+`insert()`. The two forms differ only in what the compiler will prove about
+the code.
+
 ## Error Message Style Guide
 
 Friendly, detailed errors are a core feature of Nail, and their quality is

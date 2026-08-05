@@ -95,6 +95,9 @@ pub enum TokenType {
     Dot,                                     // For dot operator (.)
     IfDeclaration,                           // For if keyword
     InsertKeyword,                           // For insert keyword (file insertion)
+    InsertSafeKeyword,                       // For insert_safe keyword (sealed file insertion)
+    SealedStart,                             // Marks where tokens spliced by insert_safe begin
+    SealedEnd,                               // Marks where tokens spliced by insert_safe end
     ElseDeclaration,                         // For else keyword
     ParallelStart,                           // For p keyword
     ParallelEnd,                             // For /p keyword
@@ -187,6 +190,9 @@ impl TokenType {
             TokenType::IfDeclaration => "the 'if' keyword".to_string(),
             TokenType::ElseDeclaration => "the 'else' keyword".to_string(),
             TokenType::InsertKeyword => "the 'insert' keyword".to_string(),
+            TokenType::InsertSafeKeyword => "the 'insert_safe' keyword".to_string(),
+            TokenType::SealedStart => "the start of a sealed insert_safe inclusion".to_string(),
+            TokenType::SealedEnd => "the end of a sealed insert_safe inclusion".to_string(),
             TokenType::ParallelStart => "the 'p' (parallel) keyword".to_string(),
             TokenType::ParallelEnd => "the '/p' (end parallel) keyword".to_string(),
             TokenType::ConcurrentStart => "the 'c' (concurrent) keyword".to_string(),
@@ -434,8 +440,12 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
             _ if is_identifier_or_keyword(c) => {
                 let lexer_output = lex_identifier_or_keyword(&mut chars, state);
                 
-                // Check if this is an insert keyword followed by a file path
-                if lexer_output.token_type == TokenType::InsertKeyword {
+                // Check if this is an insert or insert_safe keyword followed by a
+                // file path. Both splice the included file's tokens in place.
+                // insert_safe additionally wraps the splice in SealedStart and
+                // SealedEnd markers so later stages know the code is untrusted.
+                if lexer_output.token_type == TokenType::InsertKeyword || lexer_output.token_type == TokenType::InsertSafeKeyword {
+                    let sealed = lexer_output.token_type == TokenType::InsertSafeKeyword;
                     // Skip whitespace
                     while let Some(&c) = chars.peek() {
                         if c.is_whitespace() {
@@ -499,7 +509,22 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                     // Now handle the file insertion
                                     match handle_insert(&filepath, current_file, included_files, state) {
                                         Ok(inserted_tokens) => {
+                                            // A plain insert nested inside a safe-inserted
+                                            // file already lands between the outer markers,
+                                            // so the whole subtree is sealed either way.
+                                            if sealed {
+                                                tokens.push(Token {
+                                                    token_type: TokenType::SealedStart,
+                                                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
+                                                });
+                                            }
                                             tokens.extend(inserted_tokens);
+                                            if sealed {
+                                                tokens.push(Token {
+                                                    token_type: TokenType::SealedEnd,
+                                                    code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column },
+                                                });
+                                            }
                                         }
                                         Err(error) => {
                                             tokens.push(Token {
@@ -1316,6 +1341,7 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "fn" => TokenType::LexerError("'fn' is a reserved keyword and cannot be used as an identifier".to_string()),
         "let" => TokenType::LexerError("'let' is a reserved keyword and cannot be used as an identifier".to_string()),
         "insert" => TokenType::InsertKeyword,
+        "insert_safe" => TokenType::InsertSafeKeyword,
         "mut" => TokenType::LexerError("'mut' is a reserved keyword and cannot be used as an identifier".to_string()),
         "const" => TokenType::LexerError("'const' is a reserved keyword and cannot be used as an identifier".to_string()),
         "static" => TokenType::LexerError("'static' is a reserved keyword and cannot be used as an identifier".to_string()),

@@ -12,10 +12,10 @@ pub mod std_lib;
 #[derive(Debug, PartialEq, Clone)]
 pub enum ASTNode {
     Program { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
-    FunctionDeclaration { name: String, params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    FunctionDeclaration { name: String, params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, sealed: bool, code_span: CodeSpan, scope: usize },
     LambdaDeclaration { params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     FunctionCall { name: String, args: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
-    ConstDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode>, code_span: CodeSpan, scope: usize },
+    ConstDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode>, sealed: bool, code_span: CodeSpan, scope: usize },
     IfStatement { condition_branches: Vec<(Box<ASTNode>, Box<ASTNode>)>, else_branch: Option<Box<ASTNode>>, code_span: CodeSpan, scope: usize },
     ForLoop { 
         iterator: String, 
@@ -190,25 +190,155 @@ impl ASTNode {
             ASTNode::YieldDeclaration { code_span, .. } => code_span.clone(),
         }
     }
+
+    /// Every direct child expression/statement node, for generic AST walks.
+    /// Binder names (iterators, params) are strings, not nodes, so callers
+    /// that care about them handle them separately.
+    pub fn children(&self) -> Vec<&ASTNode> {
+        match self {
+            ASTNode::Program { statements, .. }
+            | ASTNode::Block { statements, .. }
+            | ASTNode::ParallelBlock { statements, .. }
+            | ASTNode::ConcurrentBlock { statements, .. } => statements.iter().collect(),
+            ASTNode::FunctionDeclaration { body, .. } | ASTNode::LambdaDeclaration { body, .. } => vec![body.as_ref()],
+            ASTNode::FunctionCall { args, .. } => args.iter().collect(),
+            ASTNode::ConstDeclaration { value, .. } => vec![value.as_ref()],
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+                let mut children: Vec<&ASTNode> = Vec::new();
+                for (condition, branch) in condition_branches {
+                    children.push(condition.as_ref());
+                    children.push(branch.as_ref());
+                }
+                if let Some(else_branch) = else_branch {
+                    children.push(else_branch.as_ref());
+                }
+                children
+            }
+            ASTNode::ForLoop { iterable, initial_value, filter, body, .. } => {
+                let mut children = vec![iterable.as_ref()];
+                children.extend(initial_value.as_deref());
+                children.extend(filter.as_deref());
+                children.push(body.as_ref());
+                children
+            }
+            ASTNode::MapExpression { iterable, body, .. }
+            | ASTNode::FilterExpression { iterable, body, .. }
+            | ASTNode::EachExpression { iterable, body, .. }
+            | ASTNode::FindExpression { iterable, body, .. }
+            | ASTNode::AllExpression { iterable, body, .. }
+            | ASTNode::AnyExpression { iterable, body, .. } => vec![iterable.as_ref(), body.as_ref()],
+            ASTNode::ReduceExpression { iterable, initial_value, body, .. } | ASTNode::ScanExpression { iterable, initial_value, body, .. } => vec![iterable.as_ref(), initial_value.as_ref(), body.as_ref()],
+            ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
+                let mut children = vec![condition.as_ref()];
+                children.extend(initial_value.as_deref());
+                children.extend(max_iterations.as_deref());
+                children.push(body.as_ref());
+                children
+            }
+            ASTNode::Loop { body, .. } | ASTNode::SpawnBlock { body, .. } => vec![body.as_ref()],
+            ASTNode::BinaryOperation { left, right, .. } | ASTNode::Assignment { left, right, .. } => vec![left.as_ref(), right.as_ref()],
+            ASTNode::UnaryOperation { operand, .. } => vec![operand.as_ref()],
+            ASTNode::StructDeclaration { fields, .. } | ASTNode::StructInstantiation { fields, .. } | ASTNode::EnumDeclaration { variants: fields, .. } => fields.iter().collect(),
+            ASTNode::StructInstantiationField { value, .. } => vec![value.as_ref()],
+            ASTNode::NestedFieldAccess { object, .. } => vec![object.as_ref()],
+            ASTNode::ArrayLiteral { elements, .. } => elements.iter().collect(),
+            ASTNode::ReturnDeclaration { statement, .. } | ASTNode::YieldDeclaration { statement, .. } => vec![statement.as_ref()],
+            ASTNode::StructDeclarationField { .. }
+            | ASTNode::StructFieldAccess { .. }
+            | ASTNode::EnumVariant { .. }
+            | ASTNode::Identifier { .. }
+            | ASTNode::NumberLiteral { .. }
+            | ASTNode::StringLiteral { .. }
+            | ASTNode::BooleanLiteral { .. }
+            | ASTNode::BreakStatement { .. }
+            | ASTNode::ContinueStatement { .. } => Vec::new(),
+        }
+    }
 }
 
 pub struct ParserState {
     tokens: Peekable<IntoIter<Token>>,
     current_token: Option<Token>,
     previous_token: Option<Token>,
+    // How many insert_safe inclusions the parser is currently inside. The
+    // lexer wraps each safe-inserted file's tokens in SealedStart/SealedEnd
+    // markers, and nesting simply nests the marker pairs.
+    sealed_depth: usize,
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, CodeError> {
-    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None };
+    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None, sealed_depth: 0 };
     parse_inner(&mut state)
 }
 
 fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     let mut program = vec![];
-    while state.tokens.peek().is_some() {
-        program.push(parse_statement(state)?);
+    while let Some(token) = state.tokens.peek() {
+        // Sealed markers drive a depth counter and produce no AST nodes
+        match token.token_type {
+            TokenType::SealedStart => {
+                advance(state);
+                state.sealed_depth += 1;
+                continue;
+            }
+            TokenType::SealedEnd => {
+                advance(state);
+                state.sealed_depth = state.sealed_depth.saturating_sub(1);
+                continue;
+            }
+            _ => {}
+        }
+        let statement = parse_statement(state)?;
+        if state.sealed_depth > 0 {
+            check_sealed_statement(&statement)?;
+        }
+        program.push(statement);
     }
     Ok(ASTNode::Program { statements: program, code_span: CodeSpan::default(), scope: GLOBAL_SCOPE })
+}
+
+/// A file included with insert_safe may only declare things: functions,
+/// structs, enums, and constants. Anything that runs at the top level is
+/// rejected, so the including program alone decides when sealed code executes.
+fn check_sealed_statement(statement: &ASTNode) -> Result<(), CodeError> {
+    match statement {
+        ASTNode::FunctionDeclaration { .. } | ASTNode::StructDeclaration { .. } | ASTNode::EnumDeclaration { .. } | ASTNode::ConstDeclaration { .. } => Ok(()),
+        other => Err(CodeError {
+            help: Some("move the statement into a function so your program decides when it runs, or include the file with plain insert if you trust it".to_string()),
+            message: format!("A file included with insert_safe may only declare functions, structs, enums, and constants, but this file has {} at the top level", describe_statement(other)),
+            code_span: other.code_span(),
+        }),
+    }
+}
+
+/// Plain-language name for a statement kind, used by the insert_safe
+/// top-level restriction error.
+fn describe_statement(statement: &ASTNode) -> String {
+    match statement {
+        ASTNode::FunctionCall { name, .. } => format!("a call to '{}'", name),
+        ASTNode::IfStatement { .. } => "an if statement".to_string(),
+        ASTNode::ForLoop { .. } => "a for loop".to_string(),
+        ASTNode::WhileLoop { .. } => "a while loop".to_string(),
+        ASTNode::Loop { .. } => "a loop".to_string(),
+        ASTNode::SpawnBlock { .. } => "a spawn block".to_string(),
+        ASTNode::ParallelBlock { .. } => "a parallel block".to_string(),
+        ASTNode::ConcurrentBlock { .. } => "a concurrent block".to_string(),
+        ASTNode::Block { .. } => "a block".to_string(),
+        ASTNode::Assignment { .. } => "an assignment".to_string(),
+        ASTNode::MapExpression { .. } => "a map expression".to_string(),
+        ASTNode::FilterExpression { .. } => "a filter expression".to_string(),
+        ASTNode::ReduceExpression { .. } => "a reduce expression".to_string(),
+        ASTNode::ScanExpression { .. } => "a scan expression".to_string(),
+        ASTNode::EachExpression { .. } => "an each expression".to_string(),
+        ASTNode::FindExpression { .. } => "a find expression".to_string(),
+        ASTNode::AllExpression { .. } => "an all expression".to_string(),
+        ASTNode::AnyExpression { .. } => "an any expression".to_string(),
+        ASTNode::ReturnDeclaration { .. } => "a return statement".to_string(),
+        ASTNode::YieldDeclaration { .. } => "a yield statement".to_string(),
+        ASTNode::BreakStatement { .. } => "a break statement".to_string(),
+        ASTNode::ContinueStatement { .. } => "a continue statement".to_string(),
+        _ => "an executable statement".to_string(),
+    }
 }
 
 fn advance(state: &mut ParserState) -> Option<Token> {
@@ -691,7 +821,7 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
         // Parse function body
         let body = Box::new(parse_block(state)?);
 
-        Ok(ASTNode::FunctionDeclaration { name, params, data_type, body, code_span, scope: GLOBAL_SCOPE })
+        Ok(ASTNode::FunctionDeclaration { name, params, data_type, body, sealed: state.sealed_depth > 0, code_span, scope: GLOBAL_SCOPE })
     } else {
         Err(CodeError { help: None, message: "Expected function declaration".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
@@ -782,7 +912,7 @@ fn parse_const_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError
     let value = Box::new(parse_expression(state, 0)?);
     let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
 
-    Ok(ASTNode::ConstDeclaration { name, data_type, value, code_span, scope: GLOBAL_SCOPE })
+    Ok(ASTNode::ConstDeclaration { name, data_type, value, sealed: state.sealed_depth > 0, code_span, scope: GLOBAL_SCOPE })
 }
 
 fn parse_type_annotation(state: &mut ParserState) -> Result<NailDataTypeDescriptor, CodeError> {

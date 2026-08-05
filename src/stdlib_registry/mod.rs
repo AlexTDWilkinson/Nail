@@ -653,6 +653,101 @@ pub fn file_fold(name: &str) -> Option<FileFold> {
     };
 }
 
+/// Deny phrases for sealed-code policy, shared between the module defaults
+/// and the per-function overrides below.
+const SEALED_TOUCHES_MACHINE: &str = "touches the machine";
+const SEALED_READS_MACHINE_STATE: &str = "reads machine state";
+const SEALED_HOLDS_GLOBAL_STATE: &str = "holds global state";
+const SEALED_SEIZES_RESOURCE: &str = "seizes a resource";
+
+/// Functions denied inside sealed code even though their module is otherwise
+/// allowed, each with the phrase explaining why.
+const SEALED_DENIED_FUNCTIONS: &[(&str, &str)] = &[
+    // Time arithmetic is pure, but sleeping holds the thread hostage
+    ("time_sleep", SEALED_SEIZES_RESOURCE),
+    // CSV text work is pure, but these take a file path or hold a file handle
+    ("csv_write", SEALED_TOUCHES_MACHINE),
+    ("csv_open", SEALED_TOUCHES_MACHINE),
+    ("csv_next_rows", SEALED_TOUCHES_MACHINE),
+    ("csv_close", SEALED_TOUCHES_MACHINE),
+    // Hashing is pure, but these two read the file themselves
+    ("crypto_hash_file_sha256", SEALED_TOUCHES_MACHINE),
+    ("crypto_hash_file_blake3", SEALED_TOUCHES_MACHINE),
+    // Path strings are pure, but these two consult the real filesystem
+    ("path_exists", SEALED_READS_MACHINE_STATE),
+    ("path_absolute", SEALED_READS_MACHINE_STATE),
+    // Terminal styling builds strings, but these three ask the real terminal
+    ("term_is_tty", SEALED_READS_MACHINE_STATE),
+    ("term_width", SEALED_READS_MACHINE_STATE),
+    ("term_height", SEALED_READS_MACHINE_STATE),
+];
+
+/// Functions allowed inside sealed code even though their module is otherwise
+/// denied.
+const SEALED_ALLOWED_FUNCTIONS: &[&str] = &[
+    // Pure IP and CIDR arithmetic on values passed in, no sockets involved
+    "net_ip_in_cidr",
+    "net_ip_is_private",
+    "net_ip_is_loopback",
+    "net_ip_version",
+    "net_ip_to_int",
+    "net_ip_from_int",
+    // Writes to stderr, which sealed code may use like log_* does
+    "print_error",
+];
+
+/// Why a stdlib function is denied inside sealed (insert_safe) code, as a
+/// short phrase for error messages, or None when the function is safe there.
+/// Sealed code may only compute: module-level defaults with per-function
+/// overrides, so all policy lives here and the checker asks one question.
+pub fn sealed_deny_reason(name: &str) -> Option<&'static str> {
+    if SEALED_ALLOWED_FUNCTIONS.contains(&name) {
+        return None;
+    }
+    if let Some((_, reason)) = SEALED_DENIED_FUNCTIONS.iter().find(|(denied, _)| *denied == name) {
+        return Some(reason);
+    }
+    match get_stdlib_function(name).map(|f| &f.module) {
+        // Touches the world: filesystem, network, databases, external
+        // processes, and every file-format module that reads or writes files
+        Some(
+            StdlibModule::Fs
+            | StdlibModule::Http
+            | StdlibModule::Mcp
+            | StdlibModule::Net
+            | StdlibModule::Feed
+            | StdlibModule::Email
+            | StdlibModule::Process
+            | StdlibModule::Archive
+            | StdlibModule::Audio
+            | StdlibModule::Image
+            | StdlibModule::Pdf
+            | StdlibModule::Xlsx
+            | StdlibModule::Database
+            | StdlibModule::DataFusion
+            | StdlibModule::Postgres
+            | StdlibModule::Valkey,
+        ) => Some(SEALED_TOUCHES_MACHINE),
+        // Reads machine or invocation state: environment, system facts,
+        // command-line arguments, and stdin
+        Some(StdlibModule::Env | StdlibModule::Sys | StdlibModule::Args | StdlibModule::IO) => Some(SEALED_READS_MACHINE_STATE),
+        // Process-global state visible across the whole program
+        Some(StdlibModule::Cache | StdlibModule::I18n) => Some(SEALED_HOLDS_GLOBAL_STATE),
+        // Seizes a resource the program owns: stdout, the terminal, or the
+        // scheduler
+        Some(StdlibModule::Print | StdlibModule::Tui | StdlibModule::Sched) => Some(SEALED_SEIZES_RESOURCE),
+        // Everything else is pure computation on values passed in, plus
+        // log_* (stderr cannot exfiltrate and keeps sealed code debuggable)
+        Some(_) => None,
+        None => None,
+    }
+}
+
+/// Whether sealed (insert_safe) code may call this stdlib function.
+pub fn is_sealed_safe(name: &str) -> bool {
+    sealed_deny_reason(name).is_none()
+}
+
 pub fn is_stdlib_fn_async(name: &str) -> bool {
     // Per-function overrides of the module default
     if name == "time_sleep" || name == "tui_run" || name == "crypto_hash_file_sha256" || name == "crypto_hash_file_blake3" || name == "csv_write" || name == "sys_cpu_usage_percent" || name == "sys_process_cpu_percent" {

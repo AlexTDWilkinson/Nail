@@ -43,7 +43,8 @@ fn token_class(token_type: &TokenType) -> Option<&'static str> {
         | TokenType::StepKeyword
         | TokenType::Return
         | TokenType::Yield
-        | TokenType::InsertKeyword => Some("tok-kw"),
+        | TokenType::InsertKeyword
+        | TokenType::InsertSafeKeyword => Some("tok-kw"),
         TokenType::ParallelStart
         | TokenType::ParallelEnd
         | TokenType::ConcurrentStart
