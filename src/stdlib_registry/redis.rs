@@ -31,7 +31,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         parameters: vec![nail_param!(url: s)],
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_Redis".to_string()))),
         diverging: false,
-        description: "Connects to a redis server - the shared scratchpad between processes: sessions, counters, queues that several programs or machines read together. For state one process keeps to itself, the cache module needs no server. URLs look like `redis://127.0.0.1/` or `redis://:password@host:6379/0`.",
+        description: "Connects to a redis-protocol server - the shared scratchpad between processes: sessions, counters, queues that several programs or machines read together. The protocol is open, so Valkey, KeyDB and Dragonfly answer the same calls as Redis itself. For state one process keeps to itself, the cache module needs no server. URLs look like `redis://127.0.0.1/` or `redis://:password@host:6379/0`.",
         example: "store:DB_Redis = danger(db_redis_connect(`redis://127.0.0.1/`));",
     });
 

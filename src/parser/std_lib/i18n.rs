@@ -81,13 +81,18 @@ pub fn locales() -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// Both tests share the catalogs, so writing and loading happens exactly
+    /// once - two test threads rewriting the same files mid-read was a race.
     fn load_test_catalogs() {
-        let directory = std::env::temp_dir().join(format!("nail_i18n_test_{}", std::process::id()));
-        std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join("en.json"), r#"{"greeting": "Hello", "items.one": "{count} item", "items.other": "{count} items"}"#).unwrap();
-        std::fs::write(directory.join("fr.json"), r#"{"greeting": "Bonjour"}"#).unwrap();
-        std::fs::write(directory.join("pt.json"), r#"{"greeting": "Olá"}"#).unwrap();
-        load(directory.to_string_lossy().to_string()).unwrap();
+        static SETUP: std::sync::Once = std::sync::Once::new();
+        SETUP.call_once(|| {
+            let directory = std::env::temp_dir().join(format!("nail_i18n_test_{}", std::process::id()));
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("en.json"), r#"{"greeting": "Hello", "items.one": "{count} item", "items.other": "{count} items"}"#).unwrap();
+            std::fs::write(directory.join("fr.json"), r#"{"greeting": "Bonjour"}"#).unwrap();
+            std::fs::write(directory.join("pt.json"), r#"{"greeting": "Olá"}"#).unwrap();
+            load(directory.to_string_lossy().to_string()).unwrap();
+        });
     }
 
     #[test]

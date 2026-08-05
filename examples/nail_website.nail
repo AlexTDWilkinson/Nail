@@ -123,9 +123,14 @@ release:s = md\`## Out **today**\`;
 plain:s = \`no tag, no change\`;`;
 tagged_snippet_html:s = code_highlight_html(tagged_snippet);
 
-// The standard library, asked of the compiler itself rather than listed by hand
-stdlib_function_list:a:STDLIB_Function = stdlib_functions();
-stdlib_module_list:a:s = stdlib_modules();
+// The standard library, asked of the compiler itself rather than listed by
+// hand - and sorted here, in Nail, so the page owes its order to nobody.
+f stdlib_order_key(func:STDLIB_Function):s {
+    r string_concat([func.module, ` `, func.name]);
+}
+
+stdlib_function_list:a:STDLIB_Function = array_sort_by(stdlib_functions(), stdlib_order_key);
+stdlib_module_list:a:s = array_sort(stdlib_modules());
 
 concurrent_example_html:s = code_highlight_html(concurrent_example);
 parallel_example_html:s = code_highlight_html(parallel_example);
