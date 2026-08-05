@@ -49,16 +49,130 @@ struct MeshTriangle {
     color: (u8, u8, u8),
 }
 
-fn meshes() -> &'static Mutex<HashMap<i64, Vec<MeshTriangle>>> {
-    static MESHES: OnceLock<Mutex<HashMap<i64, Vec<MeshTriangle>>>> = OnceLock::new();
+/// A BSP tree over a mesh's triangles, built once at load. Traversed by
+/// camera position it hands back triangles in exact far-to-near order,
+/// which no depth-sorting heuristic can promise: stacked parallel planes
+/// and walls standing on floors always have some angle where a single
+/// sort key orders them wrongly. Spanning triangles are split at build
+/// time so every triangle lies wholly on one side of every plane above it.
+struct BspNode {
+    plane_point: [f64; 3],
+    plane_normal: [f64; 3],
+    coplanar: Vec<MeshTriangle>,
+    front: Option<Box<BspNode>>,
+    back: Option<Box<BspNode>>,
+}
+
+const BSP_EPSILON: f64 = 1e-4;
+
+fn corner_f64(corner: [f32; 3]) -> [f64; 3] {
+    return [corner[0] as f64, corner[1] as f64, corner[2] as f64];
+}
+
+fn triangle_plane(triangle: &MeshTriangle) -> Option<([f64; 3], [f64; 3])> {
+    let one = corner_f64(triangle.corners[0]);
+    let two = corner_f64(triangle.corners[1]);
+    let three = corner_f64(triangle.corners[2]);
+    let normal = cross(subtract(two, one), subtract(three, one));
+    let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+    if length < 1e-12 {
+        return None;
+    }
+    return Some((one, [normal[0] / length, normal[1] / length, normal[2] / length]));
+}
+
+/// Clips a triangle to one side of a plane. `keep_front` picks the side.
+/// The result is the surviving polygon fan-triangulated, so zero, one or
+/// two triangles.
+fn clip_triangle(triangle: &MeshTriangle, distances: [f64; 3], keep_front: bool) -> Vec<MeshTriangle> {
+    let mut polygon: Vec<[f64; 3]> = Vec::with_capacity(4);
+    for index in 0..3 {
+        let next = (index + 1) % 3;
+        let here = corner_f64(triangle.corners[index]);
+        let there = corner_f64(triangle.corners[next]);
+        let here_distance = if keep_front { distances[index] } else { -distances[index] };
+        let there_distance = if keep_front { distances[next] } else { -distances[next] };
+        if here_distance >= 0.0 {
+            polygon.push(here);
+        }
+        if (here_distance >= 0.0) != (there_distance >= 0.0) {
+            let along = here_distance / (here_distance - there_distance);
+            polygon.push([
+                here[0] + (there[0] - here[0]) * along,
+                here[1] + (there[1] - here[1]) * along,
+                here[2] + (there[2] - here[2]) * along,
+            ]);
+        }
+    }
+    let as_f32 = |point: [f64; 3]| [point[0] as f32, point[1] as f32, point[2] as f32];
+    let mut out = Vec::new();
+    for fan in 1..polygon.len().saturating_sub(1) {
+        out.push(MeshTriangle { corners: [as_f32(polygon[0]), as_f32(polygon[fan]), as_f32(polygon[fan + 1])], color: triangle.color });
+    }
+    return out;
+}
+
+fn build_bsp(triangles: Vec<MeshTriangle>) -> Option<Box<BspNode>> {
+    let (plane_point, plane_normal) = triangles.iter().find_map(triangle_plane)?;
+    let mut coplanar = Vec::new();
+    let mut front_side = Vec::new();
+    let mut back_side = Vec::new();
+    for triangle in triangles {
+        let distances = [
+            dot(subtract(corner_f64(triangle.corners[0]), plane_point), plane_normal),
+            dot(subtract(corner_f64(triangle.corners[1]), plane_point), plane_normal),
+            dot(subtract(corner_f64(triangle.corners[2]), plane_point), plane_normal),
+        ];
+        let all_front = distances.iter().all(|d| *d >= -BSP_EPSILON);
+        let all_back = distances.iter().all(|d| *d <= BSP_EPSILON);
+        if all_front && all_back {
+            coplanar.push(triangle);
+        } else if all_front {
+            front_side.push(triangle);
+        } else if all_back {
+            back_side.push(triangle);
+        } else {
+            front_side.extend(clip_triangle(&triangle, distances, true));
+            back_side.extend(clip_triangle(&triangle, distances, false));
+        }
+    }
+    return Some(Box::new(BspNode { plane_point, plane_normal, coplanar, front: build_bsp_vec(front_side), back: build_bsp_vec(back_side) }));
+}
+
+fn build_bsp_vec(triangles: Vec<MeshTriangle>) -> Option<Box<BspNode>> {
+    if triangles.is_empty() {
+        return None;
+    }
+    return build_bsp(triangles);
+}
+
+/// Far side first, this plane's own triangles, then the near side: exact
+/// painter's order for wherever the eye is.
+fn traverse_bsp<'tree>(node: &'tree BspNode, eye: [f64; 3], out: &mut Vec<&'tree MeshTriangle>) {
+    let side = dot(subtract(eye, node.plane_point), node.plane_normal);
+    let (far, near) = if side >= 0.0 { (&node.back, &node.front) } else { (&node.front, &node.back) };
+    if let Some(child) = far {
+        traverse_bsp(child, eye, out);
+    }
+    out.extend(node.coplanar.iter());
+    if let Some(child) = near {
+        traverse_bsp(child, eye, out);
+    }
+}
+
+fn meshes() -> &'static Mutex<HashMap<i64, BspNode>> {
+    static MESHES: OnceLock<Mutex<HashMap<i64, BspNode>>> = OnceLock::new();
     return MESHES.get_or_init(|| Mutex::new(HashMap::new()));
 }
 
 static NEXT_MESH: AtomicI64 = AtomicI64::new(1);
 
 fn store_mesh(triangles: Vec<MeshTriangle>) -> Result<i64, String> {
+    let Some(root) = build_bsp(triangles) else {
+        return Err("game3d: the mesh has no triangles with any area".to_string());
+    };
     let handle = NEXT_MESH.fetch_add(1, Ordering::Relaxed);
-    meshes().lock().map_err(|_| "game3d: the mesh store is poisoned".to_string())?.insert(handle, triangles);
+    meshes().lock().map_err(|_| "game3d: the mesh store is poisoned".to_string())?.insert(handle, *root);
     return Ok(handle);
 }
 
@@ -189,12 +303,13 @@ fn parse_tint(color: &str) -> Option<(u8, u8, u8)> {
 }
 
 /// Projects a mesh through a camera into flat triangles: placed, spun around
-/// y, scaled, lit by the fixed light, painter-sorted far to near, and
-/// returned as ordinary shapes for the frame. An empty `tint` keeps the
-/// mesh's own material colours, a `#rrggbb` tint repaints every triangle.
+/// y, scaled, lit by the fixed light, ordered far to near by walking the
+/// mesh's BSP tree from the eye, and returned as ordinary shapes for the
+/// frame. An empty `tint` keeps the mesh's own material colours, a
+/// `#rrggbb` tint repaints every triangle.
 pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation_y: f64, scale: f64, tint: String) -> Result<Vec<GAME_Shape>, String> {
     let store = meshes().lock().map_err(|_| "game3d_mesh: the mesh store is poisoned".to_string())?;
-    let Some(triangles) = store.get(&handle) else {
+    let Some(bsp_root) = store.get(&handle) else {
         return Err(format!("game3d_mesh: no mesh with the number {} was loaded", handle));
     };
     let tint = if tint.is_empty() { None } else { Some(parse_tint(&tint).ok_or_else(|| format!("game3d_mesh: `{}` is not a #rrggbb colour", tint))?) };
@@ -210,15 +325,20 @@ pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation
     let (sin, cos) = rotation_y.sin_cos();
     let light = normalized(LIGHT);
 
-    struct Projected {
-        depth: f64,
-        points: [[f64; 2]; 3],
-        color: (u8, u8, u8),
-        brightness: f64,
-    }
-    let mut flat: Vec<Projected> = Vec::with_capacity(triangles.len());
+    // The eye moved into the mesh's own space (undo the placement, the
+    // scale, then the spin) picks the BSP traversal order. The tree hands
+    // triangles back exactly far-to-near, so they are drawn as they come
+    // with no sorting.
+    let eye_world = subtract([camera.position_x, camera.position_y, camera.position_z], [x, y, z]);
+    let safe_scale = if scale.abs() < 1e-9 { 1.0 } else { scale };
+    let eye_unscaled = [eye_world[0] / safe_scale, eye_world[1] / safe_scale, eye_world[2] / safe_scale];
+    let eye_local = [eye_unscaled[0] * cos - eye_unscaled[2] * sin, eye_unscaled[1], eye_unscaled[2] * cos + eye_unscaled[0] * sin];
+    let mut ordered: Vec<&MeshTriangle> = Vec::new();
+    traverse_bsp(bsp_root, eye_local, &mut ordered);
 
-    for triangle in triangles.iter() {
+    let mut shapes: Vec<GAME_Shape> = Vec::with_capacity(ordered.len());
+
+    for triangle in ordered {
         let mut world = [[0.0f64; 3]; 3];
         for (index, corner) in triangle.corners.iter().enumerate() {
             // Spin around y, scale, then place in the world.
@@ -235,7 +355,6 @@ pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation
         let brightness = 0.45 + 0.55 * facing;
 
         let mut points = [[0.0f64; 2]; 3];
-        let mut depth = 0.0;
         let mut behind = false;
         for (index, corner) in world.iter().enumerate() {
             let toward = subtract(*corner, [camera.position_x, camera.position_y, camera.position_z]);
@@ -247,12 +366,6 @@ pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation
                 break;
             }
             points[index] = [half_width + view_x * focal / view_z, half_height - view_y * focal / view_z];
-            // The sort key is the farthest corner, not the mean. A floor
-            // face's far corners stretch behind the wall standing on it, so
-            // mean depth can jump the floor in front of the wall at some
-            // angles and eat a triangle out of it. The farthest corner keeps
-            // touching geometry in a stable order.
-            depth = if view_z > depth { view_z } else { depth };
         }
         if behind {
             continue;
@@ -298,21 +411,12 @@ pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation
             grown[index] = [here[0] + 0.5 * sum[0] / denominator, here[1] + 0.5 * sum[1] / denominator];
         }
 
-        flat.push(Projected { depth, points: grown, color: tint.unwrap_or(triangle.color), brightness });
+        let (red, green, blue) = tint.unwrap_or(triangle.color);
+        let lit = |channel: u8| ((channel as f64 * brightness) as u8).min(255);
+        let color = format!("#{:02x}{:02x}{:02x}", lit(red), lit(green), lit(blue));
+        shapes.push(super::game::triangle(grown[0][0], grown[0][1], grown[1][0], grown[1][1], grown[2][0], grown[2][1], color));
     }
 
-    // Painter's algorithm: the far triangles go first so near ones cover them.
-    flat.sort_by(|a, b| b.depth.partial_cmp(&a.depth).unwrap_or(std::cmp::Ordering::Equal));
-
-    let shapes = flat
-        .into_iter()
-        .map(|triangle| {
-            let (red, green, blue) = triangle.color;
-            let lit = |channel: u8| ((channel as f64 * triangle.brightness) as u8).min(255);
-            let color = format!("#{:02x}{:02x}{:02x}", lit(red), lit(green), lit(blue));
-            return super::game::triangle(triangle.points[0][0], triangle.points[0][1], triangle.points[1][0], triangle.points[1][1], triangle.points[2][0], triangle.points[2][1], color);
-        })
-        .collect();
     return Ok(shapes);
 }
 
