@@ -1,0 +1,8 @@
+// A Point needs both coordinates, and this literal hopes nobody notices.
+struct Point {
+    x_pos:i,
+    y_pos:i
+}
+
+somewhere:Point = Point { x_pos = 3 };
+print(somewhere.x_pos);

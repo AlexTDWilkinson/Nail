@@ -585,7 +585,7 @@ f generate_css():s {
     }`;
 
     seal_styles:s = css`
-    .seal-points {
+    .sandbox-points {
         display: flex;
         flex-wrap: wrap;
         justify-content: center;
@@ -594,7 +594,7 @@ f generate_css():s {
         max-width: 800px;
     }
 
-    .seal-point {
+    .sandbox-point {
         border: 1px solid var(--border);
         border-radius: 2rem;
         padding: 0.4rem 1rem;
@@ -604,28 +604,28 @@ f generate_css():s {
         background: var(--bg-primary);
     }
 
-    .seal-grid {
+    .sandbox-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 1.5rem;
     }
 
-    .seal-grid .code-example {
+    .sandbox-grid .code-example {
         margin: 0;
     }
 
-    .seal-verdict {
+    .sandbox-verdict {
         border-left: 4px solid var(--error);
         margin: 1.5rem 0 2rem;
     }
 
-    .seal-verdict pre {
+    .sandbox-verdict pre {
         color: #fca5a5;
         white-space: pre-wrap;
         word-break: break-word;
     }
 
-    .seal-note {
+    .sandbox-note {
         max-width: 800px;
         margin: 0 auto 1.25rem;
         text-align: center;
@@ -633,8 +633,24 @@ f generate_css():s {
         line-height: 1.8;
     }
 
+    .refusal-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+    }
+
+    .refusal-pane .code-example {
+        margin: 0 0 1rem;
+    }
+
+    @media (max-width: 1000px) {
+        .refusal-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
     @media (max-width: 900px) {
-        .seal-grid {
+        .sandbox-grid {
             grid-template-columns: 1fr;
         }
     }`;

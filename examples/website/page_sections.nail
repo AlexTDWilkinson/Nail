@@ -79,46 +79,57 @@ f generate_hero(hero_code:s):s {
     r hero_html;
 }
 
-f generate_philosophy():s {
-    r html`<section id="philosophy" class="philosophy">
+f generate_whole_language(snippet_html:s, rust_line_count:i):s {
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `snippet`, snippet_html);
+    hashmap_set(values, `rust_lines`, string_from(rust_line_count));
+    r danger(template_render(html`<section id="philosophy" class="philosophy">
     <div class="section-header">
-        <h2>Our Philosophy</h2>
-        <p>Simplicity is not about doing less. It's about doing only what matters.</p>
+        <h2>The Whole Language on One Screen</h2>
+        <p>If it is not on this screen, Nail does not have it</p>
     </div>
-    <div class="philosophy-content">
-        <p>
-            Every new abstraction is another way to do the same thing, and another thing to understand
-            when it breaks. Nail removes instead of adding: one good way to solve a problem, not ten.
-        </p>
-
-        <div class="philosophy-quote">
-            "The best code is not the code that handles every edge case with clever abstractions.
-            It's the code that doesn't have edge cases to begin with."
-        </div>
+    <div class="code-example">
+        <span class="code-label">whole_language.nail</span>
+        <pre>{{{snippet}}}</pre>
     </div>
-</section>`;
+    <p class="sandbox-note">
+        This file compiles. The server checked it with its own compiler at startup, and it became
+        {{rust_lines}} lines of Rust.
+    </p>
+</section>`, values));
 }
 
-f generate_problem_section():s {
-    r html`<section class="problems" style="padding: 4rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-    <div style="max-width: 1200px; margin: 0 auto; color: white;">
-        <h2 style="font-size: 2.5rem; margin-bottom: 2.5rem; text-align: center;">Three bugs Nail cannot express</h2>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem;">
-            <div style="text-align: center;">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">NULL</div>
-                <p>The billion dollar mistake. There is no null to return, so nothing can be missing.</p>
-            </div>
-            <div style="text-align: center;">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">LOOPS</div>
-                <p>Off-by-one, iterator invalidation, infinite loops. There are no counters to get wrong.</p>
-            </div>
-            <div style="text-align: center;">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">RACES</div>
-                <p>Data races and deadlocks. Nothing is mutable, so threads have nothing to fight over.</p>
-            </div>
+// One refused file: the code, then the compiler's answer under it.
+f refusal_pane(title:s, code_html:s, verdict_html:s):s {
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `title`, title);
+    hashmap_set(values, `code`, code_html);
+    hashmap_set(values, `verdict`, verdict_html);
+    r danger(template_render(html`<div class="refusal-pane">
+        <div class="code-example sandbox-code">
+            <span class="code-label">{{title}}</span>
+            <pre>{{{code}}}</pre>
         </div>
+        <div class="code-example sandbox-verdict">
+            <span class="code-label">The compiler's answer</span>
+            <pre>{{{verdict}}}</pre>
+        </div>
+    </div>`, values));
+}
+
+f generate_refusals(error_html:s, error_verdict:s, field_html:s, field_verdict:s, nothing_html:s, nothing_verdict:s):s {
+    panes:s = array_join([
+        refusal_pane(`Ignoring a failure`, error_html, error_verdict),
+        refusal_pane(`Forgetting a field`, field_html, field_verdict),
+        refusal_pane(`Keeping a nothing`, nothing_html, nothing_verdict)
+    ], ``);
+    r array_join([html`<section id="refusals" class="refusals">
+    <div class="section-header">
+        <h2>Bugs That Do Not Compile</h2>
+        <p>Three everyday mistakes. The errors are real: this server fed each file to its own compiler at startup</p>
     </div>
-</section>`;
+    <div class="refusal-grid">`, panes, html`</div>
+</section>`], ``);
 }
 
 f generate_features():s {
@@ -161,15 +172,15 @@ f generate_features():s {
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🛡️</div>
-            <h3>Strangers' Code Arrives Sealed</h3>
-            <p>insert_safe pulls a shared file in and the compiler proves it can only compute.
-               No network, no disk, no way to phone home.</p>
+            <h3>Foreign Code Runs Sandboxed</h3>
+            <p>insert_safe puts downloaded code in a compile-time sandbox: no network, no disk,
+               no way to phone home. The compiler enforces it.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">📦</div>
-            <h3>A Thousand Functions, Zero Installs</h3>
-            <p>The whole library ships inside the compiler, so there is nothing to download and
-               no version to mismatch.</p>
+            <h3>Batteries Included</h3>
+            <p>A standard library with a thousand functions: servers, databases, stats, money,
+               geo. No package manager, nothing to install.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🗣️</div>
@@ -516,29 +527,14 @@ f generate_versioning():s {
     </div>
     <div class="philosophy-content">
         <p>
-            You open an old project and it won't run any more. Nobody touched the code. The language
-            moved on, or something it depended on vanished. The fix: every Nail file records the
-            compiler it was written for. You never type it. The IDE stamps it on save.
+            Every Nail file will record the compiler it was written for. The IDE stamps it on save,
+            the toolchain fetches exactly that version and builds with it. Old code keeps working
+            because nothing drags it forward.
         </p>
         <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Nail</span><pre>nail 0.1</pre></div>
-        <p>
-            Open or save, and Nail reads that stamp, fetches that version if you don't have it, and edits
-            and builds the file with it: not the newest one, the one the file asked for. What arrives is
-            that version of Nail itself, editor included, since the errors you see while typing must come
-            from the compiler that builds the program. The Rust toolchain underneath is shared, so
-            switching is usually a small download. The stamp is plain text inside the file because source
-            gets zipped, emailed, pasted and committed, and a version kept anywhere else is lost on the way.
-        </p>
-        <p>
-            Upgrading is the same gesture in reverse: pick a different Nail, save, and the file reopens on
-            it. If the newer release dislikes something you wrote, set it back and save. Nothing drags you
-            forward, and nothing rots if you stay.
-        </p>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            Status: a plan, not a feature. There is one version of Nail today, so there is nothing to pin
-            yet. The version line is reserved in the specification. It lands in three steps: tagged
-            releases, then a warning when a file's version doesn't match the compiler you're running, then
-            the automatic fetch-and-run above.
+            Status: planned, not built. Tagged releases first, then a mismatch warning, then the
+            automatic fetch-and-build.
         </p>
     </div>
 </section>`;
@@ -548,7 +544,7 @@ f generate_mcp(mcp_source:s):s {
     r array_join([
         html`<section id="mcp" class="examples">
     <div class="section-header">
-        <h2>Your Binary Is an MCP Server</h2>
+        <h2>Instant MCP Server</h2>
         <p>The Model Context Protocol is how AI assistants call outside tools. In Nail it is a tool list and one function.</p>
     </div>
     <div class="code-example" style="position: relative;">
@@ -569,26 +565,6 @@ f generate_mcp(mcp_source:s):s {
     ], ``);
 }
 
-f generate_batteries(rows:a:h<s,s>):s {
-    entries:s = danger(template_render_rows(html`<div class="stdlib-fn battery-row"><code class="stdlib-sig">{{expression}}</code><code class="battery-answer">{{answer}}</code></div>`, rows));
-    values:h<s,s> = hashmap_new();
-    hashmap_set(values, `entries`, entries);
-    r danger(template_render(html`<section id="batteries" class="stdlib">
-    <style>.battery-row { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; align-items: baseline; padding: 0.5rem 0; } .battery-answer { color: var(--success); font-weight: 600; }</style>
-    <div class="section-header">
-        <h2>Batteries, Fired</h2>
-        <p>Every answer on the right was computed by this server at startup, by running the expression on its left</p>
-    </div>
-    <p class="stdlib-intro">
-        A mortgage in the American convention and then the Canadian one (they really differ, and
-        the difference is law), the p-value of an A/B test, the road not taken between Edmonton
-        and Calgary, fuel economy across its inverse scales, a typo finding its city, a name
-        turned into a stable id, cron in English. No package for any of it. This is the
-        standard library talking.
-    </p>
-    {{{entries}}}
-</section>`, values));
-}
 
 // The library list is not written here: the server asks the compiler what it
 // can call and prints the answer, so this section is the standard library of
@@ -604,36 +580,36 @@ f generate_insert_safe(helper_html:s, entry_html:s, verdict_html:s):s {
     r danger(template_render(html`<section id="insertsafe" class="insertsafe">
     <div class="section-header">
         <h2>Use a Stranger's Code Without Trusting It</h2>
-        <p>insert_safe pulls a file into your program and seals it: it can compute anything and touch nothing</p>
+        <p>insert_safe pulls a file into your program, seals it and sandboxes it: it can compute anything and touch nothing</p>
     </div>
-    <div class="seal-points">
-        <span class="seal-point">No network</span>
-        <span class="seal-point">No disk</span>
-        <span class="seal-point">No environment</span>
-        <span class="seal-point">No processes</span>
-        <span class="seal-point">No global state</span>
-        <span class="seal-point">Zero runtime cost</span>
+    <div class="sandbox-points">
+        <span class="sandbox-point">No network</span>
+        <span class="sandbox-point">No disk</span>
+        <span class="sandbox-point">No environment</span>
+        <span class="sandbox-point">No processes</span>
+        <span class="sandbox-point">No global state</span>
+        <span class="sandbox-point">Zero runtime cost</span>
     </div>
-    <div class="seal-grid">
-        <div class="code-example seal-code">
+    <div class="sandbox-grid">
+        <div class="code-example sandbox-code">
             <span class="code-label">A file from the internet</span>
             <pre>{{{helper}}}</pre>
         </div>
-        <div class="code-example seal-code">
+        <div class="code-example sandbox-code">
             <span class="code-label">Your program</span>
             <pre>{{{entry}}}</pre>
         </div>
     </div>
-    <div class="code-example seal-verdict">
+    <div class="code-example sandbox-verdict">
         <span class="code-label">The compiler's answer</span>
         <pre>{{{verdict}}}</pre>
     </div>
-    <p class="seal-note">
+    <p class="sandbox-note">
         Not a mock. At startup this server handed the two files above to its own compiler and
-        printed the refusal it got back. The seal holds through every function the sealed file
+        printed the refusal it got back. The sandbox holds through every function the file
         reaches, so nothing gets laundered through a helper.
     </p>
-    <p class="seal-note">
+    <p class="sandbox-note">
         insert is for your own files and trusts them completely. insert_safe is for everyone
         else's. A package repository for Nail would be a shelf of plain files brought in like
         this: nothing to resolve, nothing to update, nothing to lock.
@@ -643,22 +619,21 @@ f generate_insert_safe(helper_html:s, entry_html:s, verdict_html:s):s {
 
 // The front page carries only a teaser: the listing itself is huge, so it
 // lives on its own page at /stdlib.
-f generate_stdlib_teaser(function_count:i, module_count:i):s {
+f generate_stdlib_teaser(function_count:i, module_count:i, rows:a:h<s,s>):s {
+    entries:s = danger(template_render_rows(html`<div class="stdlib-fn battery-row"><code class="stdlib-sig">{{expression}}</code><code class="battery-answer">{{answer}}</code></div>`, rows));
     values:h<s,s> = hashmap_new();
     hashmap_set(values, `function_count`, string_from(function_count));
     hashmap_set(values, `module_count`, string_from(module_count));
+    hashmap_set(values, `entries`, entries);
     r danger(template_render(html`<section id="stdlib" class="stdlib">
+    <style>.battery-row { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; align-items: baseline; padding: 0.5rem 0; } .battery-answer { color: var(--success); font-weight: 600; }</style>
     <div class="section-header">
         <h2>Standard Library</h2>
-        <p>{{function_count}} functions across {{module_count}} modules, all built in</p>
+        <p>{{function_count}} functions across {{module_count}} modules, all built in. Every answer below was computed by this server at startup, by running the expression on its left</p>
     </div>
-    <p class="stdlib-intro">
-        Web servers, cron, SQLite and Postgres, hypothesis tests, geohashes, mortgages, color
-        math, fuzzy matching, MCP serving. Read it before you start and you will know whether
-        Nail can carry your project.
-    </p>
-    <div class="stdlib-controls">
-        <a href="/stdlib" class="btn btn-primary">Browse all {{function_count}} functions</a>
+    {{{entries}}}
+    <div class="stdlib-controls" style="margin-top: 2rem;">
+        <a href="/stdlib" class="btn btn-primary">Browse standard library</a>
     </div>
 </section>`, values));
 }

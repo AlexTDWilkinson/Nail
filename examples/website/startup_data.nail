@@ -12,16 +12,9 @@ struct NavItem {
 }
 
 nav_items:a:NavItem = [
-    NavItem { name = `Philosophy`, path = `#philosophy` },
-    NavItem { name = `Features`, path = `#features` },
     NavItem { name = `Examples`, path = `#examples` },
-    NavItem { name = `insert_safe`, path = `#insertsafe` },
-    NavItem { name = `MCP`, path = `#mcp` },
     NavItem { name = `Library`, path = `/stdlib` },
     NavItem { name = `Get Started`, path = `#start` },
-    NavItem { name = `IDE`, path = `#ide` },
-    NavItem { name = `Performance`, path = `#performance` },
-    NavItem { name = `Roadmap`, path = `#versioning` },
     NavItem { name = `Documentation`, path = `https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md` }
 ];
 
@@ -125,35 +118,6 @@ stdlib_module_list:a:s = array_sort(stdlib_modules());
 concurrent_example_html:s = code_highlight_html(concurrent_example);
 mcp_example_html:s = code_highlight_html(mcp_example);
 
-// The batteries, demonstrated by firing them: every answer below is computed
-// right here at startup by running the expression its row shows.
-us_payment:s = money_format(danger(money_loan_payment(20000000, 6.0, 360)), `$`);
-ca_payment:s = money_format(danger(money_loan_payment_compounded(20000000, 6.0, 360, 2)), `$`);
-ab_p_value:s = string_from(danger(math_round_to(danger(stats_ab_test(200, 1000, 250, 1000)), 4)));
-city_distance:s = string_from(danger(math_round_to(danger(geo_distance_km(53.5461, -113.4937, 51.0447, -114.0719)), 1)));
-city_geohash:s = danger(geo_geohash(53.5461, -113.4937, 7));
-fuel_mpg:s = string_from(danger(math_round_to(danger(convert_fuel_economy(8.0, `l100km`, `mpg`)), 1)));
-fuzzy_city:s = danger(string_best_match(`edmontn`, [`Calgary`, `Edmonton`, `Toronto`, `Vancouver`]));
-stable_id:s = danger(crypto_uuid_v5(`6ba7b810-9dad-11d1-80b4-00c04fd430c8`, `nail-lang.org`));
-cron_in_words:s = danger(time_cron_describe(`0 3 * * *`));
-year_in_roman:s = danger(format_roman(2026));
-readable_text:s = danger(color_text_on(`#2563eb`));
-count_in_words:s = format_number_words(array_length(stdlib_function_list));
-
-battery_rows:a:h<s,s> = [
-    battery_row(`money_loan_payment(20000000, 6.0, 360)`, us_payment),
-    battery_row(`money_loan_payment_compounded(20000000, 6.0, 360, 2)`, ca_payment),
-    battery_row(`stats_ab_test(200, 1000, 250, 1000)`, ab_p_value),
-    battery_row(`geo_distance_km(53.5461, -113.4937, 51.0447, -114.0719)`, city_distance),
-    battery_row(`geo_geohash(53.5461, -113.4937, 7)`, city_geohash),
-    battery_row(`convert_fuel_economy(8.0, "l100km", "mpg")`, fuel_mpg),
-    battery_row(`string_best_match("edmontn", cities)`, fuzzy_city),
-    battery_row(`crypto_uuid_v5(dns_namespace, "nail-lang.org")`, stable_id),
-    battery_row(`time_cron_describe("0 3 * * *")`, cron_in_words),
-    battery_row(`format_roman(2026)`, year_in_roman),
-    battery_row(`color_text_on("#2563eb")`, readable_text),
-    battery_row(`format_number_words(array_length(stdlib_functions()))`, count_in_words)
-];
 parallel_example_html:s = code_highlight_html(parallel_example);
 error_example_html:s = code_highlight_html(error_example);
 
@@ -162,22 +126,65 @@ concurrent_rust_html:s = code_escape_html(danger(code_transpile_to_rust(concurre
 parallel_rust_html:s = code_escape_html(danger(code_transpile_to_rust(parallel_example)));
 error_rust_html:s = code_escape_html(danger(code_transpile_to_rust(error_example)));
 
-// The insert_safe demo: a booby-trapped helper and the program that pulls it
-// in sealed. Both are real files, shown on the page exactly as they are fed
-// to the compiler.
-sealed_helper_source:s = danger(fs_read(`examples/website_examples/sealed_break_in_helper.nail`));
-sealed_entry_source:s = danger(fs_read(`examples/website_examples/sealed_break_in.nail`));
-sealed_helper_html:s = code_highlight_html(sealed_helper_source);
-sealed_entry_html:s = code_highlight_html(sealed_entry_source);
-
-// Hand the attempt to the real compiler at startup. It must refuse, and the
-// handler catches the refusal so the page can print it verbatim.
-f seal_refusal(err:e):s {
+// Every refusal shown on the page is real: the file goes to the compiler at
+// startup, the handler catches the rejection, and the page prints it verbatim.
+f compiler_error_text(err:e):s {
     r error_message(err);
 }
-seal_verdict_raw:s = safe(code_transpile_to_rust(sealed_entry_source), seal_refusal);
-seal_verdict:s = string_replace(seal_verdict_raw, `code_transpile_to_rust: type error in the source: `, `error: `);
-seal_verdict_html:s = code_escape_html(seal_verdict);
+
+f refusal_of(source:s):s {
+    raw:s = safe(code_transpile_to_rust(source), compiler_error_text);
+    r string_replace(raw, `code_transpile_to_rust: type error in the source: `, `error: `);
+}
+
+// The sandbox demo: a booby-trapped download and the program that contains it.
+jailbreak_source:s = danger(fs_read(`examples/website_examples/jailbreak_attempt.nail`));
+sandbox_demo_source:s = danger(fs_read(`examples/website_examples/sandbox_demo.nail`));
+jailbreak_html:s = code_highlight_html(jailbreak_source);
+sandbox_demo_html:s = code_highlight_html(sandbox_demo_source);
+sandbox_verdict_html:s = code_escape_html(refusal_of(sandbox_demo_source));
+
+// Three everyday bugs the type checker refuses to compile.
+refused_error_source:s = danger(fs_read(`examples/website_examples/refused_ignored_error.nail`));
+refused_field_source:s = danger(fs_read(`examples/website_examples/refused_missing_field.nail`));
+refused_nothing_source:s = danger(fs_read(`examples/website_examples/refused_nothing.nail`));
+refused_error_html:s = code_highlight_html(refused_error_source);
+refused_field_html:s = code_highlight_html(refused_field_source);
+refused_nothing_html:s = code_highlight_html(refused_nothing_source);
+refused_error_verdict:s = code_escape_html(refusal_of(refused_error_source));
+refused_field_verdict:s = code_escape_html(refusal_of(refused_field_source));
+refused_nothing_verdict:s = code_escape_html(refusal_of(refused_nothing_source));
+
+// The whole language on one screen, proven to compile at startup.
+whole_language_source:s = danger(fs_read(`examples/website_examples/whole_language.nail`));
+whole_language_html:s = code_highlight_html(whole_language_source);
+whole_language_rust_lines:i = array_length(string_split(danger(code_transpile_to_rust(whole_language_source)), `\n`));
+
+// The library table: every answer computed at startup by running the
+// expression its row shows.
+us_payment:s = money_format(danger(money_loan_payment(20000000, 6.0, 360)), `$`);
+ab_p_value:s = string_from(danger(math_round_to(danger(stats_ab_test(200, 1000, 250, 1000)), 4)));
+city_distance:s = string_from(danger(math_round_to(danger(geo_distance_km(53.5461, -113.4937, 51.0447, -114.0719)), 1)));
+fuzzy_city:s = danger(string_best_match(`edmontn`, [`Calgary`, `Edmonton`, `Toronto`, `Vancouver`]));
+cron_in_words:s = danger(time_cron_describe(`0 3 * * *`));
+bold_move:s = string_trim(markdown_to_html(`**bold** move`));
+in_network:s = string_from(danger(net_ip_in_cidr(`10.1.2.3`, `10.0.0.0/8`)));
+cleaned:s = html_sanitize(`<script>alert(1)</script>hello`);
+readable_text:s = danger(color_text_on(`#2563eb`));
+count_in_words:s = format_number_words(array_length(stdlib_function_list));
+
+battery_rows:a:h<s,s> = [
+    battery_row(`money_loan_payment(20000000, 6.0, 360)`, us_payment),
+    battery_row(`stats_ab_test(200, 1000, 250, 1000)`, ab_p_value),
+    battery_row(`geo_distance_km(53.5461, -113.4937, 51.0447, -114.0719)`, city_distance),
+    battery_row(`string_best_match("edmontn", cities)`, fuzzy_city),
+    battery_row(`time_cron_describe("0 3 * * *")`, cron_in_words),
+    battery_row(`markdown_to_html("**bold** move")`, bold_move),
+    battery_row(`net_ip_in_cidr("10.1.2.3", "10.0.0.0/8")`, in_network),
+    battery_row(`html_sanitize("<script>alert(1)</script>hello")`, cleaned),
+    battery_row(`color_text_on("#2563eb")`, readable_text),
+    battery_row(`format_number_words(array_length(stdlib_functions()))`, count_in_words)
+];
 
 // Create navigation HTML
 nav_links:a:s = map item in nav_items {

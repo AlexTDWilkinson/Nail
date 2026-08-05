@@ -1,0 +1,44 @@
+// Every construct Nail has, on one screen. If it is not here, the language
+// does not have it.
+
+struct Point {
+    x_pos:i,
+    y_pos:i
+}
+
+enum Direction {
+    North,
+    South
+}
+
+f manhattan(point:Point):i {
+    r point.x_pos + point.y_pos;
+}
+
+f half_of(num:i):i!e {
+    if {
+        num % 2 == 1 -> { r e(`odd numbers do not halve cleanly`); },
+        else -> { r num / 2; }
+    }
+}
+
+f zero(err:e):i {
+    r 0;
+}
+
+distance:i = manhattan(Point { x_pos = 3, y_pos = 4 });
+half:i = safe(half_of(distance), zero);
+heading:Direction = Direction::North;
+
+// map, filter and reduce are the loops, and they run on every core
+squares:a:i = map num in array_range_inclusive(1, 10) { y num * num; };
+evens:a:i = filter num in squares { y num % 2 == 0; };
+total:i = reduce acc num in evens from 0 { y acc + num; };
+
+// p runs statements on real threads at once
+p
+    left:i = array_sum(array_range_inclusive(1, 1000));
+    right:i = array_sum(array_range_inclusive(1, 2000));
+/p
+
+print(total + left + right + half);

@@ -1,0 +1,3 @@
+// Reading a file can fail, and this code pretends it cannot.
+content:s = fs_read(`config.txt`);
+print(content);
