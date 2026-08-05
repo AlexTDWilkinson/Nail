@@ -558,6 +558,20 @@ f generate_profiling(shot_timings:s):s {
             run measured: total, share of wall time, average with call count, and max. Edit the
             file and the numbers dim as stale until the next run.
         </p>
+        <h3 style="margin-top: 2.5rem;">And every run answers on the way out</h3>
+        <div class="code-example"><span class="code-label">a program closing, printed by itself</span><pre>── nail timing sheet ──
+function               calls      total        avg        max       %
+is_prime                9998    419.0ms     41.9µs     13.9ms  2304.3%
+count_primes_below         1     18.2ms     18.2ms     18.2ms   99.8%
+factorial                 12      5.2µs      437ns      781ns    0.0%
+program wall time 18.2ms, it could run 55.0 times a second. Times are cumulative, a caller includes its callees. A share over 100% means that function ran on several cores at once.</pre></div>
+        <p class="ide-caption">
+            Real output from examples/profiling_demo.nail. The last line is the whole program as
+            one number: over 60 runs a second reads as instant, single digits reads as sluggish.
+            The 2304% share is not a bug, it is is_prime running across every core at once, which
+            the compiler parallelized on its own. Games close with one more line, like
+            <code>56 fps shown, 513 fps possible, 1.95ms of real work per frame</code>.
+        </p>
     </div>
 </section>`], ``);
 }

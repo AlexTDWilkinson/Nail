@@ -211,10 +211,16 @@ mod real {
         if hidden > 0 {
             out.push_str(&format!("({} more not shown)\n", hidden));
         }
+        let parallel_note = if rows.iter().any(|row| snapshot.wall_nanos > 0 && row.total_nanos > snapshot.wall_nanos) {
+            " A share over 100% means that function ran on several cores at once."
+        } else {
+            ""
+        };
         out.push_str(&format!(
-            "program wall time {}, it could run {} times a second. Times are cumulative, a caller includes its callees.\n",
+            "program wall time {}, it could run {} times a second. Times are cumulative, a caller includes its callees.{}\n",
             format_duration(snapshot.wall_nanos),
-            format_runs_per_second(snapshot.wall_nanos)
+            format_runs_per_second(snapshot.wall_nanos),
+            parallel_note
         ));
         out
     }
