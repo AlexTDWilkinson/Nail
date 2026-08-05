@@ -155,8 +155,14 @@ f generate_profile_fragment(dump:s):s {
         }
     }
     ordered:a:ProfRow = array_reverse(array_sort_by(rows, prof_row_total));
+    top:a:ProfRow = array_take(ordered, 10);
+    hidden:i = array_length(ordered) - array_length(top);
+    more_note:s = if {
+        hidden > 0 -> { r array_join([`, plus `, string_from(hidden), ` quieter functions not shown`], ``); },
+        else -> { r ``; }
+    };
     row_bits:a:s = [];
-    for row in ordered {
+    for row in top {
         row_bits = array_push(row_bits, prof_row_html(row, wall));
     }
     r array_join([
@@ -173,6 +179,7 @@ f generate_profile_fragment(dump:s):s {
         `</table></div>`,
         `<p style="margin-top: 0.75rem; font-size: 0.85rem; opacity: 0.75;">Server up `,
         prof_nanos_label(wall),
+        more_note,
         `. Times are cumulative wall time, a caller includes its callees.</p>`
     ], ``);
 }
