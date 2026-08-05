@@ -20,34 +20,30 @@ pub struct STDLIB_Function {
     pub example: String,
 }
 
-/// Every callable standard library function, sorted by module in the order the
-/// registry declares them, then by name.
+/// Every callable standard library function, sorted by module name and then
+/// by function name, so a person can find things without knowing the
+/// registry's internal order.
 pub fn functions() -> Vec<STDLIB_Function> {
-    let module_order = StdlibModule::all();
-    let mut functions: Vec<(usize, STDLIB_Function)> = STDLIB_FUNCTIONS
+    let mut functions: Vec<STDLIB_Function> = STDLIB_FUNCTIONS
         .iter()
         .map(|(name, function)| {
             let parameters: Vec<String> = function.parameters.iter().map(|parameter| format!("{}:{}", parameter.name, parameter.param_type)).collect();
-            let order = module_order.iter().position(|module| module == &function.module).unwrap_or(module_order.len());
-            (
-                order,
-                STDLIB_Function {
-                    name: name.to_string(),
-                    module: function.module.display_name().to_string(),
-                    signature: format!("{}({}):{}", name, parameters.join(", "), function.return_type),
-                    description: function.description.to_string(),
-                    example: function.example.to_string(),
-                },
-            )
+            STDLIB_Function {
+                name: name.to_string(),
+                module: function.module.display_name().to_string(),
+                signature: format!("{}({}):{}", name, parameters.join(", "), function.return_type),
+                description: function.description.to_string(),
+                example: function.example.to_string(),
+            }
         })
         .collect();
-    functions.sort_by(|(left_order, left), (right_order, right)| left_order.cmp(right_order).then_with(|| left.name.cmp(&right.name)));
-    functions.into_iter().map(|(_, function)| function).collect()
+    functions.sort_by(|left, right| left.module.cmp(&right.module).then_with(|| left.name.cmp(&right.name)));
+    functions
 }
 
-/// The namespaces that actually export something, in the order `functions`
-/// lists them. Modules that share a namespace (SQLite, Postgres and DataFusion
-/// are all `db`) appear once.
+/// The namespaces that actually export something, alphabetically - the order
+/// `functions` lists them. Modules that share a namespace (SQLite, Postgres
+/// and DataFusion are all `db`) appear once.
 pub fn modules() -> Vec<String> {
     let exported: Vec<&StdlibModule> = STDLIB_FUNCTIONS.values().map(|function| &function.module).collect();
     let mut names: Vec<String> = Vec::new();
@@ -57,6 +53,7 @@ pub fn modules() -> Vec<String> {
             names.push(name);
         }
     }
+    names.sort();
     names
 }
 
