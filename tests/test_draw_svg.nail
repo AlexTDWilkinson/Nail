@@ -6,7 +6,7 @@ background_bar:s = danger(draw_rect(10.0, 20.0, 30.0, 40.0, `steelblue`, 4.0));
 dot:s = danger(draw_circle(50.0, 50.0, 4.0, `crimson`));
 oval:s = danger(draw_ellipse(120.0, 50.0, 20.0, 10.0, `gold`));
 axis:s = danger(draw_line(0.0, 100.0, 200.0, 100.0, `black`, 1.0));
-label:s = danger(draw_text(100.0, 16.0, `Revenue & Costs`, 14.0, `black`, `middle`));
+label:s = danger(draw_text(100.0, 16.0, `Revenue & Costs`, 14.0, `black`, DRAW_Anchor::Middle));
 squiggle:s = danger(draw_path(`M 0 0 L 10 10 L 20 0`, `purple`, 2.0, ``));
 
 // Text that would otherwise break the document is escaped, so the ampersand

@@ -61,8 +61,8 @@ print(string_sounds_like(`Robert`, `Rupert`));
 print(danger(string_best_match(`edmontn`, [`Calgary`, `Edmonton`, `Toronto`])));
 
 // New dimensions convert, including the inverse fuel scales.
-print(danger(convert_units(1.0, `kwh`, `j`)));
-print(danger(math_round_to(danger(convert_fuel_economy(8.0, `l100km`, `mpg`)), 2)));
+print(danger(convert_units(1.0, CONVERT_Unit::KilowattHour, CONVERT_Unit::Joule)));
+print(danger(math_round_to(danger(convert_fuel_economy(8.0, CONVERT_FuelEconomy::LitersPer100Km, CONVERT_FuelEconomy::MpgUs)), 2)));
 
 // The scraper asks permission, the phone reads well, cron speaks English.
 print(url_robots_allowed(`User-agent: *\nDisallow: /admin`, `nailbot`, `/blog`));

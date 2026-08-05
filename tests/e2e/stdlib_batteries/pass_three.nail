@@ -49,10 +49,10 @@ cache_set_ttl(`e2e`, `flash`, `now`, 0);
 print(cache_get_or(`e2e`, `flash`, `already gone`));
 print(cache_len(`e2e`));
 
-// Units convert across names and plurals, never across dimensions.
-print(danger(convert_units(1.0, `mi`, `km`)));
-print(danger(convert_units(100.0, `c`, `f`)));
-print(danger(convert_units(3.0, `miles`, `kilometers`)));
+// Units convert within a dimension, never across dimensions.
+print(danger(convert_units(1.0, CONVERT_Unit::Mile, CONVERT_Unit::Kilometer)));
+print(danger(convert_units(100.0, CONVERT_Unit::Celsius, CONVERT_Unit::Fahrenheit)));
+print(danger(convert_units(3.0, CONVERT_Unit::Mile, CONVERT_Unit::Kilometer)));
 
 // The classic mortgage, to the cent.
 print(danger(money_loan_payment(20000000, 6.0, 360)));

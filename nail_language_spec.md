@@ -1351,7 +1351,7 @@ else. Coordinates start at the top left and y grows downward.
 - `draw_line(x1:f, y1:f, x2:f, y2:f, stroke:s, stroke_width:f):s!e`
 - `draw_polyline(points:a:f, stroke:s, stroke_width:f):s!e` - Connected segments from a flat array of x and y values; the shape a line chart is made of
 - `draw_polygon(points:a:f, fill:s):s!e` - The same, closed and filled
-- `draw_text(x:f, y:f, content:s, size:f, fill:s, anchor:s):s!e` - Anchor is `start`, `middle` or `end`
+- `draw_text(x:f, y:f, content:s, size:f, fill:s, anchor:DRAW_Anchor):s!e` - The anchor is `DRAW_Anchor::Start`, `DRAW_Anchor::Middle` or `DRAW_Anchor::End`
 - `draw_path(commands:s, stroke:s, stroke_width:f, fill:s):s!e` - SVG path notation, for a shape none of the others can make
 - `draw_group(offset_x:f, offset_y:f, shapes:a:s):s` - Move several shapes together
 - `draw_scale(value:f, from_low:f, from_high:f, to_low:f, to_high:f):f!e` - Move a value between ranges. To plot upward on a screen whose y grows downward, pass the height as `to_low` and `0.0` as `to_high`

@@ -78,7 +78,7 @@ week:HTTP_Cookie = HTTP_Cookie {
     max_age = 604800,
     http_only = true,
     secure = true,
-    same_site = `Strict`
+    same_site = HTTP_SameSite::Strict
 };
 print(`week-long cookie:`, danger(http_build_cookie(week)));
 
@@ -90,7 +90,7 @@ smuggled:HTTP_Cookie = HTTP_Cookie {
     max_age = 0,
     http_only = true,
     secure = true,
-    same_site = `Lax`
+    same_site = HTTP_SameSite::Lax
 };
 print(`smuggled value:`, safe(http_build_cookie(smuggled), empty_text));
 

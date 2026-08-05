@@ -58,11 +58,26 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "validate_isbn" => "std_lib::validate::isbn", (text: (&s)) -> b,
             "Returns true if the text is an ISBN-10 or ISBN-13 with a correct checksum. Hyphens and spaces are ignored.",
             "orderable:b = validate_isbn(book_number);";
-        "validate_postal_code" => "std_lib::validate::postal_code", (text: (&s), country: (&s)) -> (b!e),
-            "Returns whether the text is a postal code shaped the way the given country shapes them. Knows us, ca, gb, de, fr, nl and au. A country it does not know is an error rather than a false.",
-            "deliverable:b = danger(validate_postal_code(form_code, `ca`));";
         "validate_schema" [JsonSchema, SerdeJson] => "std_lib::validate::schema", (json: s, schema: s) -> ([s]!e),
             "Checks a JSON document against a JSON Schema - types, ranges, required fields, formats. The answer is the list of problems with the path where each sits. An empty list means the document passes. The error case is a schema or document that does not even parse.",
             "problems:a:s = danger(validate_schema(request.body, order_schema));";
     }
+
+    // validate_postal_code takes the VALIDATE_Country enum, which needs a
+    // custom type import, so it uses the full struct form.
+    m.insert("validate_postal_code", StdlibFunction {
+        rust_path: "std_lib::validate::postal_code".to_string(),
+        crate_deps: vec![],
+        struct_derives: vec![],
+        custom_type_imports: vec![("VALIDATE_Country", "nail::std_lib::validate")],
+        module: StdlibModule::Validate,
+        parameters: vec![
+            nail_param!(text: (&s)),
+            StdlibParameter { name: "country".to_string(), param_type: NailDataTypeDescriptor::Enum("VALIDATE_Country".to_string()), pass_by_reference: false },
+        ],
+        return_type: nail_type!(b),
+        diverging: false,
+        description: "Returns whether the text is a postal code shaped the way the given country shapes them. The country is a VALIDATE_Country variant, so there is no unknown country to be wrong about and the answer is a plain boolean.",
+        example: "deliverable:b = validate_postal_code(form_code, VALIDATE_Country::Canada);",
+    });
 }

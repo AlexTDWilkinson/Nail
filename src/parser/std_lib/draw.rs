@@ -16,6 +16,19 @@
 //! convention every screen uses and the opposite of the one every graph uses.
 //! To plot something, subtract from the height.
 
+use serde::{Deserialize, Serialize};
+
+/// Which part of a piece of text sits at the x it was placed at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DRAW_Anchor {
+    /// The text begins at x and runs right.
+    Start,
+    /// The text is centred on x - what a label over a bar wants.
+    Middle,
+    /// The text ends at x, for right-aligned labels.
+    End,
+}
+
 /// XML-escapes text going into an attribute or a text node. Without this, a
 /// label containing `<` or `&` silently produces a document nothing can open.
 fn escape(text: &str) -> String {
@@ -175,15 +188,17 @@ pub fn polygon(points: Vec<f64>, fill: String) -> Result<String, String> {
     return Ok(format!("<polygon points=\"{}\" fill=\"{}\"/>", attribute, escape(&fill)));
 }
 
-/// Text at a point. `anchor` is `start`, `middle` or `end`, and says which
-/// part of the text sits at that x - `middle` is what a centred label wants.
-pub fn text(x: f64, y: f64, content: String, size: f64, fill: String, anchor: String) -> Result<String, String> {
+/// Text at a point. The anchor says which part of the text sits at that x -
+/// DRAW_Anchor::Middle is what a centred label wants.
+pub fn text(x: f64, y: f64, content: String, size: f64, fill: String, anchor: DRAW_Anchor) -> Result<String, String> {
     if size <= 0.0 {
         return Err(format!("draw_text: text {} units tall would not be visible", number(size)));
     }
-    if !["start", "middle", "end"].contains(&anchor.as_str()) {
-        return Err(format!("draw_text: '{}' is not an anchor - use start, middle or end", anchor));
-    }
+    let anchor = match anchor {
+        DRAW_Anchor::Start => "start",
+        DRAW_Anchor::Middle => "middle",
+        DRAW_Anchor::End => "end",
+    };
     return Ok(format!(
         "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\">{}</text>",
         number(x),
@@ -458,7 +473,7 @@ mod tests {
 
     #[test]
     fn text_that_would_break_the_document_is_escaped() {
-        let drawn = text(0.0, 0.0, "a < b & \"c\"".to_string(), 10.0, "black".to_string(), "start".to_string()).expect("valid text");
+        let drawn = text(0.0, 0.0, "a < b & \"c\"".to_string(), 10.0, "black".to_string(), DRAW_Anchor::Start).expect("valid text");
         assert!(drawn.contains("a &lt; b &amp; &quot;c&quot;"), "got: {}", drawn);
         assert!(!drawn.contains("a < b"), "the raw text must not survive: {}", drawn);
     }
@@ -499,15 +514,15 @@ mod tests {
         assert!(rect(0.0, 0.0, -1.0, 4.0, "blue".to_string(), 0.0).unwrap_err().contains("negative side"));
         assert!(circle(0.0, 0.0, -1.0, "blue".to_string()).unwrap_err().contains("cannot be drawn"));
         assert!(line(0.0, 0.0, 1.0, 1.0, "black".to_string(), 0.0).unwrap_err().contains("would not be visible"));
-        assert!(text(0.0, 0.0, "hi".to_string(), 0.0, "black".to_string(), "start".to_string()).unwrap_err().contains("would not be visible"));
+        assert!(text(0.0, 0.0, "hi".to_string(), 0.0, "black".to_string(), DRAW_Anchor::Start).unwrap_err().contains("would not be visible"));
         assert!(path(String::new(), "black".to_string(), 1.0, String::new()).unwrap_err().contains("no commands"));
     }
 
     #[test]
-    fn an_anchor_that_is_not_one_of_the_three_is_an_error() {
-        assert!(text(0.0, 0.0, "hi".to_string(), 10.0, "black".to_string(), "centre".to_string()).unwrap_err().contains("not an anchor"));
-        for anchor in ["start", "middle", "end"] {
-            assert!(text(0.0, 0.0, "hi".to_string(), 10.0, "black".to_string(), anchor.to_string()).is_ok());
+    fn each_anchor_lands_in_the_text_anchor_attribute() {
+        for (anchor, spelled) in [(DRAW_Anchor::Start, "start"), (DRAW_Anchor::Middle, "middle"), (DRAW_Anchor::End, "end")] {
+            let drawn = text(0.0, 0.0, "hi".to_string(), 10.0, "black".to_string(), anchor).expect("valid text");
+            assert!(drawn.contains(&format!("text-anchor=\"{}\"", spelled)), "got: {}", drawn);
         }
     }
 

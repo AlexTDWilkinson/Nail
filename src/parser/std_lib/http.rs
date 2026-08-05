@@ -39,16 +39,27 @@ pub struct HTTP_Cookie {
     pub http_only: bool,
     /// Sends it over HTTPS only.
     pub secure: bool,
-    /// `Strict`, `Lax` or `None` - how much of a cross-site request carries
-    /// the cookie. Lax is the usual answer for a login session: it survives a
-    /// normal link into the site but not a form another site submits.
-    pub same_site: String,
+    /// How much of a cross-site request carries the cookie. Lax is the usual
+    /// answer for a login session: it survives a normal link into the site
+    /// but not a form another site submits.
+    pub same_site: HTTP_SameSite,
+}
+
+/// How much of a cross-site request carries a cookie.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum HTTP_SameSite {
+    /// Only requests the site makes to itself carry the cookie.
+    Strict,
+    /// A normal link into the site carries it, a cross-site form does not.
+    Lax,
+    /// Every request carries it, which browsers only honour with Secure.
+    None,
 }
 
 /// A cookie with the safe answers already filled in: site-wide path, session
 /// lifetime, hidden from scripts, HTTPS only, Lax.
 pub fn http_default_cookie(name: String, value: String) -> HTTP_Cookie {
-    return HTTP_Cookie { name, value, path: "/".to_string(), max_age: 0, http_only: true, secure: true, same_site: "Lax".to_string() };
+    return HTTP_Cookie { name, value, path: "/".to_string(), max_age: 0, http_only: true, secure: true, same_site: HTTP_SameSite::Lax };
 }
 
 /// A cookie name may not contain separators or spaces, and a value may not
@@ -71,11 +82,10 @@ pub fn http_build_cookie(cookie: HTTP_Cookie) -> Result<String, String> {
         return Err(format!("http_build_cookie: the value of cookie '{}' contains a character a cookie cannot carry", cookie.name));
     }
 
-    let same_site = match cookie.same_site.to_lowercase().as_str() {
-        "strict" => "Strict",
-        "lax" => "Lax",
-        "none" => "None",
-        other => return Err(format!("http_build_cookie: same_site is '{}', and a cookie understands only Strict, Lax or None", other)),
+    let same_site = match cookie.same_site {
+        HTTP_SameSite::Strict => "Strict",
+        HTTP_SameSite::Lax => "Lax",
+        HTTP_SameSite::None => "None",
     };
     // SameSite=None is only honoured on a cookie that is also Secure, and
     // browsers drop the pair outright otherwise - better to say so here than

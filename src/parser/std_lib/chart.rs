@@ -107,7 +107,7 @@ fn value_axis(width: f64, height: f64, lowest: f64, highest: f64, shapes: &mut V
         // The bottom line is the axis itself, so it is drawn darker.
         let colour = if step == 0 { AXIS_COLOUR } else { GRID_COLOUR };
         shapes.push(draw::line(plot_left, y, plot_right, y, colour.to_string(), 1.0)?);
-        shapes.push(draw::text(plot_left - 8.0, y + 4.0, tick_label(value), 11.0, LABEL_COLOUR.to_string(), "end".to_string())?);
+        shapes.push(draw::text(plot_left - 8.0, y + 4.0, tick_label(value), 11.0, LABEL_COLOUR.to_string(), draw::DRAW_Anchor::End)?);
     }
     shapes.push(draw::line(plot_left, plot_top, plot_left, plot_bottom, AXIS_COLOUR.to_string(), 1.0)?);
     return Ok(());
@@ -117,7 +117,7 @@ fn title_shape(width: f64, title: String) -> Result<Vec<String>, String> {
     if title.is_empty() {
         return Ok(vec![]);
     }
-    return Ok(vec![draw::text(width / 2.0, TOP_MARGIN - 12.0, title, 14.0, TITLE_COLOUR.to_string(), "middle".to_string())?]);
+    return Ok(vec![draw::text(width / 2.0, TOP_MARGIN - 12.0, title, 14.0, TITLE_COLOUR.to_string(), draw::DRAW_Anchor::Middle)?]);
 }
 
 /// A line chart of evenly spaced values, with the labels written under the
@@ -165,7 +165,7 @@ pub fn line(width: f64, height: f64, values: Vec<f64>, labels: Vec<String>, colo
             continue;
         }
         let x = plot_left + index as f64 * horizontal_step;
-        shapes.push(draw::text(x, plot_bottom + 18.0, label.clone(), 11.0, LABEL_COLOUR.to_string(), "middle".to_string())?);
+        shapes.push(draw::text(x, plot_bottom + 18.0, label.clone(), 11.0, LABEL_COLOUR.to_string(), draw::DRAW_Anchor::Middle)?);
     }
 
     return draw::svg(width, height, "#ffffff".to_string(), shapes);
@@ -209,7 +209,7 @@ pub fn bar(width: f64, height: f64, values: Vec<f64>, labels: Vec<String>, colou
 
         if let Some(label) = labels.get(index) {
             if !label.is_empty() {
-                shapes.push(draw::text(slot_left + slot / 2.0, plot_bottom + 18.0, label.clone(), 11.0, LABEL_COLOUR.to_string(), "middle".to_string())?);
+                shapes.push(draw::text(slot_left + slot / 2.0, plot_bottom + 18.0, label.clone(), 11.0, LABEL_COLOUR.to_string(), draw::DRAW_Anchor::Middle)?);
             }
         }
     }
@@ -253,11 +253,11 @@ pub fn scatter(width: f64, height: f64, x_values: Vec<f64>, y_values: Vec<f64>, 
         let x = plot_left + share * (plot_right - plot_left);
         let value = x_low + share * (x_high - x_low);
         let anchor = match step {
-            0 => "start",
-            2 => "end",
-            _ => "middle",
+            0 => draw::DRAW_Anchor::Start,
+            2 => draw::DRAW_Anchor::End,
+            _ => draw::DRAW_Anchor::Middle,
         };
-        shapes.push(draw::text(x, plot_bottom + 18.0, tick_label(value), 11.0, LABEL_COLOUR.to_string(), anchor.to_string())?);
+        shapes.push(draw::text(x, plot_bottom + 18.0, tick_label(value), 11.0, LABEL_COLOUR.to_string(), anchor)?);
     }
 
     for (x_value, y_value) in x_values.iter().zip(y_values.iter()) {
@@ -343,14 +343,14 @@ fn round_chart(function_name: &str, labels: Vec<String>, values: Vec<f64>, with_
         shapes.push(draw::rect(legend_left, row_baseline - 10.0, 12.0, 12.0, colour.to_string(), 3.0)?);
         let percentage = format!("{}%", tick_label(share * 100.0));
         let entry = if labels[index].is_empty() { percentage } else { format!("{} {}", labels[index], percentage) };
-        shapes.push(draw::text(legend_left + 20.0, row_baseline, entry, 12.0, LABEL_COLOUR.to_string(), "start".to_string())?);
+        shapes.push(draw::text(legend_left + 20.0, row_baseline, entry, 12.0, LABEL_COLOUR.to_string(), draw::DRAW_Anchor::Start)?);
     }
 
     if with_hole {
         // The hole is painted rather than cut, which works because the
         // document's background is known to be white.
         shapes.push(draw::circle(center_x, center_y, radius * 0.6, "#ffffff".to_string())?);
-        shapes.push(draw::text(center_x, center_y + 6.0, tick_label(total), 18.0, TITLE_COLOUR.to_string(), "middle".to_string())?);
+        shapes.push(draw::text(center_x, center_y + 6.0, tick_label(total), 18.0, TITLE_COLOUR.to_string(), draw::DRAW_Anchor::Middle)?);
     }
 
     return draw::svg(width, height, "#ffffff".to_string(), shapes);
@@ -427,11 +427,11 @@ pub fn histogram(values: Vec<f64>, bins: i64) -> Result<String, String> {
     let mut edge = 0;
     while edge <= bin_count {
         let x = plot_left + edge as f64 * slot;
-        shapes.push(draw::text(x, plot_bottom + 18.0, tick_label(low + edge as f64 * bin_width), 11.0, LABEL_COLOUR.to_string(), "middle".to_string())?);
+        shapes.push(draw::text(x, plot_bottom + 18.0, tick_label(low + edge as f64 * bin_width), 11.0, LABEL_COLOUR.to_string(), draw::DRAW_Anchor::Middle)?);
         edge += label_step;
     }
     if (bin_count % label_step) != 0 {
-        shapes.push(draw::text(plot_right, plot_bottom + 18.0, tick_label(high), 11.0, LABEL_COLOUR.to_string(), "middle".to_string())?);
+        shapes.push(draw::text(plot_right, plot_bottom + 18.0, tick_label(high), 11.0, LABEL_COLOUR.to_string(), draw::DRAW_Anchor::Middle)?);
     }
 
     return draw::svg(width, height, "#ffffff".to_string(), shapes);

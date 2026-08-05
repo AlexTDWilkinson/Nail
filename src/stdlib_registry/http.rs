@@ -189,7 +189,7 @@ m.insert("http_request", StdlibFunction {
         rust_path: "std_lib::http::http_default_cookie".to_string(),
         crate_deps: vec![],
         struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
-        custom_type_imports: vec![("HTTP_Cookie", "nail::std_lib::http")],
+        custom_type_imports: vec![("HTTP_Cookie", "nail::std_lib::http"), ("HTTP_SameSite", "nail::std_lib::http")],
         module: StdlibModule::Http,
         parameters: vec![
             StdlibParameter { name: "name".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
@@ -205,7 +205,7 @@ m.insert("http_request", StdlibFunction {
         rust_path: "std_lib::http::http_build_cookie".to_string(),
         crate_deps: vec![],
         struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
-        custom_type_imports: vec![("HTTP_Cookie", "nail::std_lib::http")],
+        custom_type_imports: vec![("HTTP_Cookie", "nail::std_lib::http"), ("HTTP_SameSite", "nail::std_lib::http")],
         module: StdlibModule::Http,
         parameters: vec![StdlibParameter { name: "cookie".to_string(), param_type: NailDataTypeDescriptor::Struct("HTTP_Cookie".to_string()), pass_by_reference: false }],
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),

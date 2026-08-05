@@ -214,8 +214,23 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "time_age_years" [Chrono] => "std_lib::time::age_years", (born: i, at: i) -> (i!e),
             "Returns the age in whole years at a moment, counted the way a person counts it: it goes up on the birthday, not at New Year. A moment before the birth is an error.",
             "age:i = danger(time_age_years(birthday, time_now()));";
-        "time_next_weekday" [Chrono] => "std_lib::time::next_weekday", (timestamp: i, weekday: i) -> (i!e),
-            "Returns the next date strictly after the timestamp that falls on the given weekday - Monday is 1 through Sunday, 7 - keeping the time of day. A Monday asked for the next Monday gets the one a week out.",
-            "next_monday:i = danger(time_next_weekday(time_now(), 1));";
     }
+
+    // time_next_weekday takes the TIME_Weekday enum, which needs a custom
+    // type import, so it uses the full struct form.
+    m.insert("time_next_weekday", StdlibFunction {
+        rust_path: "std_lib::time::next_weekday".to_string(),
+        crate_deps: vec![CrateDependency::Chrono],
+        struct_derives: vec![],
+        custom_type_imports: vec![("TIME_Weekday", "nail::std_lib::time")],
+        module: StdlibModule::Time,
+        parameters: vec![
+            nail_param!(timestamp: i),
+            StdlibParameter { name: "weekday".to_string(), param_type: NailDataTypeDescriptor::Enum("TIME_Weekday".to_string()), pass_by_reference: false },
+        ],
+        return_type: nail_type!((i!e)),
+        diverging: false,
+        description: "Returns the next date strictly after the timestamp that falls on the given weekday, keeping the time of day. A Monday asked for the next Monday gets the one a week out.",
+        example: "next_monday:i = danger(time_next_weekday(time_now(), TIME_Weekday::Monday));",
+    });
 }

@@ -976,17 +976,42 @@ pub fn age_years(born: i64, at: i64) -> Result<i64, String> {
     return Ok(age);
 }
 
-/// The next date strictly after the moment that falls on the given weekday -
-/// Monday is 1 through Sunday, 7 - keeping the time of day. Strictly after
-/// means a Monday asked for the next Monday gets the one a week out, which is
-/// what "next Monday" means on any day of the week.
-pub fn next_weekday(timestamp: i64, weekday: i64) -> Result<i64, String> {
-    if !(1..=7).contains(&weekday) {
-        return Err(format!("time_next_weekday: {} is not a weekday - Monday is 1 through Sunday, 7", weekday));
+/// A day of the week, for asking about the next one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TIME_Weekday {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
+}
+
+impl TIME_Weekday {
+    /// Monday is 1 through Sunday, 7 - ISO 8601's numbering, the same one
+    /// chrono's number_from_monday uses.
+    fn number_from_monday(self) -> i64 {
+        return match self {
+            TIME_Weekday::Monday => 1,
+            TIME_Weekday::Tuesday => 2,
+            TIME_Weekday::Wednesday => 3,
+            TIME_Weekday::Thursday => 4,
+            TIME_Weekday::Friday => 5,
+            TIME_Weekday::Saturday => 6,
+            TIME_Weekday::Sunday => 7,
+        };
     }
+}
+
+/// The next date strictly after the moment that falls on the given weekday,
+/// keeping the time of day. Strictly after means a Monday asked for the next
+/// Monday gets the one a week out, which is what "next Monday" means on any
+/// day of the week.
+pub fn next_weekday(timestamp: i64, weekday: TIME_Weekday) -> Result<i64, String> {
     let moment = to_datetime("time_next_weekday", timestamp)?;
     let today = moment.weekday().number_from_monday() as i64;
-    let mut days_ahead = (weekday - today).rem_euclid(7);
+    let mut days_ahead = (weekday.number_from_monday() - today).rem_euclid(7);
     if days_ahead == 0 {
         days_ahead = 7;
     }
@@ -1143,11 +1168,9 @@ mod workweek_and_boundary_tests {
     #[test]
     fn the_next_weekday_is_strictly_after_and_keeps_the_clock() {
         // From Monday 2024-01-15 at 12:30:45.
-        assert_eq!(next_weekday(MONDAY, 5).unwrap(), at(2024, 1, 19, 12, 30, 45), "the coming Friday");
-        assert_eq!(next_weekday(MONDAY, 7).unwrap(), at(2024, 1, 21, 12, 30, 45), "the coming Sunday");
-        assert_eq!(next_weekday(MONDAY, 1).unwrap(), at(2024, 1, 22, 12, 30, 45), "a Monday's next Monday is a week out");
-        assert!(next_weekday(MONDAY, 0).unwrap_err().contains("not a weekday"));
-        assert!(next_weekday(MONDAY, 8).unwrap_err().contains("not a weekday"));
+        assert_eq!(next_weekday(MONDAY, TIME_Weekday::Friday).unwrap(), at(2024, 1, 19, 12, 30, 45), "the coming Friday");
+        assert_eq!(next_weekday(MONDAY, TIME_Weekday::Sunday).unwrap(), at(2024, 1, 21, 12, 30, 45), "the coming Sunday");
+        assert_eq!(next_weekday(MONDAY, TIME_Weekday::Monday).unwrap(), at(2024, 1, 22, 12, 30, 45), "a Monday's next Monday is a week out");
     }
 
     #[test]
@@ -1161,15 +1184,15 @@ mod workweek_and_boundary_tests {
 
 /// The weekday number Monday 1 through Sunday 7 for a lower-case name, if the
 /// word is one.
-fn weekday_number(name: &str) -> Option<i64> {
+fn weekday_number(name: &str) -> Option<TIME_Weekday> {
     return match name {
-        "monday" => Some(1),
-        "tuesday" => Some(2),
-        "wednesday" => Some(3),
-        "thursday" => Some(4),
-        "friday" => Some(5),
-        "saturday" => Some(6),
-        "sunday" => Some(7),
+        "monday" => Some(TIME_Weekday::Monday),
+        "tuesday" => Some(TIME_Weekday::Tuesday),
+        "wednesday" => Some(TIME_Weekday::Wednesday),
+        "thursday" => Some(TIME_Weekday::Thursday),
+        "friday" => Some(TIME_Weekday::Friday),
+        "saturday" => Some(TIME_Weekday::Saturday),
+        "sunday" => Some(TIME_Weekday::Sunday),
         _ => None,
     };
 }
@@ -1225,7 +1248,7 @@ pub fn parse_human(text: String, reference: i64) -> Result<i64, String> {
             let target = weekday_number(day).expect("the guard checked the name");
             let moment = to_datetime("time_parse_human", reference)?;
             let today_number = moment.weekday().number_from_monday() as i64;
-            let mut back = (today_number - target).rem_euclid(7);
+            let mut back = (today_number - target.number_from_monday()).rem_euclid(7);
             if back == 0 {
                 back = 7;
             }

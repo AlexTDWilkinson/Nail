@@ -1299,7 +1299,7 @@ lazy_static! {
                 fields.insert("max_age".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("http_only".to_string(), NailDataTypeDescriptor::Boolean);
                 fields.insert("secure".to_string(), NailDataTypeDescriptor::Boolean);
-                fields.insert("same_site".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("same_site".to_string(), NailDataTypeDescriptor::Enum("HTTP_SameSite".to_string()));
                 fields
             }
         });
@@ -1520,10 +1520,44 @@ lazy_static! {
     pub static ref STDLIB_ENUMS: HashMap<&'static str, Vec<&'static str>> = {
         let mut m = HashMap::new();
         m.insert("CSV_Trim", vec!["None", "Headers", "Fields", "All"]);
+        m.insert("CONVERT_FuelEconomy", vec!["LitersPer100Km", "MpgUs", "MpgImperial"]);
+        m.insert(
+            "CONVERT_Unit",
+            vec![
+                // length
+                "Millimeter", "Centimeter", "Meter", "Kilometer", "Inch", "Foot", "Yard", "Mile", "NauticalMile",
+                // mass
+                "Milligram", "Gram", "Kilogram", "Tonne", "Ounce", "Pound", "Stone",
+                // volume
+                "Milliliter", "Liter", "Gallon", "Quart", "Pint", "Cup", "FluidOunce", "Tablespoon", "Teaspoon",
+                // data, decimal then binary
+                "Byte", "Kilobyte", "Megabyte", "Gigabyte", "Terabyte", "Kibibyte", "Mebibyte", "Gibibyte", "Tebibyte",
+                // speed
+                "MetersPerSecond", "KilometersPerHour", "MilesPerHour", "Knot",
+                // area
+                "SquareMeter", "SquareKilometer", "SquareFoot", "SquareMile", "Acre", "Hectare",
+                // energy
+                "Joule", "Kilojoule", "Megajoule", "WattHour", "KilowattHour", "Calorie", "Kilocalorie", "Btu",
+                // power
+                "Watt", "Kilowatt", "Megawatt", "Horsepower",
+                // pressure
+                "Pascal", "Kilopascal", "Megapascal", "Bar", "Psi", "Atmosphere", "MillimeterOfMercury",
+                // frequency
+                "Hertz", "Kilohertz", "Megahertz", "Gigahertz", "Rpm",
+                // angle
+                "Degree", "Radian", "Gradian", "Turn", "Arcminute", "Arcsecond",
+                // temperature
+                "Celsius", "Fahrenheit", "Kelvin",
+            ],
+        );
+        m.insert("DRAW_Anchor", vec!["Start", "Middle", "End"]);
         m.insert("HTTP_Method", vec!["Get", "Post", "Put", "Delete", "Patch"]);
+        m.insert("HTTP_SameSite", vec!["Strict", "Lax", "None"]);
         m.insert("LOG_Level", vec!["Debug", "Info", "Warn", "Error"]);
         m.insert("ML_Objective", vec!["Squared", "Logistic"]);
         m.insert("TIME_Format", vec!["Unix", "UnixMillis", "ISO8601", "RFC3339", "RFC2822"]);
+        m.insert("TIME_Weekday", vec!["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]);
+        m.insert("VALIDATE_Country", vec!["UnitedStates", "Canada", "UnitedKingdom", "Germany", "France", "Netherlands", "Australia"]);
         m.insert(
             "TERM_Color",
             vec!["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White", "BrightBlack", "BrightRed", "BrightGreen", "BrightYellow", "BrightBlue", "BrightMagenta", "BrightCyan", "BrightWhite"],
@@ -1672,17 +1706,23 @@ mod stdlib_types_drift_tests {
 
     #[test]
     fn stdlib_enums_match_real_enums() {
+        assert_enum_matches_registry::<crate::parser::std_lib::convert::CONVERT_FuelEconomy>("CONVERT_FuelEconomy");
+        assert_enum_matches_registry::<crate::parser::std_lib::convert::CONVERT_Unit>("CONVERT_Unit");
         assert_enum_matches_registry::<crate::parser::std_lib::csv::CSV_Trim>("CSV_Trim");
+        assert_enum_matches_registry::<crate::parser::std_lib::draw::DRAW_Anchor>("DRAW_Anchor");
         assert_enum_matches_registry::<crate::parser::std_lib::http::HTTP_Method>("HTTP_Method");
+        assert_enum_matches_registry::<crate::parser::std_lib::http::HTTP_SameSite>("HTTP_SameSite");
         assert_enum_matches_registry::<crate::parser::std_lib::log::LOG_Level>("LOG_Level");
         assert_enum_matches_registry::<crate::parser::std_lib::term::TERM_Color>("TERM_Color");
         assert_enum_matches_registry::<crate::parser::std_lib::time::TIME_Format>("TIME_Format");
+        assert_enum_matches_registry::<crate::parser::std_lib::time::TIME_Weekday>("TIME_Weekday");
         assert_enum_matches_registry::<crate::parser::std_lib::ml::ML_Objective>("ML_Objective");
+        assert_enum_matches_registry::<crate::parser::std_lib::validate::VALIDATE_Country>("VALIDATE_Country");
     }
 
     #[test]
     fn all_stdlib_enums_are_drift_tested() {
-        let covered = ["CSV_Trim", "HTTP_Method", "LOG_Level", "ML_Objective", "TERM_Color", "TIME_Format"];
+        let covered = ["CONVERT_FuelEconomy", "CONVERT_Unit", "CSV_Trim", "DRAW_Anchor", "HTTP_Method", "HTTP_SameSite", "LOG_Level", "ML_Objective", "TERM_Color", "TIME_Format", "TIME_Weekday", "VALIDATE_Country"];
         for enum_name in STDLIB_ENUMS.keys() {
             assert!(covered.contains(enum_name), "STDLIB_ENUMS entry '{}' has no drift test", enum_name);
         }

@@ -317,34 +317,43 @@ fn uk_postcode(code: &str) -> bool {
     return outward.len() - position <= 1 && outward[position..].iter().all(|character| character.is_ascii_alphanumeric());
 }
 
+/// A country whose postal code shape validate_postal_code knows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum VALIDATE_Country {
+    UnitedStates,
+    Canada,
+    UnitedKingdom,
+    Germany,
+    France,
+    Netherlands,
+    Australia,
+}
+
 /// Whether the text is a postal code shaped the way the given country shapes
-/// them. Knows us, ca, gb, de, fr, nl and au; a country it does not know is
-/// an error rather than a false, because "no" and "no idea" are different
-/// answers and a form should not confuse them.
-pub fn postal_code(text: &String, country: &String) -> Result<bool, String> {
+/// them. The country is a VALIDATE_Country variant, so there is no unknown
+/// country to have an opinion about, and the answer is a plain boolean.
+pub fn postal_code(text: &String, country: VALIDATE_Country) -> bool {
     let code = text.trim();
     let characters: Vec<char> = code.chars().collect();
     let all_digits = |chars: &[char]| chars.iter().all(|character| character.is_ascii_digit());
 
-    let fits = match country.trim().to_lowercase().as_str() {
+    return match country {
         // 12345, with the optional four-digit ZIP+4 tail.
-        "us" => (characters.len() == 5 && all_digits(&characters)) || (characters.len() == 10 && all_digits(&characters[..5]) && characters[5] == '-' && all_digits(&characters[6..])),
+        VALIDATE_Country::UnitedStates => (characters.len() == 5 && all_digits(&characters)) || (characters.len() == 10 && all_digits(&characters[..5]) && characters[5] == '-' && all_digits(&characters[6..])),
         // A1A 1A1, with the space optional because people leave it out.
-        "ca" => {
+        VALIDATE_Country::Canada => {
             let compact: Vec<char> = characters.iter().filter(|character| **character != ' ').copied().collect();
             compact.len() == 6 && compact.iter().enumerate().all(|(position, character)| if position % 2 == 0 { character.is_ascii_alphabetic() } else { character.is_ascii_digit() })
         }
-        "gb" => uk_postcode(code),
-        "de" | "fr" => characters.len() == 5 && all_digits(&characters),
+        VALIDATE_Country::UnitedKingdom => uk_postcode(code),
+        VALIDATE_Country::Germany | VALIDATE_Country::France => characters.len() == 5 && all_digits(&characters),
         // 1234 AB, with the space optional.
-        "nl" => {
+        VALIDATE_Country::Netherlands => {
             let compact: Vec<char> = characters.iter().filter(|character| **character != ' ').copied().collect();
             compact.len() == 6 && all_digits(&compact[..4]) && compact[4..].iter().all(|character| character.is_ascii_alphabetic())
         }
-        "au" => characters.len() == 4 && all_digits(&characters),
-        unknown => return Err(format!("validate_postal_code: no rules for country '{}' - it knows us, ca, gb, de, fr, nl and au", unknown)),
+        VALIDATE_Country::Australia => characters.len() == 4 && all_digits(&characters),
     };
-    return Ok(fits);
 }
 
 /// Whether the text is a colour a stylesheet would accept: a hash and then
@@ -612,43 +621,34 @@ mod tests {
         assert!(!isbn(&text("")));
     }
 
-    fn postal(code: &str, country: &str) -> bool {
-        return postal_code(&text(code), &text(country)).expect("a known country");
+    fn postal(code: &str, country: VALIDATE_Country) -> bool {
+        return postal_code(&text(code), country);
     }
 
     #[test]
     fn each_country_recognises_its_own_postal_codes() {
-        assert!(postal("12345", "us"));
-        assert!(postal("12345-6789", "us"));
-        assert!(!postal("1234", "us"));
-        assert!(!postal("12345-678", "us"));
-        assert!(postal("T2N 1N4", "ca"));
-        assert!(postal("t2n 1n4", "ca"));
-        assert!(postal("T2N1N4", "ca"));
-        assert!(!postal("T2N-1N4", "ca"));
-        assert!(!postal("123 456", "ca"));
-        assert!(postal("SW1A 1AA", "gb"));
-        assert!(postal("sw1a 1aa", "gb"));
-        assert!(postal("M1 1AE", "gb"));
-        assert!(postal("EC1A1BB", "gb"));
-        assert!(!postal("12345", "gb"));
-        assert!(postal("10115", "de"));
-        assert!(postal("75008", "fr"));
-        assert!(!postal("1011", "de"));
-        assert!(postal("1234 AB", "nl"));
-        assert!(postal("1234ab", "nl"));
-        assert!(!postal("12345", "nl"));
-        assert!(postal("2000", "au"));
-        assert!(!postal("200", "au"));
-    }
-
-    #[test]
-    fn an_unknown_country_is_an_error_not_a_false() {
-        let complaint = postal_code(&text("12345"), &text("jp")).unwrap_err();
-        assert!(complaint.contains("no rules for country 'jp'"));
-        assert!(complaint.contains("us, ca, gb, de, fr, nl and au"));
-        // Country codes are read case-insensitively.
-        assert!(postal_code(&text("T2N 1N4"), &text("CA")).expect("a known country"));
+        assert!(postal("12345", VALIDATE_Country::UnitedStates));
+        assert!(postal("12345-6789", VALIDATE_Country::UnitedStates));
+        assert!(!postal("1234", VALIDATE_Country::UnitedStates));
+        assert!(!postal("12345-678", VALIDATE_Country::UnitedStates));
+        assert!(postal("T2N 1N4", VALIDATE_Country::Canada));
+        assert!(postal("t2n 1n4", VALIDATE_Country::Canada));
+        assert!(postal("T2N1N4", VALIDATE_Country::Canada));
+        assert!(!postal("T2N-1N4", VALIDATE_Country::Canada));
+        assert!(!postal("123 456", VALIDATE_Country::Canada));
+        assert!(postal("SW1A 1AA", VALIDATE_Country::UnitedKingdom));
+        assert!(postal("sw1a 1aa", VALIDATE_Country::UnitedKingdom));
+        assert!(postal("M1 1AE", VALIDATE_Country::UnitedKingdom));
+        assert!(postal("EC1A1BB", VALIDATE_Country::UnitedKingdom));
+        assert!(!postal("12345", VALIDATE_Country::UnitedKingdom));
+        assert!(postal("10115", VALIDATE_Country::Germany));
+        assert!(postal("75008", VALIDATE_Country::France));
+        assert!(!postal("1011", VALIDATE_Country::Germany));
+        assert!(postal("1234 AB", VALIDATE_Country::Netherlands));
+        assert!(postal("1234ab", VALIDATE_Country::Netherlands));
+        assert!(!postal("12345", VALIDATE_Country::Netherlands));
+        assert!(postal("2000", VALIDATE_Country::Australia));
+        assert!(!postal("200", VALIDATE_Country::Australia));
     }
 }
 

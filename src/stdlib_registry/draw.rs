@@ -29,9 +29,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "draw_polygon" => "std_lib::draw::polygon", (points: [f], fill: s) -> (s!e),
             "A closed shape through the given points, in the same flat array of x and y values.",
             "area:s = danger(draw_polygon(points, `lightblue`));";
-        "draw_text" => "std_lib::draw::text", (x: f, y: f, content: s, size: f, fill: s, anchor: s) -> (s!e),
-            "Text at a point. The anchor is start, middle or end, and says which part of the text sits at that x.",
-            "label:s = danger(draw_text(100.0, 20.0, `Revenue`, 14.0, `black`, `middle`));";
         "draw_path" => "std_lib::draw::path", (commands: s, stroke: s, stroke_width: f, fill: s) -> (s!e),
             "An arbitrary path in SVG's own path notation - the escape hatch for a shape none of the others can make. An empty fill leaves it unfilled.",
             "shape:s = danger(draw_path(`M 0 0 L 10 10`, `black`, 1.0, ``));";
@@ -66,4 +63,26 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "A QR code of the text as an SVG document, black on white. Put a URL in it and a phone camera opens the page - tickets, table menus, 2FA enrolment.",
             "badge:s = danger(draw_qr_svg(`https://nail-lang.org`));";
     }
+
+    // draw_text takes the DRAW_Anchor enum, which needs a custom type import,
+    // so it uses the full struct form.
+    m.insert("draw_text", StdlibFunction {
+        rust_path: "std_lib::draw::text".to_string(),
+        crate_deps: vec![],
+        struct_derives: vec![],
+        custom_type_imports: vec![("DRAW_Anchor", "nail::std_lib::draw")],
+        module: StdlibModule::Draw,
+        parameters: vec![
+            nail_param!(x: f),
+            nail_param!(y: f),
+            nail_param!(content: s),
+            nail_param!(size: f),
+            nail_param!(fill: s),
+            StdlibParameter { name: "anchor".to_string(), param_type: NailDataTypeDescriptor::Enum("DRAW_Anchor".to_string()), pass_by_reference: false },
+        ],
+        return_type: nail_type!((s!e)),
+        diverging: false,
+        description: "Text at a point. The anchor says which part of the text sits at that x - DRAW_Anchor::Middle is what a centred label wants.",
+        example: "label:s = danger(draw_text(100.0, 20.0, `Revenue`, 14.0, `black`, DRAW_Anchor::Middle));",
+    });
 }
