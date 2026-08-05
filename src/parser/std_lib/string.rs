@@ -1456,3 +1456,316 @@ mod casing_shape_and_extraction_tests {
         assert!(hamming_distance(&"ab".to_string(), &"abc".to_string()).unwrap_err().contains("different lengths"));
     }
 }
+
+/// The classic American Soundex code for a name: the first letter followed by
+/// three digits, so names that sound alike code alike. `Robert` and `Rupert`
+/// are both `R163`. H and W are transparent, meaning two letters with the
+/// same digit on either side of one still count as a single sound, while a
+/// vowel between them separates the sounds. Only ASCII letters take part, and
+/// a string without any gives the empty string.
+pub fn soundex(name: &String) -> String {
+    fn digit_of(letter: char) -> Option<u8> {
+        return match letter {
+            'B' | 'F' | 'P' | 'V' => Some(1),
+            'C' | 'G' | 'J' | 'K' | 'Q' | 'S' | 'X' | 'Z' => Some(2),
+            'D' | 'T' => Some(3),
+            'L' => Some(4),
+            'M' | 'N' => Some(5),
+            'R' => Some(6),
+            _ => None,
+        };
+    }
+    let letters: Vec<char> = name.chars().filter(|character| character.is_ascii_alphabetic()).map(|character| character.to_ascii_uppercase()).collect();
+    let first = match letters.first() {
+        Some(letter) => *letter,
+        None => return String::new(),
+    };
+    let mut code = String::with_capacity(4);
+    code.push(first);
+    let mut previous_digit = digit_of(first);
+    for letter in letters.iter().skip(1) {
+        match digit_of(*letter) {
+            Some(digit) => {
+                if previous_digit != Some(digit) {
+                    code.push((b'0' + digit) as char);
+                    if code.len() == 4 {
+                        break;
+                    }
+                }
+                previous_digit = Some(digit);
+            }
+            // H and W are invisible to adjacency, so the digit before one is
+            // still the digit the next letter is compared against. A vowel
+            // breaks the run instead.
+            None => {
+                if *letter != 'H' && *letter != 'W' {
+                    previous_digit = None;
+                }
+            }
+        }
+    }
+    while code.len() < 4 {
+        code.push('0');
+    }
+    return code;
+}
+
+/// True when two names share the same non-empty Soundex code, which is how
+/// `Robert` finds `Rupert` in a list of people. Two letterless strings are
+/// not alike, because an empty code carries no sound to agree on.
+pub fn sounds_like(first: &String, second: &String) -> bool {
+    let first_code = soundex(first);
+    if first_code.is_empty() {
+        return false;
+    }
+    return first_code == soundex(second);
+}
+
+/// The Jaccard similarity of the two texts' lowercase word sets: the words
+/// they share divided by all the words between them, from 0.0 to 1.0. Repeats
+/// do not count, so reach for `string_cosine_words` when how often a word
+/// appears matters. Two empty texts give 1.0 and one empty text gives 0.0.
+pub fn jaccard_words(first: &String, second: &String) -> f64 {
+    use std::collections::HashSet;
+    let first_words: HashSet<String> = first.split_whitespace().map(|word| word.to_lowercase()).collect();
+    let second_words: HashSet<String> = second.split_whitespace().map(|word| word.to_lowercase()).collect();
+    if first_words.is_empty() && second_words.is_empty() {
+        return 1.0;
+    }
+    if first_words.is_empty() || second_words.is_empty() {
+        return 0.0;
+    }
+    let shared = first_words.intersection(&second_words).count();
+    let combined = first_words.union(&second_words).count();
+    return shared as f64 / combined as f64;
+}
+
+/// The cosine similarity of the two texts' lowercase word-count vectors, the
+/// duplicate-aware cousin of `string_jaccard_words`. `a a b` and `a b` hold
+/// the same word set, so Jaccard calls them identical and this does not. Two
+/// empty texts give 1.0 and one empty text gives 0.0.
+pub fn cosine_words(first: &String, second: &String) -> f64 {
+    use std::collections::HashMap;
+    let mut first_counts: HashMap<String, f64> = HashMap::new();
+    for word in first.split_whitespace() {
+        *first_counts.entry(word.to_lowercase()).or_insert(0.0) += 1.0;
+    }
+    let mut second_counts: HashMap<String, f64> = HashMap::new();
+    for word in second.split_whitespace() {
+        *second_counts.entry(word.to_lowercase()).or_insert(0.0) += 1.0;
+    }
+    if first_counts.is_empty() && second_counts.is_empty() {
+        return 1.0;
+    }
+    if first_counts.is_empty() || second_counts.is_empty() {
+        return 0.0;
+    }
+    let mut dot_product = 0.0;
+    for (word, count) in first_counts.iter() {
+        if let Some(other_count) = second_counts.get(word) {
+            dot_product += count * other_count;
+        }
+    }
+    let first_length: f64 = first_counts.values().map(|count| count * count).sum::<f64>().sqrt();
+    let second_length: f64 = second_counts.values().map(|count| count * count).sum::<f64>().sqrt();
+    return dot_product / (first_length * second_length);
+}
+
+/// The set of three-character windows of the text, the pieces that
+/// `trigram_similarity` and `best_match` compare. Callers lowercase first.
+fn trigram_set(text: &str) -> std::collections::HashSet<[char; 3]> {
+    let characters: Vec<char> = text.chars().collect();
+    let mut found = std::collections::HashSet::new();
+    for window in characters.windows(3) {
+        found.insert([window[0], window[1], window[2]]);
+    }
+    return found;
+}
+
+/// How alike two strings look, measured on their three-character windows: the
+/// lowercased text is cut into every run of three characters and the two sets
+/// are compared with Jaccard. This is the plain character-trigram form, not
+/// the word-padded variant postgres uses. A string always scores 1.0 against
+/// itself, which is also what covers strings too short to hold a trigram,
+/// while two different short strings score 0.0. Where `string_similarity`
+/// counts edits in order, this rewards shared fragments wherever they sit, so
+/// it forgives swapped and missing letters in longer strings.
+pub fn trigram_similarity(first: &String, second: &String) -> f64 {
+    let first_lowered = first.to_lowercase();
+    let second_lowered = second.to_lowercase();
+    if first_lowered == second_lowered {
+        return 1.0;
+    }
+    let first_trigrams = trigram_set(&first_lowered);
+    let second_trigrams = trigram_set(&second_lowered);
+    if first_trigrams.is_empty() || second_trigrams.is_empty() {
+        return 0.0;
+    }
+    let shared = first_trigrams.intersection(&second_trigrams).count();
+    let combined = first_trigrams.union(&second_trigrams).count();
+    return shared as f64 / combined as f64;
+}
+
+/// The candidate whose trigram similarity to the query is highest, with ties
+/// going to the earlier candidate. Where `string_closest` picks by edit
+/// distance, which favors the smallest typo, this picks by shared
+/// three-character fragments, which also survives missing and reordered
+/// letters. An empty list of candidates is an error, because there is no
+/// answer to give.
+pub fn best_match(query: String, candidates: Vec<String>) -> Result<String, String> {
+    let mut best: Option<(f64, &String)> = None;
+    for candidate in candidates.iter() {
+        let score = trigram_similarity(&query, candidate);
+        let improves = match best {
+            None => true,
+            Some((best_score, _)) => score > best_score,
+        };
+        if improves {
+            best = Some((score, candidate));
+        }
+    }
+    return match best {
+        Some((_, candidate)) => Ok(candidate.clone()),
+        None => Err("string_best_match: there were no candidates to choose from".to_string()),
+    };
+}
+
+/// True for the characters in the emoji blocks: Miscellaneous Symbols and
+/// Pictographs, Emoticons, Transport and Map, Supplemental Symbols and
+/// Pictographs, Symbols and Pictographs Extended-A, and the dingbats.
+fn is_emoji_character(character: char) -> bool {
+    return matches!(character as u32,
+        0x1F300..=0x1F5FF | 0x1F600..=0x1F64F | 0x1F680..=0x1F6FF | 0x1F900..=0x1F9FF | 0x1FA70..=0x1FAFF | 0x2700..=0x27BF);
+}
+
+/// The text with its emoji removed: everything in the emoticon, pictograph,
+/// transport, supplemental and extended symbol blocks and the dingbats, plus
+/// the invisible variation selector and zero-width joiner when they ride on a
+/// removed emoji. Ordinary text, accents and CJK pass through untouched.
+/// Sequences built from parts outside those blocks reduce to their leftovers
+/// honestly rather than perfectly, so a flag keeps its regional indicator
+/// letters and a keycap keeps its digit.
+pub fn strip_emoji(text: String) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut previous_was_removed = false;
+    for character in text.chars() {
+        if is_emoji_character(character) {
+            previous_was_removed = true;
+        } else if previous_was_removed && (character == '\u{FE0F}' || character == '\u{200D}') {
+            // The joiner between two removed emoji goes with them, and the
+            // chain stays open so the emoji after it goes too.
+            previous_was_removed = true;
+        } else {
+            out.push(character);
+            previous_was_removed = false;
+        }
+    }
+    return out;
+}
+
+/// True when the text holds at least one character from the emoji blocks that
+/// `string_strip_emoji` removes. Accented letters and CJK are not emoji, so
+/// `café` says false.
+pub fn has_emoji(text: &String) -> bool {
+    return text.chars().any(is_emoji_character);
+}
+
+#[cfg(test)]
+mod fuzzy_matching_and_emoji_tests {
+    use super::*;
+
+    #[test]
+    fn soundex_gives_the_classic_anchor_codes() {
+        assert_eq!(soundex(&"Robert".to_string()), "R163");
+        assert_eq!(soundex(&"Rupert".to_string()), "R163");
+        assert_eq!(soundex(&"Tymczak".to_string()), "T522");
+        assert_eq!(soundex(&"Pfister".to_string()), "P236");
+        assert_eq!(soundex(&"Honeyman".to_string()), "H555");
+        // H is transparent, so the s and c around it code once, not twice.
+        assert_eq!(soundex(&"Ashcraft".to_string()), "A261");
+    }
+
+    #[test]
+    fn soundex_of_letterless_input_is_empty() {
+        assert_eq!(soundex(&"".to_string()), "");
+        assert_eq!(soundex(&"123 !?".to_string()), "");
+    }
+
+    #[test]
+    fn names_sound_alike_only_when_their_codes_agree() {
+        assert!(sounds_like(&"Robert".to_string(), &"Rupert".to_string()));
+        assert!(!sounds_like(&"Robert".to_string(), &"Alberta".to_string()));
+        // Letterless strings have no code to agree on.
+        assert!(!sounds_like(&"".to_string(), &"".to_string()));
+    }
+
+    #[test]
+    fn jaccard_measures_the_shared_word_set() {
+        assert_eq!(jaccard_words(&"the quick fox".to_string(), &"the slow fox".to_string()), 0.5);
+        assert_eq!(jaccard_words(&"Same Words".to_string(), &"same words".to_string()), 1.0);
+        assert_eq!(jaccard_words(&"".to_string(), &"".to_string()), 1.0);
+        assert_eq!(jaccard_words(&"words here".to_string(), &"".to_string()), 0.0);
+    }
+
+    #[test]
+    fn cosine_sees_the_counts_that_jaccard_ignores() {
+        assert_eq!(jaccard_words(&"a a b".to_string(), &"a b".to_string()), 1.0);
+        let repeated = cosine_words(&"a a b".to_string(), &"a b".to_string());
+        assert!(repeated > 0.9 && repeated < 1.0, "got {}", repeated);
+        let identical = cosine_words(&"same words".to_string(), &"same words".to_string());
+        assert!((identical - 1.0).abs() < 1e-9, "got {}", identical);
+        assert_eq!(cosine_words(&"".to_string(), &"".to_string()), 1.0);
+        assert_eq!(cosine_words(&"words".to_string(), &"".to_string()), 0.0);
+    }
+
+    #[test]
+    fn trigram_similarity_is_one_for_itself_and_near_zero_for_strangers() {
+        assert_eq!(trigram_similarity(&"Edmonton".to_string(), &"edmonton".to_string()), 1.0);
+        assert_eq!(trigram_similarity(&"hi".to_string(), &"hi".to_string()), 1.0);
+        let strangers = trigram_similarity(&"edmonton".to_string(), &"calgary".to_string());
+        assert!(strangers < 0.1, "got {}", strangers);
+        let typo = trigram_similarity(&"edmontn".to_string(), &"edmonton".to_string());
+        assert!(typo > 0.5, "got {}", typo);
+    }
+
+    #[test]
+    fn the_best_match_answers_a_mangled_city_name() {
+        let cities = vec!["Calgary".to_string(), "Edmonton".to_string(), "Toronto".to_string(), "Vancouver".to_string()];
+        assert_eq!(best_match("edmontn".to_string(), cities).expect("a candidate"), "Edmonton");
+    }
+
+    #[test]
+    fn best_match_ties_go_to_the_earlier_candidate_and_no_candidates_is_an_error() {
+        // Both candidates score zero against the query, so the first wins.
+        let unrelated = vec!["alpha".to_string(), "beta".to_string()];
+        assert_eq!(best_match("zzzzz".to_string(), unrelated).expect("a candidate"), "alpha");
+        assert!(best_match("anything".to_string(), vec![]).unwrap_err().contains("no candidates"));
+    }
+
+    #[test]
+    fn stripping_emoji_keeps_the_words() {
+        assert_eq!(strip_emoji("trip was great 🌍✈️ photos soon".to_string()), "trip was great  photos soon");
+        assert_eq!(strip_emoji("done ✅".to_string()), "done ");
+        assert_eq!(strip_emoji("no emoji here".to_string()), "no emoji here");
+        assert_eq!(strip_emoji("café 日本語 😀".to_string()), "café 日本語 ");
+    }
+
+    #[test]
+    fn joined_sequences_go_whole_and_outside_parts_stay() {
+        // A family is three people joined by zero-width joiners, and the
+        // joiners go with the emoji they ride on.
+        assert_eq!(strip_emoji("👨\u{200D}👩\u{200D}👧!".to_string()), "!");
+        // A keycap is a digit plus invisibles from outside the emoji blocks,
+        // so its leftovers stay, honestly rather than perfectly.
+        assert_eq!(strip_emoji("1\u{FE0F}\u{20E3}".to_string()), "1\u{FE0F}\u{20E3}");
+    }
+
+    #[test]
+    fn emoji_detection_ignores_accents_and_plain_text() {
+        assert!(has_emoji(&"launch day 🚀".to_string()));
+        assert!(has_emoji(&"✅ shipped".to_string()));
+        assert!(!has_emoji(&"plain text".to_string()));
+        assert!(!has_emoji(&"café".to_string()));
+        assert!(!has_emoji(&"日本語".to_string()));
+    }
+}

@@ -92,6 +92,7 @@ mod args;
 mod array;
 mod audio;
 mod base32;
+mod base58;
 mod base64;
 mod binary;
 mod bits;
@@ -112,12 +113,14 @@ mod env;
 mod error;
 mod float;
 mod feed;
+mod finance;
 mod format;
 mod fs;
 mod geo;
 mod hashmap;
 mod hex;
 mod i18n;
+mod ini;
 mod html;
 mod http;
 mod image;
@@ -313,6 +316,7 @@ stdlib_modules! {
     Fs => "std_lib::fs", "fs_",
     Json => "std_lib::json", "json_",
     Toml => "std_lib::toml", "toml_",
+    Ini => "std_lib::ini", "ini_",
     Yaml => "std_lib::yaml", "yaml_",
     Xml => "std_lib::xml", "xml_",
     Feed => "std_lib::feed", "feed_",
@@ -329,6 +333,7 @@ stdlib_modules! {
     Math => "std_lib::math", "math_",
     Linalg => "std_lib::linalg", "linalg_",
     Money => "std_lib::money", "money_",
+    Finance => "std_lib::finance", "finance_",
     Stats => "std_lib::stats", "stats_",
     Semver => "std_lib::semver", "semver_",
     Ml => "std_lib::ml", "ml_",
@@ -373,6 +378,7 @@ stdlib_modules! {
     Diff => "std_lib::diff", "diff_",
     Base64 => "std_lib::base64", "base64_",
     Base32 => "std_lib::base32", "base32_",
+    Base58 => "std_lib::base58", "base58_",
     Hex => "std_lib::hex", "hex_",
     Binary => "std_lib::binary", "binary_",
     Cache => "std_lib::cache", "cache_",
@@ -455,6 +461,7 @@ lazy_static! {
         chart::register(&mut m);
         code::register(&mut m);
         base32::register(&mut m);
+        base58::register(&mut m);
         binary::register(&mut m);
         cache::register(&mut m);
         color::register(&mut m);
@@ -471,12 +478,14 @@ lazy_static! {
         error::register(&mut m);
         float::register(&mut m);
         feed::register(&mut m);
+        finance::register(&mut m);
         format::register(&mut m);
         fs::register(&mut m);
         geo::register(&mut m);
         hashmap::register(&mut m);
         hex::register(&mut m);
         i18n::register(&mut m);
+        ini::register(&mut m);
         html::register(&mut m);
         http::register(&mut m);
         image::register(&mut m);

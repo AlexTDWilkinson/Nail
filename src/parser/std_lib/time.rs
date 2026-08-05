@@ -1152,6 +1152,385 @@ mod workweek_and_boundary_tests {
     }
 }
 
+/// The weekday number Monday 1 through Sunday 7 for a lower-case name, if the
+/// word is one.
+fn weekday_number(name: &str) -> Option<i64> {
+    return match name {
+        "monday" => Some(1),
+        "tuesday" => Some(2),
+        "wednesday" => Some(3),
+        "thursday" => Some(4),
+        "friday" => Some(5),
+        "saturday" => Some(6),
+        "sunday" => Some(7),
+        _ => None,
+    };
+}
+
+/// Shifts the reference by a count of one named unit, or None when the word is
+/// not a unit this reads. Months go through add_months because a month is not
+/// a fixed number of seconds.
+fn human_shift(reference: i64, count: i64, unit: &str) -> Option<Result<i64, String>> {
+    let singular = unit.strip_suffix('s').unwrap_or(unit);
+    let seconds_per = match singular {
+        "second" => 1,
+        "minute" => 60,
+        "hour" => 3600,
+        "day" => 86_400,
+        "week" => 604_800,
+        "month" => {
+            return Some(add_months(reference, count).map_err(|_| format!("time_parse_human: {} months from {} is off the calendar", count, reference)));
+        }
+        _ => return None,
+    };
+    return Some(Ok(reference + count * seconds_per));
+}
+
+/// Reads a plain-English moment relative to a reference timestamp: `now`,
+/// `today`, `tomorrow`, `yesterday`, `next monday` through `next sunday`,
+/// `last monday` through `last sunday`, `in N seconds/minutes/hours/days/weeks/months`,
+/// the same units with `N units ago`, and an absolute `YYYY-MM-DD` date.
+/// Case and extra spaces are forgiven. `today`, `tomorrow`, `yesterday` and an
+/// absolute date land on midnight UTC, while `next` and `last` weekdays keep
+/// the reference's time of day, the way time_next_weekday does. Anything else
+/// is an error naming the shapes this reads.
+pub fn parse_human(text: String, reference: i64) -> Result<i64, String> {
+    let cleaned = text.to_lowercase();
+    let words: Vec<&str> = cleaned.split_whitespace().collect();
+    let unreadable = || {
+        format!(
+            "time_parse_human: could not read `{}` - this reads now, today, tomorrow, yesterday, next or last plus a weekday name, in N seconds/minutes/hours/days/weeks/months, N of those units ago, and YYYY-MM-DD",
+            text.trim()
+        )
+    };
+    let too_far = |stamp: i64| format!("time_parse_human: {} is too far from 1970 to be a date", stamp);
+
+    match words.as_slice() {
+        ["now"] => return Ok(reference),
+        ["today"] => return start_of_day(reference).map_err(|_| too_far(reference)),
+        ["tomorrow"] => return start_of_day(reference).map(|midnight| add_days(midnight, 1)).map_err(|_| too_far(reference)),
+        ["yesterday"] => return start_of_day(reference).map(|midnight| add_days(midnight, -1)).map_err(|_| too_far(reference)),
+        ["next", day] if weekday_number(day).is_some() => {
+            let target = weekday_number(day).expect("the guard checked the name");
+            return next_weekday(reference, target).map_err(|_| too_far(reference));
+        }
+        ["last", day] if weekday_number(day).is_some() => {
+            let target = weekday_number(day).expect("the guard checked the name");
+            let moment = to_datetime("time_parse_human", reference)?;
+            let today_number = moment.weekday().number_from_monday() as i64;
+            let mut back = (today_number - target).rem_euclid(7);
+            if back == 0 {
+                back = 7;
+            }
+            return Ok(add_days(reference, -back));
+        }
+        ["in", count_text, unit] => {
+            let count: i64 = match count_text.parse() {
+                Ok(number) => number,
+                Err(_) => return Err(unreadable()),
+            };
+            return match human_shift(reference, count, unit) {
+                Some(shifted) => shifted,
+                None => Err(unreadable()),
+            };
+        }
+        [count_text, unit, "ago"] => {
+            let count: i64 = match count_text.parse() {
+                Ok(number) => number,
+                Err(_) => return Err(unreadable()),
+            };
+            return match human_shift(reference, -count, unit) {
+                Some(shifted) => shifted,
+                None => Err(unreadable()),
+            };
+        }
+        [only] => {
+            if let Ok(date) = NaiveDate::parse_from_str(only, "%Y-%m-%d") {
+                return Ok(date.and_hms_opt(0, 0, 0).expect("midnight is a valid time").and_utc().timestamp());
+            }
+            return Err(unreadable());
+        }
+        _ => return Err(unreadable()),
+    }
+}
+
+/// The name of a cron weekday number, with 0 and 7 both Sunday as they are in
+/// every cron there has ever been.
+fn cron_weekday_name(number: i64) -> Option<&'static str> {
+    return match number {
+        0 | 7 => Some("Sunday"),
+        1 => Some("Monday"),
+        2 => Some("Tuesday"),
+        3 => Some("Wednesday"),
+        4 => Some("Thursday"),
+        5 => Some("Friday"),
+        6 => Some("Saturday"),
+        _ => None,
+    };
+}
+
+/// A cron weekday field written in words, when it fits the vocabulary: a
+/// single day, a range of days, or a comma list of days, with `1-5` reading as
+/// weekdays. None sends the whole expression to the field-by-field fallback.
+fn cron_weekday_phrase(field: &str) -> Option<String> {
+    if field == "1-5" {
+        return Some("weekdays".to_string());
+    }
+    if let Some((first, last)) = field.split_once('-') {
+        let first_name = cron_weekday_name(first.parse().ok()?)?;
+        let last_name = cron_weekday_name(last.parse().ok()?)?;
+        return Some(format!("{} to {}", first_name, last_name));
+    }
+    if field.contains(',') {
+        let names: Vec<&str> = field.split(',').map(|token| cron_weekday_name(token.parse().ok()?)).collect::<Option<Vec<&str>>>()?;
+        let mut phrase = names[..names.len() - 1].join(", ");
+        phrase.push_str(" and ");
+        phrase.push_str(names[names.len() - 1]);
+        return Some(phrase);
+    }
+    return Some(cron_weekday_name(field.parse().ok()?)?.to_string());
+}
+
+/// A day of the month written for a sentence: the first day, the 2nd day, the
+/// 15th day.
+fn cron_day_phrase(day: i64) -> String {
+    if day == 1 {
+        return "first".to_string();
+    }
+    let suffix = match (day % 100, day % 10) {
+        (11..=13, _) => "th",
+        (_, 1) => "st",
+        (_, 2) => "nd",
+        (_, 3) => "rd",
+        _ => "th",
+    };
+    return format!("{}{}", day, suffix);
+}
+
+/// A five-field cron expression written out in words. `0 3 * * *` reads
+/// `every day at 03:00`, `*/15 * * * *` reads `every 15 minutes`,
+/// `0 9 * * 1-5` reads `at 09:00 on weekdays`, and `0 0 1 * *` reads
+/// `at 00:00 on the first day of the month`. An expression beyond that
+/// vocabulary gets a faithful field-by-field reading such as
+/// `minute 5,35, hour 3, any day, month 2, any weekday` rather than an error.
+/// Only an expression whose five fields do not parse is an error.
+pub fn cron_describe(expression: String) -> Result<String, String> {
+    parse_cron(&expression).map_err(|detail| format!("time_cron_describe: {}", detail))?;
+    let fields: Vec<&str> = expression.split_whitespace().collect();
+    let (minute, hour, day_of_month, month, day_of_week) = (fields[0], fields[1], fields[2], fields[3], fields[4]);
+
+    let fixed_minute: Option<i64> = minute.parse().ok();
+    let fixed_hour: Option<i64> = hour.parse().ok();
+    let rest_any = day_of_month == "*" && month == "*" && day_of_week == "*";
+
+    if minute == "*" && hour == "*" && rest_any {
+        return Ok("every minute".to_string());
+    }
+    if let Some(step) = minute.strip_prefix("*/") {
+        if hour == "*" && rest_any {
+            if step == "1" {
+                return Ok("every minute".to_string());
+            }
+            return Ok(format!("every {} minutes", step));
+        }
+    }
+    if let (Some(minute_number), Some(step)) = (fixed_minute, hour.strip_prefix("*/")) {
+        if rest_any {
+            let cadence = if step == "1" { "every hour".to_string() } else { format!("every {} hours", step) };
+            if minute_number == 0 {
+                return Ok(cadence);
+            }
+            return Ok(format!("{} at minute {}", cadence, minute_number));
+        }
+    }
+    if let Some(minute_number) = fixed_minute {
+        if hour == "*" && rest_any {
+            if minute_number == 0 {
+                return Ok("every hour".to_string());
+            }
+            return Ok(format!("every hour at minute {}", minute_number));
+        }
+    }
+    if let (Some(minute_number), Some(hour_number)) = (fixed_minute, fixed_hour) {
+        let clock = format!("{:02}:{:02}", hour_number, minute_number);
+        if rest_any {
+            return Ok(format!("every day at {}", clock));
+        }
+        if day_of_month == "*" && month == "*" {
+            if let Some(days) = cron_weekday_phrase(day_of_week) {
+                return Ok(format!("at {} on {}", clock, days));
+            }
+        }
+        if month == "*" && day_of_week == "*" {
+            if let Ok(day_number) = day_of_month.parse::<i64>() {
+                return Ok(format!("at {} on the {} day of the month", clock, cron_day_phrase(day_number)));
+            }
+        }
+    }
+
+    // The faithful field-by-field fallback for anything beyond the vocabulary.
+    let piece = |name: &str, any_name: &str, value: &str| if value == "*" { any_name.to_string() } else { format!("{} {}", name, value) };
+    return Ok(format!(
+        "{}, {}, {}, {}, {}",
+        piece("minute", "any minute", minute),
+        piece("hour", "any hour", hour),
+        piece("day", "any day", day_of_month),
+        piece("month", "any month", month),
+        piece("weekday", "any weekday", day_of_week)
+    ));
+}
+
+#[cfg(test)]
+mod human_time_tests {
+    use super::*;
+
+    /// A timestamp for a moment, so the tests read as dates rather than numbers.
+    fn at(year: i64, month: i64, day: i64, hour: i64, minute: i64, second: i64) -> i64 {
+        return from_parts(year, month, day, hour, minute, second).expect("a real date");
+    }
+
+    /// 2024-01-17 12:30:45 UTC, a Wednesday. Every relative reading in these
+    /// tests is measured from here.
+    fn wednesday() -> i64 {
+        let reference = at(2024, 1, 17, 12, 30, 45);
+        assert_eq!(weekday(reference).expect("a real date"), "Wednesday");
+        return reference;
+    }
+
+    fn read(text: &str) -> i64 {
+        return parse_human(text.to_string(), wednesday()).expect("a readable moment");
+    }
+
+    #[test]
+    fn now_is_the_reference_itself() {
+        assert_eq!(read("now"), wednesday());
+    }
+
+    #[test]
+    fn the_named_days_land_on_their_midnights() {
+        assert_eq!(read("today"), at(2024, 1, 17, 0, 0, 0));
+        assert_eq!(read("tomorrow"), at(2024, 1, 18, 0, 0, 0));
+        assert_eq!(read("yesterday"), at(2024, 1, 16, 0, 0, 0));
+    }
+
+    #[test]
+    fn next_and_last_weekdays_keep_the_clock() {
+        // From Wednesday the 17th, the next Monday is the 22nd and the last
+        // Monday was the 15th.
+        assert_eq!(read("next monday"), at(2024, 1, 22, 12, 30, 45));
+        assert_eq!(read("last monday"), at(2024, 1, 15, 12, 30, 45));
+        // A Wednesday's next Wednesday is a week out, and its last Wednesday
+        // a week back, on the reading time_next_weekday uses.
+        assert_eq!(read("next wednesday"), at(2024, 1, 24, 12, 30, 45));
+        assert_eq!(read("last wednesday"), at(2024, 1, 10, 12, 30, 45));
+        assert_eq!(read("next sunday"), at(2024, 1, 21, 12, 30, 45));
+        assert_eq!(read("last sunday"), at(2024, 1, 14, 12, 30, 45));
+    }
+
+    #[test]
+    fn fixed_units_shift_forwards_and_back() {
+        assert_eq!(read("in 30 seconds"), wednesday() + 30);
+        assert_eq!(read("in 2 hours"), wednesday() + 7200);
+        assert_eq!(read("in 1 day"), wednesday() + 86_400);
+        assert_eq!(read("in 2 weeks"), wednesday() + 14 * 86_400);
+        assert_eq!(read("3 days ago"), wednesday() - 3 * 86_400);
+        assert_eq!(read("45 minutes ago"), wednesday() - 2700);
+    }
+
+    #[test]
+    fn month_steps_cross_the_year_end_in_both_directions() {
+        // Two months back from January 2024 is November 2023, and twelve
+        // months on is January 2025.
+        assert_eq!(read("2 months ago"), at(2023, 11, 17, 12, 30, 45));
+        assert_eq!(read("in 12 months"), at(2025, 1, 17, 12, 30, 45));
+        assert_eq!(read("in 1 month"), at(2024, 2, 17, 12, 30, 45));
+    }
+
+    #[test]
+    fn an_absolute_date_reads_at_its_midnight() {
+        assert_eq!(read("2024-06-15"), at(2024, 6, 15, 0, 0, 0));
+        // 2024 is a leap year, so its 29th of February exists.
+        assert_eq!(read("2024-02-29"), at(2024, 2, 29, 0, 0, 0));
+    }
+
+    #[test]
+    fn a_day_that_is_not_on_the_calendar_is_an_error() {
+        assert!(parse_human("2023-02-29".to_string(), wednesday()).unwrap_err().contains("could not read"));
+    }
+
+    #[test]
+    fn case_and_extra_spaces_are_forgiven() {
+        assert_eq!(read("  NEXT   Monday  "), at(2024, 1, 22, 12, 30, 45));
+        assert_eq!(read("In  2  HOURS"), wednesday() + 7200);
+        assert_eq!(read(" Tomorrow "), at(2024, 1, 18, 0, 0, 0));
+    }
+
+    #[test]
+    fn anything_else_names_the_shapes_it_reads() {
+        let failure = parse_human("half past three".to_string(), wednesday()).unwrap_err();
+        assert!(failure.contains("YYYY-MM-DD"), "got: {}", failure);
+        assert!(failure.contains("next or last"), "got: {}", failure);
+        assert!(parse_human("in five days".to_string(), wednesday()).unwrap_err().contains("could not read"));
+        assert!(parse_human("in 2 fortnights".to_string(), wednesday()).unwrap_err().contains("could not read"));
+        assert!(parse_human("".to_string(), wednesday()).unwrap_err().contains("could not read"));
+    }
+}
+
+#[cfg(test)]
+mod cron_describe_tests {
+    use super::cron_describe;
+
+    fn described(expression: &str) -> String {
+        return cron_describe(expression.to_string()).expect("a valid expression");
+    }
+
+    #[test]
+    fn the_common_schedules_read_as_sentences() {
+        assert_eq!(described("0 3 * * *"), "every day at 03:00");
+        assert_eq!(described("*/15 * * * *"), "every 15 minutes");
+        assert_eq!(described("0 9 * * 1-5"), "at 09:00 on weekdays");
+        assert_eq!(described("0 0 1 * *"), "at 00:00 on the first day of the month");
+    }
+
+    #[test]
+    fn stars_and_steps_read_as_cadences() {
+        assert_eq!(described("* * * * *"), "every minute");
+        assert_eq!(described("*/1 * * * *"), "every minute");
+        assert_eq!(described("0 */2 * * *"), "every 2 hours");
+        assert_eq!(described("30 */6 * * *"), "every 6 hours at minute 30");
+        assert_eq!(described("0 * * * *"), "every hour");
+        assert_eq!(described("30 * * * *"), "every hour at minute 30");
+    }
+
+    #[test]
+    fn weekdays_read_by_name_with_sunday_at_both_ends() {
+        assert_eq!(described("0 12 * * 5"), "at 12:00 on Friday");
+        assert_eq!(described("0 0 * * 0"), "at 00:00 on Sunday");
+        assert_eq!(described("0 0 * * 7"), "at 00:00 on Sunday");
+        assert_eq!(described("0 8 * * 1,3,5"), "at 08:00 on Monday, Wednesday and Friday");
+        assert_eq!(described("0 8 * * 2-4"), "at 08:00 on Tuesday to Thursday");
+    }
+
+    #[test]
+    fn fixed_days_of_the_month_read_as_ordinals() {
+        assert_eq!(described("0 0 2 * *"), "at 00:00 on the 2nd day of the month");
+        assert_eq!(described("30 6 15 * *"), "at 06:30 on the 15th day of the month");
+    }
+
+    #[test]
+    fn anything_beyond_the_vocabulary_reads_field_by_field() {
+        assert_eq!(described("5,35 3 * 2 *"), "minute 5,35, hour 3, any day, month 2, any weekday");
+        assert_eq!(described("0 3 1 * 1"), "minute 0, hour 3, day 1, any month, weekday 1");
+    }
+
+    #[test]
+    fn only_an_unparseable_expression_is_an_error() {
+        assert!(cron_describe("0 3 * *".to_string()).unwrap_err().contains("five fields"));
+        assert!(cron_describe("60 * * * *".to_string()).unwrap_err().contains("minute"));
+        assert!(cron_describe("@daily".to_string()).unwrap_err().contains("five fields"));
+    }
+}
+
 #[cfg(feature = "timezones")]
 fn parse_zone(zone: &str, what: &str) -> Result<chrono_tz::Tz, String> {
     return zone.trim().parse::<chrono_tz::Tz>().map_err(|_| format!("{}: `{}` is not an IANA zone name - try the `America/Edmonton` form, or time_list_zones()", what, zone.trim()));

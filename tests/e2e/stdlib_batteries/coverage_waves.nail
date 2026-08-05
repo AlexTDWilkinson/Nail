@@ -44,3 +44,29 @@ print(markdown_word_count(`# Hi\n\ntwo words here`));
 // Drawings and charts are documents with the right shapes inside.
 print(string_contains(danger(draw_star(50.0, 50.0, 5, 40.0, 16.0, `gold`)), `polygon`));
 print(string_contains(danger(chart_pie([`a`, `b`], [1.0, 3.0])), `svg`));
+
+// Money grows, pays back, and doubles on schedule.
+print(danger(math_round_to(danger(finance_future_value(1000.0, 5.0, 10)), 2)));
+print(danger(math_round_to(danger(finance_irr([-1000.0, 300.0, 300.0, 300.0, 300.0])), 4)));
+print(danger(finance_rule_of_72_years(8.0)));
+
+// Config files and short ids read and write.
+print(danger(ini_get(`[server]\nport = 8080`, `server`, `port`)));
+print(base58_encode(`Hello World!`));
+
+// The experiment has a p-value and names sound alike.
+print(danger(math_round_to(danger(stats_ab_test(200, 1000, 250, 1000)), 6)));
+print(string_soundex(`Robert`));
+print(string_sounds_like(`Robert`, `Rupert`));
+print(danger(string_best_match(`edmontn`, [`Calgary`, `Edmonton`, `Toronto`])));
+
+// New dimensions convert, including the inverse fuel scales.
+print(danger(convert_units(1.0, `kwh`, `j`)));
+print(danger(math_round_to(danger(convert_fuel_economy(8.0, `l100km`, `mpg`)), 2)));
+
+// The scraper asks permission, the phone reads well, cron speaks English.
+print(url_robots_allowed(`User-agent: *\nDisallow: /admin`, `nailbot`, `/blog`));
+print(url_robots_allowed(`User-agent: *\nDisallow: /admin`, `nailbot`, `/admin/users`));
+print(danger(format_phone_na(`17805550100`)));
+print(danger(time_cron_describe(`0 3 * * *`)));
+print(danger(time_parse_human(`tomorrow`, 1705320000)));

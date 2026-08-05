@@ -56,6 +56,41 @@ fn factor_exact(unit: &str) -> Option<(&'static str, f64)> {
         "acre" => ("area", 4046.8564224),
         "ha" | "hectare" => ("area", 10000.0),
 
+        "j" | "joule" => ("energy", 1.0),
+        "kj" | "kilojoule" => ("energy", 1000.0),
+        "mj" | "megajoule" => ("energy", 1000000.0),
+        "wh" | "watt_hour" => ("energy", 3600.0),
+        "kwh" | "kilowatt_hour" => ("energy", 3600000.0),
+        "cal" | "calorie" => ("energy", 4.184),
+        "kcal" | "kilocalorie" => ("energy", 4184.0),
+        "btu" => ("energy", 1055.05585262),
+
+        "w" | "watt" => ("power", 1.0),
+        "kw" | "kilowatt" => ("power", 1000.0),
+        "mw" | "megawatt" => ("power", 1000000.0),
+        "hp" | "horsepower" => ("power", 745.699_871_582_270),
+
+        "pa" | "pascal" => ("pressure", 1.0),
+        "kpa" | "kilopascal" => ("pressure", 1000.0),
+        "mpa" | "megapascal" => ("pressure", 1000000.0),
+        "bar" => ("pressure", 100000.0),
+        "psi" => ("pressure", 6894.757293168),
+        "atm" | "atmosphere" => ("pressure", 101325.0),
+        "mmhg" => ("pressure", 133.322387415),
+
+        "hz" | "hertz" => ("frequency", 1.0),
+        "khz" | "kilohertz" => ("frequency", 1000.0),
+        "mhz" | "megahertz" => ("frequency", 1000000.0),
+        "ghz" | "gigahertz" => ("frequency", 1000000000.0),
+        "rpm" => ("frequency", 1.0 / 60.0),
+
+        "deg" | "degree" => ("angle", 1.0),
+        "rad" | "radian" => ("angle", 57.29577951308232),
+        "grad" | "gradian" => ("angle", 0.9),
+        "turn" => ("angle", 360.0),
+        "arcmin" | "arcminute" => ("angle", 1.0 / 60.0),
+        "arcsec" | "arcsecond" => ("angle", 1.0 / 3600.0),
+
         _ => return None,
     });
 }
@@ -90,8 +125,9 @@ fn kelvin_to(unit: &str, kelvin: f64) -> Option<f64> {
 }
 
 /// This number, in that unit. Units are short names - `km`, `mi`, `kg`, `lb`,
-/// `l`, `cup`, `gb`, `mib`, `mph`, `knot`, `acre`, `c`, `f` - with full names
-/// and plurals forgiven. Converting length to mass is an error, not a guess.
+/// `l`, `cup`, `gb`, `mib`, `mph`, `knot`, `acre`, `kwh`, `hp`, `psi`, `hz`,
+/// `deg`, `c`, `f` - with full names and plurals forgiven. Converting length
+/// to mass is an error, not a guess.
 pub fn units(value: f64, from_unit: String, to_unit: String) -> Result<f64, String> {
     let from_clean = from_unit.trim().to_lowercase().replace(' ', "_");
     let to_clean = to_unit.trim().to_lowercase().replace(' ', "_");
@@ -107,12 +143,48 @@ pub fn units(value: f64, from_unit: String, to_unit: String) -> Result<f64, Stri
         return Err(format!("convert_units: `{}` and `{}` measure different things - a temperature only converts to a temperature", from_unit.trim(), to_unit.trim()));
     }
 
-    let (from_dimension, from_factor) = factor(&from_clean).ok_or_else(|| format!("convert_units: `{}` is not a unit this knows - it speaks length, mass, volume, area, speed, data and temperature", from_unit.trim()))?;
-    let (to_dimension, to_factor) = factor(&to_clean).ok_or_else(|| format!("convert_units: `{}` is not a unit this knows - it speaks length, mass, volume, area, speed, data and temperature", to_unit.trim()))?;
+    let (from_dimension, from_factor) = factor(&from_clean).ok_or_else(|| format!("convert_units: `{}` is not a unit this knows - it speaks length, mass, volume, area, speed, data, energy, power, pressure, frequency, angle and temperature", from_unit.trim()))?;
+    let (to_dimension, to_factor) = factor(&to_clean).ok_or_else(|| format!("convert_units: `{}` is not a unit this knows - it speaks length, mass, volume, area, speed, data, energy, power, pressure, frequency, angle and temperature", to_unit.trim()))?;
     if from_dimension != to_dimension {
         return Err(format!("convert_units: `{}` measures {} and `{}` measures {} - they do not convert", from_unit.trim(), from_dimension, to_unit.trim(), to_dimension));
     }
     return Ok(value * from_factor / to_factor);
+}
+
+/// Miles per US gallon against liters per 100 km, derived from 3.785411784
+/// liters per US gallon and 1.609344 km per mile as 100 * 3.785411784 /
+/// 1.609344, about 235.214583. Dividing it by an mpg figure gives l100km and
+/// dividing it by an l100km figure gives mpg, because the relation is its own
+/// inverse.
+const MPG_US_BRIDGE: f64 = 100.0 * 3.785411784 / 1.609344;
+
+/// The imperial twin, from 4.54609 liters per imperial gallon and the same
+/// 1.609344 km per mile as 100 * 4.54609 / 1.609344, about 282.480936.
+const MPG_IMPERIAL_BRIDGE: f64 = 100.0 * 4.54609 / 1.609344;
+
+/// One bridge serves both directions: an mpg figure in yields l100km out, an
+/// l100km figure in yields mpg out, and l100km itself passes through.
+fn fuel_bridge(unit: &str, value: f64) -> Option<f64> {
+    return match unit {
+        "l100km" => Some(value),
+        "mpg" => Some(MPG_US_BRIDGE / value),
+        "mpgimp" => Some(MPG_IMPERIAL_BRIDGE / value),
+        _ => None,
+    };
+}
+
+/// Fuel economy across its three dialects: `l100km`, `mpg` for US gallons and
+/// `mpgimp` for imperial. Bigger mpg means less fuel, an inverse relation no
+/// plain factor table can hold, so everything converts through liters per
+/// 100 km. The value must be positive.
+pub fn fuel_economy(value: f64, from_unit: String, to_unit: String) -> Result<f64, String> {
+    let from_clean = from_unit.trim().to_lowercase().replace(' ', "");
+    let to_clean = to_unit.trim().to_lowercase().replace(' ', "");
+    if value <= 0.0 {
+        return Err(format!("convert_fuel_economy: {} is not a fuel economy - the value must be positive", value));
+    }
+    let as_l100km = fuel_bridge(&from_clean, value).ok_or_else(|| format!("convert_fuel_economy: `{}` is not a fuel economy unit this knows - it speaks l100km, mpg and mpgimp", from_unit.trim()))?;
+    return fuel_bridge(&to_clean, as_l100km).ok_or_else(|| format!("convert_fuel_economy: `{}` is not a fuel economy unit this knows - it speaks l100km, mpg and mpgimp", to_unit.trim()));
 }
 
 #[cfg(test)]
@@ -121,6 +193,10 @@ mod tests {
 
     fn close(left: f64, right: f64) -> bool {
         return (left - right).abs() < 0.0001;
+    }
+
+    fn close_within(left: f64, right: f64, tolerance: f64) -> bool {
+        return (left - right).abs() < tolerance;
     }
 
     #[test]
@@ -151,5 +227,42 @@ mod tests {
         assert!(units(1.0, "parsec".to_string(), "km".to_string()).unwrap_err().contains("not a unit this knows"));
         assert!(units(1.0, "kg".to_string(), "km".to_string()).unwrap_err().contains("do not convert"));
         assert!(units(1.0, "c".to_string(), "kg".to_string()).unwrap_err().contains("only converts to a temperature"));
+    }
+
+    #[test]
+    fn energy_power_pressure_frequency_and_angle_come_out_right() {
+        assert!(close_within(units(1.0, "kwh".to_string(), "j".to_string()).unwrap(), 3600000.0, 0.000001));
+        assert!(close_within(units(100.0, "hp".to_string(), "w".to_string()).unwrap(), 74569.987, 0.01));
+        assert!(close_within(units(1.0, "atm".to_string(), "psi".to_string()).unwrap(), 14.695949, 0.0001));
+        assert!(close_within(units(90.0, "deg".to_string(), "rad".to_string()).unwrap(), 1.570796, 0.000001));
+        assert!(close_within(units(3000.0, "rpm".to_string(), "hz".to_string()).unwrap(), 50.0, 0.000000001));
+    }
+
+    #[test]
+    fn new_dimensions_forgive_full_names_and_refuse_to_cross() {
+        assert!(close_within(units(2.0, "kilowatt hours".to_string(), "megajoules".to_string()).unwrap(), 7.2, 0.000000001));
+        assert!(close_within(units(1.0, "horsepower".to_string(), "kilowatts".to_string()).unwrap(), 0.745700, 0.000001));
+        assert!(close_within(units(1.0, "atmosphere".to_string(), "bar".to_string()).unwrap(), 1.01325, 0.000001));
+        assert!(close_within(units(0.5, "turns".to_string(), "radians".to_string()).unwrap(), 3.14159265, 0.000001));
+        assert!(units(1.0, "j".to_string(), "w".to_string()).unwrap_err().contains("do not convert"));
+        assert!(units(1.0, "hz".to_string(), "deg".to_string()).unwrap_err().contains("do not convert"));
+    }
+
+    #[test]
+    fn fuel_economy_crosses_its_inverse_scales() {
+        assert!(close_within(fuel_economy(8.0, "l100km".to_string(), "mpg".to_string()).unwrap(), 29.401823, 0.0001));
+        let there = fuel_economy(29.4, "mpg".to_string(), "l100km".to_string()).unwrap();
+        let back = fuel_economy(there, "l100km".to_string(), "mpg".to_string()).unwrap();
+        assert!(close_within(back, 29.4, 0.000000001));
+        assert!(close_within(fuel_economy(30.0, "mpg".to_string(), "mpgimp".to_string()).unwrap(), 36.028498, 0.001));
+        assert!(close_within(fuel_economy(5.0, "L100KM".to_string(), " mpg imp ".to_string()).unwrap(), 56.4961872, 0.0001));
+    }
+
+    #[test]
+    fn fuel_economy_rejects_the_meaningless() {
+        assert!(fuel_economy(0.0, "mpg".to_string(), "l100km".to_string()).unwrap_err().contains("must be positive"));
+        assert!(fuel_economy(-4.0, "l100km".to_string(), "mpg".to_string()).unwrap_err().contains("must be positive"));
+        let unknown = fuel_economy(8.0, "furlongs per firkin".to_string(), "mpg".to_string()).unwrap_err();
+        assert!(unknown.contains("l100km") && unknown.contains("mpg") && unknown.contains("mpgimp"));
     }
 }

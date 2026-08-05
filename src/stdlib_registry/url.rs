@@ -34,6 +34,9 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "url_path_segments" [UrlEncoding] => "std_lib::url::path_segments", (url: s) -> ([s]!e),
             "The path of a URL split into its slash-separated segments, each one percent-decoded. The root path / is an empty array.",
             "segments:a:s = danger(url_path_segments(request_url));";
+        "url_robots_allowed" => "std_lib::url::robots_allowed", (robots_txt: s, user_agent: s, path: s) -> b,
+            "Whether a robots.txt file lets a user agent fetch a path - the polite scraper's question. Agent groups match case-insensitively by substring with * as the fallback, the longest matching rule between Allow and Disallow decides with Allow winning ties, * in a rule matches any run and $ anchors the end. An empty file allows everything.",
+            "polite:b = url_robots_allowed(robots, `NailBot`, `/private/page`);";
     }
 
     // The two functions that speak in pieces of a URL use the full struct form.

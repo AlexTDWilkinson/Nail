@@ -225,6 +225,20 @@ pub fn significant(value: f64, figures: i64) -> Result<String, String> {
     return Ok(unsigned);
 }
 
+/// A North American phone number formatted the standard way: ten digits as
+/// `(780) 555-0100`. Formatting characters already in the input are forgiven,
+/// and so is an eleventh leading 1, the long-distance prefix, which is
+/// dropped. Any other count of digits is an error saying how many were found.
+pub fn phone_na(digits: String) -> Result<String, String> {
+    let found: Vec<char> = digits.chars().filter(|character| character.is_ascii_digit()).collect();
+    let ten: &[char] = if found.len() == 11 && found[0] == '1' { &found[1..] } else { &found[..] };
+    if ten.len() != 10 {
+        return Err(format!("format_phone_na: a North American number has ten digits and `{}` has {}", digits.trim(), found.len()));
+    }
+    let text: String = ten.iter().collect();
+    return Ok(format!("({}) {}-{}", &text[..3], &text[3..6], &text[6..]));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,5 +398,27 @@ mod tests {
     fn significant_figures_outside_one_to_twelve_are_an_error() {
         assert!(significant(1.5, 0).unwrap_err().contains("between 1 and 12"));
         assert!(significant(1.5, 13).unwrap_err().contains("between 1 and 12"));
+    }
+
+    #[test]
+    fn a_phone_number_reads_the_same_however_it_arrived() {
+        assert_eq!(phone_na("7805550100".to_string()).expect("ten digits"), "(780) 555-0100");
+        assert_eq!(phone_na("780-555-0100".to_string()).expect("ten digits"), "(780) 555-0100");
+        assert_eq!(phone_na("(780) 555-0100".to_string()).expect("ten digits"), "(780) 555-0100");
+        assert_eq!(phone_na("780.555.0100".to_string()).expect("ten digits"), "(780) 555-0100");
+    }
+
+    #[test]
+    fn a_leading_one_is_forgiven_and_dropped() {
+        assert_eq!(phone_na("17805550100".to_string()).expect("eleven digits with the prefix"), "(780) 555-0100");
+        assert_eq!(phone_na("1-780-555-0100".to_string()).expect("eleven digits with the prefix"), "(780) 555-0100");
+        assert_eq!(phone_na("+1 780 555 0100".to_string()).expect("eleven digits with the prefix"), "(780) 555-0100");
+    }
+
+    #[test]
+    fn the_wrong_number_of_digits_says_how_many_it_found() {
+        assert!(phone_na("780555010".to_string()).unwrap_err().contains("has 9"));
+        assert!(phone_na("78055501000".to_string()).unwrap_err().contains("has 11"), "eleven digits without the 1 prefix are not a number");
+        assert!(phone_na("call me".to_string()).unwrap_err().contains("has 0"));
     }
 }

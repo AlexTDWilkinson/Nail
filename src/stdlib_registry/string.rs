@@ -286,5 +286,29 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_hamming_distance" => "std_lib::string::hamming_distance", (first: (&s), second: (&s)) -> (i!e),
             "Counts the positions where two equal-length strings differ. Errors when the lengths differ.",
             "mistakes:i = danger(string_hamming_distance(sent_code, typed_code));";
+        "string_soundex" => "std_lib::string::soundex", (name: (&s)) -> s,
+            "Returns the classic American Soundex code, a letter plus three digits, so names that sound alike code alike. Letterless input gives an empty string.",
+            "code:s = string_soundex(`Robert`);";
+        "string_sounds_like" => "std_lib::string::sounds_like", (first: (&s), second: (&s)) -> b,
+            "Returns true when two names share the same non-empty Soundex code, so `Robert` matches `Rupert`.",
+            "alike:b = string_sounds_like(`Robert`, `Rupert`);";
+        "string_jaccard_words" => "std_lib::string::jaccard_words", (first: (&s), second: (&s)) -> f,
+            "Returns the Jaccard similarity of the lowercase word sets, from 0.0 to 1.0. Repeats do not count, which is what string_cosine_words is for.",
+            "overlap:f = string_jaccard_words(headline_one, headline_two);";
+        "string_cosine_words" => "std_lib::string::cosine_words", (first: (&s), second: (&s)) -> f,
+            "Returns the cosine similarity of the lowercase word-count vectors, the duplicate-aware cousin of string_jaccard_words.",
+            "score:f = string_cosine_words(review_one, review_two);";
+        "string_trigram_similarity" => "std_lib::string::trigram_similarity", (first: (&s), second: (&s)) -> f,
+            "Returns how alike two strings look by comparing their sets of lowercased three-character windows. Forgiving of swapped and missing letters where string_similarity counts edits in order.",
+            "score:f = string_trigram_similarity(`edmontn`, `Edmonton`);";
+        "string_best_match" => "std_lib::string::best_match", (query: s, candidates: [s]) -> (s!e),
+            "Returns the candidate with the highest trigram similarity to the query, ties going to the earlier one. Where string_closest picks by edit distance, this rewards shared fragments. Errors if there are no candidates.",
+            "city:s = danger(string_best_match(typed, city_names));";
+        "string_strip_emoji" => "std_lib::string::strip_emoji", (text: s) -> s,
+            "Removes emoji from the text, keeping ordinary letters, accents and CJK. Flag sequences and keycaps reduce to their leftover parts.",
+            "plain:s = string_strip_emoji(comment);";
+        "string_has_emoji" => "std_lib::string::has_emoji", (text: (&s)) -> b,
+            "Returns true when the text holds at least one emoji character.",
+            "flagged:b = string_has_emoji(username);";
     }
 }

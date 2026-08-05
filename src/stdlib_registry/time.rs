@@ -136,6 +136,12 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "time_cron_next" [Chrono] => "std_lib::time::cron_next", (expression: s, after_timestamp: i) -> (i!e),
             "The next moment after the given time that a cron expression matches. A scheduler asks this, sleeps until then with time_sleep, does the work, and asks again.",
             "next_run:i = danger(time_cron_next(`0 3 * * *`, time_now()));";
+        "time_parse_human" [Chrono] => "std_lib::time::parse_human", (text: s, reference: i) -> (i!e),
+            "Reads a plain-English moment relative to a reference timestamp: now, today, tomorrow, yesterday, next or last plus a weekday name, in N seconds/minutes/hours/days/weeks/months, N of those units ago, or an absolute YYYY-MM-DD date. Case and extra spaces are forgiven. Anything else is an error naming the shapes it reads.",
+            "deadline:i = danger(time_parse_human(`in 2 days`, time_now()));";
+        "time_cron_describe" [Chrono] => "std_lib::time::cron_describe", (expression: s) -> (s!e),
+            "A five-field cron expression written out in words: 0 3 * * * reads every day at 03:00, and 0 9 * * 1-5 reads at 09:00 on weekdays. An expression beyond the vocabulary gets a faithful field-by-field reading rather than an error, and only an expression whose five fields do not parse is an error.",
+            "when:s = danger(time_cron_describe(`0 3 * * *`));";
         "time_parse_duration" => "std_lib::time::parse_duration", (text: s) -> (i!e),
             "A human duration - `90s`, `2h30m`, `1.5h`, `2 days` - as whole seconds. A bare number is already seconds. The other direction is time_format_duration.",
             "ttl:i = danger(time_parse_duration(`2h30m`));";

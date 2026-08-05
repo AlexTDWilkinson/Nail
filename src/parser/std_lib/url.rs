@@ -358,6 +358,156 @@ pub fn path_segments(text: String) -> Result<Vec<String>, String> {
         .collect());
 }
 
+/// One group of robots.txt rules and the agent names it applies to.
+struct RobotsGroup {
+    agents: Vec<String>,
+    /// Each rule keeps whether it allows and the path pattern it matches.
+    rules: Vec<(bool, String)>,
+}
+
+/// Whether a robots.txt rule pattern matches a request path. A pattern matches
+/// from the start of the path, `*` matches any run of characters, and a
+/// trailing `$` requires the match to reach the very end.
+fn robots_rule_matches(pattern: &str, path: &str) -> bool {
+    let (body, anchored) = match pattern.strip_suffix('$') {
+        Some(rest) => (rest, true),
+        None => (pattern, false),
+    };
+    let segments: Vec<&str> = body.split('*').collect();
+    if segments.len() == 1 {
+        if anchored {
+            return path == body;
+        }
+        return path.starts_with(body);
+    }
+    if !path.starts_with(segments[0]) {
+        return false;
+    }
+    let mut position = segments[0].len();
+    let last = segments.len() - 1;
+    for (index, segment) in segments.iter().enumerate().skip(1) {
+        // The segment before the anchor must sit at the very end of the path,
+        // with the `*` before it absorbing whatever lies between.
+        if index == last && anchored {
+            return path.len() >= position + segment.len() && path.ends_with(segment);
+        }
+        match path[position..].find(segment) {
+            Some(found) => position += found + segment.len(),
+            None => return false,
+        }
+    }
+    return true;
+}
+
+/// Whether a robots.txt file lets a user agent fetch a path - the polite
+/// scraper's question, asked before every crawl.
+///
+/// This reads the subset of robots.txt that real files use. `User-agent` lines
+/// open groups, agents are matched case-insensitively by substring, the
+/// longest matching agent name wins, and the `*` group is the fallback when no
+/// name matches. Within the winning group the longest matching rule between
+/// `Allow` and `Disallow` decides, with `Allow` winning a tie. In a rule `*`
+/// matches any run of characters and a trailing `$` anchors the end. An empty
+/// `Disallow` line restricts nothing, a missing file given as an empty string
+/// allows everything, and a path no rule speaks to is allowed. `Crawl-delay`,
+/// `Sitemap` and the nonstandard extensions are ignored.
+pub fn robots_allowed(robots_txt: String, user_agent: String, path: String) -> bool {
+    let path = if path.is_empty() { "/".to_string() } else { path };
+    let mut groups: Vec<RobotsGroup> = Vec::new();
+    // Consecutive User-agent lines share one group, so the group stays open
+    // for more names until a rule arrives.
+    let mut collecting_agents = false;
+
+    for raw_line in robots_txt.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((directive, value)) = line.split_once(':') else {
+            continue;
+        };
+        let directive = directive.trim().to_lowercase();
+        let value = value.trim().to_string();
+        match directive.as_str() {
+            "user-agent" => {
+                if !collecting_agents {
+                    groups.push(RobotsGroup { agents: Vec::new(), rules: Vec::new() });
+                    collecting_agents = true;
+                }
+                if let Some(group) = groups.last_mut() {
+                    group.agents.push(value.to_lowercase());
+                }
+            }
+            "allow" | "disallow" => {
+                collecting_agents = false;
+                // A rule before any User-agent line belongs to nobody.
+                if let Some(group) = groups.last_mut() {
+                    group.rules.push((directive == "allow", value));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // The most specific matching agent name wins, with `*` counting as the
+    // least specific match of all.
+    let agent_lowered = user_agent.to_lowercase();
+    let mut best_specificity: i64 = -1;
+    for group in &groups {
+        for agent in &group.agents {
+            let specificity = if agent == "*" {
+                0
+            } else if !agent.is_empty() && agent_lowered.contains(agent.as_str()) {
+                agent.len() as i64
+            } else {
+                continue;
+            };
+            if specificity > best_specificity {
+                best_specificity = specificity;
+            }
+        }
+    }
+    if best_specificity < 0 {
+        // No group speaks to this agent at all.
+        return true;
+    }
+
+    // Every group naming the winning agent contributes its rules, so a file
+    // with two groups for the same crawler behaves as one.
+    let mut best_allow: i64 = -1;
+    let mut best_disallow: i64 = -1;
+    for group in &groups {
+        let applies = group.agents.iter().any(|agent| {
+            if agent == "*" {
+                return best_specificity == 0;
+            }
+            return !agent.is_empty() && agent_lowered.contains(agent.as_str()) && agent.len() as i64 == best_specificity;
+        });
+        if !applies {
+            continue;
+        }
+        for (allows, pattern) in &group.rules {
+            // An empty Disallow allows everything, which as a rule means it
+            // restricts nothing, and an empty Allow claims nothing either.
+            if pattern.is_empty() {
+                continue;
+            }
+            if !robots_rule_matches(pattern, &path) {
+                continue;
+            }
+            let length = pattern.len() as i64;
+            if *allows {
+                best_allow = best_allow.max(length);
+            } else {
+                best_disallow = best_disallow.max(length);
+            }
+        }
+    }
+    // The longest match decides and Allow wins a tie. With no match at all
+    // both sit at their starting value and the path is allowed.
+    return best_allow >= best_disallow;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,5 +657,101 @@ mod tests {
         assert!(path_segments("https://example.com/".to_string()).expect("a URL").is_empty());
         assert!(path_segments("https://example.com".to_string()).expect("a URL").is_empty());
         assert!(path_segments("no scheme here".to_string()).unwrap_err().contains("is not a URL"));
+    }
+}
+
+#[cfg(test)]
+mod robots_tests {
+    use super::robots_allowed;
+
+    fn allowed(robots: &str, agent: &str, path: &str) -> bool {
+        return robots_allowed(robots.to_string(), agent.to_string(), path.to_string());
+    }
+
+    #[test]
+    fn a_missing_file_allows_everything() {
+        assert!(allowed("", "NailBot", "/anything"));
+        assert!(allowed("   \n  ", "NailBot", "/anything"));
+    }
+
+    #[test]
+    fn the_wildcard_group_is_the_fallback() {
+        let robots = "User-agent: *\nDisallow: /private/";
+        assert!(!allowed(robots, "NailBot", "/private/page"));
+        assert!(allowed(robots, "NailBot", "/public/page"));
+    }
+
+    #[test]
+    fn a_specific_agent_group_beats_the_wildcard() {
+        let robots = "User-agent: *\nDisallow: /\n\nUser-agent: NailBot\nDisallow: /private/";
+        // The wildcard bans everything, but NailBot has its own gentler group.
+        assert!(allowed(robots, "NailBot/1.0", "/public/page"));
+        assert!(!allowed(robots, "NailBot/1.0", "/private/page"));
+        assert!(!allowed(robots, "OtherBot", "/public/page"));
+    }
+
+    #[test]
+    fn the_most_specific_agent_name_wins_and_matching_is_substring() {
+        let robots = "User-agent: Nail\nDisallow: /a/\n\nUser-agent: NailBot\nDisallow: /b/";
+        // Both names are substrings of the agent, and the longer one wins.
+        assert!(allowed(robots, "Mozilla/5.0 NailBot/1.0", "/a/page"));
+        assert!(!allowed(robots, "Mozilla/5.0 NailBot/1.0", "/b/page"));
+        // Case does not matter on either side.
+        assert!(!allowed(robots, "mozilla nailbot", "/b/page"));
+    }
+
+    #[test]
+    fn the_longest_rule_wins_between_allow_and_disallow() {
+        let robots = "User-agent: *\nDisallow: /shop/\nAllow: /shop/catalogue/";
+        assert!(!allowed(robots, "NailBot", "/shop/basket"));
+        assert!(allowed(robots, "NailBot", "/shop/catalogue/hammers"));
+    }
+
+    #[test]
+    fn allow_wins_a_tie_of_equal_length() {
+        let robots = "User-agent: *\nDisallow: /page\nAllow: /page";
+        assert!(allowed(robots, "NailBot", "/page"));
+    }
+
+    #[test]
+    fn a_dollar_anchors_the_end_of_the_path() {
+        let robots = "User-agent: *\nDisallow: /*.pdf$";
+        assert!(!allowed(robots, "NailBot", "/report.pdf"));
+        assert!(!allowed(robots, "NailBot", "/deep/nested/report.pdf"));
+        assert!(allowed(robots, "NailBot", "/report.pdf.html"));
+
+        let exact = "User-agent: *\nDisallow: /private$";
+        assert!(!allowed(exact, "NailBot", "/private"));
+        assert!(allowed(exact, "NailBot", "/private/page"));
+    }
+
+    #[test]
+    fn a_star_in_a_rule_matches_any_run() {
+        let robots = "User-agent: *\nDisallow: /search*results";
+        assert!(!allowed(robots, "NailBot", "/searchresults"));
+        assert!(!allowed(robots, "NailBot", "/search/all/results/page"));
+        assert!(allowed(robots, "NailBot", "/search/all"));
+    }
+
+    #[test]
+    fn an_empty_disallow_restricts_nothing() {
+        let robots = "User-agent: *\nDisallow:";
+        assert!(allowed(robots, "NailBot", "/anything/at/all"));
+    }
+
+    #[test]
+    fn comments_and_unknown_directives_are_ignored() {
+        let robots = "# a note\nUser-agent: * # everyone\nCrawl-delay: 10\nSitemap: https://example.com/map.xml\nDisallow: /private/ # keep out";
+        assert!(!allowed(robots, "NailBot", "/private/page"));
+        assert!(allowed(robots, "NailBot", "/public"));
+    }
+
+    #[test]
+    fn shared_user_agent_lines_share_one_group() {
+        let robots = "User-agent: AlphaBot\nUser-agent: BetaBot\nDisallow: /private/";
+        assert!(!allowed(robots, "AlphaBot", "/private/page"));
+        assert!(!allowed(robots, "BetaBot", "/private/page"));
+        // No wildcard group, so an unnamed agent is free.
+        assert!(allowed(robots, "GammaBot", "/private/page"));
     }
 }

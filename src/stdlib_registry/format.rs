@@ -43,5 +43,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "format_significant" => "std_lib::format::significant", (value: f, figures: i) -> (s!e),
             "Rounds a number to the given significant figures for display, so 1234.5 at 2 becomes 1200. Errors unless figures is 1 to 12.",
             "reading:s = danger(format_significant(1234.5, 2));";
+        "format_phone_na" => "std_lib::format::phone_na", (digits: s) -> (s!e),
+            "Formats a ten-digit North American phone number as (780) 555-0100, forgiving formatting characters and an eleventh leading 1. Any other count of digits is an error saying how many were found.",
+            "line:s = danger(format_phone_na(`1-780-555-0100`));";
     }
 }

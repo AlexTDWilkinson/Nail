@@ -781,6 +781,288 @@ pub fn sample_size_for_proportion(margin_of_error: f64, confidence: f64) -> Resu
     return Ok(required as i64);
 }
 
+/// The continued fraction at the heart of the regularized incomplete beta,
+/// evaluated with the modified Lentz method. The caller guarantees the
+/// argument is strictly between 0 and 1 and on the fast-converging side of
+/// the split in regularized_incomplete_beta.
+fn beta_continued_fraction(a: f64, b: f64, x: f64) -> f64 {
+    const TINY: f64 = 1e-300;
+    const EPSILON: f64 = 3e-16;
+    let qab = a + b;
+    let qap = a + 1.0;
+    let qam = a - 1.0;
+    let mut c = 1.0;
+    let mut d = 1.0 - qab * x / qap;
+    if d.abs() < TINY {
+        d = TINY;
+    }
+    d = 1.0 / d;
+    let mut h = d;
+    for m in 1..=200 {
+        let m = m as f64;
+        let m2 = 2.0 * m;
+        let even_step = m * (b - m) * x / ((qam + m2) * (a + m2));
+        d = 1.0 + even_step * d;
+        if d.abs() < TINY {
+            d = TINY;
+        }
+        c = 1.0 + even_step / c;
+        if c.abs() < TINY {
+            c = TINY;
+        }
+        d = 1.0 / d;
+        h *= d * c;
+        let odd_step = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+        d = 1.0 + odd_step * d;
+        if d.abs() < TINY {
+            d = TINY;
+        }
+        c = 1.0 + odd_step / c;
+        if c.abs() < TINY {
+            c = TINY;
+        }
+        d = 1.0 / d;
+        let step = d * c;
+        h *= step;
+        if (step - 1.0).abs() < EPSILON {
+            break;
+        }
+    }
+    return h;
+}
+
+/// The regularized incomplete beta function, the cdf of a beta distribution
+/// and the road to the Student t distribution. Evaluated through the
+/// continued fraction above, flipped to whichever side converges fastest.
+/// The caller guarantees both shape parameters are positive.
+fn regularized_incomplete_beta(a: f64, b: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    let ln_front = ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (-x).ln_1p();
+    let front = ln_front.exp();
+    if x < (a + 1.0) / (a + b + 2.0) {
+        return front * beta_continued_fraction(a, b, x) / a;
+    }
+    return 1.0 - front * beta_continued_fraction(b, a, 1.0 - x) / b;
+}
+
+/// The Student t cdf, the probability of a draw at or below the value, built
+/// from the regularized incomplete beta. The caller guarantees the degrees
+/// of freedom are positive.
+fn student_t_cdf(value: f64, degrees_of_freedom: f64) -> f64 {
+    let x = degrees_of_freedom / (degrees_of_freedom + value * value);
+    let tail = 0.5 * regularized_incomplete_beta(degrees_of_freedom / 2.0, 0.5, x);
+    if value >= 0.0 {
+        return 1.0 - tail;
+    }
+    return tail;
+}
+
+/// The Student t quantile, found by bisection on the cdf above. Forty-odd
+/// halvings pin it far past any practical tolerance. The caller guarantees
+/// the probability is strictly between 0 and 1 and the degrees of freedom
+/// are positive.
+fn student_t_inverse(probability: f64, degrees_of_freedom: f64) -> f64 {
+    let mut low = -1.0;
+    let mut high = 1.0;
+    while student_t_cdf(low, degrees_of_freedom) > probability && low > -1e12 {
+        low *= 2.0;
+    }
+    while student_t_cdf(high, degrees_of_freedom) < probability && high < 1e12 {
+        high *= 2.0;
+    }
+    for _ in 0..200 {
+        let middle = (low + high) / 2.0;
+        if student_t_cdf(middle, degrees_of_freedom) < probability {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return (low + high) / 2.0;
+}
+
+/// The regularized upper incomplete gamma function, the tail probability of
+/// a gamma distribution and the road to the chi-square p-value. A series on
+/// one side of a + 1 and a modified Lentz continued fraction on the other,
+/// each where it converges fastest. The caller guarantees the shape is
+/// positive.
+fn regularized_upper_gamma(a: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return 1.0;
+    }
+    const TINY: f64 = 1e-300;
+    const EPSILON: f64 = 3e-16;
+    let ln_scale = -x + a * x.ln() - ln_gamma(a);
+    if x < a + 1.0 {
+        // The series builds the lower tail, and the upper is its complement.
+        let mut denominator = a;
+        let mut term = 1.0 / a;
+        let mut total = term;
+        for _ in 0..500 {
+            denominator += 1.0;
+            term *= x / denominator;
+            total += term;
+            if term.abs() < total.abs() * EPSILON {
+                break;
+            }
+        }
+        return 1.0 - total * ln_scale.exp();
+    }
+    let mut b = x + 1.0 - a;
+    let mut c = 1.0 / TINY;
+    let mut d = 1.0 / b;
+    let mut h = d;
+    for i in 1..=500 {
+        let an = -(i as f64) * (i as f64 - a);
+        b += 2.0;
+        d = an * d + b;
+        if d.abs() < TINY {
+            d = TINY;
+        }
+        c = b + an / c;
+        if c.abs() < TINY {
+            c = TINY;
+        }
+        d = 1.0 / d;
+        let step = d * c;
+        h *= step;
+        if (step - 1.0).abs() < EPSILON {
+            break;
+        }
+    }
+    return ln_scale.exp() * h;
+}
+
+/// Welch's two-sample t-test: the two-sided p-value for the question of
+/// whether two groups of measurements really have different means, without
+/// assuming they share a variance. Identical samples with spread answer 1.0,
+/// no evidence of any difference. Two flat samples have no spread at all to
+/// judge the gap against, so they error instead.
+pub fn t_test(first: &Vec<f64>, second: &Vec<f64>) -> Result<f64, String> {
+    if first.len() < 2 || second.len() < 2 {
+        return Err(format!("stats_t_test: each sample needs at least two values, got {} and {}", first.len(), second.len()));
+    }
+    let first_mean = mean(first)?;
+    let second_mean = mean(second)?;
+    let first_share = variance(first)? / first.len() as f64;
+    let second_share = variance(second)? / second.len() as f64;
+    let spread = first_share + second_share;
+    if spread == 0.0 {
+        return Err("stats_t_test: both samples hold the same value throughout, so there is no spread to judge the gap against".to_string());
+    }
+    let statistic = (first_mean - second_mean) / spread.sqrt();
+    // Welch-Satterthwaite degrees of freedom, fractional by design.
+    let degrees_of_freedom = spread * spread / (first_share * first_share / (first.len() - 1) as f64 + second_share * second_share / (second.len() - 1) as f64);
+    // Both tails at once: the regularized incomplete beta at this argument
+    // is exactly twice the one-sided tail of the t distribution.
+    let x = degrees_of_freedom / (degrees_of_freedom + statistic * statistic);
+    return Ok(regularized_incomplete_beta(degrees_of_freedom / 2.0, 0.5, x));
+}
+
+/// Chi-square goodness-of-fit: the p-value for the question of whether
+/// observed counts are consistent with the expected ones, with the usual
+/// cells minus one degrees of freedom. A perfect match answers 1.0.
+pub fn chi_square_test(observed: &Vec<f64>, expected: &Vec<f64>) -> Result<f64, String> {
+    if observed.len() != expected.len() {
+        return Err(format!("stats_chi_square_test: the arrays have {} and {} values, and must be the same length", observed.len(), expected.len()));
+    }
+    if observed.len() < 2 {
+        return Err(format!("stats_chi_square_test: needs at least two cells to compare, got {}", observed.len()));
+    }
+    let mut statistic = 0.0;
+    for index in 0..observed.len() {
+        if !(expected[index] > 0.0) {
+            return Err(format!("stats_chi_square_test: the expected count {} is not positive, and every cell must expect something", expected[index]));
+        }
+        let delta = observed[index] - expected[index];
+        statistic += delta * delta / expected[index];
+    }
+    let degrees_of_freedom = (observed.len() - 1) as f64;
+    return Ok(regularized_upper_gamma(degrees_of_freedom / 2.0, statistic / 2.0));
+}
+
+/// Two-proportion pooled z-test: the two-sided p-value for the question of
+/// whether two success rates really differ, judged against the spread the
+/// pooled rate predicts. Equal rates answer 1.0. When every trial in both
+/// groups comes out the same way there is no variation to judge against,
+/// so that errors instead.
+pub fn proportion_test(successes_a: i64, total_a: i64, successes_b: i64, total_b: i64) -> Result<f64, String> {
+    if total_a < 1 || total_b < 1 {
+        return Err(format!("stats_proportion_test: the totals are {} and {}, and each group needs at least one trial", total_a, total_b));
+    }
+    if successes_a < 0 || successes_a > total_a {
+        return Err(format!("stats_proportion_test: {} successes cannot come out of {} trials, the count runs from 0 to the total", successes_a, total_a));
+    }
+    if successes_b < 0 || successes_b > total_b {
+        return Err(format!("stats_proportion_test: {} successes cannot come out of {} trials, the count runs from 0 to the total", successes_b, total_b));
+    }
+    let pooled = (successes_a + successes_b) as f64 / (total_a + total_b) as f64;
+    if pooled == 0.0 || pooled == 1.0 {
+        return Err("stats_proportion_test: every trial in both groups came out the same way, so there is no variation to judge a difference against".to_string());
+    }
+    let share_a = successes_a as f64 / total_a as f64;
+    let share_b = successes_b as f64 / total_b as f64;
+    let spread = (pooled * (1.0 - pooled) * (1.0 / total_a as f64 + 1.0 / total_b as f64)).sqrt();
+    let z = (share_a - share_b) / spread;
+    return Ok(2.0 * standard_normal_cdf(-z.abs()));
+}
+
+/// The A/B test: the p-value that variant B converts differently from
+/// variant A. The same pooled two-proportion z-test as above, in the words
+/// of the person running the experiment. Below 0.05 is the conventional bar
+/// for calling a winner.
+pub fn ab_test(conversions_a: i64, visitors_a: i64, conversions_b: i64, visitors_b: i64) -> Result<f64, String> {
+    if visitors_a < 1 || visitors_b < 1 {
+        return Err(format!("stats_ab_test: the arms saw {} and {} visitors, and each needs at least one", visitors_a, visitors_b));
+    }
+    if conversions_a < 0 || conversions_a > visitors_a {
+        return Err(format!("stats_ab_test: {} conversions cannot come out of {} visitors, the count runs from 0 to the visitors", conversions_a, visitors_a));
+    }
+    if conversions_b < 0 || conversions_b > visitors_b {
+        return Err(format!("stats_ab_test: {} conversions cannot come out of {} visitors, the count runs from 0 to the visitors", conversions_b, visitors_b));
+    }
+    return proportion_test(conversions_a, visitors_a, conversions_b, visitors_b).map_err(|message| message.replace("stats_proportion_test", "stats_ab_test"));
+}
+
+/// The plus-or-minus number for a mean: the half width of the 95 percent
+/// t-interval, so the true mean sits within this distance of the sample
+/// mean 95 percent of the time. A flat sample pins its mean exactly and
+/// answers 0.0.
+pub fn confidence_interval_95(values: &Vec<f64>) -> Result<f64, String> {
+    if values.len() < 2 {
+        return Err(format!("stats_confidence_interval_95: needs at least two values to build an interval, got {}", values.len()));
+    }
+    let spread = stddev(values)?;
+    let count = values.len() as f64;
+    let critical = student_t_inverse(0.975, count - 1.0);
+    return Ok(critical * spread / count.sqrt());
+}
+
+/// The smallest absolute rate change an A/B test can reliably detect with
+/// that many visitors in each arm, at the standard 80 percent power and
+/// two-sided 5 percent significance. The number to check before running an
+/// experiment, so a test too small to see the effect never launches.
+pub fn min_detectable_effect(visitors_per_arm: i64, baseline_rate: f64) -> Result<f64, String> {
+    if visitors_per_arm < 1 {
+        return Err(format!("stats_min_detectable_effect: {} visitors per arm cannot detect anything, at least one is needed", visitors_per_arm));
+    }
+    if !(baseline_rate > 0.0 && baseline_rate < 1.0) {
+        return Err(format!("stats_min_detectable_effect: {} is not a baseline rate strictly between 0 and 1", baseline_rate));
+    }
+    // The classic planning approximation: the two-sided 5 percent critical
+    // value plus the 80 percent power value, times the spread of a rate
+    // difference at the baseline.
+    const SIGNIFICANCE_Z: f64 = 1.96;
+    const POWER_Z: f64 = 0.8416;
+    let spread = (2.0 * baseline_rate * (1.0 - baseline_rate) / visitors_per_arm as f64).sqrt();
+    return Ok((SIGNIFICANCE_Z + POWER_Z) * spread);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1314,5 +1596,131 @@ mod tests {
         assert!(sample_size_for_proportion(0.03, 0.0).unwrap_err().contains("confidence level"));
         assert!(sample_size_for_proportion(0.03, 1.0).unwrap_err().contains("confidence level"));
         assert!(sample_size_for_proportion(0.03, 1.5).unwrap_err().contains("confidence level"));
+    }
+
+    #[test]
+    fn t_test_matches_the_welch_table() {
+        // [1..5] against [2..6]: t is exactly -1, the Satterthwaite degrees
+        // of freedom are exactly 8, and the two-sided p is 0.3465935071.
+        let first = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let second = vec![2.0, 3.0, 4.0, 5.0, 6.0];
+        assert!((t_test(&first, &second).expect("two spread samples") - 0.3465935071).abs() < 1e-8);
+        // A two-sided answer cannot depend on which sample comes first.
+        assert!(close(t_test(&first, &second).expect("two spread samples"), t_test(&second, &first).expect("two spread samples")));
+    }
+
+    #[test]
+    fn t_test_sees_no_difference_between_identical_spread_samples() {
+        let sample = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        assert!(close(t_test(&sample, &sample).expect("a spread sample"), 1.0));
+        // One flat sample against a spread one still has spread to work with.
+        assert!(t_test(&vec![5.0, 5.0, 5.0], &vec![1.0, 2.0, 3.0]).is_ok());
+    }
+
+    #[test]
+    fn t_test_rejects_short_samples_and_two_flat_ones() {
+        assert!(t_test(&vec![1.0], &vec![1.0, 2.0]).unwrap_err().contains("at least two"));
+        assert!(t_test(&vec![1.0, 2.0], &vec![1.0]).unwrap_err().contains("at least two"));
+        // Two flat samples leave nothing to judge the gap against, even when
+        // the gap itself is plain to see.
+        assert!(t_test(&vec![5.0, 5.0], &vec![5.0, 5.0]).unwrap_err().contains("no spread"));
+        assert!(t_test(&vec![5.0, 5.0], &vec![7.0, 7.0]).unwrap_err().contains("no spread"));
+    }
+
+    #[test]
+    fn chi_square_test_matches_the_table() {
+        // [50,30,20] against [40,40,20] is a statistic of 5.0 on 2 degrees
+        // of freedom, whose upper tail is exactly exp(-2.5).
+        let p = chi_square_test(&vec![50.0, 30.0, 20.0], &vec![40.0, 40.0, 20.0]).expect("matched cells");
+        assert!((p - 0.0820849986238988).abs() < 1e-9);
+        // [45,55] against [50,50] is 1.0 on 1 degree of freedom, which the
+        // z-table reads back as 0.3173105079.
+        let one_dof = chi_square_test(&vec![45.0, 55.0], &vec![50.0, 50.0]).expect("matched cells");
+        assert!((one_dof - 0.3173105079).abs() < 1e-9);
+        // A perfect fit leaves the whole distribution above it.
+        assert!(close(chi_square_test(&vec![40.0, 40.0], &vec![40.0, 40.0]).expect("matched cells"), 1.0));
+    }
+
+    #[test]
+    fn chi_square_test_rejects_mismatch_short_arrays_and_empty_cells() {
+        assert!(chi_square_test(&vec![1.0, 2.0], &vec![1.0]).unwrap_err().contains("same length"));
+        assert!(chi_square_test(&vec![1.0], &vec![1.0]).unwrap_err().contains("at least two cells"));
+        assert!(chi_square_test(&vec![1.0, 2.0], &vec![1.0, 0.0]).unwrap_err().contains("not positive"));
+        assert!(chi_square_test(&vec![1.0, 2.0], &vec![-1.0, 3.0]).unwrap_err().contains("not positive"));
+    }
+
+    #[test]
+    fn proportion_test_matches_the_pooled_z_table() {
+        // 200 of 1000 against 250 of 1000 pools to 0.225, z lands at
+        // -2.6774, and the two-sided p works out to 0.0074196493.
+        let p = proportion_test(200, 1000, 250, 1000).expect("valid counts");
+        assert!((p - 0.0074196493).abs() < 1e-9);
+        // Symmetric in the two groups, and equal shares carry no evidence.
+        assert!(close(p, proportion_test(250, 1000, 200, 1000).expect("valid counts")));
+        assert!(close(proportion_test(50, 100, 100, 200).expect("valid counts"), 1.0));
+    }
+
+    #[test]
+    fn proportion_test_rejects_empty_groups_impossible_counts_and_no_variation() {
+        assert!(proportion_test(0, 0, 1, 10).unwrap_err().contains("at least one trial"));
+        assert!(proportion_test(1, 10, 0, -1).unwrap_err().contains("at least one trial"));
+        assert!(proportion_test(11, 10, 1, 10).unwrap_err().contains("0 to the total"));
+        assert!(proportion_test(-1, 10, 1, 10).unwrap_err().contains("0 to the total"));
+        assert!(proportion_test(1, 10, 20, 10).unwrap_err().contains("0 to the total"));
+        // All successes everywhere, or none anywhere, pools to no variation.
+        assert!(proportion_test(10, 10, 5, 5).unwrap_err().contains("no variation"));
+        assert!(proportion_test(0, 10, 0, 5).unwrap_err().contains("no variation"));
+    }
+
+    #[test]
+    fn ab_test_is_the_proportion_test_in_experiment_words() {
+        assert!(close(ab_test(200, 1000, 250, 1000).expect("valid arms"), proportion_test(200, 1000, 250, 1000).expect("valid counts")));
+    }
+
+    #[test]
+    fn ab_test_speaks_in_visitors_and_conversions_and_keeps_its_own_name() {
+        assert!(ab_test(1, 0, 1, 10).unwrap_err().contains("visitors"));
+        assert!(ab_test(11, 10, 1, 10).unwrap_err().contains("conversions"));
+        assert!(ab_test(1, 10, -1, 10).unwrap_err().contains("conversions"));
+        // The one error that surfaces from the underlying proportion test
+        // still reports under this function's name.
+        let flat = ab_test(5, 5, 3, 3).unwrap_err();
+        assert!(flat.starts_with("stats_ab_test"));
+        assert!(flat.contains("no variation"));
+    }
+
+    #[test]
+    fn confidence_interval_95_matches_the_t_table() {
+        // For 1 through 10 the standard error is 0.9574 and the t critical
+        // value on 9 degrees of freedom is 2.2622, so the half width is
+        // 2.1658505897.
+        let values: Vec<f64> = (1..=10).map(|value| value as f64).collect();
+        assert!((confidence_interval_95(&values).expect("enough values") - 2.1658505897).abs() < 1e-6);
+        // A flat sample pins its mean exactly.
+        assert!(close(confidence_interval_95(&vec![4.0, 4.0, 4.0]).expect("enough values"), 0.0));
+    }
+
+    #[test]
+    fn confidence_interval_95_needs_two_values() {
+        assert!(confidence_interval_95(&vec![]).unwrap_err().contains("at least two"));
+        assert!(confidence_interval_95(&vec![1.0]).unwrap_err().contains("at least two"));
+    }
+
+    #[test]
+    fn min_detectable_effect_gives_the_planning_number() {
+        // 1000 visitors per arm at a 10 percent baseline: 2.8016 times the
+        // square root of 0.00018, which is 0.0375874083.
+        assert!((min_detectable_effect(1000, 0.10).expect("a valid plan") - 0.0375874083).abs() < 1e-9);
+        // Four times the traffic halves the detectable effect.
+        assert!(close(min_detectable_effect(4000, 0.10).expect("a valid plan") * 2.0, min_detectable_effect(1000, 0.10).expect("a valid plan")));
+    }
+
+    #[test]
+    fn min_detectable_effect_rejects_empty_arms_and_impossible_baselines() {
+        assert!(min_detectable_effect(0, 0.1).unwrap_err().contains("at least one"));
+        assert!(min_detectable_effect(-5, 0.1).unwrap_err().contains("at least one"));
+        assert!(min_detectable_effect(1000, 0.0).unwrap_err().contains("strictly between"));
+        assert!(min_detectable_effect(1000, 1.0).unwrap_err().contains("strictly between"));
+        assert!(min_detectable_effect(1000, -0.2).unwrap_err().contains("strictly between"));
     }
 }

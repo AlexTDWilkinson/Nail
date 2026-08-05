@@ -4,6 +4,7 @@ pub mod array;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod base32;
+pub mod base58;
 pub mod base64;
 pub mod binary;
 pub mod bits;
@@ -27,11 +28,13 @@ pub mod error;
 pub mod float;
 pub mod format;
 pub mod feed;
+pub mod finance;
 pub mod fs;
 pub mod geo;
 pub mod hashmap;
 pub mod hex;
 pub mod i18n;
+pub mod ini;
 #[cfg(feature = "html")]
 pub mod html;
 #[cfg(feature = "image")]

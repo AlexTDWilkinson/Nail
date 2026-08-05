@@ -136,5 +136,23 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "stats_sample_size_for_proportion" => "std_lib::stats::sample_size_for_proportion", (margin_of_error: f, confidence: f) -> (i!e),
             "Returns how many people to survey so an estimated proportion lands within the margin of error at the given confidence, the classic poll planning number, rounded up. Errors unless both the margin and the confidence are strictly between 0 and 1.",
             "respondents:i = danger(stats_sample_size_for_proportion(0.03, 0.95));";
+        "stats_t_test" => "std_lib::stats::t_test", (first: (&[f]), second: (&[f])) -> (f!e),
+            "Returns the two-sided p-value of a Welch two-sample t-test, the chance of a gap this large between the means if the groups truly matched. Errors unless each sample has at least two values and at least one sample has spread.",
+            "p_value:f = danger(stats_t_test(control_times, variant_times));";
+        "stats_chi_square_test" => "std_lib::stats::chi_square_test", (observed: (&[f]), expected: (&[f])) -> (f!e),
+            "Returns the goodness-of-fit p-value comparing observed counts against expected ones, the chance of a mismatch this large if the expectation were right. Errors on mismatched lengths, fewer than two cells, or an expected count that is not positive.",
+            "p_value:f = danger(stats_chi_square_test(observed_counts, expected_counts));";
+        "stats_proportion_test" => "std_lib::stats::proportion_test", (successes_a: i, total_a: i, successes_b: i, total_b: i) -> (f!e),
+            "Returns the two-sided p-value of a pooled two-proportion z-test, the chance of a gap this large between two success rates if they truly matched. Errors unless each total is at least one, each success count fits its total, and the outcomes vary at all.",
+            "p_value:f = danger(stats_proportion_test(200, 1000, 250, 1000));";
+        "stats_ab_test" => "std_lib::stats::ab_test", (conversions_a: i, visitors_a: i, conversions_b: i, visitors_b: i) -> (f!e),
+            "Returns the p-value that variant B converts differently from variant A, the two-proportion z-test in experiment words, with 0.05 the conventional bar for calling a winner. Errors unless each arm has at least one visitor and the conversions fit their visitors.",
+            "p_value:f = danger(stats_ab_test(120, 2400, 156, 2400));";
+        "stats_confidence_interval_95" => "std_lib::stats::confidence_interval_95", (values: (&[f])) -> (f!e),
+            "Returns the plus-or-minus half width of the 95 percent t-interval for the mean, the distance the true mean sits within 95 percent of the time. Errors on fewer than two values.",
+            "margin:f = danger(stats_confidence_interval_95(measurements));";
+        "stats_min_detectable_effect" => "std_lib::stats::min_detectable_effect", (visitors_per_arm: i, baseline_rate: f) -> (f!e),
+            "Returns the smallest absolute rate change an A/B test with that many visitors per arm can reliably detect, at 80 percent power and two-sided 5 percent significance. Errors unless each arm has at least one visitor and the baseline rate sits strictly between 0 and 1.",
+            "effect:f = danger(stats_min_detectable_effect(5000, 0.042));";
     }
 }
