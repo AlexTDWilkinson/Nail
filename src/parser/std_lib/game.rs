@@ -90,6 +90,11 @@ pub struct GAME_Input {
     pub mouse_right: bool,
     pub scroll: f64,
     pub delta_ms: f64,
+    /// Every finger touching right now, as x then y for each one. The first
+    /// finger also arrives as the mouse, so a game that only reads the mouse
+    /// still works by touch, but a game that wants two controls at once, a
+    /// direction pad and a jump button, has to look here. Empty on a desktop.
+    pub touches: Vec<f64>,
 }
 
 fn blank(kind: &str) -> GAME_Shape {
@@ -487,6 +492,7 @@ struct Poll {
     mouse_down: bool,
     mouse_right: bool,
     scroll: f64,
+    touches: Vec<f64>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -587,6 +593,7 @@ where
                     mouse_right: polled.mouse_right,
                     scroll: std::mem::take(&mut waiting_scroll),
                     delta_ms: step_ms,
+                    touches: polled.touches.clone(),
                 };
                 state = update(state, input).await;
                 banked_ms -= step_ms;
@@ -608,6 +615,7 @@ where
                 mouse_right: polled.mouse_right,
                 scroll: std::mem::take(&mut waiting_scroll),
                 delta_ms: elapsed_ms,
+                touches: polled.touches,
             };
             state = update(state, input).await;
         }
@@ -786,7 +794,7 @@ mod native_backend {
     /// A poll with no input in it, for the frames before the window exists
     /// and for the one that carries the close request.
     fn quiet_poll(close_requested: bool, ready: bool) -> Poll {
-        return Poll { close_requested, ready, keys_down: Vec::new(), keys_pressed: Vec::new(), mouse_x: 0.0, mouse_y: 0.0, mouse_down: false, mouse_right: false, scroll: 0.0 };
+        return Poll { close_requested, ready, keys_down: Vec::new(), keys_pressed: Vec::new(), mouse_x: 0.0, mouse_y: 0.0, mouse_down: false, mouse_right: false, scroll: 0.0, touches: Vec::new() };
     }
 
     pub struct Backend {
@@ -832,6 +840,8 @@ mod native_backend {
                 mouse_down: self.app.mouse_down,
                 mouse_right: self.app.mouse_right,
                 scroll: std::mem::take(&mut self.app.scroll),
+                // A desktop has a mouse, not fingers.
+                touches: Vec::new(),
             });
         }
 
@@ -1000,6 +1010,10 @@ mod web_backend {
         /// How far apart two fingers were last time they both touched, so a
         /// pinch can be turned into scrolling. Zero means no pinch underway.
         pinch_span: f64,
+        /// Every finger touching right now, x then y for each. A game with
+        /// two controls on screen at once needs all of them, not just the
+        /// one that happens to be first.
+        touches: Vec<f64>,
     }
 
     /// The DOM's names for keys, folded onto the same names the native build
@@ -1052,6 +1066,20 @@ mod web_backend {
         let across = (touch.client_x() as f64 - box_on_screen.left()) * game_width / shown_width;
         let down = (touch.client_y() as f64 - box_on_screen.top()) * game_height / shown_height;
         return (across, down);
+    }
+
+    /// Every finger on the canvas, as x then y for each, in game
+    /// coordinates. A game reads this when it has more than one control on
+    /// screen and a player may hold two of them at once.
+    fn touch_points(canvas: &web_sys::HtmlCanvasElement, touches: &web_sys::TouchList, game_width: f64, game_height: f64) -> Vec<f64> {
+        let mut points = Vec::new();
+        for index in 0..touches.length() {
+            let Some(finger) = touches.get(index) else { continue };
+            let (across, down) = touch_position(canvas, &finger, game_width, game_height);
+            points.push(across);
+            points.push(down);
+        }
+        return points;
     }
 
     /// How far apart the first two fingers are, or zero when fewer than two
@@ -1216,6 +1244,7 @@ mod web_backend {
                         state.mouse_y = down;
                         state.mouse_down = true;
                     }
+                    state.touches = touch_points(&canvas, &touches, game_width, game_height);
                     state.pinch_span = touch_span(&touches);
                 })
             };
@@ -1233,6 +1262,7 @@ mod web_backend {
                         state.mouse_x = across;
                         state.mouse_y = down;
                     }
+                    state.touches = touch_points(&canvas, &touches, game_width, game_height);
                     // Spreading two fingers scrolls the same way a wheel
                     // scrolls up, which is what zooming in means to a game.
                     let span = touch_span(&touches);
@@ -1244,10 +1274,14 @@ mod web_backend {
             };
             let touch_end = {
                 let input = input.clone();
+                let canvas = canvas.clone();
+                let game_width = width as f64;
+                let game_height = height as f64;
                 Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |event: web_sys::TouchEvent| {
                     event.prevent_default();
                     let touches = event.touches();
                     let mut state = input.borrow_mut();
+                    state.touches = touch_points(&canvas, &touches, game_width, game_height);
                     state.pinch_span = touch_span(&touches);
                     if touches.length() == 0 {
                         state.mouse_down = false;
@@ -1288,6 +1322,7 @@ mod web_backend {
                 mouse_down: pending.mouse_down,
                 mouse_right: pending.mouse_right,
                 scroll: std::mem::take(&mut pending.scroll),
+                touches: pending.touches.clone(),
             });
         }
 

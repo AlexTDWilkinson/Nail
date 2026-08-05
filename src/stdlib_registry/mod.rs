@@ -1347,6 +1347,7 @@ lazy_static! {
                 fields.insert("mouse_right".to_string(), NailDataTypeDescriptor::Boolean);
                 fields.insert("scroll".to_string(), NailDataTypeDescriptor::Float);
                 fields.insert("delta_ms".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("touches".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)));
                 fields
             }
         });

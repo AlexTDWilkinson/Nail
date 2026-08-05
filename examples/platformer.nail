@@ -211,12 +211,23 @@ f left_pad():a:f { r [20.0, 480.0, 74.0, 74.0]; }
 f right_pad():a:f { r [104.0, 480.0, 74.0, 74.0]; }
 f jump_pad():a:f { r [648.0, 470.0, 94.0, 94.0]; }
 
-f pad_pressed(input:GAME_Input, pad:a:f):b {
+f point_in_pad(point_x:f, point_y:f, pad:a:f):b {
     pad_x:f = danger(array_get(pad, 0));
     pad_y:f = danger(array_get(pad, 1));
     pad_w:f = danger(array_get(pad, 2));
     pad_h:f = danger(array_get(pad, 3));
-    r input.mouse_down && input.mouse_x >= pad_x && input.mouse_x <= (pad_x + pad_w) && input.mouse_y >= pad_y && input.mouse_y <= (pad_y + pad_h);
+    r point_x >= pad_x && point_x <= (pad_x + pad_w) && point_y >= pad_y && point_y <= (pad_y + pad_h);
+}
+
+// Every finger is checked, not just the first one, so holding a direction
+// and jumping at the same time works. Reading only the first finger is
+// what made the game unplayable by touch.
+f pad_pressed(input:GAME_Input, pad:a:f):b {
+    fingers:i = array_length(input.touches) / 2;
+    touched:b = any index in array_range(0, fingers) {
+        y point_in_pad(danger(array_get(input.touches, index * 2)), danger(array_get(input.touches, (index * 2) + 1)), pad);
+    };
+    r touched || (input.mouse_down && point_in_pad(input.mouse_x, input.mouse_y, pad));
 }
 
 // One physics step: read the keys, move and collide on each axis in turn,

@@ -39,6 +39,15 @@ f generate_css():s {
         background-repeat: no-repeat;
     }
 
+    /* Code never wraps, so a block of it is wider than a phone. Every one of
+       them scrolls inside its own edges, because overflow that is not
+       contained is overflow the whole page carries, which is what makes a
+       narrow screen scroll sideways over the entire site. */
+    pre {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
     h1, h2, h3 {
         letter-spacing: -0.02em;
     }
@@ -580,6 +589,15 @@ f generate_css():s {
             float: none;
             display: block;
             margin: 0 auto 1.5rem;
+        }
+
+        /* Two rems of padding either side is a third of a phone screen. */
+        .code-example {
+            padding: 1rem;
+        }
+
+        .code-example pre {
+            font-size: 0.8rem;
         }
     }`;
 
