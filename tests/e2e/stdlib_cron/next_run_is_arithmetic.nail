@@ -1,0 +1,22 @@
+// E2E: cron schedules as arithmetic - the loop stays in the program
+print(time_cron_valid(`0 3 * * *`));
+print(time_cron_valid(`@daily`));
+print(time_cron_valid(`0 24 * * *`));
+
+tuesday_morning:i = danger(time_from_parts(2026, 8, 4, 4, 0, 0));
+tomorrow_at_three:i = danger(time_from_parts(2026, 8, 5, 3, 0, 0));
+print(danger(time_cron_next(`0 3 * * *`, tuesday_morning)) == tomorrow_at_three);
+
+tuesday_night:i = danger(time_from_parts(2026, 8, 4, 1, 0, 0));
+today_at_three:i = danger(time_from_parts(2026, 8, 4, 3, 0, 0));
+print(danger(time_cron_next(`0 3 * * *`, tuesday_night)) == today_at_three);
+
+friday_evening:i = danger(time_from_parts(2026, 8, 7, 18, 0, 0));
+monday_at_nine:i = danger(time_from_parts(2026, 8, 10, 9, 0, 0));
+print(danger(time_cron_next(`0 9 * * 1-5`, friday_evening)) == monday_at_nine);
+
+print(danger(time_cron_matches(`*/15 * * * *`, danger(time_from_parts(2026, 8, 4, 13, 30, 0)))));
+print(danger(time_cron_matches(`*/15 * * * *`, danger(time_from_parts(2026, 8, 4, 13, 31, 0)))));
+
+f no_schedule(err:e):i { r -1; }
+print(safe(time_cron_next(`0 25 * * *`, tuesday_morning), no_schedule));

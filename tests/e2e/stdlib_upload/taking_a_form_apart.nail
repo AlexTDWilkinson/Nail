@@ -1,0 +1,39 @@
+// E2E: a multipart/form-data body taken apart the way a browser sends one. The
+// body is written here rather than received, so the test needs no server.
+boundary:s = `----NailBoundary123`;
+content_type:s = string_concat([`multipart/form-data; boundary=`, boundary]);
+
+// Two text fields and a file part, with the CRLF line endings the format requires.
+body:s = string_concat([
+    `--`, boundary, `
+Content-Disposition: form-data; name="caption"
+
+my photo
+--`, boundary, `
+Content-Disposition: form-data; name="photo"; filename="holiday.png"
+Content-Type: image/png
+
+not really a png
+--`, boundary, `--
+`]);
+danger(fs_write(`body.txt`, body));
+
+fields:h<s,s> = danger(http_multipart_extract(`body.txt`, content_type, `uploads`));
+print(danger(hashmap_get(fields, `caption`)));
+print(danger(hashmap_get(fields, `photo.filename`)));
+print(danger(hashmap_get(fields, `photo.type`)));
+
+// The file part was written into the directory, under a name of the server's
+// choosing rather than the one the client asked for.
+written:s = danger(hashmap_get(fields, `photo`));
+print(string_starts_with(written, `uploads/`));
+print(string_ends_with(written, `holiday.png`));
+print(danger(fs_read(written)));
+
+// A content type with no boundary cannot split anything, and one that is not
+// multipart at all has no parts to take out.
+f refused(err:e):h<s,s> { r hashmap_new(); }
+without_boundary:h<s,s> = safe(http_multipart_extract(`body.txt`, `multipart/form-data`, `uploads`), refused);
+print(hashmap_len(without_boundary));
+not_a_form:h<s,s> = safe(http_multipart_extract(`body.txt`, `application/json`, `uploads`), refused);
+print(hashmap_len(not_a_form));

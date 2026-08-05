@@ -130,7 +130,12 @@ pub enum TokenType {
     Operator(Operation),                     // For operators like +, -, *, /
     Comma,                                   // For commas
     Colon,                                   // For colons
-    StringLiteral(String),                   // For string literals
+    // For string literals. `tag` is the optional language marker written in
+    // front of the opening backtick (html`<p>hi</p>`), carried purely so
+    // highlighters can render embedded languages. The lexer is agnostic about
+    // which tags exist; anything that looks like an identifier is accepted and
+    // it is up to each highlighter to recognize the ones it knows.
+    StringLiteral { value: String, tag: Option<String> },
     TypeDeclaration(NailDataTypeDescriptor), // For explicit type declarations
     ParenthesisOpen,                         // For parenthesis open
     ParenthesisClose,                        // For parenthesis close
@@ -167,7 +172,8 @@ impl TokenType {
             TokenType::Integer(value) => format!("the number '{}'", value),
             TokenType::Float(value) => format!("the number '{}'", value),
             TokenType::BooleanLiteral(value) => format!("the boolean '{}'", value),
-            TokenType::StringLiteral(_) => "a string literal".to_string(),
+            TokenType::StringLiteral { tag: None, .. } => "a string literal".to_string(),
+            TokenType::StringLiteral { tag: Some(tag), .. } => format!("a {} string literal", tag),
             TokenType::Operator(op) => format!("the operator '{}'", op),
             TokenType::TypeDeclaration(data_type) => format!("the type ':{}'", data_type),
             TokenType::FunctionReturnTypeDeclaration(data_type) => format!("the return type ':{}'", data_type),
@@ -390,6 +396,14 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                 });
             }
 
+            _ if is_tagged_string_literal(&chars) => {
+                let lexer_output: LexerOutput = lex_tagged_string_literal(&mut chars, state);
+                tokens.push(Token {
+                    token_type: lexer_output.token_type,
+                    code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
+                });
+            }
+
 
             _ if is_enum_declaration(&mut chars) => {
                 let lexer_output: LexerOutput = lex_enum_delcaration(&mut chars, state);
@@ -461,7 +475,7 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                         if chars.peek() == Some(&'`') {
                             let string_output = lex_string_literal(&mut chars, state);
                             
-                            if let TokenType::StringLiteral(filepath) = string_output.token_type {
+                            if let TokenType::StringLiteral { value: filepath, .. } = string_output.token_type {
                                 // Skip whitespace
                                 while let Some(&c) = chars.peek() {
                                     if c.is_whitespace() {
@@ -1711,6 +1725,55 @@ fn lex_number(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexe
     LexerOutput { token_type, start_line, start_column, end_line: state.line, end_column: state.column }
 }
 
+// A tagged string is an identifier written flush against the opening backtick,
+// as in html`<p>hi</p>`. Nail has no other syntax where an identifier abuts a
+// backtick, so the shape is unambiguous. The tag has no meaning to the
+// compiler - the string lexes and transpiles exactly as an untagged one - it
+// only tells a highlighter which language the contents are written in.
+fn is_tagged_string_literal(chars: &std::iter::Peekable<std::str::Chars>) -> bool {
+    let mut lookahead = chars.clone();
+
+    match lookahead.next() {
+        Some(c) if is_in_alphabet_lowercase(c) => {}
+        _ => return false,
+    }
+
+    while let Some(&c) = lookahead.peek() {
+        if is_in_alphabet_or_number(c) || c == '_' {
+            lookahead.next();
+        } else {
+            break;
+        }
+    }
+
+    return lookahead.peek() == Some(&'`');
+}
+
+fn lex_tagged_string_literal(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
+    let start_line = state.line;
+    let start_column = state.column;
+
+    let mut tag = String::new();
+    while let Some(&c) = chars.peek() {
+        if c == '`' {
+            break;
+        }
+        tag.push(c);
+        advance(chars, state);
+    }
+
+    let string_output = lex_string_literal(chars, state);
+
+    // The string span starts at the tag, not at the backtick, so the whole
+    // literal highlights as one unit.
+    let token_type = match string_output.token_type {
+        TokenType::StringLiteral { value, .. } => TokenType::StringLiteral { value, tag: Some(tag) },
+        other => other,
+    };
+
+    return LexerOutput { token_type, start_line, start_column, end_line: string_output.end_line, end_column: string_output.end_column };
+}
+
 fn lex_string_literal(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
     let start_line = state.line;
     let start_column = state.column;
@@ -1743,7 +1806,7 @@ fn lex_string_literal(chars: &mut std::iter::Peekable<std::str::Chars>, state: &
                 };
             }
         } else if c == '`' {
-            return LexerOutput { token_type: TokenType::StringLiteral(string_literal), start_line, start_column, end_line: state.line, end_column: state.column };
+            return LexerOutput { token_type: TokenType::StringLiteral { value: string_literal, tag: None }, start_line, start_column, end_line: state.line, end_column: state.column };
         } else {
             string_literal.push(c);
         }
@@ -1970,6 +2033,7 @@ fn lex_value(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexer
         let lexer_output: LexerOutput = match c {
             // Arrays are now handled by the parser, not the lexer
             '`' => lex_string_literal(chars, state),
+            _ if is_tagged_string_literal(chars) => lex_tagged_string_literal(chars, state),
             _ if is_number(chars) => lex_number(chars, state),
             // Struct instantiation now handled by parser
             _ if is_enum_variant(chars) => lex_enum_variant(chars, state),
@@ -1988,3 +2052,61 @@ fn lex_value(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexer
     }
 }
 
+
+#[cfg(test)]
+mod tagged_string_tests {
+    use super::*;
+
+    fn string_tokens(source: &str) -> Vec<(String, Option<String>)> {
+        lexer(source)
+            .into_iter()
+            .filter_map(|token| match token.token_type {
+                TokenType::StringLiteral { value, tag } => Some((value, tag)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_tag_against_the_backtick_is_kept_with_the_string() {
+        let tokens = string_tokens("page:s = html`<p>hi</p>`;");
+        assert_eq!(tokens, vec![("<p>hi</p>".to_string(), Some("html".to_string()))]);
+    }
+
+    #[test]
+    fn any_identifier_shaped_tag_lexes_since_the_lexer_knows_no_languages() {
+        let tokens = string_tokens("a:s = css`p{}`;\nb:s = sql`SELECT 1`;\nc:s = my_lang2`x`;");
+        let tags: Vec<Option<String>> = tokens.into_iter().map(|(_, tag)| tag).collect();
+        assert_eq!(tags, vec![Some("css".to_string()), Some("sql".to_string()), Some("my_lang2".to_string())]);
+    }
+
+    #[test]
+    fn an_untagged_string_carries_no_tag() {
+        let tokens = string_tokens("plain:s = `hello`;");
+        assert_eq!(tokens, vec![("hello".to_string(), None)]);
+    }
+
+    #[test]
+    fn a_tag_must_touch_the_backtick_to_count() {
+        // With a space between them these are two separate tokens: an
+        // identifier and an ordinary string.
+        let tokens = string_tokens("html = `hello`;");
+        assert_eq!(tokens, vec![("hello".to_string(), None)]);
+    }
+
+    #[test]
+    fn a_tagged_string_escapes_exactly_like_an_untagged_one() {
+        let tagged = string_tokens("a:s = html`a \\` b\\nc`;");
+        let untagged = string_tokens("a:s = `a \\` b\\nc`;");
+        assert_eq!(tagged[0].0, untagged[0].0);
+        assert_eq!(tagged[0].0, "a ` b\nc");
+    }
+
+    #[test]
+    fn the_span_of_a_tagged_string_starts_at_the_tag() {
+        let tokens = lexer("page:s = html`<p>hi</p>`;");
+        let string_token = tokens.iter().find(|token| matches!(token.token_type, TokenType::StringLiteral { .. })).expect("a string literal");
+        // `page:s = ` is nine characters, so the tag starts at column ten.
+        assert_eq!(string_token.code_span.start_column, 10);
+    }
+}

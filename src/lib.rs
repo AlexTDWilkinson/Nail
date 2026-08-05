@@ -1,6 +1,7 @@
 pub mod common;
 pub mod checker;
 pub mod colorizer;
+pub mod embedded;
 pub mod formatter;
 pub mod lexer;
 pub mod parser;

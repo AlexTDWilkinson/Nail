@@ -1,0 +1,16 @@
+// E2E: splitting at one separator, trimming named characters, code points
+pair:a:s = danger(string_split_once(`key=a=b`, `=`));
+print(pair);
+last:a:s = danger(string_split_last(`localhost:8080`, `:`));
+print(last);
+f no_pair(err:e):a:s { r [`none`]; }
+print(safe(string_split_once(`plain`, `=`), no_pair));
+print(string_trim_chars(`/blog/post/`, `/`));
+print(string_trim_chars(`"quoted"`, `"`));
+print(string_trim_start_chars(`00042`, `0`));
+print(string_trim_end_chars(`wait...`, `.`));
+print(string_trim_chars(`untouched`, `/`));
+print(danger(string_char_code(`A`, 0)));
+print(danger(string_char_code(`hello`, 1)));
+print(danger(string_from_char_code(65)));
+print(danger(string_from_char_code(8364)));

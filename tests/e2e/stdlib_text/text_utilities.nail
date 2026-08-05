@@ -1,0 +1,25 @@
+// E2E: the string_* text utilities every program ends up writing for itself
+print(string_to_camel_case(`user id number`));
+print(string_to_pascal_case(`user account`));
+print(string_slugify(`Hello, World!`));
+print(string_slugify(`Nail 1.0 Released`));
+print(string_truncate(`hello world`, 8, `...`));
+print(string_truncate(`hello`, 8, `...`));
+print(string_word_wrap(`the quick brown fox`, 10));
+print(string_levenshtein(`kitten`, `sitting`));
+print(string_similarity(`same`, `same`));
+print(danger(string_closest(`transpil`, [`transpile`, `check`, `format`])));
+print(string_word_count(`one two three`));
+print(string_normalize_whitespace(`  a   b   c  `));
+print(string_indent(`first
+second`, `> `));
+print(string_dedent(`    outer
+        inner`));
+print(string_unescape_html(`&lt;b&gt;hi&lt;/b&gt;`));
+print(string_unescape_html(string_escape_html(`it's 5 > 3 & true`)));
+print(danger(string_char_at(`hello`, 1)));
+print(string_common_prefix([`/srv/app/one`, `/srv/app/two`]));
+print(string_strip_prefix(`> quoted`, `> `));
+print(string_strip_suffix(`main.nail`, `.nail`));
+print(string_strip_prefix(`plain`, `> `));
+print(string_mask(`sk_live_abcd1234`, 4, `*`));

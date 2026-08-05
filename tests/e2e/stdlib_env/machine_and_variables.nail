@@ -1,0 +1,17 @@
+// E2E: environment variables and what the machine says about itself.
+// Machine-specific values are only checked for shape, so this reads the same
+// on any computer.
+danger(env_set(`NAIL_E2E_GREETING`, `hello`));
+print(danger(env_get(`NAIL_E2E_GREETING`)));
+print(danger(hashmap_get(env_all(), `NAIL_E2E_GREETING`)));
+danger(env_remove(`NAIL_E2E_GREETING`));
+f missing(err:e):s { r `not set`; }
+print(safe(env_get(`NAIL_E2E_GREETING`), missing));
+// Removing a variable that was never there is not an error.
+danger(env_remove(`NAIL_E2E_NEVER_SET`));
+print(path_is_absolute(danger(env_current_dir())));
+print(string_length(env_os()) > 0);
+print(string_length(env_arch()) > 0);
+print(env_pid() > 0);
+print(env_cpu_count() >= 1);
+print(string_length(danger(env_hostname())) > 0);

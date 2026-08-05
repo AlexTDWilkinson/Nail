@@ -11,5 +11,14 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "int_pow" => "std_lib::int::pow", (base: i, exponent: i) -> (i!e),
             "Raises base to an integer power; errors on negative exponents or overflow.",
             "big:i = danger(int_pow(2, 10));";
+        "int_from_hex" => "std_lib::int::from_hex", (text: s) -> (i!e),
+            "Reads a hexadecimal number, with or without the 0x in front; errors if it is not one.",
+            "red:i = danger(int_from_hex(`0xFF`));";
+        "int_from_radix" => "std_lib::int::from_radix", (text: s, base: i) -> (i!e),
+            "Reads a number written in any base from 2 to 36, where digits above 9 are letters; errors if it is not one.",
+            "flags:i = danger(int_from_radix(`1011`, 2));";
+        "int_to_radix" => "std_lib::int::to_radix", (value: i, base: i) -> (s!e),
+            "Writes a number in any base from 2 to 36, using lower-case letters for digits above 9.",
+            "hex:s = danger(int_to_radix(255, 16));";
     }
 }

@@ -1,0 +1,27 @@
+// E2E: reading HTML somebody else wrote, by CSS selector
+page:s = html`<!doctype html>
+<html>
+  <head><title>  A Page  </title>
+  <meta name="description" content="what the page is about"></head>
+  <body>
+    <h1>Heading</h1>
+    <div class="post"><a href="/first">First</a><img src="/one.png"></div>
+    <div class="post"><a href="https://example.com/second">Second</a></div>
+  </body>
+</html>`;
+
+print(danger(html_title(page)));
+print(danger(html_meta(page, `description`)));
+print(danger(html_select_text(page, `.post a`)));
+print(danger(html_links(page)));
+print(danger(html_images(page)));
+print(danger(html_count(page, `div.post`)));
+print(array_length(danger(html_select_text(page, `.comment`))));
+print(string_contains(html_text(page), `Heading`));
+
+// Real HTML is not well-formed, and refusing it would make this useless.
+broken:s = html`<div><p>unclosed<p>another<span>and text`;
+print(array_length(danger(html_select_text(broken, `p`))));
+
+f not_a_selector(err:e):i { r -1; }
+print(safe(html_count(page, `div..`), not_a_selector));

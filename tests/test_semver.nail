@@ -1,0 +1,42 @@
+// Version numbers compared the way tools compare them, not the way text sorts.
+
+test_assert(semver_valid(`1.4.2`), `a plain version`);
+test_assert(semver_valid(`v1.4.2`), `a version written as a tag`);
+test_assert(semver_valid(`1.0.0-rc.1`), `a prerelease`);
+test_assert_false(semver_valid(`1.4`), `two numbers are not a version`);
+
+// The whole reason this module exists: 1.10.0 is newer than 1.9.0 even though
+// it sorts before it as text.
+test_assert_equal_int(danger(semver_compare(`1.10.0`, `1.9.0`)), 1, `ten is after nine`);
+test_assert_equal_int(danger(semver_compare(`1.9.0`, `1.10.0`)), -1, `and nine is before ten`);
+test_assert_equal_int(danger(semver_compare(`2.0.0`, `2.0.0`)), 0, `the same version`);
+test_assert_equal_int(danger(semver_compare(`1.0.0+monday`, `1.0.0+tuesday`)), 0, `build metadata is not part of the version`);
+test_assert_equal_int(danger(semver_compare(`1.0.0-rc.1`, `1.0.0`)), -1, `a prerelease precedes its release`);
+
+test_assert(danger(semver_is_newer(`2.0.0`, `1.9.9`)), `a major release is newer`);
+test_assert(danger(semver_is_older(`1.9.9`, `2.0.0`)), `and the one before it is older`);
+
+test_assert_equal_int(danger(semver_major(`1.4.2`)), 1, `the major number`);
+test_assert_equal_int(danger(semver_minor(`1.4.2`)), 4, `the minor number`);
+test_assert_equal_int(danger(semver_patch(`1.4.2`)), 2, `the patch number`);
+test_assert_equal_string(danger(semver_prerelease(`1.0.0-rc.1`)), `rc.1`, `the prerelease`);
+
+test_assert_equal_string(danger(semver_bump_major(`1.9.3`)), `2.0.0`, `bumping major resets the rest`);
+test_assert_equal_string(danger(semver_bump_minor(`1.9.3`)), `1.10.0`, `bumping minor resets the patch`);
+test_assert_equal_string(danger(semver_bump_patch(`1.9.3`)), `1.9.4`, `bumping patch`);
+
+test_assert(danger(semver_satisfies(`1.5.0`, `>=1.2.0, <2.0.0`)), `inside the range`);
+test_assert_false(danger(semver_satisfies(`2.1.0`, `>=1.2.0, <2.0.0`)), `above the range`);
+test_assert(danger(semver_satisfies(`1.9.0`, `^1.2.3`)), `a caret allows a new minor`);
+test_assert_false(danger(semver_satisfies(`2.0.0`, `^1.2.3`)), `a caret refuses a new major`);
+test_assert(danger(semver_satisfies(`1.2.9`, `~1.2.3`)), `a tilde allows a new patch`);
+test_assert_false(danger(semver_satisfies(`1.3.0`, `~1.2.3`)), `a tilde refuses a new minor`);
+test_assert(danger(semver_satisfies(`9.9.9`, `*`)), `a star takes anything`);
+
+tags:a:s = [`1.10.0`, `1.9.0`, `2.0.0-rc.1`, `2.0.0`];
+ordered:a:s = danger(semver_sort(tags));
+expected:a:s = [`1.9.0`, `1.10.0`, `2.0.0-rc.1`, `2.0.0`];
+test_assert_equal_array(ordered, expected, `oldest first`);
+test_assert_equal_string(danger(semver_newest(tags)), `2.0.0`, `the newest release`);
+
+print(`every version comparison held`);

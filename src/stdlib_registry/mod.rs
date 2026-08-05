@@ -87,35 +87,67 @@ macro_rules! simple_fns {
     };
 }
 
+mod archive;
 mod args;
 mod array;
+mod audio;
 mod base64;
+mod bits;
+mod chart;
 mod code;
 mod compress;
 mod crypto;
 mod csv;
 mod database;
 mod datafusion;
+mod draw;
+mod email;
 mod env;
 mod error;
 mod float;
+mod feed;
+mod format;
 mod fs;
 mod hashmap;
 mod hex;
+mod html;
 mod http;
+mod image;
 mod int;
 mod io;
 mod json;
+mod jwt;
+mod linalg;
+mod log;
 mod markdown;
 mod math;
+mod mime;
+mod ml;
+mod money;
+mod net;
 mod panic;
 mod path;
+mod pdf;
+mod postgres;
 mod print;
 mod process;
+mod rand;
 mod regex;
+mod semver;
+mod stats;
+mod stdlib;
 mod string;
+mod template;
+mod term;
+mod test;
 mod time;
+mod toml;
+mod tui;
 mod url;
+mod validate;
+mod xlsx;
+mod xml;
+mod yaml;
 
 /// Defines the CrateDependency enum and all its lookup methods from a single
 /// table so adding a crate is one line instead of four match arms.
@@ -161,7 +193,8 @@ macro_rules! crate_dependencies {
 }
 
 crate_dependencies! {
-    Axum => { cargo: "axum = \"0.7\"", name: "axum", import: "use axum;" },
+    Futures => { cargo: "futures = \"0.3\"", name: "futures", import: "use futures;" },
+    Axum => { cargo: "axum = { version = \"0.7\", features = [\"ws\"] }", name: "axum", import: "use axum;" },
     TowerHttp => { cargo: "tower-http = { version = \"0.5\", features = [\"fs\"] }", name: "tower-http", import: "use tower_http;" },
     Tokio => { cargo: "tokio = { version = \"1\", features = [\"rt-multi-thread\", \"macros\"] }", name: "tokio", import: "use tokio;" },
     SerdeJson => { cargo: "serde_json = \"1.0\"", name: "serde_json", import: "use serde_json;" },
@@ -171,24 +204,45 @@ crate_dependencies! {
     Csv => { cargo: "csv = \"1.3\"", name: "csv", import: "use csv;" },
     DashMap => { cargo: "dashmap = { version = \"6.1.0\", features = [\"serde\"] }", name: "dashmap", import: "use dashmap;" },
     Pulldown => { cargo: "pulldown-cmark = \"0.9\"", name: "pulldown-cmark", import: "use pulldown_cmark;" },
-    Reqwest => { cargo: "reqwest = { version = \"0.11\", default-features = false, features = [\"json\", \"rustls-tls\"] }", name: "reqwest", import: "use reqwest;" },
+    Reqwest => { cargo: "reqwest = { version = \"0.11\", default-features = false, features = [\"json\", \"rustls-tls\", \"multipart\"] }", name: "reqwest", import: "use reqwest;" },
     Sha2 => { cargo: "sha2 = \"0.10\"", name: "sha2", import: "use sha2;" },
     Md5 => { cargo: "md5 = \"0.7\"", name: "md5", import: "use md5;" },
-    Uuid => { cargo: "uuid = { version = \"1.0\", features = [\"v4\"] }", name: "uuid", import: "use uuid;" },
+    Uuid => { cargo: "uuid = { version = \"1.0\", features = [\"v4\", \"v7\"] }", name: "uuid", import: "use uuid;" },
+    Argon2 => { cargo: "argon2 = \"0.5\"", name: "argon2", import: "use argon2;" },
+    Toml => { cargo: "toml = \"0.8\"", name: "toml", import: "use toml;" },
+    QuickXml => { cargo: "quick-xml = { version = \"0.36\", features = [\"serialize\"] }", name: "quick-xml", import: "use quick_xml;" },
+    FeedRs => { cargo: "feed-rs = \"2\"", name: "feed-rs", import: "use feed_rs;" },
+    Notify => { cargo: "notify = \"6\"", name: "notify", import: "use notify;" },
+    PrintPdf => { cargo: "printpdf = \"0.7\"", name: "printpdf", import: "use printpdf;", feature: "pdf" },
+    PdfExtract => { cargo: "pdf-extract = \"0.7\"", name: "pdf-extract", import: "use pdf_extract;", feature: "pdf" },
+    Calamine => { cargo: "calamine = \"0.24\"", name: "calamine", import: "use calamine;", feature: "xlsx" },
+    RustXlsxWriter => { cargo: "rust_xlsxwriter = \"0.64\"", name: "rust_xlsxwriter", import: "use rust_xlsxwriter;", feature: "xlsx" },
+    SerdeYaml => { cargo: "serde_yaml = \"0.9\"", name: "serde_yaml", import: "use serde_yaml;" },
     UrlEncoding => { cargo: "urlencoding = \"2.1\"", name: "urlencoding", import: "use urlencoding;" },
     Flate2 => { cargo: "flate2 = \"1.0\"", name: "flate2", import: "use flate2;" },
+    Zip => { cargo: "zip = { version = \"2\", default-features = false, features = [\"deflate\"] }", name: "zip", import: "use zip;" },
+    Tar => { cargo: "tar = \"0.4\"", name: "tar", import: "use tar;" },
     Base64 => { cargo: "base64 = \"0.21\"", name: "base64", import: "use base64;" },
+    AesGcm => { cargo: "aes-gcm = \"0.10\"", name: "aes-gcm", import: "use aes_gcm;" },
     Hmac => { cargo: "hmac = \"0.12\"", name: "hmac", import: "use hmac;" },
+    Crossterm => { cargo: "crossterm = \"0.28\"", name: "crossterm", import: "use crossterm;" },
+    Chrono => { cargo: "chrono = \"0.4\"", name: "chrono", import: "use chrono;" },
     Rusqlite => { cargo: "rusqlite = { version = \"0.31\", features = [\"bundled\"] }", name: "rusqlite", import: "use rusqlite;" },
     DataFusion => { cargo: "datafusion = \"50\"", name: "datafusion", import: "use datafusion;", feature: "datafusion" },
+    Rodio => { cargo: "rodio = \"0.19\"", name: "rodio", import: "use rodio;", feature: "audio" },
+    TokioPostgres => { cargo: "tokio-postgres = \"0.7\"", name: "tokio-postgres", import: "use tokio_postgres;", feature: "postgres" },
+    Image => { cargo: "image = { version = \"0.25\", default-features = false, features = [\"png\", \"jpeg\", \"gif\", \"webp\", \"bmp\", \"tiff\"] }", name: "image", import: "use image;", feature: "image" },
+    Scraper => { cargo: "scraper = \"0.20\"", name: "scraper", import: "use scraper;", feature: "html" },
+    Lettre => { cargo: "lettre = { version = \"0.11\", default-features = false, features = [\"smtp-transport\", \"tokio1-rustls-tls\", \"builder\"] }", name: "lettre", import: "use lettre;", feature: "email" },
 }
 
-/// Defines the StdlibModule enum, its runtime module path, and the namespace
-/// every name in that module wears, from one table. The namespace is not
-/// decoration: a Nail program has one flat name space, so `csv_open` and
-/// `CSV_Options` say which library they belong to without an import list.
+/// Defines the StdlibModule enum, its runtime module path, the namespace
+/// every name in that module wears, and the name people read it by, from one
+/// table. The namespace is not decoration: a Nail program has one flat name
+/// space, so `csv_open` and `CSV_Options` say which library they belong to
+/// without an import list.
 macro_rules! stdlib_modules {
-    ($($variant:ident => $path:literal, $prefix:literal),* $(,)?) => {
+    ($($variant:ident => $path:literal, $prefix:literal, $display:literal),* $(,)?) => {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub enum StdlibModule {
             $($variant,)*
@@ -204,6 +258,12 @@ macro_rules! stdlib_modules {
                 match self { $(StdlibModule::$variant => $prefix,)* }
             }
 
+            /// What the module is called anywhere a person reads it - the IDE's
+            /// library browser, the website's function list, documentation.
+            pub fn display_name(&self) -> &'static str {
+                match self { $(StdlibModule::$variant => $display,)* }
+            }
+
             pub fn all() -> &'static [StdlibModule] {
                 &[$(StdlibModule::$variant,)*]
             }
@@ -212,35 +272,67 @@ macro_rules! stdlib_modules {
 }
 
 stdlib_modules! {
-    Http => "std_lib::http", "http_",
-    Fs => "std_lib::fs", "fs_",
-    Json => "std_lib::json", "json_",
-    String => "std_lib::string", "string_",
-    Int => "std_lib::int", "int_",
-    Float => "std_lib::float", "float_",
-    Array => "std_lib::array", "array_",
-    Math => "std_lib::math", "math_",
-    Time => "std_lib::time", "time_",
-    Env => "std_lib::env", "env_",
-    Process => "std_lib::process", "process_",
-    Path => "std_lib::path", "path_",
-    Error => "std_lib::error", "error_",
-    Panic => "std_lib::panic", "panic_",
-    HashMap => "std_lib::hashmap", "hashmap_",
-    IO => "std_lib::io", "io_",
-    Print => "std_lib::print", "print",
-    Markdown => "std_lib::markdown", "markdown_",
-    Code => "std_lib::code", "code_",
-    Crypto => "std_lib::crypto", "crypto_",
-    Regex => "std_lib::regex", "regex_",
-    Args => "std_lib::args", "args_",
-    Url => "std_lib::url", "url_",
-    Base64 => "std_lib::base64", "base64_",
-    Hex => "std_lib::hex", "hex_",
-    Csv => "std_lib::csv", "csv_",
-    Compress => "std_lib::compress", "compress_",
-    Database => "std_lib::database", "db_",
-    DataFusion => "std_lib::datafusion", "db_datafusion_",
+    Http => "std_lib::http", "http_", "HTTP",
+    Fs => "std_lib::fs", "fs_", "File System",
+    Json => "std_lib::json", "json_", "JSON",
+    Toml => "std_lib::toml", "toml_", "TOML",
+    Yaml => "std_lib::yaml", "yaml_", "YAML",
+    Xml => "std_lib::xml", "xml_", "XML",
+    Feed => "std_lib::feed", "feed_", "Feeds",
+    Pdf => "std_lib::pdf", "pdf_", "PDFs",
+    Xlsx => "std_lib::xlsx", "xlsx_", "Spreadsheets",
+    String => "std_lib::string", "string_", "Strings",
+    Int => "std_lib::int", "int_", "Integers",
+    Float => "std_lib::float", "float_", "Floats",
+    Format => "std_lib::format", "format_", "Formatting Numbers for People",
+    Array => "std_lib::array", "array_", "Arrays",
+    Math => "std_lib::math", "math_", "Math",
+    Linalg => "std_lib::linalg", "linalg_", "Vectors and Matrices",
+    Money => "std_lib::money", "money_", "Money",
+    Stats => "std_lib::stats", "stats_", "Statistics",
+    Semver => "std_lib::semver", "semver_", "Version Numbers",
+    Ml => "std_lib::ml", "ml_", "Machine Learning",
+    Bits => "std_lib::bits", "bits_", "Bits",
+    Rand => "std_lib::rand", "rand_", "Randomness",
+    Time => "std_lib::time", "time_", "Time",
+    Env => "std_lib::env", "env_", "Environment",
+    Process => "std_lib::process", "process_", "Processes",
+    Path => "std_lib::path", "path_", "Paths",
+    Error => "std_lib::error", "error_", "Errors",
+    Panic => "std_lib::panic", "panic_", "Panics",
+    HashMap => "std_lib::hashmap", "hashmap_", "Hashmaps",
+    IO => "std_lib::io", "io_", "Input and Output",
+    Print => "std_lib::print", "print", "Printing",
+    Log => "std_lib::log", "log_", "Logging",
+    Term => "std_lib::term", "term_", "Terminals",
+    Tui => "std_lib::tui", "tui_", "Terminal Interfaces",
+    Test => "std_lib::test", "test_", "Testing",
+    Html => "std_lib::html", "html_", "Reading HTML",
+    Markdown => "std_lib::markdown", "markdown_", "Markdown",
+    Mime => "std_lib::mime", "mime_", "Media Types",
+    Template => "std_lib::template", "template_", "Templates",
+    Draw => "std_lib::draw", "draw_", "Drawing",
+    Image => "std_lib::image", "image_", "Pictures",
+    Chart => "std_lib::chart", "chart_", "Charts",
+    Audio => "std_lib::audio", "audio_", "Audio",
+    Code => "std_lib::code", "code_", "Nail Source Code",
+    Crypto => "std_lib::crypto", "crypto_", "Crypto",
+    Email => "std_lib::email", "email_", "Email",
+    Jwt => "std_lib::jwt", "jwt_", "Signed Tokens",
+    Validate => "std_lib::validate", "validate_", "Validation",
+    Regex => "std_lib::regex", "regex_", "Regular Expressions",
+    Args => "std_lib::args", "args_", "Command Line Arguments",
+    Url => "std_lib::url", "url_", "URLs",
+    Base64 => "std_lib::base64", "base64_", "Base64",
+    Hex => "std_lib::hex", "hex_", "Hex",
+    Csv => "std_lib::csv", "csv_", "CSV",
+    Compress => "std_lib::compress", "compress_", "Compression",
+    Archive => "std_lib::archive", "archive_", "Archives",
+    Net => "std_lib::net", "net_", "Networks",
+    Database => "std_lib::database", "db_", "Databases",
+    DataFusion => "std_lib::datafusion", "db_datafusion_", "DataFusion",
+    Postgres => "std_lib::postgres", "db_postgres_", "Postgres",
+    Stdlib => "std_lib::stdlib", "stdlib_", "The Standard Library Itself",
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -302,35 +394,67 @@ pub struct StdlibFunction {
 lazy_static! {
     pub static ref STDLIB_FUNCTIONS: HashMap<&'static str, StdlibFunction> = {
         let mut m = HashMap::new();
+        archive::register(&mut m);
         args::register(&mut m);
         array::register(&mut m);
+        audio::register(&mut m);
         base64::register(&mut m);
+        bits::register(&mut m);
+        chart::register(&mut m);
         code::register(&mut m);
         compress::register(&mut m);
         crypto::register(&mut m);
         csv::register(&mut m);
         database::register(&mut m);
         datafusion::register(&mut m);
+        draw::register(&mut m);
+        email::register(&mut m);
         env::register(&mut m);
         error::register(&mut m);
         float::register(&mut m);
+        feed::register(&mut m);
+        format::register(&mut m);
         fs::register(&mut m);
         hashmap::register(&mut m);
         hex::register(&mut m);
+        html::register(&mut m);
         http::register(&mut m);
+        image::register(&mut m);
         int::register(&mut m);
         io::register(&mut m);
         json::register(&mut m);
+        jwt::register(&mut m);
+        linalg::register(&mut m);
+        log::register(&mut m);
         markdown::register(&mut m);
         math::register(&mut m);
+        mime::register(&mut m);
+        ml::register(&mut m);
+        money::register(&mut m);
+        net::register(&mut m);
         panic::register(&mut m);
         path::register(&mut m);
+        pdf::register(&mut m);
+        postgres::register(&mut m);
         print::register(&mut m);
         process::register(&mut m);
+        rand::register(&mut m);
         regex::register(&mut m);
+        semver::register(&mut m);
+        stats::register(&mut m);
+        stdlib::register(&mut m);
         string::register(&mut m);
+        template::register(&mut m);
+        term::register(&mut m);
+        test::register(&mut m);
         time::register(&mut m);
+        toml::register(&mut m);
+        tui::register(&mut m);
         url::register(&mut m);
+        validate::register(&mut m);
+        xlsx::register(&mut m);
+        xml::register(&mut m);
+        yaml::register(&mut m);
         m
     };
 }
@@ -398,11 +522,48 @@ pub fn get_iterator_form(name: &str) -> Option<&'static str> {
 /// completely generic.
 /// Functions whose Rust implementations are synchronous even though their
 /// module is otherwise async, so no `.await` may be emitted for them.
-const SYNC_STDLIB_FUNCTIONS: &[&str] = &["http_path_matches", "http_path_params", "http_default_cookie", "http_build_cookie", "http_parse_cookies"];
+const SYNC_STDLIB_FUNCTIONS: &[&str] =
+    &["http_path_matches", "http_path_params", "http_default_cookie", "http_build_cookie", "http_parse_cookies", "http_default_config", "http_default_retry", "http_part_text", "http_part_file", "process_default_options"];
+
+/// Stdlib functions whose second argument is a Nail function producing one key
+/// per element - `array_sort_by(books, book_year)` and the rest of the `_by`
+/// family.
+///
+/// Nothing calls that function while it works. The transpiler runs it over the
+/// array first, in a loop it can await in, and then passes the keys alongside the
+/// elements to the `..._keys` implementation the registry names. That is what lets
+/// a key function read a file: sorting never has to wait for anything, because
+/// the waiting all happened before it started.
+const KEY_FUNCTION_CALLERS: &[&str] = &["array_sort_by", "array_sort_by_descending", "array_min_by", "array_max_by", "array_sum_by", "array_group_by", "array_count_by"];
+
+/// Whether this stdlib function takes an array and a key function, so the keys
+/// are worked out before it is called.
+pub fn precomputes_key_argument(name: &str) -> bool {
+    return KEY_FUNCTION_CALLERS.contains(&name);
+}
+
+/// How a stdlib function that folds a file line by line is put together: which
+/// runtime functions open, read and close the file, and how many lines to take at
+/// a time. The transpiler emits the loop from this, so it needs no function names
+/// of its own - the loop has to be emitted rather than written in Rust because the
+/// program's step function may be async, and only the emitter knows whether it is.
+pub struct FileFold {
+    pub open: &'static str,
+    pub next_lines: &'static str,
+    pub close: &'static str,
+    pub lines_at_a_time: usize,
+}
+
+pub fn file_fold(name: &str) -> Option<FileFold> {
+    return match name {
+        "fs_reduce_lines" => Some(FileFold { open: "std_lib::fs::open_reader", next_lines: "std_lib::fs::next_lines", close: "std_lib::fs::close_reader", lines_at_a_time: 1000 }),
+        _ => None,
+    };
+}
 
 pub fn is_stdlib_fn_async(name: &str) -> bool {
     // Per-function overrides of the module default
-    if name == "time_sleep" {
+    if name == "time_sleep" || name == "tui_run" || name == "crypto_hash_file_sha256" || name == "csv_write" {
         return true;
     }
     if SYNC_STDLIB_FUNCTIONS.contains(&name) {
@@ -410,7 +571,7 @@ pub fn is_stdlib_fn_async(name: &str) -> bool {
     }
     matches!(
         get_stdlib_function(name).map(|f| &f.module),
-        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process)
+        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx)
     )
 }
 
@@ -426,6 +587,47 @@ lazy_static! {
     pub static ref STDLIB_TYPES: HashMap<&'static str, StdlibTypeInfo> = {
         let mut m = HashMap::new();
         
+        // PROCESS_Options struct
+        m.insert("PROCESS_Options", StdlibTypeInfo {
+            name: "PROCESS_Options".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("directory".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("environment".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("input".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("timeout_seconds".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        // PROCESS_Result struct
+        m.insert("PROCESS_Result", StdlibTypeInfo {
+            name: "PROCESS_Result".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("stdout".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("stderr".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("exit_code".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        // URL_Parts struct
+        m.insert("URL_Parts", StdlibTypeInfo {
+            name: "URL_Parts".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("scheme".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("user".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("host".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("port".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("query".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("fragment".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
         // CSV_Reader struct
         m.insert("CSV_Reader", StdlibTypeInfo {
             name: "CSV_Reader".to_string(),
@@ -455,6 +657,339 @@ lazy_static! {
                 fields.insert("null_values".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
                 fields.insert("ignore_errors".to_string(), NailDataTypeDescriptor::Boolean);
                 fields.insert("eol_char".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // The Postgres structs, the same shape as the SQLite ones: a
+        // connection is a handle, and a statement reports what it changed.
+        m.insert("DB_Postgres", StdlibTypeInfo {
+            name: "DB_Postgres".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("database".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        m.insert("DB_PostgresResult", StdlibTypeInfo {
+            name: "DB_PostgresResult".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("rows_affected".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        m.insert("FS_Watcher", StdlibTypeInfo {
+            name: "FS_Watcher".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        m.insert("FEED_Entry", StdlibTypeInfo {
+            name: "FEED_Entry".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("id".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("title".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("link".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("summary".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("published".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        m.insert("FEED_Feed", StdlibTypeInfo {
+            name: "FEED_Feed".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("title".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("link".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("description".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("entries".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct("FEED_Entry".to_string()))));
+                fields
+            }
+        });
+
+        // FS_Reader struct
+        m.insert("FS_Reader", StdlibTypeInfo {
+            name: "FS_Reader".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // EMAIL_Server struct
+        m.insert("EMAIL_Server", StdlibTypeInfo {
+            name: "EMAIL_Server".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("host".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("port".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("username".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("password".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("from_address".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("from_name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("use_tls".to_string(), NailDataTypeDescriptor::Boolean);
+                fields
+            }
+        });
+
+        // STDLIB_Function struct
+        m.insert("STDLIB_Function", StdlibTypeInfo {
+            name: "STDLIB_Function".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("module".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("signature".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("description".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("example".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // ARGS_Option struct
+        m.insert("ARGS_Option", StdlibTypeInfo {
+            name: "ARGS_Option".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("short".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("description".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("takes_value".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("required".to_string(), NailDataTypeDescriptor::Boolean);
+                fields
+            }
+        });
+
+        // ARGS_Parsed struct
+        m.insert("ARGS_Parsed", StdlibTypeInfo {
+            name: "ARGS_Parsed".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("command".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("positional".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("values".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("flags".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
+                fields
+            }
+        });
+
+        // The machine learning structs. A fitted model is data, so every one
+        // of these can be printed, stored as JSON and predicted with later.
+        m.insert("ML_Split", StdlibTypeInfo {
+            name: "ML_Split".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("train_features".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)))));
+                fields.insert("train_labels".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("test_features".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)))));
+                fields.insert("test_labels".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields
+            }
+        });
+
+        m.insert("ML_Linear", StdlibTypeInfo {
+            name: "ML_Linear".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("weights".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)));
+                fields.insert("intercept".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        m.insert("ML_Tree", StdlibTypeInfo {
+            name: "ML_Tree".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("feature".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("threshold".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)));
+                fields.insert("left".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("right".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("prediction".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields
+            }
+        });
+
+        m.insert("ML_Clusters", StdlibTypeInfo {
+            name: "ML_Clusters".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("centroids".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)))));
+                fields.insert("assignments".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields
+            }
+        });
+
+        m.insert("ML_Scores", StdlibTypeInfo {
+            name: "ML_Scores".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("true_positive".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("false_positive".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("true_negative".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("false_negative".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("accuracy".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("precision".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("recall".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("f1".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        m.insert("ML_BoostConfig", StdlibTypeInfo {
+            name: "ML_BoostConfig".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("trees".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("learning_rate".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("max_depth".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("min_samples_leaf".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("bins".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("lambda_l2".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("objective".to_string(), NailDataTypeDescriptor::Enum("ML_Objective".to_string()));
+                fields.insert("early_stopping_rounds".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        m.insert("ML_Boost", StdlibTypeInfo {
+            name: "ML_Boost".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("base_score".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("roots".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("feature".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("threshold".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)));
+                fields.insert("left".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("right".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("value".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)));
+                fields.insert("gain".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)));
+                fields.insert("default_left".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Boolean)));
+                fields.insert("columns".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("objective".to_string(), NailDataTypeDescriptor::Enum("ML_Objective".to_string()));
+                fields.insert("trees_used".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        m.insert("ML_OneHot", StdlibTypeInfo {
+            name: "ML_OneHot".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("categories".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("columns".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)))));
+                fields
+            }
+        });
+
+        m.insert("ML_Forest", StdlibTypeInfo {
+            name: "ML_Forest".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("roots".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("feature".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("threshold".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)));
+                fields.insert("left".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("right".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("prediction".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Int)));
+                fields.insert("columns".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        m.insert("ML_Regression", StdlibTypeInfo {
+            name: "ML_Regression".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("r_squared".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("mae".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("rmse".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("mape".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("median_ape".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("within_ten_percent".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        // The terminal interface structs. A screen is data, so what a program
+        // would draw can be checked without a terminal to draw it on.
+        m.insert("TUI_Line", StdlibTypeInfo {
+            name: "TUI_Line".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("text".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("color".to_string(), NailDataTypeDescriptor::Enum("TERM_Color".to_string()));
+                fields.insert("bold".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("selected".to_string(), NailDataTypeDescriptor::Boolean);
+                fields
+            }
+        });
+
+        m.insert("TUI_Screen", StdlibTypeInfo {
+            name: "TUI_Screen".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("title".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("lines".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct("TUI_Line".to_string()))));
+                fields.insert("status".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("quit".to_string(), NailDataTypeDescriptor::Boolean);
+                fields
+            }
+        });
+
+        m.insert("TUI_Event", StdlibTypeInfo {
+            name: "TUI_Event".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("key".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("tick".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("width".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("height".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        // The linear algebra structs. A vector is its components and nothing
+        // else, so a program can build one as a literal and read x and y back
+        // without going through a function.
+        m.insert("LINALG_Vec2", StdlibTypeInfo {
+            name: "LINALG_Vec2".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("x_coordinate".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("y_coordinate".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        m.insert("LINALG_Vec3", StdlibTypeInfo {
+            name: "LINALG_Vec3".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("x_coordinate".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("y_coordinate".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("z_coordinate".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        m.insert("LINALG_Mat3", StdlibTypeInfo {
+            name: "LINALG_Mat3".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("values".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Float)));
                 fields
             }
         });
@@ -499,6 +1034,33 @@ lazy_static! {
             }
         });
 
+        // HTTP_Part struct
+        m.insert("HTTP_Part", StdlibTypeInfo {
+            name: "HTTP_Part".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("value".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("file_path".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("file_name".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("content_type".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // HTTP_Retry struct
+        m.insert("HTTP_Retry", StdlibTypeInfo {
+            name: "HTTP_Retry".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("attempts".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("initial_delay_ms".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("max_delay_ms".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("timeout_ms".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
         // HTTP_Request struct
         m.insert("HTTP_Request", StdlibTypeInfo {
             name: "HTTP_Request".to_string(),
@@ -509,6 +1071,7 @@ lazy_static! {
                 fields.insert("query".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
                 fields.insert("headers".to_string(), NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)));
                 fields.insert("body".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("body_path".to_string(), NailDataTypeDescriptor::String);
                 fields
             }
         });
@@ -586,23 +1149,62 @@ pub struct HandlerCallback {
 }
 
 lazy_static! {
-    /// Stdlib function name -> the Nail function it calls back into.
-    pub static ref HANDLER_CALLBACKS: HashMap<&'static str, HandlerCallback> = {
+    /// Stdlib function name -> the Nail functions it calls back into, in the
+    /// order the transpiler passes them as trailing arguments.
+    ///
+    /// A signature here may name a type variable that also appears in the
+    /// stdlib function's own parameters - `tui_run(initial: T)` binds `T` from
+    /// its argument, and `view` and `update` are then checked against that
+    /// binding. That is what lets a stdlib function call back into the program
+    /// with a type only the program knows.
+    pub static ref HANDLER_CALLBACKS: HashMap<&'static str, Vec<HandlerCallback>> = {
         let mut m = HashMap::new();
-        m.insert("http_server", HandlerCallback {
+        m.insert("http_server", vec![HandlerCallback {
             function_name: "handle_request",
             parameter_types: vec![
                 NailDataTypeDescriptor::Struct("HTTP_Request".to_string()),
                 NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
             ],
             return_type: NailDataTypeDescriptor::Struct("HTTP_Response".to_string()),
-        });
+        }]);
+        m.insert("http_server_realtime", vec![
+            HandlerCallback {
+                function_name: "handle_request",
+                parameter_types: vec![
+                    NailDataTypeDescriptor::Struct("HTTP_Request".to_string()),
+                    NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
+                ],
+                return_type: NailDataTypeDescriptor::Struct("HTTP_Response".to_string()),
+            },
+            // Called once per websocket text frame; the returned text goes back
+            // to that one client, and the empty string means no reply.
+            HandlerCallback {
+                function_name: "handle_message",
+                parameter_types: vec![
+                    NailDataTypeDescriptor::String,
+                    NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
+                ],
+                return_type: NailDataTypeDescriptor::String,
+            },
+        ]);
+        m.insert("tui_run", vec![
+            HandlerCallback {
+                function_name: "view",
+                parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![])],
+                return_type: NailDataTypeDescriptor::Struct("TUI_Screen".to_string()),
+            },
+            HandlerCallback {
+                function_name: "update",
+                parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]), NailDataTypeDescriptor::Struct("TUI_Event".to_string())],
+                return_type: NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
+            },
+        ]);
         m
     };
 }
 
-/// The Nail function a stdlib function dispatches to, if it takes one.
-pub fn get_handler_callback(name: &str) -> Option<&'static HandlerCallback> {
+/// The Nail functions a stdlib function dispatches to, if it takes any.
+pub fn get_handler_callbacks(name: &str) -> Option<&'static Vec<HandlerCallback>> {
     HANDLER_CALLBACKS.get(name)
 }
 
@@ -610,7 +1212,7 @@ pub fn get_handler_callback(name: &str) -> Option<&'static HandlerCallback> {
 /// function is invoked from async glue, so it can never be emitted as a plain
 /// sync Rust function.
 pub fn is_handler_callback_target(function_name: &str) -> bool {
-    HANDLER_CALLBACKS.values().any(|callback| callback.function_name == function_name)
+    HANDLER_CALLBACKS.values().flatten().any(|callback| callback.function_name == function_name)
 }
 
 lazy_static! {
@@ -620,6 +1222,13 @@ lazy_static! {
         let mut m = HashMap::new();
         m.insert("CSV_Trim", vec!["None", "Headers", "Fields", "All"]);
         m.insert("HTTP_Method", vec!["Get", "Post", "Put", "Delete", "Patch"]);
+        m.insert("LOG_Level", vec!["Debug", "Info", "Warn", "Error"]);
+        m.insert("ML_Objective", vec!["Squared", "Logistic"]);
+        m.insert("TIME_Format", vec!["Unix", "UnixMillis", "ISO8601", "RFC3339", "RFC2822"]);
+        m.insert(
+            "TERM_Color",
+            vec!["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White", "BrightBlack", "BrightRed", "BrightGreen", "BrightYellow", "BrightBlue", "BrightMagenta", "BrightCyan", "BrightWhite"],
+        );
         m
     };
 }
@@ -631,6 +1240,27 @@ pub fn get_stdlib_enum_variants(name: &str) -> Option<&'static Vec<&'static str>
 
 pub fn is_stdlib_enum(name: &str) -> bool {
     STDLIB_ENUMS.contains_key(name)
+}
+
+/// Where a stdlib type lives in Rust, worked out from the namespace its name
+/// carries rather than from a second table that could disagree with the first.
+///
+/// `TUI_Screen` starts with the Terminal Interfaces module's namespace, so it
+/// lives at `nail::std_lib::tui::TUI_Screen`. This is what lets a program name
+/// a stdlib type in its own function signatures without having called a
+/// stdlib function that happens to import it - writing `view` and `update`
+/// before ever calling `tui_run`, for instance.
+pub fn stdlib_type_rust_path(type_name: &str) -> Option<String> {
+    if !STDLIB_TYPES.contains_key(type_name) && !STDLIB_ENUMS.contains_key(type_name) {
+        return None;
+    }
+    for module in StdlibModule::all() {
+        let namespace = module.name_prefix().trim_end_matches('_').to_uppercase() + "_";
+        if type_name.starts_with(&namespace) {
+            return Some(format!("nail::{}::{}", module.to_module_path(), type_name));
+        }
+    }
+    return None;
 }
 
 /// Get all stdlib type names (structs/enums defined in stdlib)
@@ -718,11 +1348,15 @@ mod stdlib_types_drift_tests {
     fn stdlib_enums_match_real_enums() {
         assert_enum_matches_registry::<crate::parser::std_lib::csv::CSV_Trim>("CSV_Trim");
         assert_enum_matches_registry::<crate::parser::std_lib::http::HTTP_Method>("HTTP_Method");
+        assert_enum_matches_registry::<crate::parser::std_lib::log::LOG_Level>("LOG_Level");
+        assert_enum_matches_registry::<crate::parser::std_lib::term::TERM_Color>("TERM_Color");
+        assert_enum_matches_registry::<crate::parser::std_lib::time::TIME_Format>("TIME_Format");
+        assert_enum_matches_registry::<crate::parser::std_lib::ml::ML_Objective>("ML_Objective");
     }
 
     #[test]
     fn all_stdlib_enums_are_drift_tested() {
-        let covered = ["CSV_Trim", "HTTP_Method"];
+        let covered = ["CSV_Trim", "HTTP_Method", "LOG_Level", "ML_Objective", "TERM_Color", "TIME_Format"];
         for enum_name in STDLIB_ENUMS.keys() {
             assert!(covered.contains(enum_name), "STDLIB_ENUMS entry '{}' has no drift test", enum_name);
         }
@@ -774,13 +1408,48 @@ mod stdlib_types_drift_tests {
 
     #[test]
     fn stdlib_types_match_real_structs() {
+        assert_matches_registry::<crate::parser::std_lib::url::URL_Parts>("URL_Parts");
+        assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Options>("PROCESS_Options");
+        assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Result>("PROCESS_Result");
         assert_matches_registry::<crate::parser::std_lib::csv::CSV_Options>("CSV_Options");
         assert_matches_registry::<crate::parser::std_lib::csv::CSV_Reader>("CSV_Reader");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Config>("HTTP_Config");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Static>("HTTP_Static");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Cookie>("HTTP_Cookie");
+        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Part>("HTTP_Part");
+        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Retry>("HTTP_Retry");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Request>("HTTP_Request");
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Response>("HTTP_Response");
+        assert_matches_registry::<crate::parser::std_lib::stdlib::STDLIB_Function>("STDLIB_Function");
+        assert_matches_registry::<crate::parser::std_lib::args::ARGS_Option>("ARGS_Option");
+        assert_matches_registry::<crate::parser::std_lib::args::ARGS_Parsed>("ARGS_Parsed");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_Split>("ML_Split");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_Linear>("ML_Linear");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_Tree>("ML_Tree");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_Clusters>("ML_Clusters");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_Scores>("ML_Scores");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_BoostConfig>("ML_BoostConfig");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_Boost>("ML_Boost");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_Regression>("ML_Regression");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_OneHot>("ML_OneHot");
+        assert_matches_registry::<crate::parser::std_lib::ml::ML_Forest>("ML_Forest");
+        assert_matches_registry::<crate::parser::std_lib::tui::TUI_Line>("TUI_Line");
+        assert_matches_registry::<crate::parser::std_lib::tui::TUI_Screen>("TUI_Screen");
+        assert_matches_registry::<crate::parser::std_lib::tui::TUI_Event>("TUI_Event");
+        assert_matches_registry::<crate::parser::std_lib::linalg::LINALG_Vec2>("LINALG_Vec2");
+        assert_matches_registry::<crate::parser::std_lib::linalg::LINALG_Vec3>("LINALG_Vec3");
+        assert_matches_registry::<crate::parser::std_lib::linalg::LINALG_Mat3>("LINALG_Mat3");
+        #[cfg(feature = "email")]
+        assert_matches_registry::<crate::parser::std_lib::email::EMAIL_Server>("EMAIL_Server");
+        #[cfg(feature = "postgres")]
+        {
+            assert_matches_registry::<crate::parser::std_lib::postgres::DB_Postgres>("DB_Postgres");
+            assert_matches_registry::<crate::parser::std_lib::postgres::DB_PostgresResult>("DB_PostgresResult");
+        }
+        assert_matches_registry::<crate::parser::std_lib::fs::FS_Reader>("FS_Reader");
+        assert_matches_registry::<crate::parser::std_lib::fs::FS_Watcher>("FS_Watcher");
+        assert_matches_registry::<crate::parser::std_lib::feed::FEED_Entry>("FEED_Entry");
+        assert_matches_registry::<crate::parser::std_lib::feed::FEED_Feed>("FEED_Feed");
         assert_matches_registry::<crate::parser::std_lib::database::DB_SQLite>("DB_SQLite");
         assert_matches_registry::<crate::parser::std_lib::database::DB_Result>("DB_Result");
         #[cfg(feature = "datafusion")]
@@ -795,7 +1464,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

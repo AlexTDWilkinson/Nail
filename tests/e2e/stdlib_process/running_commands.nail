@@ -1,0 +1,29 @@
+// E2E: running a command and learning everything about how it went
+ran:PROCESS_Result = danger(process_run_result(`sh`, [`-c`, `echo out; echo err 1>&2; exit 3`]));
+print(ran.stdout);
+print(ran.stderr);
+print(ran.exit_code);
+
+environment:h<s,s> = hashmap_new();
+hashmap_set(environment, `NAIL_E2E_VALUE`, `here`);
+options:PROCESS_Options = PROCESS_Options {
+    directory = `/tmp`,
+    environment = environment,
+    input = `one
+two
+`,
+    timeout_seconds = 0
+};
+with_options:PROCESS_Result = danger(process_run_with(`sh`, [`-c`, `pwd; echo $NAIL_E2E_VALUE; cat`], options));
+print(with_options.stdout);
+print(with_options.exit_code);
+
+no_environment:h<s,s> = hashmap_new();
+slow:PROCESS_Options = PROCESS_Options { directory = ``, environment = no_environment, input = ``, timeout_seconds = 1 };
+f gave_up(err:e):PROCESS_Result { r PROCESS_Result { stdout = ``, stderr = `gave up`, exit_code = -1 }; }
+timed_out:PROCESS_Result = safe(process_run_with(`sleep`, [`30`], slow), gave_up);
+print(timed_out.stderr);
+
+print(string_ends_with(danger(process_which(`sh`)), `/sh`));
+f not_found(err:e):s { r `not on PATH`; }
+print(safe(process_which(`nail_no_such_command`), not_found));

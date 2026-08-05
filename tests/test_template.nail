@@ -1,0 +1,59 @@
+// Filling values into text, with the escaping done on the way in rather than
+// remembered at every call site.
+
+values:h<s,s> = hashmap_new();
+hashmap_set(values, `name`, `Alex`);
+hashmap_set(values, `comment`, `<script>alert('x')</script>`);
+hashmap_set(values, `body`, `<p>already markup</p>`);
+hashmap_set(values, `admin`, `true`);
+hashmap_set(values, `logged_in`, ``);
+
+greeting:s = danger(template_render(`Hello, {{name}}!`, values));
+test_assert_equal_string(greeting, `Hello, Alex!`, `a value filled in`);
+
+// The reason to use a template at all: this escaping is not something anyone
+// has to remember.
+escaped:s = danger(template_render(`<p>{{comment}}</p>`, values));
+test_assert_false(string_contains(escaped, `<script>`), `a submitted comment cannot become markup`);
+
+// Markup that is already markup goes in with three braces.
+raw:s = danger(template_render(`<main>{{{body}}}</main>`, values));
+test_assert_equal_string(raw, `<main><p>already markup</p></main>`, `raw markup passes through`);
+
+admin_link:s = danger(template_render(`{{#if admin}}<a href="/admin">Admin</a>{{/if}}done`, values));
+test_assert(string_contains(admin_link, `/admin`), `a set value keeps its part`);
+
+login_link:s = danger(template_render(`{{#unless logged_in}}<a href="/login">Log in</a>{{/unless}}`, values));
+test_assert(string_contains(login_link, `/login`), `and unless is the other way round`);
+
+either_way:s = danger(template_render(`{{#if logged_in}}Hello, {{name}}{{else}}Hello, stranger{{/if}}`, values));
+test_assert_equal_string(either_way, `Hello, stranger`, `an else branch when the value is not set`);
+
+commented:s = danger(template_render(`a{{! a note to whoever edits this }}b`, values));
+test_assert_equal_string(commented, `ab`, `a comment renders as nothing`);
+
+// A table body is one template rendered once per row.
+first_row:h<s,s> = hashmap_new();
+hashmap_set(first_row, `name`, `Alex`);
+hashmap_set(first_row, `score`, `10`);
+second_row:h<s,s> = hashmap_new();
+hashmap_set(second_row, `name`, `Sam`);
+hashmap_set(second_row, `score`, `8`);
+rows:a:h<s,s> = [first_row, second_row];
+
+body:s = danger(template_render_rows(`<tr><td>{{name}}</td><td>{{score}}</td></tr>`, rows));
+test_assert_equal_string(body, `<tr><td>Alex</td><td>10</td></tr><tr><td>Sam</td><td>8</td></tr>`, `a row for each set of values`);
+
+// A missing value is an error naming it, because a blank in a page is a bug.
+f no_page(err:e):s { r `refused`; }
+missing:s = safe(template_render(`{{nowhere}}`, values), no_page);
+test_assert_equal_string(missing, `refused`, `a name the values do not have`);
+unclosed:s = safe(template_render(`{{#if admin}}text`, values), no_page);
+test_assert_equal_string(unclosed, `refused`, `and a tag that is never closed`);
+
+needed:a:s = danger(template_names_used(`{{title}} {{#if admin}}{{name}}{{/if}}`));
+test_assert_equal_int(array_length(needed), 3, `the names a template asks for`);
+test_assert(array_contains(needed, `title`), `including the plain ones`);
+test_assert(array_contains(needed, `admin`), `and the ones a conditional asks about`);
+
+print(`every template held`);

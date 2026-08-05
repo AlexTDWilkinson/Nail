@@ -578,7 +578,7 @@ mod tests {
         // to lex without errors, keep every string literal byte-identical, and
         // still parse. Formatting must also be idempotent.
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let files = ["tests/test_hashmap.nail", "tests/test_arrays.nail", "examples/hello_world.nail"];
+        let files = ["tests/test_hashmap.nail", "tests/test_arrays.nail", "tests/test_tagged_strings.nail", "examples/hello_world.nail"];
         let mut files_verified = 0;
 
         for file in files {
@@ -609,7 +609,7 @@ mod tests {
             let string_literals = |tokens: &[crate::lexer::Token]| -> Vec<String> {
                 tokens
                     .iter()
-                    .filter_map(|t| if let crate::lexer::TokenType::StringLiteral(s) = &t.token_type { Some(s.clone()) } else { None })
+                    .filter_map(|t| if let crate::lexer::TokenType::StringLiteral { value, .. } = &t.token_type { Some(value.clone()) } else { None })
                     .collect()
             };
             assert_eq!(string_literals(&original_tokens), string_literals(&formatted_tokens), "Formatting {} changed string literal contents", file);

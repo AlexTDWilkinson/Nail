@@ -1,0 +1,21 @@
+// E2E: money_* counts in whole cents, so ten dimes are exactly a dollar
+dime:i = money_from_dollars(0.10);
+total:i = dime + dime + dime + dime + dime + dime + dime + dime + dime + dime;
+print(total);
+print(money_format(total, `$`));
+print(money_from_dollars(12.34));
+print(danger(money_parse(`$1,234.50`)));
+print(danger(money_parse(`12`)));
+print(danger(money_parse(`-12.34`)));
+print(danger(money_parse(`($12.34)`)));
+print(money_format(5, `$`));
+print(money_percent_of(12995, 5.0));
+print(danger(money_times(1299, 3)));
+shares:a:i = danger(money_split(1000, 3));
+print(shares);
+print(array_sum(shares));
+allocated:a:i = danger(money_allocate(1000, [2, 1]));
+print(allocated);
+f rejected(err:e):i { r -1; }
+print(safe(money_parse(`1.005`), rejected));
+print(safe(money_parse(`free`), rejected));

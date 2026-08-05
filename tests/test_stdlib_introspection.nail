@@ -1,0 +1,20 @@
+// The standard library describes itself: stdlib_functions returns the same
+// registry entries the type checker uses, so a program can list what it can call.
+functions:a:STDLIB_Function = stdlib_functions();
+modules:a:s = stdlib_modules();
+
+names:a:s = map function in functions {
+    y function.name;
+};
+
+string_functions:a:STDLIB_Function = filter function in functions {
+    y function.module == `Strings`;
+};
+
+lines:a:s = map function in string_functions {
+    y array_join([function.signature, function.description, function.example], ` | `);
+};
+
+print(`Functions: `, array_length(names));
+print(`Modules: `, array_length(modules));
+print(`String functions: `, array_length(lines));

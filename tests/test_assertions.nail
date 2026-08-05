@@ -1,0 +1,25 @@
+// Assertions, which a Nail program uses to check itself. Every assertion here
+// holds, so the program runs to the end and exits cleanly.
+
+numbers:a:i = [3, 1, 2];
+sorted:a:i = array_sort(numbers);
+expected:a:i = [1, 2, 3];
+
+test_assert(array_length(numbers) == 3, `the array has three elements`);
+test_assert_false(array_length(numbers) == 0, `the array is not empty`);
+test_assert_equal_int(array_length(sorted), 3, `sorting keeps every element`);
+test_assert_equal_array(sorted, expected, `the sorted order`);
+
+greeting:s = string_concat([`hello `, `world`]);
+test_assert_equal_string(greeting, `hello world`, `the greeting`);
+test_assert_contains(greeting, `lo wo`, `the greeting spans both halves`);
+
+finished:b = true;
+test_assert_equal_bool(finished, true, `the job finished`);
+
+// Floats are compared with a tolerance, because 0.1 plus 0.2 is not exactly
+// 0.3 on any machine with hardware floats.
+total:f = 0.1 + 0.2;
+test_assert_equal_float(total, 0.3, 0.000001, `the running total`);
+
+print(`every assertion held`);

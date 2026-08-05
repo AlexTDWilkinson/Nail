@@ -1,0 +1,7 @@
+// E2E: the most common value, and how it breaks a tie
+print(danger(stats_mode([1.0, 2.0, 2.0, 3.0])));
+print(danger(stats_mode([5.0])));
+print(danger(stats_mode([9.0, 9.0, 1.0, 1.0, 4.0])));
+print(danger(stats_mode([3.0, 1.0, 2.0])));
+f no_values(err:e):f { r -1.0; }
+print(safe(stats_mode([]), no_values));

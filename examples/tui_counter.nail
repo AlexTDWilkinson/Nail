@@ -1,0 +1,76 @@
+// A working full-screen terminal program in forty lines.
+//
+// Run it with --interactive to take over the screen:
+//
+//     nail run examples/tui_counter.nail --interactive
+//
+// Without that flag it just prints what it would have drawn, so the example
+// stays runnable in a pipeline, a test suite, or anywhere else without a
+// terminal to take over.
+//
+// The whole interface is the two functions below. Neither touches the
+// terminal, holds a widget, or mutates anything: `view` says what the screen
+// looks like for a given state, `update` says what the state becomes when
+// something happens, and `tui_run` owns raw mode, input, redrawing, resizing
+// and putting the terminal back - including if the program panics.
+
+struct App {
+    count:i,
+    message:s,
+    finished:b
+}
+
+f view(state:App):TUI_Screen {
+    heading:TUI_Line = tui_styled(`Counter`, TERM_Color::Cyan, true, false);
+    total:TUI_Line = tui_styled(string_concat([`count: `, string_from(state.count)]), TERM_Color::BrightWhite, true, false);
+    note:TUI_Line = tui_styled(state.message, TERM_Color::Yellow, false, false);
+    blank:TUI_Line = tui_line(``);
+    help:TUI_Line = tui_styled(`up / down to change, r to reset, q to quit`, TERM_Color::White, false, true);
+
+    r TUI_Screen {
+        title = `Nail counter`,
+        lines = [heading, blank, total, note, blank, help],
+        status = `a full-screen program with nothing mutable in it`,
+        quit = state.finished
+    };
+}
+
+f update(state:App, event:TUI_Event):App {
+    if {
+        event.key == `q` => { r App { count = state.count, message = `bye`, finished = true }; },
+        event.key == `Esc` => { r App { count = state.count, message = `bye`, finished = true }; },
+        event.key == `Ctrl+c` => { r App { count = state.count, message = `bye`, finished = true }; },
+        event.key == `Up` => { r App { count = state.count + 1, message = `up`, finished = false }; },
+        event.key == `Down` => { r App { count = state.count - 1, message = `down`, finished = false }; },
+        event.key == `r` => { r App { count = 0, message = `reset`, finished = false }; },
+        else => { r state; }
+    }
+}
+
+start:App = App { count = 0, message = `ready`, finished = false };
+
+// A terminal this program can take over is not something to assume: piped to
+// a file there is nothing to draw on, and tui_run says so rather than writing
+// escape codes into the file.
+f without_a_terminal(err:e):App {
+    print(`not run interactively:`, err);
+    r App { count = 0, message = `no terminal`, finished = true };
+}
+
+if {
+    args_flag(`interactive`) => {
+        finished:App = safe(tui_run(start), without_a_terminal);
+        print(`finished on:`, finished.count);
+    },
+    else => {
+        // Everything is data and pure functions, so what the program would
+        // have drawn can be printed without drawing it.
+        drawn:TUI_Screen = view(start);
+        print(drawn.title);
+        for line in drawn.lines {
+            print(line.text);
+        }
+        print(drawn.status);
+        print(`pass --interactive to run this for real`);
+    }
+}

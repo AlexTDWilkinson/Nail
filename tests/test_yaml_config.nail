@@ -1,0 +1,39 @@
+// YAML, for the documents a program does not get to choose the format of.
+
+struct Job {
+    name:s,
+    runs_on:s,
+    timeout_minutes:i,
+    steps:a:s
+}
+
+job:Job = Job {
+    name = `build`,
+    runs_on = `ubuntu-latest`,
+    timeout_minutes = 30,
+    steps = [`checkout`, `test`]
+};
+
+written:s = danger(yaml_serialize(job));
+test_assert(string_contains(written, `name: build`), `a plain value`);
+test_assert(string_contains(written, `- checkout`), `and a list item`);
+
+read_back:Job = danger(yaml_deserialize(written));
+test_assert_equal_string(read_back.name, `build`, `the name survived the round trip`);
+test_assert_equal_int(read_back.timeout_minutes, 30, `and so did the number`);
+test_assert_equal_int(array_length(read_back.steps), 2, `and both steps`);
+
+// A document written by hand, with the comments and indentation a person uses.
+by_hand:s = `# which runner
+name: lint
+runs_on: ubuntu-latest
+timeout_minutes: 5
+steps:
+  - checkout
+  - clippy
+`;
+parsed:Job = danger(yaml_deserialize(by_hand));
+test_assert_equal_string(parsed.name, `lint`, `read from a hand-written document`);
+test_assert_equal_int(parsed.timeout_minutes, 5, `with its number read as a number`);
+
+print(`every document held`);

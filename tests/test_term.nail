@@ -1,0 +1,43 @@
+// Terminal colour, measurement and the two drawings worth having built in.
+
+heading:s = term_bold(`Results`);
+hint:s = term_dim(`press q to quit`);
+quoted:s = term_italic(`as written`);
+linked:s = term_underline(`documentation`);
+selected:s = term_inverse(`current row`);
+print(heading);
+print(hint);
+print(quoted);
+print(linked);
+print(selected);
+
+warning:s = term_paint(`careful`, TERM_Color::Yellow);
+banner:s = term_background(`FAIL`, TERM_Color::Red);
+print(warning);
+print(banner);
+
+// Colour is escape codes around the text, so what a person sees is shorter
+// than the string. Both of these answer 7.
+plain:s = term_strip_styles(warning);
+seen:i = term_display_width(warning);
+print(plain);
+print(seen);
+
+interactive:b = term_is_tty();
+columns:i = term_width();
+rows:i = term_height();
+print(`terminal:`);
+print(interactive);
+print(columns);
+print(rows);
+
+link:s = term_hyperlink(`Nail`, `https://nail-lang.org`);
+print(link);
+
+bar:s = danger(term_progress_bar(0.42, 20));
+print(bar);
+
+headers:a:s = [`name`, `count`];
+rows_of_data:a:a:s = [[`apples`, `3`], [`figs`, `12`], [`quinces`, `108`]];
+rendered:s = danger(term_table(headers, rows_of_data));
+print(rendered);

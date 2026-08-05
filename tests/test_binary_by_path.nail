@@ -1,0 +1,27 @@
+// Binary files handled by path: hashed, encoded, resized. Nothing binary ever
+// becomes a Nail value, which is why none of this needs a bytes type.
+
+scratch:s = path_join(fs_temp_dir(), `nail_binary_test`);
+danger(fs_create_dir(scratch));
+
+// A file's checksum, read in blocks so the file never has to fit in memory.
+text_file:s = path_join(scratch, `hello.txt`);
+danger(fs_write(text_file, `hello`));
+digest:s = danger(crypto_hash_file_sha256(text_file));
+test_assert_equal_string(digest, crypto_hash_sha256(`hello`), `hashing a file matches hashing its contents`);
+test_assert_equal_int(string_length(digest), 64, `and is 64 hex characters`);
+
+// Base64 is how a small file gets into the program at all - for a data: URI, say.
+encoded:s = danger(fs_read_base64(text_file));
+copy:s = path_join(scratch, `hello_copy.txt`);
+danger(fs_write_base64(copy, encoded));
+test_assert_equal_string(danger(fs_read(copy)), `hello`, `bytes survive the round trip`);
+
+// Text that is not base64 is refused rather than written as nonsense.
+never:s = path_join(scratch, `never.bin`);
+f refused(err:e):v { }
+safe(fs_write_base64(never, `not base64!!`), refused);
+test_assert_false(fs_is_file(never), `nothing was written`);
+
+danger(fs_remove_dir_all(scratch));
+print(`every file held`);

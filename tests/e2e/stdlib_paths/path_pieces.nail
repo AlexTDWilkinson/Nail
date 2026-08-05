@@ -1,0 +1,18 @@
+// E2E: the path_* pieces a program takes apart and puts back together
+print(path_stem(`/tmp/report.pdf`));
+print(path_stem(`archive.tar.gz`));
+print(path_stem(`README`));
+print(path_with_extension(`report.md`, `html`));
+print(path_with_extension(`report.md`, `.html`));
+print(path_with_extension(`report.md`, ``));
+print(danger(path_relative_to(`/srv/app/logs/today.log`, `/srv/app`)));
+print(danger(path_relative_to(`src/parser/mod.rs`, `src`)));
+f outside(err:e):s { r `not inside`; }
+print(safe(path_relative_to(`/etc/hosts`, `/srv`), outside));
+print(path_normalize(`/srv/./app/../app/logs`));
+print(path_normalize(`a/./b/../c`));
+print(path_normalize(`../up/one`));
+// The current directory differs per machine, so only its shape is checked.
+here:s = danger(path_absolute(`config.toml`));
+print(path_is_absolute(here));
+print(path_basename(here));

@@ -1,0 +1,53 @@
+// What kind of file this is, and the values a document carries above its text.
+
+test_assert_equal_string(mime_for_path(`index.html`), `text/html; charset=utf-8`, `a page`);
+test_assert_equal_string(mime_for_path(`/srv/app/public/logo.svg`), `image/svg+xml`, `a picture, found through its path`);
+test_assert_equal_string(mime_for_path(`PHOTO.PNG`), `image/png`, `whatever case the extension is in`);
+
+// Anything unrecognised is bytes rather than a guess, which is the safe answer
+// when guessing is the thing being avoided.
+test_assert_equal_string(mime_for_path(`Makefile`), `application/octet-stream`, `a name with no extension`);
+test_assert_equal_string(mime_for_path(`archive.unknownext`), `application/octet-stream`, `and an extension nobody knows`);
+
+test_assert(mime_is_text(`text/html; charset=utf-8`), `a page is text`);
+test_assert(mime_is_text(`application/json`), `and so is JSON`);
+test_assert_false(mime_is_text(`image/png`), `a picture is not`);
+
+test_assert_equal_string(danger(mime_extension_for(`image/png`)), `png`, `a type gives back an extension`);
+test_assert_equal_string(danger(mime_extension_for(`text/html; charset=utf-8`)), `html`, `parameters do not stop it being recognised`);
+
+// Front matter: the values a static site generator carries above the text.
+post:s = `---
+title: A Post
+date: 2026-08-04
+draft: false
+---
+# Heading
+
+The text of the post.
+`;
+
+meta:h<s,s> = markdown_front_matter(post);
+test_assert_equal_int(hashmap_len(meta), 3, `three values above the text`);
+test_assert_equal_string(danger(hashmap_get(meta, `title`)), `A Post`, `the title`);
+test_assert_equal_string(danger(hashmap_get(meta, `date`)), `2026-08-04`, `and the date`);
+
+body:s = markdown_without_front_matter(post);
+test_assert(string_starts_with(body, `# Heading`), `the body is what is left`);
+test_assert_false(string_contains(body, `title:`), `with none of the front matter in it`);
+
+// A rule partway down a document is a rule, not a fence, so a document with no
+// front matter is left alone.
+plain:s = `# Heading
+
+---
+
+Below the rule.
+`;
+test_assert_equal_string(markdown_without_front_matter(plain), plain, `a document with no front matter`);
+test_assert_equal_int(hashmap_len(markdown_front_matter(plain)), 0, `carries no values`);
+
+rendered:s = markdown_to_html(markdown_without_front_matter(post));
+test_assert(string_contains(rendered, `<h1>`), `and the body renders as markdown`);
+
+print(`every media type and document held`);

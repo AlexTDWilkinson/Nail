@@ -1,0 +1,71 @@
+// E2E: vector arithmetic, the operations that can fail, and the bridge to the
+// flat arrays of coordinates the drawing functions take.
+f pointing_east(problem:e):LINALG_Vec2 { r linalg_vec2(1.0, 0.0); }
+f origin_2d(problem:e):LINALG_Vec2 { r linalg_vec2_zero(); }
+f origin_3d(problem:e):LINALG_Vec3 { r linalg_vec3_zero(); }
+
+position:LINALG_Vec2 = linalg_vec2(3.0, 4.0);
+offset:LINALG_Vec2 = linalg_vec2(1.0, 0.0 - 1.0);
+
+moved:LINALG_Vec2 = linalg_vec2_add(position, offset);
+print(moved.x_coordinate);
+print(moved.y_coordinate);
+
+// A stdlib vector is a plain struct: the literal and the constructor agree.
+literal:LINALG_Vec2 = LINALG_Vec2 { x_coordinate = 3.0, y_coordinate = 4.0 };
+print(linalg_vec2_equals(literal, position, 0.000001));
+
+print(linalg_vec2_length(position));
+print(linalg_vec2_length_squared(position));
+print(linalg_vec2_distance(linalg_vec2_zero(), position));
+
+heading:LINALG_Vec2 = danger(linalg_vec2_normalize(position));
+print(heading.x_coordinate);
+print(heading.y_coordinate);
+
+print(linalg_vec2_dot(linalg_vec2(1.0, 0.0), linalg_vec2(0.0, 1.0)));
+print(danger(linalg_vec2_angle_between(linalg_vec2(1.0, 0.0), linalg_vec2(0.0, 2.0))));
+
+// A ball hitting a level floor keeps its sideways speed and reverses the rest.
+bounced:LINALG_Vec2 = linalg_vec2_reflect(linalg_vec2(1.0, 0.0 - 1.0), linalg_vec2(0.0, 1.0));
+print(bounced.x_coordinate);
+print(bounced.y_coordinate);
+
+// A quarter turn is exact only to within a float's patience.
+turned:LINALG_Vec2 = linalg_vec2_rotate(linalg_vec2(1.0, 0.0), math_to_radians(90.0));
+print(linalg_vec2_equals(turned, linalg_vec2(0.0, 1.0), 0.000001));
+print(linalg_vec2_equals(linalg_vec2_perpendicular(linalg_vec2(1.0, 0.0)), linalg_vec2(0.0, 1.0), 0.000001));
+
+print(linalg_vec2_lerp(linalg_vec2_zero(), linalg_vec2(10.0, 20.0), 0.5).y_coordinate);
+// The amount is clamped, so a runaway t cannot overshoot the end.
+print(linalg_vec2_lerp(linalg_vec2_zero(), linalg_vec2(10.0, 20.0), 4.0).x_coordinate);
+
+box_corner:LINALG_Vec2 = linalg_vec2_clamp(linalg_vec2(0.0 - 1.0, 9.0), linalg_vec2_zero(), linalg_vec2(5.0, 5.0));
+print(box_corner.x_coordinate);
+print(box_corner.y_coordinate);
+
+// Vectors reach draw_polyline as one flat array of coordinates.
+corners:a:f = array_flatten([linalg_vec2_to_array(position), linalg_vec2_to_array(moved)]);
+print(corners);
+print(danger(linalg_vec2_from_array([7.0, 8.0])).y_coordinate);
+
+// Three dimensions, and the product that only exists there.
+normal:LINALG_Vec3 = linalg_vec3_cross(linalg_vec3(1.0, 0.0, 0.0), linalg_vec3(0.0, 1.0, 0.0));
+print(normal.z_coordinate);
+print(linalg_vec3_dot(normal, linalg_vec3(1.0, 0.0, 0.0)));
+print(linalg_vec3_length(linalg_vec3(2.0, 3.0, 6.0)));
+print(linalg_vec3_lerp(linalg_vec3_zero(), linalg_vec3(10.0, 20.0, 30.0), 0.5).z_coordinate);
+
+inside:LINALG_Vec3 = linalg_vec3_clamp(linalg_vec3(0.0 - 1.0, 9.0, 2.0), linalg_vec3_zero(), linalg_vec3(5.0, 5.0, 5.0));
+print(inside.x_coordinate);
+print(inside.y_coordinate);
+print(inside.z_coordinate);
+print(linalg_vec3_to_array(linalg_vec3_negate(linalg_vec3(1.0, 2.0, 3.0))));
+
+// The failures are errors rather than infinities or quiet nonsense.
+nowhere:LINALG_Vec2 = safe(linalg_vec2_normalize(linalg_vec2_zero()), pointing_east);
+print(nowhere.x_coordinate);
+divided:LINALG_Vec2 = safe(linalg_vec2_divide(linalg_vec2(1.0, 1.0), linalg_vec2(2.0, 0.0)), origin_2d);
+print(divided.x_coordinate);
+short:LINALG_Vec3 = safe(linalg_vec3_from_array([1.0, 2.0]), origin_3d);
+print(short.z_coordinate);

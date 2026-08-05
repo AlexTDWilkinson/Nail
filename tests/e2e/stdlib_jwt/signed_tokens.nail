@@ -1,0 +1,26 @@
+// E2E: a signed token round-trips, and nothing else verifies against it
+struct Session {
+    user:s,
+    admin:b
+}
+
+secret:s = `a-secret-nobody-else-has`;
+session:Session = Session { user = `alex`, admin = true };
+token:s = danger(jwt_sign(danger(json_serialize(session)), secret, 3600));
+
+// The token itself is not printed: it carries the time it was made.
+print(array_length(string_split(token, `.`)));
+print(string_contains(token, `=`));
+
+returned:Session = danger(json_deserialize(danger(jwt_verify(token, secret))));
+print(returned.user);
+print(returned.admin);
+print(danger(jwt_is_expired(token)));
+print(string_contains(danger(jwt_read_unverified(token)), `alex`));
+
+f no_session(err:e):s { r `rejected`; }
+print(safe(jwt_verify(token, `some-other-secret`), no_session));
+print(safe(jwt_verify(`nonsense`, secret), no_session));
+
+permanent:s = danger(jwt_sign(danger(json_serialize(session)), secret, 0));
+print(danger(jwt_is_expired(permanent)));

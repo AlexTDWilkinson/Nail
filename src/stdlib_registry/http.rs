@@ -103,6 +103,88 @@ m.insert("http_request", StdlibFunction {
         example: "response:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://example.com`, headers, ``));",
     });
 
+    m.insert("http_part_text", StdlibFunction {
+        rust_path: "std_lib::http::http_part_text".to_string(),
+        crate_deps: vec![],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("HTTP_Part", "nail::std_lib::http")],
+        module: StdlibModule::Http,
+        parameters: vec![
+            StdlibParameter { name: "name".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "value".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+        ],
+        return_type: NailDataTypeDescriptor::Struct("HTTP_Part".to_string()),
+        diverging: false,
+        description: "One text field of a multipart form, the way a browser sends a filled-in text box.",
+        example: "purpose:HTTP_Part = http_part_text(`purpose`, `avatar`);",
+    });
+
+    m.insert("http_part_file", StdlibFunction {
+        rust_path: "std_lib::http::http_part_file".to_string(),
+        crate_deps: vec![],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("HTTP_Part", "nail::std_lib::http")],
+        module: StdlibModule::Http,
+        parameters: vec![
+            StdlibParameter { name: "name".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "file_path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
+        ],
+        return_type: NailDataTypeDescriptor::Struct("HTTP_Part".to_string()),
+        diverging: false,
+        description: "One file field of a multipart form. The file is read when the request is sent, so its bytes never have to pass through the program, and its name and media type are taken from the path.",
+        example: "upload:HTTP_Part = http_part_file(`file`, `report.pdf`);",
+    });
+
+    m.insert("http_request_multipart", StdlibFunction {
+        rust_path: "std_lib::http::http_request_multipart".to_string(),
+        crate_deps: vec![CrateDependency::Tokio, CrateDependency::Reqwest, CrateDependency::DashMap],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("HTTP_Response", "nail::std_lib::http"), ("HTTP_Method", "nail::std_lib::http"), ("HTTP_Part", "nail::std_lib::http")],
+        module: StdlibModule::Http,
+        parameters: vec![
+            StdlibParameter { name: "method".to_string(), param_type: NailDataTypeDescriptor::Enum("HTTP_Method".to_string()), pass_by_reference: false },
+            StdlibParameter { name: "url".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "headers".to_string(), param_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false },
+            StdlibParameter { name: "parts".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct("HTTP_Part".to_string()))), pass_by_reference: true },
+        ],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("HTTP_Response".to_string()))),
+        diverging: false,
+        description: "Sends a multipart/form-data request, the encoding file uploads use. Takes Post, Put or Patch, and sets Content-Type itself from the body's boundary, so headers must not carry one.",
+        example: "response:HTTP_Response = danger(http_request_multipart(HTTP_Method::Post, `https://api.example.com/files`, headers, parts));",
+    });
+
+    m.insert("http_default_retry", StdlibFunction {
+        rust_path: "std_lib::http::http_default_retry".to_string(),
+        crate_deps: vec![],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("HTTP_Retry", "nail::std_lib::http")],
+        module: StdlibModule::Http,
+        parameters: vec![],
+        return_type: NailDataTypeDescriptor::Struct("HTTP_Retry".to_string()),
+        diverging: false,
+        description: "Retry settings worth having: three attempts, a wait starting at 250ms and doubling to at most 5s, and a 30s deadline for each attempt.",
+        example: "retry:HTTP_Retry = http_default_retry();",
+    });
+
+    m.insert("http_request_retry", StdlibFunction {
+        rust_path: "std_lib::http::http_request_retry".to_string(),
+        crate_deps: vec![CrateDependency::Tokio, CrateDependency::Reqwest, CrateDependency::DashMap, CrateDependency::Rand],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("HTTP_Response", "nail::std_lib::http"), ("HTTP_Method", "nail::std_lib::http"), ("HTTP_Retry", "nail::std_lib::http")],
+        module: StdlibModule::Http,
+        parameters: vec![
+            StdlibParameter { name: "method".to_string(), param_type: NailDataTypeDescriptor::Enum("HTTP_Method".to_string()), pass_by_reference: false },
+            StdlibParameter { name: "url".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "headers".to_string(), param_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false },
+            StdlibParameter { name: "body".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "retry".to_string(), param_type: NailDataTypeDescriptor::Struct("HTTP_Retry".to_string()), pass_by_reference: false },
+        ],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("HTTP_Response".to_string()))),
+        diverging: false,
+        description: "Makes an HTTP request, sending it again while it fails in a way that might not fail next time: no answer at all, or a 408, 429, 500, 502, 503 or 504. Waits longer between attempts each time, honours a Retry-After header, and returns the last response whatever its status. The request is sent again unchanged, so an API that must not act twice wants an idempotency key in the headers.",
+        example: "response:HTTP_Response = danger(http_request_retry(HTTP_Method::Get, url, headers, ``, http_default_retry()));",
+    });
+
     m.insert("http_default_cookie", StdlibFunction {
         rust_path: "std_lib::http::http_default_cookie".to_string(),
         crate_deps: vec![],
@@ -154,7 +236,42 @@ m.insert("http_request", StdlibFunction {
         parameters: vec![],
         return_type: NailDataTypeDescriptor::Struct("HTTP_Config".to_string()),
         diverging: false,
-        description: "The default server configuration: no static mounts, 1 MiB body limit, 30 second handler timeout, empty state. Nail has no default field values, so this saves spelling out every field of HTTP_Config.",
+        description: "The default server configuration: no static mounts, 8 MiB body limit, 30 second handler timeout, empty state. Nail has no default field values, so this saves spelling out every field of HTTP_Config.",
         example: "config:HTTP_Config = http_default_config();",
     });
+
+    m.insert("http_multipart_extract", StdlibFunction {
+        rust_path: "std_lib::http::multipart_extract".to_string(),
+        crate_deps: vec![CrateDependency::Tokio, CrateDependency::DashMap, CrateDependency::Uuid],
+        struct_derives: vec![],
+        custom_type_imports: vec![],
+        module: StdlibModule::Http,
+        parameters: vec![nail_param!(body_path: s), nail_param!(content_type: s), nail_param!(into_directory: s)],
+        return_type: nail_type!(((h s s)!e)),
+        diverging: false,
+        description: "Takes a multipart/form-data body apart: file parts are written into the directory and text parts come back as values, in one hashmap where `name` is a value or a written path, `name.filename` is the cleaned-up name the client gave, and `name.type` is the declared content type. Read in blocks, so a large upload costs no more memory than a small one.",
+        example: "fields:h<s,s> = danger(http_multipart_extract(request.body_path, danger(hashmap_get(request.headers, `content-type`)), `uploads`));",
+    });
+
+    m.insert("http_server_realtime", StdlibFunction {
+        rust_path: "std_lib::http::http_server_realtime".to_string(),
+        crate_deps: vec![CrateDependency::Axum, CrateDependency::Tokio, CrateDependency::TowerHttp, CrateDependency::UrlEncoding, CrateDependency::Futures],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("HTTP_Request", "nail::std_lib::http"), ("HTTP_Response", "nail::std_lib::http"), ("HTTP_Config", "nail::std_lib::http"), ("HTTP_Static", "nail::std_lib::http")],
+        module: StdlibModule::Http,
+        parameters: vec![nail_param!(port: i), StdlibParameter { name: "config".to_string(), param_type: NailDataTypeDescriptor::Struct("HTTP_Config".to_string()), pass_by_reference: false }, nail_param!(live_path: s)],
+        return_type: NailDataTypeDescriptor::Void,
+        diverging: false,
+        description: "http_server with a live endpoint beside the ordinary routes: a GET to live_path is a server-sent-event stream of everything http_live_send broadcasts, a websocket upgrade on the same path joins the same channel, and each text frame a client sends is answered by the program's handle_message function. ?channel=name picks the channel.",
+        example: "http_server_realtime(8080, config, `/live`);",
+    });
+
+    simple_fns! { m, Http:
+        "http_live_send" [Tokio] => "std_lib::http::http_live_send", (channel: s, message: s) -> i,
+            "Sends a message to every SSE stream and websocket subscribed to the channel, returning how many there were. Nobody listening is 0, not an error.",
+            "heard_by:i = http_live_send(`chat`, rendered_message);";
+        "http_live_count" [Tokio] => "std_lib::http::http_live_count", (channel: s) -> i,
+            "How many live subscribers a channel has right now.",
+            "watching:i = http_live_count(`chat`);";
+    }
 }

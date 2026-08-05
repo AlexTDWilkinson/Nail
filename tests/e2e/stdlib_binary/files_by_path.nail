@@ -1,0 +1,41 @@
+// E2E: binary files handled by path - hashed, encoded, resized, measured.
+// Nothing binary becomes a Nail value.
+danger(fs_write(`hello.txt`, `hello`));
+
+// The published SHA-256 of "hello", so this pins the streaming read too.
+print(danger(crypto_hash_file_sha256(`hello.txt`)));
+print(danger(crypto_hash_file_sha256(`hello.txt`)) == crypto_hash_sha256(`hello`));
+
+encoded:s = danger(fs_read_base64(`hello.txt`));
+print(encoded);
+danger(fs_write_base64(`copy.txt`, encoded));
+print(danger(fs_read(`copy.txt`)));
+
+f refused(err:e):v { }
+safe(fs_write_base64(`never.bin`, `not base64!!`), refused);
+print(fs_is_file(`never.bin`));
+
+// A picture, written by the program so nothing binary is checked into the repo.
+// A 2x2 red PNG, base64 encoded.
+red_dot:s = `iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==`;
+danger(fs_write_base64(`dot.png`, red_dot));
+print(danger(image_width(`dot.png`)));
+print(danger(image_height(`dot.png`)));
+print(danger(image_format(`dot.png`)));
+
+danger(image_resize(`dot.png`, `big.png`, 8, 4));
+print(danger(image_width(`big.png`)));
+print(danger(image_height(`big.png`)));
+
+// Fitting inside a box keeps the proportions, and never enlarges.
+danger(image_resize_within(`big.png`, `within.png`, 4, 4));
+print(danger(image_width(`within.png`)));
+print(danger(image_height(`within.png`)));
+danger(image_resize_within(`dot.png`, `same.png`, 100, 100));
+print(danger(image_width(`same.png`)));
+
+danger(image_convert(`dot.png`, `dot.jpg`));
+print(danger(image_format(`dot.jpg`)));
+
+f not_a_picture(err:e):i { r -1; }
+print(safe(image_width(`hello.txt`), not_a_picture));

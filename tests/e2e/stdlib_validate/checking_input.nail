@@ -1,0 +1,23 @@
+// E2E: validate_* answers the questions a program asks of outside input
+print(validate_email(`alex@houski.ca`));
+print(validate_email(`alex@localhost`));
+print(validate_url(`https://nail-lang.org/docs?page=2`));
+print(validate_url(`/relative/path`));
+print(validate_hostname(`example.com`));
+print(validate_hostname(`-leading.com`));
+print(validate_uuid(`f47ac10b-58cc-4372-a567-0e02b2c3d479`));
+print(validate_ipv4(`192.168.0.1`));
+print(validate_ipv4(`192.168.0.256`));
+print(validate_ipv6(`2001:db8::8a2e:370:7334`));
+print(validate_port(8080));
+print(validate_port(0));
+print(validate_credit_card(`4242 4242 4242 4242`));
+print(validate_credit_card(`4242 4242 4242 4243`));
+print(validate_hex_color(`#1a2b3c`));
+print(validate_slug(`hello-world`));
+print(validate_slug(`Hello-World`));
+print(validate_length_between(`alex`, 2, 32));
+print(validate_password_strength(`password`));
+print(validate_password_strength(`Tr0ubador&horse!`));
+print(validate_json(`{"port": 8080}`));
+print(validate_json(`{port: 8080}`));

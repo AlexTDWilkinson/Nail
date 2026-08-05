@@ -1,0 +1,47 @@
+// Editing an array by building the new one: Nail arrays are immutable, so
+// every operation here returns a fresh array rather than changing this one.
+
+names:a:s = [`alice`, `bob`, `carol`, `bob`];
+
+test_assert_equal_int(danger(array_index_of(names, `carol`)), 2, `where carol is`);
+test_assert_equal_int(danger(array_index_of(names, `bob`)), 1, `the first bob, not the second`);
+test_assert_equal_int(array_count_of(names, `bob`), 2, `how many bobs`);
+test_assert_equal_int(array_count_of(names, `dave`), 0, `nobody named dave`);
+
+with_dave:a:s = danger(array_insert(names, 1, `dave`));
+expected_insert:a:s = [`alice`, `dave`, `bob`, `carol`, `bob`];
+test_assert_equal_array(with_dave, expected_insert, `dave joined in the middle`);
+
+appended:a:s = danger(array_insert(names, 4, `dave`));
+expected_append:a:s = [`alice`, `bob`, `carol`, `bob`, `dave`];
+test_assert_equal_array(appended, expected_append, `an index at the length appends`);
+
+without_alice:a:s = danger(array_remove_at(names, 0));
+expected_remove:a:s = [`bob`, `carol`, `bob`];
+test_assert_equal_array(without_alice, expected_remove, `alice removed`);
+
+renamed:a:s = danger(array_replace_at(names, 0, `alicia`));
+expected_replace:a:s = [`alicia`, `bob`, `carol`, `bob`];
+test_assert_equal_array(renamed, expected_replace, `alice renamed`);
+
+swapped:a:s = danger(array_swap(names, 0, 2));
+expected_swap:a:s = [`carol`, `bob`, `alice`, `bob`];
+test_assert_equal_array(swapped, expected_swap, `the ends exchanged`);
+
+// The original is untouched by all of the above, which is the point.
+test_assert_equal_int(array_length(names), 4, `the original array is unchanged`);
+
+test_assert_false(array_is_empty(names), `there are names`);
+nothing:a:s = [];
+test_assert(array_is_empty(nothing), `and an empty array is empty`);
+
+votes:a:s = [`yes`, `yes`, `yes`];
+test_assert(array_all_equal(votes), `a unanimous vote`);
+test_assert_false(array_all_equal(names), `the names differ`);
+
+scores:a:i = [10, 50, 20];
+leaderboard:a:i = array_sort_descending(scores);
+expected_order:a:i = [50, 20, 10];
+test_assert_equal_array(leaderboard, expected_order, `highest first`);
+
+print(`every array edit held`);

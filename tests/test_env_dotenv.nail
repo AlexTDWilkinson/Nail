@@ -1,0 +1,35 @@
+// Reading a .env file: the settings a program is configured with, without a
+// configuration library.
+
+scratch:s = path_join(fs_temp_dir(), `nail_env_dotenv`);
+danger(fs_create_dir(scratch));
+settings_path:s = path_join(scratch, `settings.env`);
+
+danger(fs_write(settings_path, `# how this program is configured
+
+NAIL_DOTENV_GREETING=hello
+export NAIL_DOTENV_PORT=8080
+NAIL_DOTENV_QUOTED="spaces  kept"
+NAIL_DOTENV_TRAILING=value # this comment is not part of it
+`));
+
+settings:h<s,s> = danger(env_load_dotenv(settings_path));
+
+greeting:s = danger(hashmap_get(settings, `NAIL_DOTENV_GREETING`));
+port:s = danger(hashmap_get(settings, `NAIL_DOTENV_PORT`));
+quoted:s = danger(hashmap_get(settings, `NAIL_DOTENV_QUOTED`));
+trailing:s = danger(hashmap_get(settings, `NAIL_DOTENV_TRAILING`));
+
+print(`what the file said:`);
+print(greeting);
+print(port);
+print(quoted);
+print(trailing);
+
+// The variables are set in the environment too, so anything reading them with
+// env_get finds them.
+from_environment:s = danger(env_get(`NAIL_DOTENV_GREETING`));
+print(`the same value through env_get:`);
+print(from_environment);
+
+danger(fs_remove_dir_all(scratch));

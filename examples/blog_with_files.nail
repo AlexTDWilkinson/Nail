@@ -139,7 +139,7 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
         else => {
             r HTTP_Response {
                 status = 404,
-                body = `<pre>404 - not found</pre>`,
+                body = html`<pre>404 - not found</pre>`,
                 content_type = `text/html`,
                 headers = headers
             };

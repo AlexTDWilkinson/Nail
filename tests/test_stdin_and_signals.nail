@@ -1,0 +1,20 @@
+// The two stdlib functions that cannot be exercised by the end-to-end suite,
+// since one waits on a person or a pipe and the other waits to be killed.
+// This file is transpiled and type checked, never run.
+f serve():v {
+    print(`started`);
+    danger(process_wait_for_interrupt());
+    print(`shutting down cleanly`);
+}
+
+f read_input():s {
+    piped:b = io_is_piped();
+    r if {
+        piped => { r danger(io_read_all()); },
+        else => { r danger(io_read_line_prompt(`name: `)); }
+    };
+}
+
+text:s = read_input();
+print(string_length(text));
+serve();

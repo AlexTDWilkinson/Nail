@@ -1,0 +1,45 @@
+// Signed tokens, which is how a server recognises a visitor it has seen before
+// without trusting anything the browser sends back unsigned.
+
+struct Session {
+    user:s,
+    admin:b
+}
+
+secret:s = `a-secret-nobody-else-has`;
+session:Session = Session { user = `alex`, admin = true };
+
+token:s = danger(jwt_sign(danger(json_serialize(session)), secret, 3600));
+
+// A token is three base64url parts, so it survives a cookie or a header
+// without escaping.
+pieces:a:s = string_split(token, `.`);
+test_assert_equal_int(array_length(pieces), 3, `a token has three parts`);
+test_assert_false(string_contains(token, `=`), `and carries no padding`);
+
+claims_json:s = danger(jwt_verify(token, secret));
+returned:Session = danger(json_deserialize(claims_json));
+test_assert_equal_string(returned.user, `alex`, `the user came back`);
+test_assert_equal_bool(returned.admin, true, `and so did the claim about them`);
+
+test_assert_false(danger(jwt_is_expired(token)), `a fresh token has not expired`);
+
+// The claims can be read without the secret - which is exactly why they have
+// to be verified before they are believed.
+unverified:s = danger(jwt_read_unverified(token));
+test_assert(string_contains(unverified, `alex`), `anyone can read the claims`);
+
+// Verifying with the wrong secret fails, and so does verifying something that
+// is not a token at all.
+f no_session(err:e):s { r `rejected`; }
+wrong_secret:s = safe(jwt_verify(token, `some-other-secret`), no_session);
+test_assert_equal_string(wrong_secret, `rejected`, `another secret does not verify it`);
+
+not_a_token:s = safe(jwt_verify(`nonsense`, secret), no_session);
+test_assert_equal_string(not_a_token, `rejected`, `and nonsense is not a token`);
+
+// A token with no expiry is for the cases where a deadline is the wrong tool.
+permanent:s = danger(jwt_sign(danger(json_serialize(session)), secret, 0));
+test_assert_false(danger(jwt_is_expired(permanent)), `a token with no expiry never expires`);
+
+print(`every token held`);

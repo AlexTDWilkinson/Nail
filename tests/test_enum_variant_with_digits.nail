@@ -15,6 +15,6 @@ f protocol_label(protocol:HTTP_Protocol):s {
     }
 }
 
-stamp:s = time_format(time_now(), TIME_Format::ISO8601);
+stamp:s = danger(time_format(time_now(), TIME_Format::ISO8601));
 print(protocol_label(HTTP_Protocol::Http2));
 print(string_length(stamp) > 0);

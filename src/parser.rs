@@ -272,7 +272,7 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                 advance(state);
                 ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Int, code_span: token.code_span, scope: GLOBAL_SCOPE }
             }
-            TokenType::StringLiteral(value) => {
+            TokenType::StringLiteral { value, .. } => {
                 advance(state);
                 ASTNode::StringLiteral { value, code_span: token.code_span, scope: GLOBAL_SCOPE }
             }

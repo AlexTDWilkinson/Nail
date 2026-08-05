@@ -1,0 +1,40 @@
+// Charts as SVG documents, which are strings like any other and go straight
+// into a page or a file.
+
+daily:a:f = [120.0, 180.0, 150.0, 240.0, 210.0, 300.0, 280.0];
+days:a:s = [`mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`];
+
+line_chart:s = danger(chart_line(600.0, 300.0, daily, days, `#2563eb`, `Requests this week`));
+test_assert(string_starts_with(line_chart, `<svg`), `a whole document`);
+test_assert(string_contains(line_chart, `polyline`), `with a line in it`);
+test_assert(string_contains(line_chart, `Requests this week`), `and its title`);
+test_assert(string_contains(line_chart, `mon`), `and its labels`);
+
+regions:a:s = [`north`, `south`, `east`, `west`];
+sales:a:f = [12.5, 8.0, 15.25, 9.75];
+bar_chart:s = danger(chart_bar(600.0, 300.0, sales, regions, `#16a34a`, `Sales by region`));
+test_assert(string_contains(bar_chart, `<rect`), `bars are rectangles`);
+test_assert(string_contains(bar_chart, `north`), `each one labelled`);
+
+predicted:a:f = [1.0, 2.0, 3.0, 4.0, 5.0];
+actual:a:f = [1.2, 1.9, 3.3, 3.8, 5.1];
+scatter_chart:s = danger(chart_scatter(400.0, 400.0, predicted, actual, `#dc2626`, `Predicted against actual`));
+test_assert(string_contains(scatter_chart, `<circle`), `points are circles`);
+
+// A sparkline has no axis and no background, so it sits inside a line of text.
+spark:s = danger(chart_sparkline(80.0, 20.0, daily, `#2563eb`));
+test_assert(string_contains(spark, `polyline`), `a sparkline is just the line`);
+test_assert_false(string_contains(spark, `<text`), `with nothing labelled`);
+
+// A label that is markup cannot break the document it goes into.
+risky:a:s = [`<script>`, `a & b`];
+two_values:a:f = [1.0, 2.0];
+escaped:s = danger(chart_bar(600.0, 300.0, two_values, risky, `#000000`, `safe`));
+test_assert_false(string_contains(escaped, `<script>`), `markup in a label is escaped`);
+
+// A chart too small to label says so rather than drawing nonsense.
+f no_chart(err:e):s { r `refused`; }
+tiny:s = safe(chart_line(40.0, 40.0, two_values, days, `#000000`, ``), no_chart);
+test_assert_equal_string(tiny, `refused`, `a chart with no room to plot in`);
+
+print(`every chart held`);

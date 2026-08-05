@@ -1,6 +1,7 @@
 mod checker;
 mod colorizer;
 mod common;
+mod embedded;
 mod formatter;
 mod lexer;
 mod parser;
@@ -704,26 +705,8 @@ impl Editor {
         self.stdlib_functions.clear();
         
         for (name, func) in STDLIB_FUNCTIONS.iter() {
-            let category = match func.module {
-                crate::stdlib_registry::StdlibModule::Http => "HTTP",
-                crate::stdlib_registry::StdlibModule::Fs => "File System",
-                crate::stdlib_registry::StdlibModule::IO => "Input/Output",
-                crate::stdlib_registry::StdlibModule::Math => "Math",
-                crate::stdlib_registry::StdlibModule::String => "String",
-                crate::stdlib_registry::StdlibModule::Array => "Array",
-                crate::stdlib_registry::StdlibModule::Error => "Error",
-                crate::stdlib_registry::StdlibModule::Print => "Print",
-                crate::stdlib_registry::StdlibModule::Time => "Time",
-                crate::stdlib_registry::StdlibModule::Regex => "Regex",
-                crate::stdlib_registry::StdlibModule::Json => "JSON",
-                crate::stdlib_registry::StdlibModule::Env => "Environment",
-                crate::stdlib_registry::StdlibModule::Process => "Process",
-                crate::stdlib_registry::StdlibModule::Crypto => "Crypto",
-                crate::stdlib_registry::StdlibModule::Database => "Database",
-                crate::stdlib_registry::StdlibModule::Compress => "Compression",
-                _ => "Other",
-            };
-            
+            let category = func.module.display_name();
+
             // Build function signature
             let mut signature = format!("{}(", name);
             for (i, param) in func.parameters.iter().enumerate() {

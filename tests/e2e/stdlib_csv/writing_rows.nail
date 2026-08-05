@@ -1,0 +1,18 @@
+// E2E: writing CSV out, with the escaping a comma in a name needs
+first:h<s,s> = hashmap_new();
+hashmap_set(first, `name`, `Doe, Jane`);
+hashmap_set(first, `city`, `London`);
+second:h<s,s> = hashmap_new();
+hashmap_set(second, `name`, `Bob`);
+options:CSV_Options = csv_default_options();
+rows:a:h<s,s> = [first, second];
+text:s = danger(csv_serialize([`name`, `city`], rows, options));
+print(text);
+// What was written reads back as the same rows.
+read_back:a:h<s,s> = danger(csv_parse(text, options));
+print(array_length(read_back));
+print(danger(hashmap_get(danger(array_first(read_back)), `name`)));
+danger(csv_write(`export.csv`, [`name`, `city`], rows, options));
+print(danger(fs_read(`export.csv`)));
+f no_columns(err:e):s { r `no columns`; }
+print(safe(csv_serialize([], rows, options), no_columns));

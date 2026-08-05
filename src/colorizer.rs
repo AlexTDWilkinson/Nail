@@ -7,6 +7,8 @@ use ratatui::{
 };
 use rayon::prelude::*;
 
+use crate::embedded::{self, Piece};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorScheme {
     pub function: Color,
@@ -132,7 +134,7 @@ pub fn colorize_code(content: Vec<Line>, theme: &ColorScheme) -> Vec<Line<'stati
     }
 
     // First pass: detect multi-line strings
-    let string_state = detect_multiline_strings(&content);
+    let string_state = scan_string_states(&content);
 
     // Parallel colorization per line with bounds checking
     let colored_lines: Vec<Line<'static>> = content.into_par_iter().enumerate().map(|(line_idx, line)| {
@@ -149,134 +151,190 @@ pub fn colorize_code(content: Vec<Line>, theme: &ColorScheme) -> Vec<Line<'stati
     colored_lines
 }
 
-fn detect_multiline_strings(content: &[Line]) -> Vec<bool> {
-    let mut in_string = false;
-    let mut string_state = Vec::with_capacity(content.len());
-
-    for line in content {
-        let line_content = line.spans.iter().map(|span| span.content.as_ref()).collect::<Vec<_>>().join("");
-
-        // Nail uses backticks for strings, not quotes
-        let mut chars = line_content.chars().peekable();
-        while let Some(ch) = chars.next() {
-            if ch == '`' {
-                in_string = !in_string;
-            }
-        }
-
-        string_state.push(in_string);
+/// Length of the language tag sitting at the end of `content`, if any. A tag
+/// is an identifier-shaped run written flush against a string's opening
+/// backtick - the `html` in html`<p>hi</p>` - and the lexer treats it as part
+/// of the literal, so the colorizer has to as well. Tags are ASCII by
+/// construction, so the returned length is good for both bytes and chars.
+fn trailing_tag_len(content: &str) -> usize {
+    let tag_len = content.chars().rev().take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_').count();
+    if tag_len == 0 {
+        return 0;
     }
-
-    string_state
+    match content[content.len() - tag_len..].chars().next() {
+        Some(first) if first.is_ascii_lowercase() => tag_len,
+        // A run of digits or underscores is not an identifier, so it is not a tag.
+        _ => 0,
+    }
 }
 
-fn colorize_line(line: Line, line_idx: usize, string_state: &[bool], theme: &ColorScheme) -> Line<'static> {
+/// Where a line begins: inside a string literal, or in ordinary code.
+/// A string opened with a language tag carries how far into that language's
+/// syntax the previous line got - a `<div` whose attributes run onto the next
+/// line, a CSS block, a `/* ... */` - since all of those stay open across the
+/// break. A string with no tag, or a tag no tokenizer knows, carries `None`
+/// and is colored as one plain string.
+#[derive(Clone, PartialEq, Debug)]
+struct StringContext {
+    embedded: Option<embedded::State>,
+}
+
+/// The state each line *starts* in. The previous version recorded the state at
+/// the end of each line, which put the boundary a line out at both ends: the
+/// line opening a multi-line string had its leading code painted as string,
+/// and the line closing one had its trailing markup painted as code.
+fn scan_string_states(content: &[Line]) -> Vec<Option<StringContext>> {
+    let mut state: Option<StringContext> = None;
+    let mut states = Vec::with_capacity(content.len());
+
+    for line in content {
+        states.push(state.clone());
+        let text = line.spans.iter().map(|span| span.content.as_ref()).collect::<Vec<_>>().join("");
+        advance_line_state(&text, &mut state, None);
+    }
+
+    states
+}
+
+/// Walks one line, updating `state`, and colors it into `emit` if one is
+/// given. Colorizing and state-tracking share this one walk so the two can
+/// never disagree about where a string ends.
+fn advance_line_state(text: &str, state: &mut Option<StringContext>, mut emit: Option<(&mut Vec<Span<'static>>, &ColorScheme)>) {
+    let chars: Vec<char> = text.chars().collect();
+    let mut index = 0;
+    let mut code_run = String::new();
+    let mut string_run = String::new();
+
+    while index < chars.len() {
+        let ch = chars[index];
+
+        if let Some(context) = state.clone() {
+            // Inside a string. An escaped character never closes it.
+            if ch == '\\' && index + 1 < chars.len() {
+                string_run.push(ch);
+                string_run.push(chars[index + 1]);
+                index += 2;
+                continue;
+            }
+            if ch == '`' {
+                let mut embedded = context.embedded.clone();
+                match emit.as_mut() {
+                    Some((spans, theme)) => {
+                        push_string_body(&string_run, &mut embedded, spans, theme);
+                        spans.push(Span::styled("`".to_string(), Style::default().fg(theme.string_literal)));
+                    }
+                    None => advance_string_body(&string_run, &mut embedded),
+                }
+                string_run.clear();
+                *state = None;
+                index += 1;
+                continue;
+            }
+            string_run.push(ch);
+            index += 1;
+            continue;
+        }
+
+        // In code. A comment runs to the end of the line and is never tokenized.
+        if ch == '/' && chars.get(index + 1) == Some(&'/') {
+            let comment: String = chars[index..].iter().collect();
+            if let Some((spans, theme)) = emit.as_mut() {
+                push_code_run(&code_run, spans, theme);
+                spans.push(Span::styled(comment, Style::default().fg(theme.comment)));
+            }
+            code_run.clear();
+            return;
+        }
+
+        if ch == '`' {
+            // A language tag written against the backtick belongs to the
+            // string, not to the code before it.
+            let tag_len = trailing_tag_len(&code_run);
+            let tag: String = code_run[code_run.len() - tag_len..].to_string();
+            code_run.truncate(code_run.len() - tag_len);
+            if let Some((spans, theme)) = emit.as_mut() {
+                push_code_run(&code_run, spans, theme);
+                spans.push(Span::styled(format!("{}`", tag), Style::default().fg(theme.string_literal)));
+            }
+            code_run.clear();
+            *state = Some(StringContext { embedded: embedded::state_for_tag(&tag) });
+            index += 1;
+            continue;
+        }
+
+        code_run.push(ch);
+        index += 1;
+    }
+
+    // Whatever is left runs off the end of the line.
+    if let Some(context) = state.as_mut() {
+        match emit.as_mut() {
+            Some((spans, theme)) => push_string_body(&string_run, &mut context.embedded, spans, theme),
+            None => advance_string_body(&string_run, &mut context.embedded),
+        }
+    } else if let Some((spans, theme)) = emit.as_mut() {
+        push_code_run(&code_run, spans, theme);
+    }
+}
+
+fn push_code_run(code_run: &str, spans: &mut Vec<Span<'static>>, theme: &ColorScheme) {
+    if code_run.is_empty() {
+        return;
+    }
+    colorize_non_string_content_preserve_positions(code_run, spans, theme);
+}
+
+/// The inside of a string literal. A tag naming a language the highlighter
+/// knows is colored piece by piece; anything else - an untagged string, or a
+/// tag no tokenizer covers - stays one color.
+fn push_string_body(body: &str, embedded: &mut Option<embedded::State>, spans: &mut Vec<Span<'static>>, theme: &ColorScheme) {
+    if body.is_empty() {
+        return;
+    }
+    match embedded {
+        Some(state) => embedded::tokenize(body, state, |text, piece| {
+            spans.push(Span::styled(text.to_string(), Style::default().fg(embedded_color(piece, theme))));
+        }),
+        None => spans.push(Span::styled(body.to_string(), Style::default().fg(theme.string_literal))),
+    }
+}
+
+fn advance_string_body(body: &str, embedded: &mut Option<embedded::State>) {
+    if let Some(state) = embedded {
+        embedded::advance(body, state);
+    }
+}
+
+/// One color per kind of piece, shared by every embedded language: an element
+/// name and a CSS selector name the same thing about their language, so they
+/// are painted the same way.
+fn embedded_color(piece: Piece, theme: &ColorScheme) -> Color {
+    return match piece {
+        Piece::Bracket => theme.comma,
+        Piece::Element => theme.keyword,
+        Piece::Attribute => theme.identifier_type,
+        Piece::Function => theme.function,
+        Piece::Keyword => theme.keyword,
+        Piece::Operator => theme.operator,
+        Piece::Value => theme.string_literal,
+        Piece::Number => theme.signed_int,
+        Piece::Comment => theme.comment,
+        Piece::Text => theme.string_literal,
+    };
+}
+
+fn colorize_line(line: Line, line_idx: usize, string_states: &[Option<StringContext>], theme: &ColorScheme) -> Line<'static> {
     if line.spans.is_empty() {
         return Line::from(vec![Span::raw("")]);
     }
 
-    let mut colored_spans = Vec::new();
-    let is_in_multiline_string = string_state.get(line_idx).copied().unwrap_or(false);
+    let text = line.spans.iter().map(|span| span.content.as_ref()).collect::<Vec<_>>().join("");
+    let mut state = string_states.get(line_idx).cloned().flatten();
+    let mut colored_spans: Vec<Span<'static>> = Vec::new();
+    advance_line_state(&text, &mut state, Some((&mut colored_spans, theme)));
 
-    for span in line.spans {
-        let content = span.content.as_ref();
-
-        // Handle comments first (highest priority)
-        if content.trim().starts_with("//") {
-            colored_spans.push(Span::styled(content.to_string(), Style::default().fg(theme.comment)));
-            continue;
-        }
-
-        // Handle multi-line strings
-        if is_in_multiline_string {
-            colored_spans.push(Span::styled(content.to_string(), Style::default().fg(theme.string_literal)));
-            continue;
-        }
-
-        // Handle string literals (complete strings on one line)
-        if content.starts_with('`') && content.ends_with('`') && content.len() > 1 {
-            colored_spans.push(Span::styled(content.to_string(), Style::default().fg(theme.string_literal)));
-            continue;
-        }
-
-        // Check if the entire content is a string that may contain keywords
-        if content.contains('`') {
-            // More complex string handling - find string boundaries and colorize accordingly
-            let mut result = String::new();
-            let mut chars = content.chars();
-            let mut in_string = false;
-            let mut string_start = 0;
-            let mut current_pos = 0;
-
-            while let Some(ch) = chars.next() {
-                if ch == '`' {
-                    if in_string {
-                        // End of string
-                        if string_start <= current_pos && current_pos < content.len() {
-                            let string_content = &content[string_start..=current_pos];
-                            colored_spans.push(Span::styled(string_content.to_string(), Style::default().fg(theme.string_literal)));
-                        }
-                        result.clear();
-                        in_string = false;
-                    } else {
-                        // Start of string
-                        if !result.is_empty() {
-                            // Colorize non-string content before the string - preserve exact spacing
-                            colorize_non_string_content_preserve_positions(&result, &mut colored_spans, theme);
-                            result.clear();
-                        }
-                        string_start = current_pos;
-                        in_string = true;
-                    }
-                } else if !in_string {
-                    result.push(ch);
-                }
-                current_pos += ch.len_utf8();
-            }
-
-            // Handle remaining content
-            if in_string {
-                // Unclosed string
-                let string_content = &content[string_start..];
-                colored_spans.push(Span::styled(string_content.to_string(), Style::default().fg(theme.string_literal)));
-            } else if !result.is_empty() {
-                // Check if the remaining content has a comment
-                if let Some(comment_pos) = result.find("//") {
-                    // Split into pre-comment and comment
-                    let pre_comment = &result[..comment_pos];
-                    let comment_part = &result[comment_pos..];
-
-                    if !pre_comment.is_empty() {
-                        colorize_non_string_content_preserve_positions(pre_comment, &mut colored_spans, theme);
-                    }
-
-                    // Add comment as a single span - DO NOT tokenize!
-                    colored_spans.push(Span::styled(comment_part.to_string(), Style::default().fg(theme.comment)));
-                } else {
-                    colorize_non_string_content_preserve_positions(&result, &mut colored_spans, theme);
-                }
-            }
-
-            continue;
-        }
-
-        // Check for inline comments and handle them specially
-        if let Some(comment_pos) = content.find("//") {
-            // Split into pre-comment and comment
-            let pre_comment = &content[..comment_pos];
-            let comment_part = &content[comment_pos..];
-
-            // Colorize pre-comment part normally
-            if !pre_comment.is_empty() {
-                colorize_non_string_content_preserve_positions(pre_comment, &mut colored_spans, theme);
-            }
-
-            // Colorize comment part
-            colored_spans.push(Span::styled(comment_part.to_string(), Style::default().fg(theme.comment)));
-        } else {
-            // Colorize content while preserving exact positions
-            colorize_non_string_content_preserve_positions(content, &mut colored_spans, theme);
-        }
+    if colored_spans.is_empty() {
+        colored_spans.push(Span::raw(text));
     }
 
     Line::from(colored_spans)
@@ -634,8 +692,9 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
         _ if word.parse::<i64>().is_ok() => Span::styled(word.to_string(), Style::default().fg(theme.signed_int)),
         _ if word.parse::<f64>().is_ok() => Span::styled(word.to_string(), Style::default().fg(theme.float)),
 
-        // String literals (Nail uses backticks)
-        _ if word.starts_with('`') || word.ends_with('`') => Span::styled(word.to_string(), Style::default().fg(theme.string_literal)),
+        // String literals (Nail uses backticks). A word containing one is
+        // either a string or a tagged string's opening, html`<p>hi</p>`.
+        _ if word.contains('`') => Span::styled(word.to_string(), Style::default().fg(theme.string_literal)),
 
         // Known stdlib functions (queried from the registry so the list never goes stale)
         _ if crate::stdlib_registry::is_stdlib_function(word) => {
@@ -687,6 +746,160 @@ mod tests {
             comment: Color::DarkGray,
             error: Color::Red,
         }
+    }
+
+    #[test]
+    fn markup_inside_an_html_string_is_colored_as_markup() {
+        let theme = test_theme();
+        let content = vec![Line::from(vec![Span::raw("page:s = html`<section class=\"hero\">`;")])];
+
+        let result = colorize_code(content, &theme);
+        let colored: Vec<(String, Option<Color>)> = result[0].spans.iter().map(|span| (span.content.to_string(), span.style.fg)).collect();
+
+        let element = colored.iter().find(|(text, _)| text == "section").expect("the element name should be its own span");
+        assert_eq!(element.1, Some(theme.keyword), "element names are colored as markup, not as string text");
+        let value = colored.iter().find(|(text, _)| text == "\"hero\"").expect("the attribute value should be its own span");
+        assert_eq!(value.1, Some(theme.string_literal));
+        let bracket = colored.iter().find(|(text, _)| text == "<").expect("brackets should be their own spans");
+        assert_eq!(bracket.1, Some(theme.comma));
+    }
+
+    #[test]
+    fn a_css_string_is_colored_by_the_css_tokenizer() {
+        let theme = test_theme();
+        let content = vec![Line::from(vec![Span::raw("sheet:s = css`.hero { font-size: 1.5rem; }`;")])];
+
+        let result = colorize_code(content, &theme);
+        let colored: Vec<(String, Option<Color>)> = result[0].spans.iter().map(|span| (span.content.to_string(), span.style.fg)).collect();
+
+        let selector = colored.iter().find(|(text, _)| text == ".hero").expect("the selector should be its own span");
+        assert_eq!(selector.1, Some(theme.keyword));
+        let property = colored.iter().find(|(text, _)| text == "font-size").expect("the property should be its own span");
+        assert_eq!(property.1, Some(theme.identifier_type));
+        let length = colored.iter().find(|(text, _)| text == "1.5rem").expect("the length should be its own span");
+        assert_eq!(length.1, Some(theme.signed_int));
+    }
+
+    #[test]
+    fn a_script_string_is_colored_by_the_script_tokenizer() {
+        let theme = test_theme();
+        let content = vec![Line::from(vec![Span::raw("script:s = js`const total = items.length; // done`;")])];
+
+        let result = colorize_code(content, &theme);
+        let colored: Vec<(String, Option<Color>)> = result[0].spans.iter().map(|span| (span.content.to_string(), span.style.fg)).collect();
+
+        let keyword = colored.iter().find(|(text, _)| text == "const").expect("the keyword should be its own span");
+        assert_eq!(keyword.1, Some(theme.keyword));
+        let member = colored.iter().find(|(text, _)| text == "length").expect("the member should be its own span");
+        assert_eq!(member.1, Some(theme.identifier_type));
+        let comment = colored.iter().find(|(text, _)| text == "// done").expect("the comment should be its own span");
+        assert_eq!(comment.1, Some(theme.comment));
+    }
+
+    #[test]
+    fn the_line_oriented_languages_are_colored_too() {
+        let theme = test_theme();
+        let content = vec![
+            Line::from(vec![Span::raw("query:s = sql`select name from users`;")]),
+            Line::from(vec![Span::raw("config:s = yaml`port: 8080`;")]),
+            Line::from(vec![Span::raw("manifest:s = toml`edition = 2024`;")]),
+        ];
+
+        let result = colorize_code(content, &theme);
+
+        let keyword = result[0].spans.iter().find(|span| span.content == "select").expect("a lowercase SQL keyword is still a keyword");
+        assert_eq!(keyword.style.fg, Some(theme.keyword));
+        let key = result[1].spans.iter().find(|span| span.content == "port").expect("the YAML key should be its own span");
+        assert_eq!(key.style.fg, Some(theme.identifier_type));
+        let number = result[2].spans.iter().find(|span| span.content == "2024").expect("the TOML value should be its own span");
+        assert_eq!(number.style.fg, Some(theme.signed_int));
+    }
+
+    #[test]
+    fn a_css_block_left_open_across_a_line_break_stays_open() {
+        let theme = test_theme();
+        let content = vec![Line::from(vec![Span::raw("sheet:s = css`.hero {")]), Line::from(vec![Span::raw("    color: red;")]), Line::from(vec![Span::raw("}`;")])];
+
+        let result = colorize_code(content, &theme);
+
+        // `color` is a property, not a selector: the block opened on the line
+        // before has not been closed yet.
+        let property = result[1].spans.iter().find(|span| span.content == "color").expect("the property should be its own span");
+        assert_eq!(property.style.fg, Some(theme.identifier_type));
+        let semicolon = result[2].spans.iter().find(|span| span.content == ";").expect("the semicolon is code again");
+        assert_eq!(semicolon.style.fg, Some(theme.end_statement));
+    }
+
+    #[test]
+    fn a_string_without_a_markup_tag_stays_one_color() {
+        let theme = test_theme();
+        let content = vec![Line::from(vec![Span::raw("plain:s = `<not markup, just text>`;")])];
+
+        let result = colorize_code(content, &theme);
+        let body = result[0].spans.iter().find(|span| span.content.contains("not markup")).expect("the body should survive as one span");
+        assert_eq!(body.content, "<not markup, just text>", "an untagged string is never tokenized");
+        assert_eq!(body.style.fg, Some(theme.string_literal));
+    }
+
+    #[test]
+    fn a_multi_line_string_covers_exactly_its_own_lines() {
+        let theme = test_theme();
+        let content = vec![
+            Line::from(vec![Span::raw("page:s = html`<section>")]),
+            Line::from(vec![Span::raw("    <h1>Nail</h1>")]),
+            Line::from(vec![Span::raw("</section>`;")]),
+        ];
+
+        let result = colorize_code(content, &theme);
+
+        // The code before the string keeps its own colors rather than being
+        // swallowed by the string that starts later on the line.
+        let name = result[0].spans.iter().find(|span| span.content == "page").expect("the declaration should still be colored");
+        assert_eq!(name.style.fg, Some(theme.var_decl));
+
+        // The closing line is still inside the string, so its markup is markup
+        // and only the trailing `;` is code.
+        let closing = result[2].spans.iter().find(|span| span.content == "section").expect("the closing element should be colored as markup");
+        assert_eq!(closing.style.fg, Some(theme.keyword));
+        let semicolon = result[2].spans.iter().find(|span| span.content == ";").expect("the semicolon is code");
+        assert_eq!(semicolon.style.fg, Some(theme.end_statement));
+    }
+
+    #[test]
+    fn a_tag_left_open_across_a_line_break_stays_open() {
+        let theme = test_theme();
+        let content = vec![
+            Line::from(vec![Span::raw("page:s = html`<svg viewBox=\"0 0 20 20\"")]),
+            Line::from(vec![Span::raw("     stroke=\"currentColor\"><path/></svg>`;")]),
+        ];
+
+        let result = colorize_code(content, &theme);
+
+        // `stroke` is an attribute, not text: the tag opened on the line before
+        // has not been closed yet.
+        let attribute = result[1].spans.iter().find(|span| span.content.trim() == "stroke").expect("the attribute should be its own span");
+        assert_eq!(attribute.style.fg, Some(theme.identifier_type));
+    }
+
+    #[test]
+    fn a_language_tag_is_colored_as_part_of_its_string() {
+        let theme = test_theme();
+        let content = vec![Line::from(vec![Span::raw("page:s = html`<p>hi</p>`;")])];
+
+        let result = colorize_code(content, &theme);
+
+        let tag_span = result[0].spans.iter().find(|span| span.content.contains("html"));
+        let tag_span = tag_span.expect("the tag should still appear in the line");
+        assert_eq!(tag_span.style.fg, Some(theme.string_literal), "the tag belongs to the string, not to the code around it");
+    }
+
+    #[test]
+    fn a_word_before_a_string_is_only_a_tag_when_it_touches_the_backtick() {
+        assert_eq!(trailing_tag_len("page:s = html"), 4);
+        assert_eq!(trailing_tag_len("page:s = "), 0);
+        // Digits alone are not identifier-shaped, so they are not a tag.
+        assert_eq!(trailing_tag_len("x = 42"), 0);
+        assert_eq!(trailing_tag_len("y:s = my_lang2"), 8);
     }
 
     #[test]

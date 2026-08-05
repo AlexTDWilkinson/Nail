@@ -1,0 +1,212 @@
+// Learning from data. Every model here is a plain struct you can print and
+// store, and everything involving randomness takes the seed as an argument so
+// the answers are the same on every machine and every run.
+
+// A rule worth learning: the label is 1 when the first column is above 5, and
+// the second column says nothing at all.
+rows:a:a:f = [
+    [1.0, 3.0],
+    [2.0, 9.0],
+    [3.0, 1.0],
+    [4.0, 7.0],
+    [6.0, 2.0],
+    [7.0, 8.0],
+    [8.0, 4.0],
+    [9.0, 6.0]
+];
+labels:a:i = [0, 0, 0, 0, 1, 1, 1, 1];
+
+// A decision tree finds that rule, and - unlike everything else here - you can
+// read what it found.
+tree:ML_Tree = danger(ml_tree_fit(rows, labels, 3));
+rules:s = danger(ml_tree_explain(tree, [`size`, `noise`]));
+print(`the rules the tree learned:`);
+print(rules);
+test_assert_contains(rules, `if size <=`, `it split on the column that matters`);
+
+// And it generalises to rows it never saw, because the rule is real.
+test_assert_equal_int(danger(ml_tree_predict(tree, [0.5, 5.0])), 0, `a small row is a zero`);
+test_assert_equal_int(danger(ml_tree_predict(tree, [9.5, 5.0])), 1, `a large row is a one`);
+
+// Nearest neighbours answer with whatever is around them, with no fitting at
+// all - the data is the model.
+test_assert_equal_int(danger(ml_knn_predict(rows, labels, [1.5, 3.0], 3)), 0, `the neighbours of a small row`);
+test_assert_equal_int(danger(ml_knn_predict(rows, labels, [8.5, 5.0], 3)), 1, `the neighbours of a large row`);
+
+// Scoring counts all four ways a prediction can land. All four come back
+// together because accuracy alone flatters a model that never says yes.
+predicted:a:i = [1, 1, 0, 0, 1, 0];
+actual:a:i = [1, 0, 0, 1, 1, 0];
+scores:ML_Scores = danger(ml_score(predicted, actual));
+print(`true positives, false positives, accuracy, f1:`);
+print(scores.true_positive);
+print(scores.false_positive);
+print(scores.accuracy);
+print(scores.f1);
+test_assert_equal_int(scores.true_positive, 2, `two positives were found`);
+test_assert_equal_int(scores.false_negative, 1, `one was missed`);
+
+// A straight line, fitted exactly rather than iteratively - no learning rate
+// to tune and no question of whether it converged. Here y = 2a + 3b + 1.
+line_rows:a:a:f = [[1.0, 1.0], [2.0, 1.0], [1.0, 2.0], [3.0, 5.0], [4.0, 2.0]];
+line_targets:a:f = [6.0, 8.0, 9.0, 22.0, 15.0];
+line:ML_Linear = danger(ml_linear_fit(line_rows, line_targets));
+test_assert_equal_float(danger(ml_linear_predict(line, [10.0, 10.0])), 51.0, 0.0001, `the fitted line predicts`);
+
+// Grouping points by nearness. The starting points come from the seed, which
+// is why it is an argument rather than a hidden decision.
+points:a:a:f = [[0.0, 0.0], [0.5, 0.2], [0.2, 0.4], [10.0, 10.0], [10.5, 9.8], [9.7, 10.2]];
+clusters:ML_Clusters = danger(ml_kmeans(points, 2, 42, 20));
+print(`which group each point landed in:`);
+print(clusters.assignments);
+test_assert_equal_int(array_length(clusters.centroids), 2, `two groups came back`);
+
+// Gradient boosting: many small trees, each trained on what the ones before
+// it still get wrong. This is the method that wins on ordinary tabular data,
+// and the one LightGBM and XGBoost implement.
+price_rows:a:a:f = [
+    [10.0, 1.0], [20.0, 2.0], [30.0, 3.0], [40.0, 4.0], [50.0, 1.0],
+    [60.0, 2.0], [70.0, 3.0], [80.0, 4.0], [90.0, 1.0], [100.0, 2.0],
+    [110.0, 3.0], [120.0, 4.0], [130.0, 1.0], [140.0, 2.0], [150.0, 3.0]
+];
+prices:a:f = [
+    40.0, 70.0, 100.0, 130.0, 160.0,
+    190.0, 220.0, 250.0, 280.0, 310.0,
+    340.0, 370.0, 400.0, 430.0, 460.0
+];
+
+// The configuration is a struct with sensible defaults; change one field and
+// leave the rest.
+config:ML_BoostConfig = ml_boost_default_config();
+tuned:ML_BoostConfig = ML_BoostConfig {
+    trees = 80,
+    learning_rate = config.learning_rate,
+    max_depth = 4,
+    min_samples_leaf = 2,
+    bins = config.bins,
+    lambda_l2 = config.lambda_l2,
+    objective = config.objective,
+    early_stopping_rounds = config.early_stopping_rounds
+};
+
+model:ML_Boost = danger(ml_boost_fit(price_rows, prices, tuned));
+estimate:f = danger(ml_boost_predict(model, [70.0, 3.0]));
+print(`what the boosted model says about a row it trained on:`);
+print(estimate);
+test_assert(estimate > 180.0, `the estimate is in the right neighbourhood`);
+test_assert(estimate < 260.0, `and not wildly above it`);
+
+// Feature importance is the question worth asking of a model you cannot read:
+// which columns did the answer actually depend on?
+importance:a:f = danger(ml_boost_importance(model));
+print(`how much each column mattered:`);
+print(importance);
+leading:f = danger(array_get(importance, 0));
+following:f = danger(array_get(importance, 1));
+test_assert(leading > following, `the column that matters carries more gain`);
+
+// Regression is judged by more than one number on purpose.
+guesses:a:f = [40.0, 71.0, 99.0, 131.0];
+truths:a:f = [40.0, 70.0, 100.0, 130.0];
+fit_scores:ML_Regression = danger(ml_regression_scores(guesses, truths));
+print(`r squared, mae, rmse, mape:`);
+print(fit_scores.r_squared);
+print(fit_scores.mae);
+print(fit_scores.rmse);
+print(fit_scores.mape);
+test_assert(fit_scores.r_squared > 0.99, `these guesses are nearly exact`);
+test_assert_equal_float(fit_scores.within_ten_percent, 1.0, 0.0001, `every guess is within a tenth`);
+
+print(`every model check held`);
+
+// --- Classification, missing values, categories, and voting ---
+
+// The logistic objective fits a yes-or-no answer. It is not the same as
+// fitting a number against 0 and 1: it optimises the odds, so a confident
+// wrong answer is punished far more than a hesitant one.
+yes_rows:a:a:f = [
+    [1.0, 1.0], [3.0, 2.0], [5.0, 3.0], [7.0, 4.0], [9.0, 1.0],
+    [11.0, 2.0], [13.0, 3.0], [15.0, 4.0], [40.0, 1.0], [42.0, 2.0],
+    [44.0, 3.0], [46.0, 4.0], [48.0, 1.0], [50.0, 2.0], [52.0, 3.0]
+];
+yes_targets:a:f = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+
+base:ML_BoostConfig = ml_boost_default_config();
+logistic:ML_BoostConfig = ML_BoostConfig {
+    trees = 40,
+    learning_rate = base.learning_rate,
+    max_depth = 3,
+    min_samples_leaf = 2,
+    bins = base.bins,
+    lambda_l2 = base.lambda_l2,
+    objective = ML_Objective::Logistic,
+    early_stopping_rounds = base.early_stopping_rounds
+};
+
+classifier:ML_Boost = danger(ml_boost_fit(yes_rows, yes_targets, logistic));
+low_chance:f = danger(ml_boost_predict_probability(classifier, [2.0, 1.0]));
+high_chance:f = danger(ml_boost_predict_probability(classifier, [50.0, 1.0]));
+print(`probability for a small row, then a large one:`);
+print(low_chance);
+print(high_chance);
+test_assert(low_chance < 0.3, `a clearly negative row is near zero`);
+test_assert(high_chance > 0.7, `a clearly positive row is near one`);
+
+// Early stopping answers the only hard question boosting asks - how many
+// trees - by watching data the model is not learning from.
+watched:ML_BoostConfig = ML_BoostConfig {
+    trees = 300,
+    learning_rate = base.learning_rate,
+    max_depth = 3,
+    min_samples_leaf = 2,
+    bins = base.bins,
+    lambda_l2 = base.lambda_l2,
+    objective = ML_Objective::Squared,
+    early_stopping_rounds = 5
+};
+
+stopped:ML_Boost = danger(ml_boost_fit_validated(price_rows, prices, price_rows, prices, watched));
+print(`trees actually kept out of 300:`);
+print(stopped.trees_used);
+test_assert(stopped.trees_used <= 300, `it never keeps more than it was offered`);
+test_assert(stopped.trees_used >= 1, `and it keeps at least one`);
+
+// Cross-validation, because one split on a small dataset says as much about
+// which rows landed where as about the model.
+folded:ML_Regression = danger(ml_cross_validate_boost(price_rows, prices, 3, tuned, 42));
+print(`cross-validated r squared:`);
+print(folded.r_squared);
+
+// A column of words becomes numbers a model can use. Keep the vocabulary:
+// new data encoded against a different one silently shifts every column.
+colours:a:s = [`red`, `blue`, `red`, `green`];
+encoded:ML_OneHot = danger(ml_one_hot(colours));
+print(`the vocabulary, sorted so it is always the same:`);
+print(encoded.categories);
+test_assert_equal_int(array_length(encoded.categories), 3, `three distinct colours`);
+
+fresh:a:a:f = danger(ml_one_hot_with([`green`, `purple`], encoded.categories));
+test_assert_equal_int(array_length(fresh), 2, `two rows encoded`);
+
+// Target encoding is for columns where one-hot would add a thousand columns.
+// The smoothing is what stops a one-row category being encoded as its own
+// answer, which would hand the model what it is meant to predict.
+postcodes:a:s = [`A1`, `A1`, `A1`, `A1`, `B2`, `B2`, `B2`, `C3`];
+values:a:f = [100.0, 110.0, 105.0, 95.0, 200.0, 210.0, 190.0, 900.0];
+encoding:h<s,f> = danger(ml_target_encode(postcodes, values, 5.0));
+rare_value:f = danger(hashmap_get(encoding, `C3`));
+print(`the one-row category, pulled back towards the average:`);
+print(rare_value);
+test_assert(rare_value < 900.0, `a single row is not encoded as its own answer`);
+
+applied:a:f = ml_encode_with([`A1`, `never seen`], encoding, 200.0);
+test_assert_equal_float(danger(array_get(applied, 1)), 200.0, 0.0001, `an unknown category falls back`);
+
+// A forest votes, which cancels out most of what any single tree gets wrong.
+// Far less sensitive to settings than boosting - reach for it when there is no
+// time to tune anything.
+forest:ML_Forest = danger(ml_forest_fit(rows, labels, 15, 3, 42));
+test_assert_equal_int(danger(ml_forest_predict(forest, [0.5, 5.0])), 0, `the forest agrees about a small row`);
+test_assert_equal_int(danger(ml_forest_predict(forest, [9.5, 5.0])), 1, `and about a large one`);
+
+print(`every extended model check held`);

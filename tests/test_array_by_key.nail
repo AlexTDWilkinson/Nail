@@ -1,0 +1,43 @@
+// The _by family: the element key comes from a function the program named, which
+// is how this works in a language with no closures.
+
+struct Book {
+    title:s,
+    author:s,
+    year:i
+}
+
+f book_year(book:Book):i { r book.year; }
+f book_author(book:Book):s { r book.author; }
+
+books:a:Book = [
+    Book { title = `Later`, author = `Ada`, year = 2001 },
+    Book { title = `Early`, author = `Bob`, year = 1999 },
+    Book { title = `Middle`, author = `Ada`, year = 2000 }
+];
+
+by_year:a:Book = array_sort_by(books, book_year);
+test_assert_equal_string(danger(array_first(by_year)).title, `Early`, `oldest first`);
+
+newest_first:a:Book = array_sort_by_descending(books, book_year);
+test_assert_equal_string(danger(array_first(newest_first)).title, `Later`, `and newest first the other way`);
+
+test_assert_equal_int(danger(array_min_by(books, book_year)).year, 1999, `the smallest key`);
+test_assert_equal_int(danger(array_max_by(books, book_year)).year, 2001, `and the largest`);
+test_assert_equal_int(array_sum_by(books, book_year), 6000, `every key added up`);
+
+by_author:h<s,a:Book> = array_group_by(books, book_author);
+test_assert_equal_int(hashmap_len(by_author), 2, `two authors`);
+test_assert_equal_int(array_length(danger(hashmap_get(by_author, `Ada`))), 2, `Ada wrote two of them`);
+
+per_author:h<s,i> = array_count_by(books, book_author);
+test_assert_equal_int(danger(hashmap_get(per_author, `Ada`)), 2, `counted without keeping the books`);
+test_assert_equal_int(danger(hashmap_get(per_author, `Bob`)), 1, `and Bob wrote one`);
+
+// An empty array has no smallest element, and groups into nothing.
+empty:a:Book = [];
+f no_book(err:e):Book { r Book { title = ``, author = ``, year = 0 }; }
+test_assert_equal_int(safe(array_min_by(empty, book_year), no_book).year, 0, `nothing to be smallest`);
+test_assert_equal_int(hashmap_len(array_group_by(empty, book_author)), 0, `and nothing to group`);
+
+print(`every key function held`);

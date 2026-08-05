@@ -37,6 +37,15 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "hashmap_entry_or_insert" [DashMap] => "std_lib::hashmap::entry_or_insert", (map: (&(h K V)), key: K, default: V) -> V,
             "Returns the value for a key, inserting and returning the default if the key is missing.",
             "score:i = hashmap_entry_or_insert(scores, `alice`, 0);";
+        "hashmap_increment" [DashMap] => "std_lib::hashmap::increment", (map: (&(h K i)), key: K) -> i,
+            "Adds one to the count under a key, starting from zero, and returns the new count.",
+            "seen:i = hashmap_increment(counts, word);";
+        "hashmap_add_to" [DashMap] => "std_lib::hashmap::add_to", (map: (&(h K i)), key: K, amount: i) -> i,
+            "Adds an amount to the running total under a key, starting from zero, and returns the new total. A negative amount subtracts.",
+            "balance:i = hashmap_add_to(totals, account, -250);";
+        "hashmap_from_arrays" [DashMap] => "std_lib::hashmap::from_arrays", (keys: [K], values: [V]) -> ((h K V)!e),
+            "Builds a hashmap by pairing keys with values by position; errors if the arrays are different lengths.",
+            "settings:h<s,s> = danger(hashmap_from_arrays(names, values));";
         "hashmap_merge" [DashMap] => "std_lib::hashmap::merge", (first: (&(h K V)), second: (&(h K V))) -> (h K V),
             "Returns a new hashmap with entries from both maps; the second map wins on duplicate keys.",
             "combined:h<s,i> = hashmap_merge(defaults, overrides);";

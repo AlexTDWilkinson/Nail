@@ -133,5 +133,80 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_escape_html" => "std_lib::string::escape_html", (text: (&s)) -> s,
             "Escapes &, <, >, \" and ' so text a visitor supplied can be put in a page without becoming markup.",
             "safe_name:s = string_escape_html(player_name);";
+        "string_unescape_html" => "std_lib::string::unescape_html", (text: s) -> s,
+            "Turns HTML entities such as &amp;lt; and &amp;#39; back into the characters they stood for.",
+            "plain:s = string_unescape_html(comment_html);";
+        "string_to_camel_case" => "std_lib::string::to_camel_case", (input: s) -> s,
+            "Converts to camelCase, the spelling JSON keys and JavaScript APIs use.",
+            "key:s = string_to_camel_case(`user id number`);";
+        "string_to_pascal_case" => "std_lib::string::to_pascal_case", (input: s) -> s,
+            "Converts to PascalCase, the spelling type names use.",
+            "type_name:s = string_to_pascal_case(`user account`);";
+        "string_slugify" => "std_lib::string::slugify", (input: s) -> s,
+            "Turns a title into a URL part: lowercase words joined by single hyphens.",
+            "slug:s = string_slugify(`Hello, World!`);";
+        "string_truncate" => "std_lib::string::truncate", (input: s, max_length: i, ellipsis: s) -> s,
+            "Cuts text to a maximum length, counting the ellipsis as part of that length.",
+            "summary:s = string_truncate(article, 80, `...`);";
+        "string_word_wrap" => "std_lib::string::word_wrap", (input: s, width: i) -> s,
+            "Breaks text into lines no wider than the given number of characters, splitting between words.",
+            "paragraph:s = string_word_wrap(notice, 72);";
+        "string_levenshtein" => "std_lib::string::levenshtein", (first: (&s), second: (&s)) -> i,
+            "Returns how many single-character edits turn one string into the other.",
+            "distance:i = string_levenshtein(`kitten`, `sitting`);";
+        "string_similarity" => "std_lib::string::similarity", (first: (&s), second: (&s)) -> f,
+            "Returns how alike two strings are, from 0.0 for nothing in common to 1.0 for identical.",
+            "score:f = string_similarity(`transpile`, `transpiles`);";
+        "string_closest" => "std_lib::string::closest", (input: s, candidates: [s]) -> (s!e),
+            "Returns the candidate most like the input, for answering a typo with a suggestion, or an error if there are no candidates.",
+            "suggestion:s = danger(string_closest(typed, commands));";
+        "string_word_count" => "std_lib::string::word_count", (input: (&s)) -> i,
+            "Returns how many whitespace-separated words the text holds.",
+            "words:i = string_word_count(essay);";
+        "string_indent" => "std_lib::string::indent", (input: s, prefix: s) -> s,
+            "Puts the prefix in front of every non-blank line.",
+            "quoted:s = string_indent(reply, `> `);";
+        "string_dedent" => "std_lib::string::dedent", (input: s) -> s,
+            "Removes the leading whitespace every non-blank line shares, keeping the relative shape.",
+            "flush:s = string_dedent(block);";
+        "string_normalize_whitespace" => "std_lib::string::normalize_whitespace", (input: s) -> s,
+            "Collapses every run of whitespace to one space and trims the ends.",
+            "clean:s = string_normalize_whitespace(scraped_text);";
+        "string_trim_chars" => "std_lib::string::trim_chars", (input: s, characters: s) -> s,
+            "Removes any of the given characters from both ends, the way string_trim removes whitespace.",
+            "path:s = string_trim_chars(`/blog/`, `/`);";
+        "string_trim_start_chars" => "std_lib::string::trim_start_chars", (input: s, characters: s) -> s,
+            "Removes any of the given characters from the start only.",
+            "digits:s = string_trim_start_chars(`00042`, `0`);";
+        "string_trim_end_chars" => "std_lib::string::trim_end_chars", (input: s, characters: s) -> s,
+            "Removes any of the given characters from the end only.",
+            "sentence:s = string_trim_end_chars(`wait...`, `.`);";
+        "string_split_once" => "std_lib::string::split_once", (input: s, separator: s) -> ([s]!e),
+            "Splits at the first separator only and returns the two halves, so a value containing the separator stays whole; errors if the separator is not there.",
+            "pair:a:s = danger(string_split_once(`key=a=b`, `=`));";
+        "string_split_last" => "std_lib::string::split_last", (input: s, separator: s) -> ([s]!e),
+            "Splits at the last separator and returns the two halves; errors if the separator is not there.",
+            "pair:a:s = danger(string_split_last(`host:port`, `:`));";
+        "string_char_code" => "std_lib::string::char_code", (input: s, index: i) -> (i!e),
+            "Returns the Unicode code point of the character at the index, so A is 65; errors if the index is out of bounds.",
+            "code:i = danger(string_char_code(`A`, 0));";
+        "string_from_char_code" => "std_lib::string::from_char_code", (code: i) -> (s!e),
+            "Returns the one-character string for a Unicode code point; errors on a number that is not one.",
+            "letter:s = danger(string_from_char_code(65));";
+        "string_char_at" => "std_lib::string::char_at", (input: s, index: i) -> (s!e),
+            "Returns the single character at the index as a string, or an error if the index is out of bounds.",
+            "initial:s = danger(string_char_at(name, 0));";
+        "string_common_prefix" => "std_lib::string::common_prefix", (strings: [s]) -> s,
+            "Returns the beginning that all the strings share, or the empty string if they share none.",
+            "shared:s = string_common_prefix(paths);";
+        "string_strip_prefix" => "std_lib::string::strip_prefix", (input: s, prefix: s) -> s,
+            "Removes the prefix if the string starts with it, and returns the string unchanged otherwise.",
+            "body:s = string_strip_prefix(line, `> `);";
+        "string_strip_suffix" => "std_lib::string::strip_suffix", (input: s, suffix: s) -> s,
+            "Removes the suffix if the string ends with it, and returns the string unchanged otherwise.",
+            "stem:s = string_strip_suffix(file_name, `.nail`);";
+        "string_mask" => "std_lib::string::mask", (input: s, visible_tail: i, mask_character: s) -> s,
+            "Replaces all but the last few characters, for showing which secret is in use without printing it.",
+            "shown:s = string_mask(api_key, 4, `*`);";
     }
 }

@@ -1,0 +1,40 @@
+// Tagged string literals. A language tag written against the opening backtick
+// marks what the string contains, so editors and the highlighter can render
+// the embedded language. The tag carries no meaning for the compiler: a tagged
+// string is an ordinary string in every other respect.
+
+page:s = html`<section class="hero">
+    <h1>Nail</h1>
+    <p>A small language that transpiles to Rust.</p>
+</section>`;
+print(page);
+
+// Fragments do not have to be balanced - most page building joins pieces.
+opening:s = html`<ul class="links">`;
+closing:s = html`</ul>`;
+print(string_concat([opening, closing]));
+
+rules:s = css`.hero { color: #86efac; padding: 2rem; }`;
+print(rules);
+
+script:s = js`document.querySelector(".hero").classList.add("ready");`;
+print(script);
+
+// Any identifier-shaped tag lexes; the compiler does not keep a list.
+query:s = sql`SELECT name FROM users WHERE active = 1;`;
+config:s = toml`name = "nail"`;
+print(query);
+print(config);
+
+// Tagged strings are plain strings: they concatenate, join and compare.
+joined:s = array_join([opening, closing], ``);
+print(joined);
+print(string_to_uppercase(html`<b>bold</b>`));
+
+// Escapes work exactly as in an untagged string.
+escaped:s = html`<p>a backtick \` and a newline\nfollow</p>`;
+print(escaped);
+
+// An untagged string is still an untagged string.
+plain:s = `no tag here`;
+print(plain);

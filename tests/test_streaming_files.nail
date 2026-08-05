@@ -1,0 +1,47 @@
+// Reading a file without holding it: a fold, a reader, joining, and a range read.
+
+scratch:s = path_join(fs_temp_dir(), `nail_streaming_test`);
+danger(fs_create_dir(scratch));
+log_file:s = path_join(scratch, `app.log`);
+danger(fs_write(log_file, `INFO start
+ERROR disk full
+INFO retry
+ERROR still full
+`));
+
+// A fold over the lines is reduce pointed at a file - nothing to open or close.
+f count_errors(total:i, line:s):i {
+    r if { string_contains(line, `ERROR`) => { r total + 1; }, else => { r total; } };
+}
+test_assert_equal_int(danger(fs_reduce_lines(log_file, 0, count_errors)), 2, `two errors in the log`);
+
+f longest_line(best:i, line:s):i {
+    r if { string_length(line) > best => { r string_length(line); }, else => { r best; } };
+}
+test_assert_equal_int(danger(fs_reduce_lines(log_file, 0, longest_line)), 16, `the longest line`);
+
+// A reader is the general form, for when the loop needs to stop early or do
+// something a fold cannot express.
+reader:FS_Reader = danger(fs_open(log_file));
+first_two:a:s = danger(fs_next_lines(reader, 2));
+test_assert_equal_int(array_length(first_two), 2, `two lines at a time`);
+test_assert_equal_string(danger(array_first(first_two)), `INFO start`, `in order, without line endings`);
+test_assert_equal_int(array_length(danger(fs_next_lines(reader, 100))), 2, `and the rest when asked for more than there is`);
+test_assert_equal_int(array_length(danger(fs_next_lines(reader, 10))), 0, `an empty answer means finished`);
+danger(fs_close(reader));
+
+// Joining files: how the pieces of a resumable upload are put back together.
+combined:s = path_join(scratch, `combined.log`);
+danger(fs_append_file(log_file, combined));
+danger(fs_append_file(log_file, combined));
+test_assert_equal_int(danger(fs_size(combined)), danger(fs_size(log_file)) * 2, `two copies end to end`);
+
+// A range read looks inside a file without loading it.
+test_assert_equal_string(danger(fs_read_range_hex(log_file, 0, 4)), `494e464f`, `the first four bytes, as hex`);
+test_assert_equal_string(danger(fs_read_range_base64(log_file, 0, 4)), `SU5GTw==`, `and as base64`);
+
+f refused(err:e):s { r `refused`; }
+test_assert_equal_string(safe(fs_read_range_hex(log_file, 0, 0), refused), `refused`, `a length of nothing is refused`);
+
+danger(fs_remove_dir_all(scratch));
+print(`every streaming read held`);

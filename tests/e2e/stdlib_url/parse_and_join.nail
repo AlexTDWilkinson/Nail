@@ -1,0 +1,27 @@
+// E2E: taking a URL apart, putting it back, and resolving a link against it
+parts:URL_Parts = danger(url_parse(`https://Example.COM/blog/post?page=2#top`));
+print(parts.scheme);
+print(parts.host);
+print(parts.port);
+print(parts.path);
+print(parts.query);
+print(parts.fragment);
+print(url_format(parts));
+print(danger(hashmap_get(url_parse_query(parts.query), `page`)));
+
+with_port:URL_Parts = danger(url_parse(`http://admin:secret@localhost:8080/health`));
+print(with_port.user);
+print(with_port.port);
+print(url_format(with_port));
+
+base:s = `https://example.com/blog/2026/post.html?page=2#here`;
+print(danger(url_join(base, `https://other.org/x`)));
+print(danger(url_join(base, `/about`)));
+print(danger(url_join(base, `next.html`)));
+print(danger(url_join(base, `../index.html`)));
+print(danger(url_join(base, `?page=3`)));
+print(danger(url_join(base, `#top`)));
+print(danger(url_join(base, `//cdn.example.com/logo.png`)));
+f not_a_url(err:e):s { r `not a URL`; }
+print(safe(url_join(`example.com`, `/about`), not_a_url));
+print(safe(url_join(`https://example.com/a`, `../../b`), not_a_url));

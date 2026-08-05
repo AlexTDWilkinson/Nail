@@ -1,0 +1,68 @@
+// Vectors and matrices: construction, arithmetic, the operations that can
+// fail, and a transform built by composing matrices.
+f no_transform(problem:e):LINALG_Mat3 { r linalg_mat3_identity(); }
+f pointing_east(problem:e):LINALG_Vec2 { r linalg_vec2(1.0, 0.0); }
+f origin_3d(problem:e):LINALG_Vec3 { r linalg_vec3_zero(); }
+
+
+position:LINALG_Vec2 = linalg_vec2(3.0, 4.0);
+offset:LINALG_Vec2 = linalg_vec2(1.0, 0.0 - 1.0);
+
+moved:LINALG_Vec2 = linalg_vec2_add(position, offset);
+print(moved.x_coordinate);
+print(moved.y_coordinate);
+
+// A vector is a plain struct, so a literal works as well as the constructor.
+literal:LINALG_Vec2 = LINALG_Vec2 { x_coordinate = 3.0, y_coordinate = 4.0 };
+print(linalg_vec2_equals(literal, position, 0.000001));
+
+length:f = linalg_vec2_length(position);
+print(length);
+
+heading:LINALG_Vec2 = danger(linalg_vec2_normalize(position));
+print(linalg_vec2_length(heading));
+
+right_angle:f = danger(linalg_vec2_angle_between(linalg_vec2(1.0, 0.0), linalg_vec2(0.0, 2.0)));
+print(right_angle);
+
+bounced:LINALG_Vec2 = linalg_vec2_reflect(linalg_vec2(1.0, 0.0 - 1.0), linalg_vec2(0.0, 1.0));
+print(bounced.y_coordinate);
+
+// Composing transforms: scale first, then move. The move must not be scaled.
+transform:LINALG_Mat3 = linalg_mat3_multiply(linalg_mat3_translation(10.0, 0.0), linalg_mat3_scaling(2.0, 2.0));
+placed:LINALG_Vec2 = linalg_mat3_transform_point(transform, linalg_vec2(1.0, 0.0));
+print(placed.x_coordinate);
+
+undo:LINALG_Mat3 = danger(linalg_mat3_inverse(transform));
+back:LINALG_Vec2 = linalg_mat3_transform_point(undo, placed);
+print(linalg_vec2_equals(back, linalg_vec2(1.0, 0.0), 0.000001));
+
+print(linalg_mat3_determinant(linalg_mat3_scaling(2.0, 3.0)));
+print(danger(linalg_mat3_get(linalg_mat3_identity(), 1, 1)));
+
+// Vectors reach the drawing functions as a flat array of coordinates.
+corners:a:f = array_flatten([linalg_vec2_to_array(position), linalg_vec2_to_array(moved)]);
+print(array_length(corners));
+
+// Three dimensions, and the one operation that only exists there.
+normal:LINALG_Vec3 = linalg_vec3_cross(linalg_vec3(1.0, 0.0, 0.0), linalg_vec3(0.0, 1.0, 0.0));
+print(normal.z_coordinate);
+print(linalg_vec3_dot(normal, linalg_vec3(1.0, 0.0, 0.0)));
+print(linalg_vec3_length(linalg_vec3(2.0, 3.0, 6.0)));
+
+midpoint:LINALG_Vec3 = linalg_vec3_lerp(linalg_vec3_zero(), linalg_vec3(10.0, 20.0, 30.0), 0.5);
+print(midpoint.y_coordinate);
+
+inside:LINALG_Vec3 = linalg_vec3_clamp(linalg_vec3(0.0 - 1.0, 9.0, 2.0), linalg_vec3_zero(), linalg_vec3(5.0, 5.0, 5.0));
+print(inside.x_coordinate);
+print(inside.y_coordinate);
+
+// The failures are errors, not infinities or silent nonsense.
+flat:LINALG_Mat3 = safe(linalg_mat3_inverse(linalg_mat3_scaling(0.0, 1.0)), no_transform);
+print(linalg_mat3_determinant(flat));
+
+nowhere:LINALG_Vec2 = safe(linalg_vec2_normalize(linalg_vec2_zero()), pointing_east);
+print(nowhere.x_coordinate);
+
+short:LINALG_Vec3 = safe(linalg_vec3_from_array([1.0, 2.0]), origin_3d);
+print(short.z_coordinate);

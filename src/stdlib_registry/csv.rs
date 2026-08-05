@@ -22,6 +22,49 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         example: "rows:a:h<s,s> = danger(csv_parse(text, csv_default_options()));",
     });
 
+    m.insert("csv_serialize", StdlibFunction {
+        rust_path: "std_lib::csv::serialize".to_string(),
+        crate_deps: vec![CrateDependency::Csv, CrateDependency::DashMap],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("CSV_Options", "nail::std_lib::csv"), ("CSV_Trim", "nail::std_lib::csv")],
+        module: StdlibModule::Csv,
+        parameters: vec![
+            StdlibParameter { name: "headers".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false },
+            StdlibParameter {
+                name: "rows".to_string(),
+                param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)))),
+                pass_by_reference: false,
+            },
+            StdlibParameter { name: "options".to_string(), param_type: NailDataTypeDescriptor::Struct("CSV_Options".to_string()), pass_by_reference: false },
+        ],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+        diverging: false,
+        description: "Writes rows out as CSV text, with the columns named and in the order given. Quotes any field holding the delimiter, a quote or a newline, and doubles a quote inside one. A row missing a column is written as an empty field.",
+        example: "text:s = danger(csv_serialize([`name`, `city`], rows, csv_default_options()));",
+    });
+
+    m.insert("csv_write", StdlibFunction {
+        rust_path: "std_lib::csv::write".to_string(),
+        crate_deps: vec![CrateDependency::Csv, CrateDependency::DashMap, CrateDependency::Tokio],
+        struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
+        custom_type_imports: vec![("CSV_Options", "nail::std_lib::csv"), ("CSV_Trim", "nail::std_lib::csv")],
+        module: StdlibModule::Csv,
+        parameters: vec![
+            StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
+            StdlibParameter { name: "headers".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false },
+            StdlibParameter {
+                name: "rows".to_string(),
+                param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)))),
+                pass_by_reference: false,
+            },
+            StdlibParameter { name: "options".to_string(), param_type: NailDataTypeDescriptor::Struct("CSV_Options".to_string()), pass_by_reference: false },
+        ],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
+        diverging: false,
+        description: "Writes rows straight to a file as CSV, with the same escaping as csv_serialize. The file is put in place by a rename, so a reader never catches it half written.",
+        example: "danger(csv_write(`export.csv`, [`name`, `city`], rows, csv_default_options()));",
+    });
+
     m.insert("csv_default_options", StdlibFunction {
         rust_path: "std_lib::csv::default_options".to_string(),
         crate_deps: vec![CrateDependency::Csv],

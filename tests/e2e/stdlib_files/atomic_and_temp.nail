@@ -1,0 +1,23 @@
+// E2E: writing a file the safe way, scratch files, and the executable bit
+danger(fs_write_atomic(`state.json`, `{"count":1}`));
+print(danger(fs_read(`state.json`)));
+// Writing again replaces it whole, and leaves nothing partial behind.
+danger(fs_write_atomic(`state.json`, `{"count":2}`));
+print(danger(fs_read(`state.json`)));
+print(array_length(danger(fs_read_dir(`.`))));
+
+scratch:s = danger(fs_temp_file(`nail_e2e_`, `csv`));
+print(path_is_absolute(scratch));
+print(string_ends_with(scratch, `.csv`));
+print(string_contains(path_basename(scratch), `nail_e2e_`));
+print(danger(fs_read(scratch)));
+danger(fs_write(scratch, `id,name`));
+print(danger(fs_read(scratch)));
+
+print(fs_is_executable(scratch));
+danger(fs_set_executable(scratch, true));
+print(fs_is_executable(scratch));
+danger(fs_set_executable(scratch, false));
+print(fs_is_executable(scratch));
+print(fs_is_executable(`/nowhere/at/all`));
+danger(fs_remove_file(scratch));

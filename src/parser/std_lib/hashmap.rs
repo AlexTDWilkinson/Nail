@@ -78,3 +78,66 @@ pub fn merge<K: Hash + Eq + Clone, V: Clone>(map1: &DashMap<K, V>, map2: &DashMa
     
     result
 }
+/// Adds one to the count under a key, starting from zero if it is not there
+/// yet, and returns the new count. Counting how often something happens is the
+/// most common thing a hashmap is for, and this is that in one line.
+pub fn increment<K: Hash + Eq + Clone>(map: &DashMap<K, i64>, key: K) -> i64 {
+    let mut entry = map.entry(key).or_insert(0);
+    *entry += 1;
+    return *entry;
+}
+
+/// Adds a number to the running total under a key, starting from zero, and
+/// returns the new total. Pass a negative number to subtract.
+pub fn add_to<K: Hash + Eq + Clone>(map: &DashMap<K, i64>, key: K, amount: i64) -> i64 {
+    let mut entry = map.entry(key).or_insert(0);
+    *entry += amount;
+    return *entry;
+}
+
+/// Builds a hashmap from a list of keys and a matching list of values, paired
+/// up by position. The two must be the same length; a later duplicate key wins.
+pub fn from_arrays<K: Hash + Eq + Clone, V: Clone>(keys: Vec<K>, values: Vec<V>) -> Result<DashMap<K, V>, String> {
+    if keys.len() != values.len() {
+        return Err(format!("hashmap_from_arrays: {} keys and {} values, and they must be the same length", keys.len(), values.len()));
+    }
+    let map = DashMap::new();
+    for (key, value) in keys.into_iter().zip(values.into_iter()) {
+        map.insert(key, value);
+    }
+    return Ok(map);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incrementing_counts_from_zero() {
+        let map: DashMap<String, i64> = DashMap::new();
+        assert_eq!(increment(&map, "hit".to_string()), 1);
+        assert_eq!(increment(&map, "hit".to_string()), 2);
+        assert_eq!(increment(&map, "miss".to_string()), 1);
+        assert_eq!(map.get("hit").expect("the key").value().clone(), 2);
+    }
+
+    #[test]
+    fn adding_to_a_total_can_go_both_ways() {
+        let map: DashMap<String, i64> = DashMap::new();
+        assert_eq!(add_to(&map, "balance".to_string(), 100), 100);
+        assert_eq!(add_to(&map, "balance".to_string(), -30), 70);
+    }
+
+    #[test]
+    fn two_arrays_pair_up_by_position() {
+        let map = from_arrays(vec!["a".to_string(), "b".to_string()], vec![1i64, 2]).expect("matching lengths");
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("b").expect("the key").value().clone(), 2);
+    }
+
+    #[test]
+    fn mismatched_lengths_are_an_error() {
+        let error = from_arrays(vec!["a".to_string()], vec![1i64, 2]).unwrap_err();
+        assert!(error.contains("same length"));
+    }
+}

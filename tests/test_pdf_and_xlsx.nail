@@ -1,0 +1,29 @@
+// PDFs and spreadsheets, by path like every other binary format.
+
+scratch:s = path_join(fs_temp_dir(), `nail_pdf_xlsx_test`);
+danger(fs_create_dir(scratch));
+
+// A report written and read back: the round trip proves both halves.
+report:s = path_join(scratch, `statement.pdf`);
+danger(pdf_from_text(report, `August Statement`, `Total due: $12.34
+Thank you for your business.`));
+contents:s = danger(pdf_text(report));
+test_assert(string_contains(contents, `August Statement`), `the title is in the PDF`);
+test_assert(string_contains(contents, `$12.34`), `and so is the body`);
+
+// A spreadsheet the same shape as CSV: headers plus rows keyed by them.
+first_row:h<s,s> = hashmap_new();
+hashmap_set(first_row, `name`, `Alex`);
+hashmap_set(first_row, `city`, `Calgary`);
+rows:a:h<s,s> = [first_row];
+workbook:s = path_join(scratch, `people.xlsx`);
+danger(xlsx_write(workbook, `people`, [`name`, `city`], rows));
+
+sheet_names:a:s = danger(xlsx_sheets(workbook));
+test_assert_equal_string(danger(array_first(sheet_names)), `people`, `the sheet is named`);
+read_back:a:h<s,s> = danger(xlsx_read(workbook, `people`));
+test_assert_equal_int(array_length(read_back), 1, `one row came back`);
+test_assert_equal_string(danger(hashmap_get(danger(array_first(read_back)), `name`)), `Alex`, `keyed by the header`);
+
+danger(fs_remove_dir_all(scratch));
+print(`every document held`);

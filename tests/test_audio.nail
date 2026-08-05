@@ -1,0 +1,29 @@
+// Making a noise. Nothing here actually plays, because a test machine has no
+// speaker and a test that beeps is a test nobody runs twice - but asking
+// whether there is a device to play through is safe everywhere.
+
+// Ask before playing anything on a server, where the answer is usually no.
+can_beep:b = audio_is_available();
+print(`is there a sound device:`);
+print(can_beep);
+
+// Playing is synchronous - the call returns when the sound has finished - so
+// a notification beep is one line. To carry on while it plays, put it in a
+// spawn block.
+//
+//   danger(audio_play_tone(440.0, 0.2, 0.2));
+//   danger(audio_play_file(`done.wav`));
+
+// A tone nobody could hear, a length that is not a length, and a volume
+// outside the range are all refused rather than played wrong. Playing returns
+// nothing, so the handler is what reports the refusal.
+f refused(err:e):v {
+    print(`refused:`, err);
+}
+
+safe(audio_play_tone(0.0, 1.0, 0.5), refused);
+safe(audio_play_tone(440.0, 3600.0, 0.5), refused);
+safe(audio_play_tone(440.0, 0.1, 2.0), refused);
+safe(audio_play_file(`/nowhere/at/all/beep.wav`), refused);
+
+print(`every audio check held`);

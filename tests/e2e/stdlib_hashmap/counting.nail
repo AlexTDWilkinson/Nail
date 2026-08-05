@@ -1,0 +1,16 @@
+// E2E: counting into a hashmap, and building one from two arrays
+counts:h<s,i> = hashmap_new();
+print(hashmap_increment(counts, `hit`));
+print(hashmap_increment(counts, `hit`));
+print(hashmap_increment(counts, `miss`));
+print(danger(hashmap_get(counts, `hit`)));
+print(hashmap_len(counts));
+totals:h<s,i> = hashmap_new();
+print(hashmap_add_to(totals, `balance`, 100));
+print(hashmap_add_to(totals, `balance`, -30));
+settings:h<s,s> = danger(hashmap_from_arrays([`host`, `port`], [`localhost`, `8080`]));
+print(danger(hashmap_get(settings, `host`)));
+print(danger(hashmap_get(settings, `port`)));
+f empty_map(err:e):h<s,i> { r hashmap_new(); }
+mismatched:h<s,i> = safe(hashmap_from_arrays([`a`], [1, 2]), empty_map);
+print(hashmap_len(mismatched));

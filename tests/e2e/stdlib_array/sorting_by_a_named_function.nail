@@ -1,0 +1,32 @@
+// E2E: the _by family takes a function the program named - no closures
+struct Book {
+    title:s,
+    author:s,
+    year:i
+}
+
+f book_year(book:Book):i { r book.year; }
+f book_author(book:Book):s { r book.author; }
+
+books:a:Book = [
+    Book { title = `Later`, author = `Ada`, year = 2001 },
+    Book { title = `Early`, author = `Bob`, year = 1999 },
+    Book { title = `Middle`, author = `Ada`, year = 2000 }
+];
+
+by_year:a:Book = array_sort_by(books, book_year);
+print(danger(array_first(by_year)).title);
+print(danger(array_last(by_year)).title);
+print(danger(array_first(array_sort_by_descending(books, book_year))).title);
+print(danger(array_min_by(books, book_year)).year);
+print(danger(array_max_by(books, book_year)).year);
+print(array_sum_by(books, book_year));
+
+by_author:h<s,a:Book> = array_group_by(books, book_author);
+print(hashmap_len(by_author));
+print(array_length(danger(hashmap_get(by_author, `Ada`))));
+print(danger(array_first(danger(hashmap_get(by_author, `Ada`)))).title);
+
+per_author:h<s,i> = array_count_by(books, book_author);
+print(danger(hashmap_get(per_author, `Ada`)));
+print(danger(hashmap_get(per_author, `Bob`)));

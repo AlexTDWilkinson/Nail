@@ -1,0 +1,54 @@
+// The trigonometry and number checks that turn math_* into a usable library.
+
+// atan2 is the one to reach for, not atan. A plain arc tangent is given only
+// the ratio, so it cannot tell the second quadrant from the fourth; given both
+// numbers, atan2 can.
+upper_left:f = math_atan2(1.0, -1.0);
+lower_right:f = math_atan2(-1.0, 1.0);
+test_assert(upper_left > 0.0, `the second quadrant is a positive angle`);
+test_assert(lower_right < 0.0, `the fourth quadrant is a negative angle`);
+
+// The distance to a point, computed without squaring first, so very large
+// distances stay exact instead of overflowing to infinity.
+distance:f = math_hypot(3.0, 4.0);
+test_assert_equal_float(distance, 5.0, 0.000001, `a three-four-five triangle`);
+
+// Angles convert both ways; everything here that takes an angle wants radians.
+half_turn:f = math_to_radians(180.0);
+test_assert_equal_float(half_turn, math_pi(), 0.000001, `180 degrees is pi radians`);
+test_assert_equal_float(math_to_degrees(math_pi()), 180.0, 0.000001, `and back again`);
+
+// Truncating and flooring differ below zero, which is the bug nobody expects.
+test_assert_equal_float(math_trunc(-2.7), -2.0, 0.000001, `truncating goes towards zero`);
+test_assert_equal_float(math_floor(-2.7), -3.0, 0.000001, `flooring goes down`);
+test_assert_equal_float(math_fract(2.75), 0.75, 0.000001, `just the fractional part`);
+
+// Cube roots work for negative numbers; raising to the power of a third does not.
+test_assert_equal_float(math_cbrt(-27.0), -3.0, 0.000001, `the cube root of a negative number`);
+
+// Modulo keeps the sign of the divisor, so wrapping an index round never goes
+// negative. This is what clock arithmetic needs and what % does not give.
+wrapped:f = danger(math_modulo(-1.0, 12.0));
+test_assert_equal_float(wrapped, 11.0, 0.000001, `an hour before midnight is eleven`);
+
+// A logarithm in any base.
+power:f = danger(math_log_base(81.0, 3.0));
+test_assert_equal_float(power, 4.0, 0.000001, `three to the fourth is eighty-one`);
+
+// The hyperbolics hold their identity: cosh squared minus sinh squared is one.
+identity:f = math_cosh(1.5) * math_cosh(1.5) - math_sinh(1.5) * math_sinh(1.5);
+test_assert_equal_float(identity, 1.0, 0.000001, `the hyperbolic identity`);
+test_assert_equal_float(math_tanh(0.0), 0.0, 0.000001, `tanh at zero`);
+
+// Whether a computed value is an ordinary number. A not-a-number value is the
+// one value not equal to itself, so == cannot be used to ask.
+ordinary:f = 1.5;
+test_assert(math_is_finite(ordinary), `an ordinary number is finite`);
+test_assert_false(math_is_nan(ordinary), `an ordinary number is a number`);
+test_assert_false(math_is_infinite(ordinary), `an ordinary number is not infinite`);
+
+// The direction of a number, which the existing math_sign now exposes.
+test_assert_equal_int(math_sign(-4.2), -1, `a negative number`);
+test_assert_equal_int(math_sign(4.2), 1, `a positive number`);
+
+print(`every math check held`);

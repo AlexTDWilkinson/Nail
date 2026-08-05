@@ -1,0 +1,24 @@
+// E2E: mime_* by file name, and the front matter a document carries
+print(mime_for_path(`index.html`));
+print(mime_for_path(`/srv/app/public/logo.svg`));
+print(mime_for_path(`PHOTO.PNG`));
+print(mime_for_path(`Makefile`));
+print(mime_is_text(`application/json`));
+print(mime_is_text(`image/png`));
+print(danger(mime_extension_for(`image/png`)));
+print(danger(mime_extension_for(`text/html; charset=utf-8`)));
+
+post:s = `---
+title: A Post
+date: 2026-08-04
+---
+# Heading
+
+The text.
+`;
+meta:h<s,s> = markdown_front_matter(post);
+print(hashmap_len(meta));
+print(danger(hashmap_get(meta, `title`)));
+print(danger(hashmap_get(meta, `date`)));
+print(markdown_without_front_matter(post));
+print(hashmap_len(markdown_front_matter(`# Just a heading`)));

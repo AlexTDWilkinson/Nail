@@ -1,0 +1,19 @@
+// E2E: a watch sees a file arrive, and quiet time is an empty answer.
+danger(fs_create_dir(`incoming`));
+watcher:FS_Watcher = danger(fs_watch_start(`incoming`));
+
+danger(fs_write(`incoming/dropped.txt`, `arrived`));
+changed:a:s = danger(fs_watch_next(watcher, 5000));
+print(array_length(changed) > 0);
+first_change:s = danger(array_first(changed));
+print(string_ends_with(first_change, `dropped.txt`));
+
+quiet:a:s = danger(fs_watch_next(watcher, 100));
+print(array_length(quiet));
+
+danger(fs_watch_stop(watcher));
+danger(fs_watch_stop(watcher));
+
+f refused(err:e):FS_Watcher { r FS_Watcher { handle = ``, path = `` }; }
+nothing:FS_Watcher = safe(fs_watch_start(`no_such_directory`), refused);
+print(string_is_empty(nothing.handle));

@@ -25,5 +25,20 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "path_normalize" => "std_lib::path::normalize", (path: s) -> s,
             "Normalizes a path by resolving . and .. components.",
             "clean:s = path_normalize(`a/./b/../c`);";
+        "path_stem" => "std_lib::path::stem", (path: s) -> s,
+            "Returns the file name with its last extension removed, so report.tar.gz gives report.tar.",
+            "name:s = path_stem(`/tmp/report.pdf`);";
+        "path_relative_to" => "std_lib::path::relative_to", (path: s, base: s) -> (s!e),
+            "Returns the path written from the base directory instead; errors if the path is not inside the base.",
+            "inside:s = danger(path_relative_to(`/srv/app/logs/today.log`, `/srv/app`));";
+        "path_absolute" => "std_lib::path::absolute", (path: s) -> (s!e),
+            "Returns the path resolved against the directory the program is running in. Works for a file that does not exist yet.",
+            "full:s = danger(path_absolute(`config.toml`));";
+        "path_with_extension" => "std_lib::path::with_extension", (path: s, extension: s) -> s,
+            "Returns the same path carrying a different extension; an empty extension removes it.",
+            "output:s = path_with_extension(`report.md`, `html`);";
+        "path_matches_glob" => "std_lib::path::matches_glob", (pattern: (&s), path: (&s)) -> b,
+            "Whether a path matches a shell glob pattern, where * stays inside one segment, ** crosses segments, ? is one character and [abc] is one of those listed.",
+            "is_test:b = path_matches_glob(`tests/**/*.nail`, path);";
     }
 }

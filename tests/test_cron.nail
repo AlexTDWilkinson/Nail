@@ -1,0 +1,39 @@
+// Cron schedules, worked out as arithmetic rather than run by a scheduler: a
+// program asks when the next run is, sleeps until then, does the work, and asks
+// again. The loop stays in the program, where anyone reading it can see what
+// happens when the work fails.
+
+test_assert(time_cron_valid(`0 3 * * *`), `every day at three`);
+test_assert(time_cron_valid(`*/15 * * * *`), `every quarter hour`);
+test_assert(time_cron_valid(`0 9-17 * * 1-5`), `office hours on weekdays`);
+test_assert_false(time_cron_valid(`0 3 * *`), `four fields is not an expression`);
+test_assert_false(time_cron_valid(`@daily`), `and neither is a shorthand`);
+test_assert_false(time_cron_valid(`0 24 * * *`), `there is no hour 24`);
+
+// A Tuesday at 04:00, after that day's three o'clock run has gone.
+tuesday_morning:i = danger(time_from_parts(2026, 8, 4, 4, 0, 0));
+next_daily:i = danger(time_cron_next(`0 3 * * *`, tuesday_morning));
+test_assert_equal_int(next_daily, danger(time_from_parts(2026, 8, 5, 3, 0, 0)), `so the next run is tomorrow`);
+
+// Earlier the same day, the run still to come is today's.
+tuesday_night:i = danger(time_from_parts(2026, 8, 4, 1, 0, 0));
+still_today:i = danger(time_cron_next(`0 3 * * *`, tuesday_night));
+test_assert_equal_int(still_today, danger(time_from_parts(2026, 8, 4, 3, 0, 0)), `and before it, today's`);
+
+quarter_past:i = danger(time_cron_next(`*/15 * * * *`, danger(time_from_parts(2026, 8, 4, 13, 1, 0))));
+test_assert_equal_int(quarter_past, danger(time_from_parts(2026, 8, 4, 13, 15, 0)), `a step runs at every step`);
+
+// A weekday schedule skips the weekend rather than firing on Saturday.
+friday_evening:i = danger(time_from_parts(2026, 8, 7, 18, 0, 0));
+after_weekend:i = danger(time_cron_next(`0 9 * * 1-5`, friday_evening));
+test_assert_equal_int(after_weekend, danger(time_from_parts(2026, 8, 10, 9, 0, 0)), `the next weekday is Monday`);
+
+test_assert(danger(time_cron_matches(`*/15 * * * *`, danger(time_from_parts(2026, 8, 4, 13, 30, 0)))), `half past matches`);
+test_assert_false(danger(time_cron_matches(`*/15 * * * *`, danger(time_from_parts(2026, 8, 4, 13, 31, 0)))), `and a minute later does not`);
+
+// A broken expression says which field is wrong rather than never firing.
+f no_schedule(err:e):i { r -1; }
+broken:i = safe(time_cron_next(`0 25 * * *`, tuesday_morning), no_schedule);
+test_assert_equal_int(broken, -1, `an hour that does not exist`);
+
+print(`every schedule held`);

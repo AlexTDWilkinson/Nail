@@ -1,0 +1,7 @@
+true
+["nested/under.txt", "top.txt"]
+the top file
+the nested file
+["nested/under.txt", "top.txt"]
+the nested file
+false

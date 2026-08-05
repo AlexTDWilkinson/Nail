@@ -1,0 +1,53 @@
+// Drawing a picture with no window and no graphics card. Every shape is a
+// string, so a chart is a map and a join like anything else in Nail.
+
+// The shapes on their own.
+background_bar:s = danger(draw_rect(10.0, 20.0, 30.0, 40.0, `steelblue`, 4.0));
+dot:s = danger(draw_circle(50.0, 50.0, 4.0, `crimson`));
+oval:s = danger(draw_ellipse(120.0, 50.0, 20.0, 10.0, `gold`));
+axis:s = danger(draw_line(0.0, 100.0, 200.0, 100.0, `black`, 1.0));
+label:s = danger(draw_text(100.0, 16.0, `Revenue & Costs`, 14.0, `black`, `middle`));
+squiggle:s = danger(draw_path(`M 0 0 L 10 10 L 20 0`, `purple`, 2.0, ``));
+
+// Text that would otherwise break the document is escaped, so the ampersand
+// above arrives as an entity rather than a broken tag.
+test_assert_contains(label, `Revenue &amp; Costs`, `text is escaped for XML`);
+
+// draw_scale is the arithmetic a chart is made of. Screens grow downward, so
+// plotting upward means passing the height as the low end.
+top:f = danger(draw_scale(10.0, 0.0, 10.0, 100.0, 0.0));
+bottom:f = danger(draw_scale(0.0, 0.0, 10.0, 100.0, 0.0));
+test_assert_equal_float(top, 0.0, 0.000001, `the largest value plots at the top`);
+test_assert_equal_float(bottom, 100.0, 0.000001, `the smallest plots at the bottom`);
+
+// A line chart: the data, scaled into a flat array of x and y values.
+data:a:f = [3.0, 7.0, 5.0, 9.0, 2.0];
+points:a:f = [0.0, 70.0, 50.0, 30.0, 100.0, 50.0, 150.0, 10.0, 200.0, 80.0];
+series:s = danger(draw_polyline(points, `steelblue`, 2.0));
+area:s = danger(draw_polygon([0.0, 100.0, 100.0, 20.0, 200.0, 100.0], `lightblue`));
+
+// A group moves everything inside it at once, which is how a plotting area is
+// kept clear of its labels without adding the margin to every coordinate.
+plot:s = draw_group(20.0, 10.0, [area, series]);
+
+// And the document, which fs_write saves like any other text.
+picture:s = danger(draw_svg(240.0, 130.0, `white`, [background_bar, dot, oval, axis, label, squiggle, plot]));
+print(picture);
+
+test_assert_contains(picture, `<svg xmlns="http://www.w3.org/2000/svg"`, `it is an SVG document`);
+test_assert_contains(picture, `viewBox="0 0 240 130"`, `the view box matches the size`);
+test_assert_contains(picture, `<polyline`, `the series is in there`);
+test_assert_contains(picture, `translate(20,10)`, `the group is offset`);
+
+// A drawing with no area, and a shape that could not be seen, are errors
+// rather than a document nothing will open.
+f refused(err:e):s {
+    r `refused`;
+}
+
+no_area:s = safe(draw_svg(0.0, 10.0, ``, []), refused);
+invisible:s = safe(draw_line(0.0, 0.0, 1.0, 1.0, `black`, 0.0), refused);
+test_assert_equal_string(no_area, `refused`, `a drawing with no area is refused`);
+test_assert_equal_string(invisible, `refused`, `a line too thin to see is refused`);
+
+print(`every drawing check held`);

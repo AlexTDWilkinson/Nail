@@ -1,0 +1,57 @@
+// Reading HTML somebody else wrote: a fetched page, a feed, a saved export.
+// Elements are found by CSS selector, the same query a browser inspector uses.
+
+page:s = html`<!doctype html>
+<html>
+  <head>
+    <title>  A Page  </title>
+    <meta name="description" content="what the page is about">
+    <meta property="og:title" content="A Page, shared">
+  </head>
+  <body>
+    <h1>Heading</h1>
+    <div class="post"><a href="/first">First</a><img src="/one.png"></div>
+    <div class="post"><a href="https://example.com/second">Second</a></div>
+    <p>Some
+       text across lines.</p>
+  </body>
+</html>`;
+
+words:s = html_text(page);
+test_assert(string_contains(words, `Heading`), `the text of the page`);
+test_assert(string_contains(words, `Some text across lines.`), `with its whitespace collapsed`);
+test_assert_false(string_contains(words, `<`), `and its tags removed`);
+
+test_assert_equal_string(danger(html_title(page)), `A Page`, `the title, tidied`);
+test_assert_equal_string(danger(html_meta(page, `description`)), `what the page is about`, `a meta tag by name`);
+test_assert_equal_string(danger(html_meta(page, `og:title`)), `A Page, shared`, `and one by property`);
+
+posts:a:s = danger(html_select_text(page, `.post a`));
+test_assert_equal_int(array_length(posts), 2, `both posts were found`);
+test_assert_equal_string(danger(array_first(posts)), `First`, `in document order`);
+
+links:a:s = danger(html_links(page));
+test_assert_equal_int(array_length(links), 2, `both links`);
+test_assert(array_contains(links, `/first`), `a relative link stays relative`);
+
+images:a:s = danger(html_images(page));
+test_assert_equal_int(array_length(images), 1, `one image`);
+
+test_assert_equal_int(danger(html_count(page, `div.post`)), 2, `elements can be counted`);
+
+// A selector matching nothing is an empty array, because a page without
+// comments is an ordinary page.
+comments:a:s = danger(html_select_text(page, `.comment`));
+test_assert_equal_int(array_length(comments), 0, `nothing matched, and that is not an error`);
+
+// Real HTML is not well-formed, and refusing it would make this useless.
+broken:s = html`<div><p>unclosed<p>another<span>and text`;
+paragraphs:a:s = danger(html_select_text(broken, `p`));
+test_assert_equal_int(array_length(paragraphs), 2, `broken markup is recovered from`);
+
+// A selector that is not a selector says so.
+f not_a_selector(err:e):i { r -1; }
+refused:i = safe(html_count(page, `div..`), not_a_selector);
+test_assert_equal_int(refused, -1, `and a broken selector is an error`);
+
+print(`every page held`);

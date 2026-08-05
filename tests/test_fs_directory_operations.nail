@@ -1,0 +1,51 @@
+// Filesystem: appending, listing, walking, measuring, and cleaning up after
+// itself. Everything happens inside one directory under the machine's
+// temporary folder, which is removed at the end.
+
+scratch:s = path_join(fs_temp_dir(), `nail_fs_directory_operations`);
+danger(fs_create_dir(scratch));
+
+// Appending keeps what is already in the file; writing would not.
+log_path:s = path_join(scratch, `events.log`);
+danger(fs_append(log_path, `first event
+`));
+danger(fs_append(log_path, `second event
+`));
+lines:a:s = danger(fs_read_lines(log_path));
+print(`lines in the log:`);
+print(array_length(lines));
+print(lines);
+
+// Size and kind describe what is there.
+bytes:i = danger(fs_size(log_path));
+is_regular_file:b = fs_is_file(log_path);
+is_folder:b = fs_is_dir(scratch);
+changed:i = danger(fs_modified(log_path));
+print(`the log file:`);
+print(bytes);
+print(is_regular_file);
+print(is_folder);
+print(changed > 0);
+
+// A path that is not there is neither a file nor a directory.
+missing:s = path_join(scratch, `nothing_here.txt`);
+print(`a missing path is neither:`);
+print(fs_is_file(missing));
+print(fs_is_dir(missing));
+
+// Reading a directory lists what is directly inside it; walking finds every
+// file however deep.
+nested:s = path_join(scratch, `nested`);
+danger(fs_create_dir(nested));
+danger(fs_write(path_join(nested, `deep.txt`), `deep`));
+
+entries:a:s = danger(fs_read_dir(scratch));
+found:a:s = danger(fs_walk(scratch));
+print(`entries directly inside, then every file underneath:`);
+print(array_length(entries));
+print(array_length(found));
+
+// Removing the whole tree, which is the one that means it.
+danger(fs_remove_dir_all(scratch));
+print(`the scratch directory is gone:`);
+print(fs_is_dir(scratch));

@@ -1,0 +1,45 @@
+// Checking that text is the shape it claims to be, which is what a program
+// does with everything that arrives from outside itself.
+
+test_assert(validate_email(`alex@houski.ca`), `an address that could be delivered to`);
+test_assert_false(validate_email(`alex@localhost`), `a hostname is not an address`);
+test_assert_false(validate_email(`not an address`), `and neither is a sentence`);
+
+test_assert(validate_url(`https://nail-lang.org/docs?page=2`), `a link that can be followed`);
+test_assert_false(validate_url(`/relative/path`), `a path is not a URL on its own`);
+
+test_assert(validate_hostname(`example.com`), `a hostname`);
+test_assert_false(validate_hostname(`-leading.com`), `a label cannot start with a hyphen`);
+
+test_assert(validate_uuid(`f47ac10b-58cc-4372-a567-0e02b2c3d479`), `a UUID`);
+test_assert_false(validate_uuid(`f47ac10b58cc4372a5670e02b2c3d479`), `the groups are part of the spelling`);
+
+test_assert(validate_ipv4(`192.168.0.1`), `an IPv4 address`);
+test_assert_false(validate_ipv4(`192.168.0.256`), `256 is not a byte`);
+test_assert(validate_ipv6(`2001:db8::8a2e:370:7334`), `an IPv6 address`);
+
+test_assert(validate_port(8080), `a port to bind`);
+test_assert_false(validate_port(0), `zero means pick one for me, not a port`);
+test_assert_false(validate_port(65536), `and there is no port above 65535`);
+
+// The published test number every payment processor documents, and the same
+// number with one digit mistyped.
+test_assert(validate_credit_card(`4242 4242 4242 4242`), `a card number typed correctly`);
+test_assert_false(validate_credit_card(`4242 4242 4242 4243`), `a mistyped digit is caught`);
+
+test_assert(validate_hex_color(`#1a2b3c`), `a colour a stylesheet accepts`);
+test_assert_false(validate_hex_color(`1a2b3c`), `without the hash it is not one`);
+
+test_assert(validate_slug(string_slugify(`Hello, World!`)), `what slugify produces is a slug`);
+test_assert_false(validate_slug(`Hello-World`), `a slug is lowercase`);
+
+test_assert(validate_length_between(`alex`, 2, 32), `a display name that fits`);
+test_assert_false(validate_length_between(`a`, 2, 32), `and one that is too short`);
+
+test_assert_equal_int(validate_password_strength(`password`), 0, `the first password anyone tries`);
+test_assert_equal_int(validate_password_strength(`Tr0ubador&horse!`), 4, `long and varied`);
+
+test_assert(validate_json(`{"port": 8080}`), `a JSON document`);
+test_assert_false(validate_json(`{port: 8080}`), `keys need their quotes`);
+
+print(`every validation held`);

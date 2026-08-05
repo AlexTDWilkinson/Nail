@@ -1,0 +1,35 @@
+// Postgres, for when the data lives on a server rather than in a file. The
+// shape is the same as the SQLite module: a connection is a handle, values are
+// bound rather than pasted in, and rows come back as the struct asked for.
+//
+// Nothing here reaches a server - a test that needed one would fail on any
+// machine without it - so this checks that a connection that cannot be made and
+// a handle that was never opened are both errors rather than hangs.
+
+struct Person {
+    id:i,
+    name:s
+}
+
+// A handler returns the same type the call would have, so each of these stands
+// for "it did not work" in the shape the call was expecting.
+f no_connection(err:e):DB_Postgres { r DB_Postgres { handle = ``, database = `` }; }
+f no_result(err:e):DB_PostgresResult { r DB_PostgresResult { rows_affected = -1 }; }
+f no_person(err:e):Person { r Person { id = -1, name = `` }; }
+
+// Port 1 has nothing on it, so connecting fails - and the failure names the
+// database rather than echoing the password back.
+attempt:DB_Postgres = safe(db_postgres_connect(`postgres://nail:secret@127.0.0.1:1/orders`), no_connection);
+test_assert_equal_string(attempt.handle, ``, `a server that is not there gives no connection`);
+
+// The rest of the module is exercised through a handle that was never opened,
+// which is the other way a program gets this wrong.
+db:DB_Postgres = DB_Postgres { handle = `pg_never_opened`, database = `orders` };
+
+executed:DB_PostgresResult = safe(db_postgres_execute(db, `INSERT INTO people (name) VALUES ($1)`, [`alice`]), no_result);
+test_assert_equal_int(executed.rows_affected, -1, `a statement on a handle that was never opened`);
+
+found:Person = safe(db_postgres_query_single(db, `SELECT id, name FROM people WHERE id = $1`, [`1`]), no_person);
+test_assert_equal_int(found.id, -1, `and so is a query`);
+
+print(`every postgres call was refused as it should be`);

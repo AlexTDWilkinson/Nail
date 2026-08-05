@@ -1,0 +1,48 @@
+// E2E: 3x3 transforms - the order two of them combine in, undoing one, and
+// the difference between moving a point and moving a direction.
+f no_transform(problem:e):LINALG_Mat3 { r linalg_mat3_identity(); }
+f minus_one(problem:e):f { r 0.0 - 1.0; }
+
+shift:LINALG_Mat3 = linalg_mat3_translation(10.0, 0.0);
+grow:LINALG_Mat3 = linalg_mat3_scaling(2.0, 2.0);
+
+// The right-hand transform happens first, so this scales and then moves and
+// the move itself is not scaled.
+scale_then_move:LINALG_Mat3 = linalg_mat3_multiply(shift, grow);
+print(linalg_mat3_transform_point(scale_then_move, linalg_vec2(1.0, 0.0)).x_coordinate);
+
+// The other order scales the move along with everything else.
+move_then_scale:LINALG_Mat3 = linalg_mat3_multiply(grow, shift);
+print(linalg_mat3_transform_point(move_then_scale, linalg_vec2(1.0, 0.0)).x_coordinate);
+
+// A direction has no position, so translation leaves it alone.
+print(linalg_mat3_transform_vector(shift, linalg_vec2(1.0, 2.0)).x_coordinate);
+print(linalg_mat3_transform_point(shift, linalg_vec2(1.0, 2.0)).x_coordinate);
+
+// Identity changes nothing, and undoing a transform returns the point given.
+print(linalg_vec2_equals(linalg_mat3_transform_point(linalg_mat3_identity(), linalg_vec2(3.0, 4.0)), linalg_vec2(3.0, 4.0), 0.000001));
+
+full:LINALG_Mat3 = linalg_mat3_multiply(shift, linalg_mat3_multiply(linalg_mat3_rotation(math_to_radians(30.0)), grow));
+undo:LINALG_Mat3 = danger(linalg_mat3_inverse(full));
+there:LINALG_Vec2 = linalg_mat3_transform_point(full, linalg_vec2(3.0, 7.0));
+back:LINALG_Vec2 = linalg_mat3_transform_point(undo, there);
+print(linalg_vec2_equals(back, linalg_vec2(3.0, 7.0), 0.000001));
+print(linalg_mat3_equals(linalg_mat3_multiply(full, undo), linalg_mat3_identity(), 0.000001));
+
+// The determinant is the area factor, and zero is exactly when there is no
+// inverse to be had.
+print(linalg_mat3_determinant(linalg_mat3_identity()));
+print(linalg_mat3_determinant(linalg_mat3_scaling(2.0, 3.0)));
+flattened:LINALG_Mat3 = safe(linalg_mat3_inverse(linalg_mat3_scaling(0.0, 1.0)), no_transform);
+print(linalg_mat3_determinant(flattened));
+
+// Nine numbers in, nine numbers out, read left to right and top to bottom.
+built:LINALG_Mat3 = danger(linalg_mat3([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]));
+print(linalg_mat3_to_array(linalg_mat3_transpose(built)));
+print(danger(linalg_mat3_get(built, 1, 2)));
+print(linalg_mat3_to_array(linalg_mat3_translation(4.0, 5.0)));
+
+wrong_size:LINALG_Mat3 = safe(linalg_mat3([1.0, 2.0]), no_transform);
+print(danger(linalg_mat3_get(wrong_size, 0, 0)));
+off_the_edge:f = safe(linalg_mat3_get(built, 3, 0), minus_one);
+print(off_the_edge);

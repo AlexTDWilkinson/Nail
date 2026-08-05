@@ -1,0 +1,74 @@
+// Multipart uploads and retrying requests.
+//
+// Nothing here is sent: the functions making the requests are defined and
+// transpiled but never called, so this test pins their signatures without
+// needing a server to answer.
+
+// The two ways to build a part, and the fields they fill in.
+field:HTTP_Part = http_part_text(`purpose`, `avatar`);
+upload:HTTP_Part = http_part_file(`file`, `portrait.png`);
+print(`Text part: `, field.name, ` = `, field.value);
+print(`File part reads: `, upload.file_path);
+
+// A part written out in full, for a name and media type the defaults would
+// have guessed differently.
+renamed:HTTP_Part = HTTP_Part {
+    name = `file`,
+    value = ``,
+    file_path = `/tmp/upload.bin`,
+    file_name = `report-2026.pdf`,
+    content_type = `application/pdf`
+};
+print(`Renamed part sends: `, renamed.file_name, ` as `, renamed.content_type);
+
+f upload_avatar(url:s, token:s):i {
+    headers:h<s,s> = hashmap_new();
+    hashmap_set(headers, `Authorization`, string_concat([`Bearer `, token]));
+
+    parts:a:HTTP_Part = [
+        http_part_text(`purpose`, `avatar`),
+        http_part_file(`file`, `portrait.png`),
+    ];
+
+    response:HTTP_Response = danger(http_request_multipart(HTTP_Method::Post, url, headers, parts));
+    r response.status;
+}
+
+// The defaults, and a settings struct written out in full.
+retry:HTTP_Retry = http_default_retry();
+print(`Default attempts: `, retry.attempts);
+print(`Default wait grows from `, retry.initial_delay_ms, `ms to at most `, retry.max_delay_ms, `ms`);
+
+patient:HTTP_Retry = HTTP_Retry {
+    attempts = 5,
+    initial_delay_ms = 500,
+    max_delay_ms = 20000,
+    timeout_ms = 60000
+};
+print(`Patient settings try `, patient.attempts, ` times`);
+
+f fetch_with_retry(url:s):s {
+    headers:h<s,s> = hashmap_new();
+    response:HTTP_Response = danger(http_request_retry(HTTP_Method::Get, url, headers, ``, http_default_retry()));
+    r response.body;
+}
+
+f post_once(url:s, body:s, key:s):i {
+    headers:h<s,s> = hashmap_new();
+    hashmap_set(headers, `Content-Type`, `application/json`);
+    // Retrying sends the same request again, so an API that must not act
+    // twice is told which call this is.
+    hashmap_set(headers, `Idempotency-Key`, key);
+
+    settings:HTTP_Retry = HTTP_Retry {
+        attempts = 4,
+        initial_delay_ms = 200,
+        max_delay_ms = 3000,
+        timeout_ms = 10000
+    };
+
+    response:HTTP_Response = danger(http_request_retry(HTTP_Method::Post, url, headers, body, settings));
+    r response.status;
+}
+
+print(`Multipart and retry signatures check out.`);

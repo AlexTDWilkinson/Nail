@@ -1,0 +1,13 @@
+// E2E: encrypting something and reading it back with the same secret
+secret:s = `a long random key from the environment`;
+sealed:s = danger(crypto_encrypt(`the secret plan`, secret));
+print(sealed != `the secret plan`);
+print(danger(crypto_decrypt(sealed, secret)));
+// The same text encrypts differently every time, and both still open.
+again:s = danger(crypto_encrypt(`the secret plan`, secret));
+print(sealed != again);
+print(danger(crypto_decrypt(again, secret)));
+f refused(err:e):s { r `refused`; }
+print(safe(crypto_decrypt(sealed, `the wrong key`), refused));
+print(safe(crypto_decrypt(`not encrypted at all`, secret), refused));
+print(safe(crypto_encrypt(`text`, ``), refused));

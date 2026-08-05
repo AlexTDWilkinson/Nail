@@ -289,3 +289,137 @@ pub fn close(reader: &CSV_Reader) -> Result<(), String> {
         None => Err(format!("csv_close: reader for '{}' is already closed", reader.path)),
     }
 }
+
+/// Writes rows out as CSV text, with the columns named and in the order given.
+/// A field that holds the delimiter, a quote or a newline is quoted, and a
+/// quote inside it doubled - the escaping every hand-rolled CSV writer gets
+/// wrong the first time a customer has a comma in their name. A row missing a
+/// column is written as an empty field rather than refused, since a hashmap
+/// row that never had the key is the normal case.
+pub fn serialize(headers: Vec<String>, rows: Vec<DashMap<String, String>>, options: CSV_Options) -> Result<String, String> {
+    if headers.is_empty() {
+        return Err("csv_serialize: no column names were given, so there is nothing to write".to_string());
+    }
+
+    let delimiter = match options.delimiter.chars().next() {
+        Some(character) => character,
+        None => ',',
+    };
+    let quote = match options.quote.chars().next() {
+        Some(character) => character,
+        None => '"',
+    };
+
+    let mut written = String::new();
+    if options.has_headers {
+        written.push_str(&join_row(&headers, delimiter, quote));
+        written.push('\n');
+    }
+
+    for row in rows.iter() {
+        let fields: Vec<String> = headers
+            .iter()
+            .map(|column| match row.get(column) {
+                Some(found) => found.value().clone(),
+                None => String::new(),
+            })
+            .collect();
+        written.push_str(&join_row(&fields, delimiter, quote));
+        written.push('\n');
+    }
+    return Ok(written);
+}
+
+/// One row of CSV, with each field quoted only when it has to be.
+fn join_row(fields: &[String], delimiter: char, quote: char) -> String {
+    let written: Vec<String> = fields
+        .iter()
+        .map(|field| {
+            let needs_quoting = field.contains(delimiter) || field.contains(quote) || field.contains('\n') || field.contains('\r');
+            if !needs_quoting {
+                return field.clone();
+            }
+            let escaped = field.replace(quote, &format!("{}{}", quote, quote));
+            return format!("{}{}{}", quote, escaped, quote);
+        })
+        .collect();
+    return written.join(&delimiter.to_string());
+}
+
+/// Writes rows straight to a file as CSV. The same escaping as csv_serialize,
+/// and the file is put in place by a rename, so a reader never catches it half
+/// written.
+pub async fn write(path: String, headers: Vec<String>, rows: Vec<DashMap<String, String>>, options: CSV_Options) -> Result<(), String> {
+    let text = serialize(headers, rows, options)?;
+    return crate::parser::std_lib::fs::write_atomic(path, text).await;
+}
+
+#[cfg(test)]
+mod writing_tests {
+    use super::*;
+
+    fn row(pairs: &[(&str, &str)]) -> DashMap<String, String> {
+        let built = DashMap::new();
+        for (key, value) in pairs.iter() {
+            built.insert(key.to_string(), value.to_string());
+        }
+        return built;
+    }
+
+    #[test]
+    fn columns_are_written_in_the_order_they_were_named() {
+        let rows = vec![row(&[("name", "Ada"), ("city", "London")]), row(&[("city", "Calgary"), ("name", "Bob")])];
+        let text = serialize(vec!["name".to_string(), "city".to_string()], rows, default_options()).expect("columns");
+        assert_eq!(text, "name,city\nAda,London\nBob,Calgary\n");
+    }
+
+    #[test]
+    fn a_field_that_would_break_the_format_is_quoted() {
+        let rows = vec![row(&[("name", "Doe, Jane"), ("note", "she said \"hi\""), ("address", "one\ntwo")])];
+        let text = serialize(vec!["name".to_string(), "note".to_string(), "address".to_string()], rows, default_options()).expect("columns");
+        assert_eq!(text, "name,note,address\n\"Doe, Jane\",\"she said \"\"hi\"\"\",\"one\ntwo\"\n");
+    }
+
+    #[test]
+    fn what_is_written_can_be_read_back() {
+        let rows = vec![row(&[("name", "Doe, Jane"), ("note", "she said \"hi\"")])];
+        let text = serialize(vec!["name".to_string(), "note".to_string()], rows, default_options()).expect("columns");
+        let read_back = parse(text, default_options()).expect("what we just wrote");
+        assert_eq!(read_back.len(), 1);
+        assert_eq!(read_back[0].get("name").expect("the column").value().clone(), "Doe, Jane");
+        assert_eq!(read_back[0].get("note").expect("the column").value().clone(), "she said \"hi\"");
+    }
+
+    #[test]
+    fn a_missing_column_is_written_as_an_empty_field() {
+        let rows = vec![row(&[("name", "Ada")])];
+        let text = serialize(vec!["name".to_string(), "city".to_string()], rows, default_options()).expect("columns");
+        assert_eq!(text, "name,city\nAda,\n");
+    }
+
+    #[test]
+    fn the_delimiter_and_the_header_row_follow_the_options() {
+        let mut options = default_options();
+        options.delimiter = "\t".to_string();
+        options.has_headers = false;
+        let rows = vec![row(&[("name", "Ada"), ("city", "London")])];
+        let text = serialize(vec!["name".to_string(), "city".to_string()], rows, options).expect("columns");
+        assert_eq!(text, "Ada\tLondon\n");
+    }
+
+    #[test]
+    fn writing_no_columns_is_an_error() {
+        assert!(serialize(vec![], vec![], default_options()).unwrap_err().contains("no column names"));
+    }
+
+    #[tokio::test]
+    async fn a_written_file_reads_back_as_the_same_rows() {
+        let path = crate::parser::std_lib::fs::temp_file("nail_csv_".to_string(), "csv".to_string()).await.expect("a writable temporary directory");
+        let rows = vec![row(&[("name", "Ada"), ("city", "London")])];
+        write(path.clone(), vec!["name".to_string(), "city".to_string()], rows, default_options()).await.expect("a writable path");
+
+        let text = crate::parser::std_lib::fs::read_file(path.clone()).await.expect("the file we wrote");
+        assert_eq!(text, "name,city\nAda,London\n");
+        tokio::fs::remove_file(&path).await.expect("a removable file");
+    }
+}

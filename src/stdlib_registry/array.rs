@@ -100,5 +100,53 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_max" => "std_lib::array::max", (array: (&[T])) -> (T!e),
             "Returns the largest element, or an error if the array is empty.",
             "highest:i = danger(array_max(numbers));";
+        "array_index_of" => "std_lib::array::index_of", (array: (&[T]), item: T) -> (i!e),
+            "Returns the index where the item first appears, or an error if the array does not contain it.",
+            "position:i = danger(array_index_of(names, `alice`));";
+        "array_count_of" => "std_lib::array::count_of", (array: (&[T]), item: T) -> i,
+            "Returns how many times the item appears in the array.",
+            "repeats:i = array_count_of(rolls, 6);";
+        "array_insert" => "std_lib::array::insert_at", (array: [T], index: i, item: T) -> ([T]!e),
+            "Returns a new array with the item inserted at the index, moving the rest along; errors if the index is past the end.",
+            "queue:a:s = danger(array_insert(queue, 0, `urgent`));";
+        "array_remove_at" => "std_lib::array::remove_at", (array: [T], index: i) -> ([T]!e),
+            "Returns a new array without the element at the index; errors if the index is out of bounds.",
+            "rest:a:s = danger(array_remove_at(names, 2));";
+        "array_replace_at" => "std_lib::array::replace_at", (array: [T], index: i, item: T) -> ([T]!e),
+            "Returns a new array with the element at the index replaced; errors if the index is out of bounds.",
+            "fixed:a:s = danger(array_replace_at(names, 0, `alice`));";
+        "array_swap" => "std_lib::array::swap", (array: [T], first: i, second: i) -> ([T]!e),
+            "Returns a new array with the two elements exchanged; errors if either index is out of bounds.",
+            "reordered:a:i = danger(array_swap(numbers, 0, 1));";
+        "array_all_equal" => "std_lib::array::all_equal", (array: (&[T])) -> b,
+            "Returns true if every element equals the first one, and true for an empty array.",
+            "uniform:b = array_all_equal(votes);";
+        "array_is_empty" => "std_lib::array::is_empty", (array: (&[T])) -> b,
+            "Returns true if the array has no elements.",
+            "nothing_to_do:b = array_is_empty(queue);";
+        "array_sort_descending" => "std_lib::array::sort_descending", (array: [T]) -> [T],
+            "Returns a new array sorted from largest to smallest.",
+            "leaderboard:a:i = array_sort_descending(scores);";
+        "array_sort_by" => "std_lib::array::sort_by_keys", (array: [T], key: (fn(T) -> K)) -> [T],
+            "Returns the array sorted by what the named key function returns for each element, smallest first. The key function must be a plain one - reading a field or doing arithmetic - not one that reads a file or makes a request.",
+            "by_year:a:Book = array_sort_by(books, book_year);";
+        "array_sort_by_descending" => "std_lib::array::sort_by_keys_descending", (array: [T], key: (fn(T) -> K)) -> [T],
+            "Returns the array sorted by the key function, largest first.",
+            "newest_first:a:Book = array_sort_by_descending(books, book_year);";
+        "array_min_by" => "std_lib::array::min_by_keys", (array: [T], key: (fn(T) -> K)) -> (T!e),
+            "Returns the element whose key is smallest; an empty array is an error.",
+            "oldest:Book = danger(array_min_by(books, book_year));";
+        "array_max_by" => "std_lib::array::max_by_keys", (array: [T], key: (fn(T) -> K)) -> (T!e),
+            "Returns the element whose key is largest; an empty array is an error.",
+            "newest:Book = danger(array_max_by(books, book_year));";
+        "array_sum_by" => "std_lib::array::sum_of_keys", (array: [T], key: (fn(T) -> (K: i|f))) -> K,
+            "Returns every element's key added up, which is the total of a field over the array. An empty array sums to zero.",
+            "total_pages:i = array_sum_by(books, book_pages);";
+        "array_group_by" => "std_lib::array::group_by_keys", (array: [T], key: (fn(T) -> (K: i|s))) -> (h K [T]),
+            "Buckets the elements by what the key function returns, keeping the order they appeared in inside each bucket. For anything beyond bucketing, register the rows and write SQL.",
+            "by_author:h<s,a:Book> = array_group_by(books, book_author);";
+        "array_count_by" => "std_lib::array::count_by_keys", (array: [T], key: (fn(T) -> (K: i|s))) -> (h K i),
+            "Returns how many elements share each key, which is array_group_by when only the sizes matter.",
+            "per_author:h<s,i> = array_count_by(books, book_author);";
     }
 }

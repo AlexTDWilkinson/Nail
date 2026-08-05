@@ -1718,10 +1718,34 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
 
         // Return the inner type of the first argument (Result type)
         let first_arg_type = check_type(&args[0], state);
-        return match first_arg_type {
+        let success_type = match first_arg_type {
             NailDataTypeDescriptor::Result(inner) => (*inner).clone(),
             _ => NailDataTypeDescriptor::FailedToResolve,
         };
+
+        // The handler stands in for the value when the call fails, so what it
+        // returns has to be what the call would have produced. Without this
+        // the mismatch only surfaces as an error in the generated Rust.
+        let handler_return = match &args[1] {
+            ASTNode::LambdaDeclaration { data_type, .. } => Some(data_type.clone()),
+            ASTNode::Identifier { name: handler_name, .. } => match lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), handler_name).map(|symbol| symbol.data_type.clone()) {
+                Some(NailDataTypeDescriptor::Fn(_, returns)) => Some((*returns).clone()),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(returned) = handler_return {
+            let mut handler_bindings: HashMap<String, NailDataTypeDescriptor> = HashMap::new();
+            if !success_type.is_unresolved() && !returned.is_unresolved() && !unify_types(&success_type, &returned, &mut handler_bindings) {
+                add_error(
+                    state,
+                    format!("The error handler passed to 'safe' returns {}, but it stands in for a value of type {}, so it must return {}", returned.describe(), success_type.describe(), success_type.describe()),
+                    code_span,
+                );
+            }
+        }
+
+        return success_type;
     }
 
     // Check if this is a stdlib function first
@@ -1756,13 +1780,20 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
 
         // Functions that dispatch back into the program require it to define
         // the target function, since the transpiler emits a direct call to it.
-        if let Some(callback) = crate::stdlib_registry::get_handler_callback(name) {
-            let expected_parameters: Vec<String> = callback.parameter_types.iter().map(|param| param.describe()).collect();
-            let expected_signature = format!("'{}' taking ({}) and returning {}", callback.function_name, expected_parameters.join(", "), callback.return_type.describe());
+        for callback in crate::stdlib_registry::get_handler_callbacks(name).map(|callbacks| callbacks.as_slice()).unwrap_or(&[]) {
+            // A callback signature may be written in terms of a type variable
+            // the stdlib call's own arguments bound - tui_run(initial: T) fixes
+            // T, and view and update are checked against whatever it became.
+            let expected_parameter_types: Vec<NailDataTypeDescriptor> =
+                callback.parameter_types.iter().map(|param| substitute_bound_type_vars(param, &type_var_bindings)).collect();
+            let expected_return_type = substitute_bound_type_vars(&callback.return_type, &type_var_bindings);
+
+            let expected_parameters: Vec<String> = expected_parameter_types.iter().map(|param| param.describe()).collect();
+            let expected_signature = format!("'{}' taking ({}) and returning {}", callback.function_name, expected_parameters.join(", "), expected_return_type.describe());
 
             match lookup_symbol(&state.scope_arena, call_scope, callback.function_name).map(|symbol| symbol.data_type.clone()) {
                 Some(NailDataTypeDescriptor::Fn(param_types, return_type)) => {
-                    if param_types != callback.parameter_types || *return_type != callback.return_type {
+                    if param_types != expected_parameter_types || *return_type != expected_return_type {
                         let actual_parameters: Vec<String> = param_types.iter().map(|param| param.describe()).collect();
                         add_error(
                             state,
@@ -1771,7 +1802,7 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
                                 name,
                                 callback.function_name,
                                 expected_parameters.join(", "),
-                                callback.return_type.describe(),
+                                expected_return_type.describe(),
                                 actual_parameters.join(", "),
                                 return_type.describe()
                             ),

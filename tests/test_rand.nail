@@ -1,0 +1,48 @@
+// Random numbers: the unseeded half for variety, the seeded half for results
+// that have to be the same every run.
+
+roll:i = danger(rand_int(1, 6));
+print(`a die roll between 1 and 6:`);
+print(roll);
+
+fraction:f = rand_float();
+print(`a fraction below one:`);
+print(fraction);
+
+jitter:f = danger(rand_float_range(0.5, 1.5));
+print(`a delay multiplier:`);
+print(jitter);
+
+heads:b = rand_bool();
+rare:b = danger(rand_chance(0.5));
+print(`coin flips:`);
+print(heads);
+print(rare);
+
+names:a:s = [`ada`, `grace`, `alan`, `edsger`];
+winner:s = danger(rand_pick(names));
+print(`a picked name:`);
+print(winner);
+
+two:a:s = danger(rand_sample(names, 2));
+print(`two names without repeats:`);
+print(two);
+
+// The seeded functions answer the same way every run, which is what makes a
+// test that samples data reproducible.
+fixed_roll:i = danger(rand_seeded_int(42, 1, 100));
+same_roll:i = danger(rand_seeded_int(42, 1, 100));
+print(`the same seed gives the same roll:`);
+print(fixed_roll);
+print(same_roll);
+
+fixed_fraction:f = rand_seeded_float(42);
+print(`the same seed gives the same fraction:`);
+print(fixed_fraction);
+
+cards:a:i = [1, 2, 3, 4, 5, 6, 7, 8];
+shuffled:a:i = rand_seeded_shuffle(42, cards);
+shuffled_again:a:i = rand_seeded_shuffle(42, cards);
+print(`the same seed gives the same shuffle:`);
+print(shuffled);
+print(shuffled_again);

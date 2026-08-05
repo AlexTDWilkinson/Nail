@@ -1,0 +1,20 @@
+https
+example.com
+0
+/blog/post
+page=2
+top
+https://example.com/blog/post?page=2#top
+2
+admin:secret
+8080
+http://admin:secret@localhost:8080/health
+https://other.org/x
+https://example.com/about
+https://example.com/blog/2026/next.html
+https://example.com/blog/index.html
+https://example.com/blog/2026/post.html?page=3
+https://example.com/blog/2026/post.html?page=2#top
+https://cdn.example.com/logo.png
+not a URL
+https://example.com/b

@@ -1,0 +1,49 @@
+// E2E: reading a file a piece at a time, so its size does not have to fit in
+// memory. Four ways: a fold, a reader loop, joining files, and a range read.
+danger(fs_write(`app.log`, `INFO start
+ERROR disk full
+INFO retry
+ERROR still full
+`));
+
+// A fold is reduce pointed at a file: no handle, nothing to close.
+f count_errors(total:i, line:s):i {
+    r if { string_contains(line, `ERROR`) => { r total + 1; }, else => { r total; } };
+}
+print(danger(fs_reduce_lines(`app.log`, 0, count_errors)));
+
+f longest_line(best:i, line:s):i {
+    r if { string_length(line) > best => { r string_length(line); }, else => { r best; } };
+}
+print(danger(fs_reduce_lines(`app.log`, 0, longest_line)));
+
+// A step function may read files itself - the fold awaits it, so this is allowed
+// rather than refused.
+danger(fs_write(`INFO start`, `x`));
+f count_lines_that_name_a_file(total:i, line:s):i {
+    r if { path_exists(line) => { r total + 1; }, else => { r total; } };
+}
+print(danger(fs_reduce_lines(`app.log`, 0, count_lines_that_name_a_file)));
+
+// A reader is the general form: ask for lines until there are none.
+reader:FS_Reader = danger(fs_open(`app.log`));
+first_two:a:s = danger(fs_next_lines(reader, 2));
+print(array_length(first_two));
+print(danger(array_first(first_two)));
+print(array_length(danger(fs_next_lines(reader, 100))));
+// The reader closed itself at the end, so this is empty rather than an error.
+print(array_length(danger(fs_next_lines(reader, 10))));
+danger(fs_close(reader));
+
+// Joining files, which is how the pieces of a resumable upload are reassembled.
+danger(fs_append_file(`app.log`, `combined.log`));
+danger(fs_append_file(`app.log`, `combined.log`));
+print(danger(fs_size(`combined.log`)) == danger(fs_size(`app.log`)) * 2);
+
+// A range read looks inside a file without loading it: `INFO` in hex.
+print(danger(fs_read_range_hex(`app.log`, 0, 4)));
+print(danger(fs_read_range_base64(`app.log`, 0, 4)));
+
+f refused(err:e):s { r `refused`; }
+print(safe(fs_read_range_hex(`app.log`, 0, 0), refused));
+print(safe(fs_read_range_hex(`no_such_file.log`, 0, 4), refused));

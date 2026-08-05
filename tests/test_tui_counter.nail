@@ -1,0 +1,89 @@
+// A full-screen terminal program, described rather than drawn.
+//
+// The whole interface is two ordinary functions. `view` says what the screen
+// looks like for a given state; `update` says what the state becomes when
+// something happens. Neither of them touches the terminal, holds a widget, or
+// mutates anything - and tui_run owns raw mode, input, redrawing, resizing,
+// and putting the terminal back afterwards, including if this panics.
+
+struct App {
+    count:i,
+    message:s,
+    finished:b
+}
+
+// What the screen looks like right now. A pure function of the state, so the
+// same state always draws the same screen - which is what makes an interface
+// testable at all.
+f view(state:App):TUI_Screen {
+    heading:TUI_Line = tui_styled(`Counter`, TERM_Color::Cyan, true, false);
+    total:TUI_Line = tui_line(string_concat([`count: `, string_from(state.count)]));
+    note:TUI_Line = tui_styled(state.message, TERM_Color::Yellow, false, false);
+
+    // The selected row is drawn with the foreground and background swapped.
+    chosen:TUI_Line = tui_styled(`> up and down to change, q to quit`, TERM_Color::White, false, true);
+
+    r TUI_Screen {
+        title = `Nail counter`,
+        lines = [heading, total, note, chosen],
+        status = string_concat([`the count is `, string_from(state.count)]),
+        quit = state.finished
+    };
+}
+
+// What the state becomes when something happens. The event carries the key
+// that was pressed, whether this was the periodic tick instead, and the size
+// of the terminal - so a resize needs no special handling at all.
+f update(state:App, event:TUI_Event):App {
+    if {
+        event.key == `q` => {
+            r App { count = state.count, message = `bye`, finished = true };
+        },
+        event.key == `Ctrl+c` => {
+            r App { count = state.count, message = `bye`, finished = true };
+        },
+        event.key == `Up` => {
+            r App { count = state.count + 1, message = `up`, finished = false };
+        },
+        event.key == `Down` => {
+            r App { count = state.count - 1, message = `down`, finished = false };
+        },
+        else => {
+            r state;
+        }
+    }
+}
+
+// Everything above is data and pure functions, so it can be exercised without
+// a terminal - which is exactly the point of describing a screen rather than
+// drawing one.
+start:App = App { count = 0, message = `ready`, finished = false };
+
+pressed_up:App = update(start, TUI_Event { key = `Up`, tick = false, width = 80, height = 24 });
+test_assert_equal_int(pressed_up.count, 1, `up increases the count`);
+test_assert_equal_bool(pressed_up.finished, false, `and does not end the program`);
+
+pressed_down:App = update(pressed_up, TUI_Event { key = `Down`, tick = false, width = 80, height = 24 });
+test_assert_equal_int(pressed_down.count, 0, `down decreases it again`);
+
+ticked:App = update(pressed_down, TUI_Event { key = ``, tick = true, width = 80, height = 24 });
+test_assert_equal_int(ticked.count, 0, `a tick changes nothing on its own`);
+
+quitting:App = update(ticked, TUI_Event { key = `q`, tick = false, width = 80, height = 24 });
+test_assert_equal_bool(quitting.finished, true, `q ends the program`);
+
+// The screen is data too, so what would be drawn can be checked.
+drawn:TUI_Screen = view(pressed_up);
+test_assert_equal_string(drawn.title, `Nail counter`, `the title`);
+test_assert_equal_int(array_length(drawn.lines), 4, `four lines on the screen`);
+test_assert_equal_bool(drawn.quit, false, `it is not over yet`);
+
+ending:TUI_Screen = view(quitting);
+test_assert_equal_bool(ending.quit, true, `the state, not the library, decides when it is over`);
+
+print(`every interface check held`);
+
+// Running it for real needs a terminal, so it is not done here. It would be:
+//
+//   final_state:App = danger(tui_run(start));
+//   print(`finished on `, final_state.count);

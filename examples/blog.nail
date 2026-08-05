@@ -211,8 +211,8 @@ f create_index(posts:a:BlogPost):s {
     post_items:a:s = map post in posts {
         y array_join([`
         <li>
-            <h2><a href="/posts/`, post.slug, `">`, post.title, `</a></h2>
-            <div class="post-meta">`, post.date, `</div>
+            <h2><a href="/posts/`, post.slug, `">`, post.title, html`</a></h2>
+            <div class="post-meta">`, post.date, html`</div>
         </li>`], ``);
     };
     
@@ -223,7 +223,7 @@ f create_index(posts:a:BlogPost):s {
     content:s = array_join([`
         <h1>🔨 The Nail Programming Blog</h1>
         <p>Welcome to the official Nail programming language blog. Learn about Nail's unique approach to simplicity and performance.</p>
-        <ul class="post-list">`, posts_html, `</ul>`], ``);
+        <ul class="post-list">`, posts_html, html`</ul>`], ``);
     
     page:s = create_page(`Nail Blog`, content);
     r page;
@@ -235,8 +235,8 @@ f create_post_page(post:BlogPost):s {
     content_html:s = markdown_to_html(post.content);
     
     content:s = array_join([`
-        <h1>`, post.title, `</h1>
-        <div class="post-meta">Published: `, post.date, `</div>
+        <h1>`, post.title, html`</h1>
+        <div class="post-meta">Published: `, post.date, html`</div>
         `, content_html, `
         <hr>
         <p><a href="/">← Back to all posts</a></p>
@@ -330,7 +330,7 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
         else => {
             r HTTP_Response {
                 status = 404,
-                body = `<pre>404 - not found</pre>`,
+                body = html`<pre>404 - not found</pre>`,
                 content_type = `text/html`,
                 headers = headers
             };

@@ -1,0 +1,57 @@
+// Bit-level operations on whole numbers.
+
+low_flag:i = danger(bits_shift_left(1, 0));
+high_flag:i = danger(bits_shift_left(1, 3));
+flags:i = bits_or(low_flag, high_flag);
+print(`flags as binary:`);
+print(bits_to_binary(flags));
+
+combined:i = bits_or(12, 10);
+shared:i = bits_and(12, 10);
+changed:i = bits_xor(12, 10);
+print(`or, and, xor of 12 and 10:`);
+print(combined);
+print(shared);
+print(changed);
+
+inverted:i = bits_not(0);
+print(`not zero:`);
+print(inverted);
+
+doubled:i = danger(bits_shift_left(21, 1));
+halved:i = danger(bits_shift_right(84, 1));
+print(`shifted:`);
+print(doubled);
+print(halved);
+
+rotated:i = danger(bits_rotate_left(1, 8));
+back:i = danger(bits_rotate_right(rotated, 8));
+print(`rotated and back:`);
+print(rotated);
+print(back);
+
+ones:i = bits_count_ones(255);
+zeros:i = bits_count_zeros(255);
+leading:i = bits_leading_zeros(1);
+trailing:i = bits_trailing_zeros(8);
+print(`counted bits:`);
+print(ones);
+print(zeros);
+print(leading);
+print(trailing);
+
+third_bit:b = danger(bits_get(4, 2));
+with_bit:i = danger(bits_set(0, 3, true));
+without_bit:i = danger(bits_set(15, 0, false));
+print(`single bits:`);
+print(third_bit);
+print(with_bit);
+print(without_bit);
+
+pattern:s = bits_to_binary(5);
+parsed:i = danger(bits_from_binary(`1010_1010`));
+in_hex:s = bits_to_hex(255);
+print(`written out:`);
+print(pattern);
+print(parsed);
+print(in_hex);

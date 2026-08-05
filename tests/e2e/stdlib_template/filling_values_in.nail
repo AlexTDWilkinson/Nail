@@ -1,0 +1,27 @@
+// E2E: template_render escapes values on the way in
+values:h<s,s> = hashmap_new();
+hashmap_set(values, `name`, `Alex`);
+hashmap_set(values, `comment`, `<script>alert('x')</script>`);
+hashmap_set(values, `body`, `<p>already markup</p>`);
+hashmap_set(values, `admin`, `true`);
+hashmap_set(values, `logged_in`, ``);
+
+print(danger(template_render(`Hello, {{name}}!`, values)));
+print(danger(template_render(`<p>{{comment}}</p>`, values)));
+print(danger(template_render(`<main>{{{body}}}</main>`, values)));
+print(danger(template_render(`{{#if admin}}admin{{/if}}done`, values)));
+print(danger(template_render(`{{#unless logged_in}}log in{{/unless}}`, values)));
+print(danger(template_render(`{{#if logged_in}}Hello, {{name}}{{else}}Hello, stranger{{/if}}`, values)));
+print(danger(template_render(`a{{! a note }}b`, values)));
+
+first_row:h<s,s> = hashmap_new();
+hashmap_set(first_row, `name`, `Alex`);
+second_row:h<s,s> = hashmap_new();
+hashmap_set(second_row, `name`, `Sam`);
+rows:a:h<s,s> = [first_row, second_row];
+print(danger(template_render_rows(`<li>{{name}}</li>`, rows)));
+
+f no_page(err:e):s { r `refused`; }
+print(safe(template_render(`{{nowhere}}`, values), no_page));
+print(safe(template_render(`{{#if admin}}text`, values), no_page));
+print(danger(template_names_used(`{{title}} {{#if admin}}{{name}}{{/if}}`)));

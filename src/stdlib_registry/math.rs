@@ -94,5 +94,53 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "math_e" => "std_lib::math::e", () -> f,
             "Returns Euler's number e (2.71828...).",
             "base:f = math_e();";
+        "math_sign" => "std_lib::math::sign", (value: (T: i|f)) -> i,
+            "Returns -1, 0 or 1 according to whether the value is negative, zero or positive.",
+            "direction:i = math_sign(-4.2);";
+        "math_atan2" => "std_lib::math::atan2", (y: f, x: f) -> f,
+            "Returns the angle from the positive x axis to the point (x, y), from -pi to pi. Use this rather than math_atan for angles - a plain arc tangent cannot tell the quadrants apart.",
+            "angle:f = math_atan2(dy, dx);";
+        "math_hypot" => "std_lib::math::hypot", (x: f, y: f) -> f,
+            "Returns the distance from the origin to (x, y), computed without squaring the inputs first so very large distances stay exact.",
+            "distance:f = math_hypot(dx, dy);";
+        "math_cbrt" => "std_lib::math::cbrt", (value: f) -> f,
+            "Returns the cube root, which is defined for negative numbers too - unlike raising to the power of one third.",
+            "side:f = math_cbrt(27.0);";
+        "math_trunc" => "std_lib::math::trunc", (value: f) -> f,
+            "Throws away the fractional part towards zero, so -2.7 becomes -2.0 where math_floor would give -3.0.",
+            "whole:f = math_trunc(-2.7);";
+        "math_fract" => "std_lib::math::fract", (value: f) -> f,
+            "Returns just the fractional part, keeping the sign.",
+            "part:f = math_fract(2.75);";
+        "math_to_degrees" => "std_lib::math::to_degrees", (radians: f) -> f,
+            "Writes an angle given in radians as degrees.",
+            "degrees:f = math_to_degrees(angle);";
+        "math_to_radians" => "std_lib::math::to_radians", (degrees: f) -> f,
+            "Writes an angle given in degrees as radians, which is what every function here that takes an angle expects.",
+            "angle:f = math_to_radians(90.0);";
+        "math_sinh" => "std_lib::math::sinh", (value: f) -> f,
+            "Returns the hyperbolic sine.",
+            "value:f = math_sinh(1.0);";
+        "math_cosh" => "std_lib::math::cosh", (value: f) -> f,
+            "Returns the hyperbolic cosine.",
+            "value:f = math_cosh(1.0);";
+        "math_tanh" => "std_lib::math::tanh", (value: f) -> f,
+            "Returns the hyperbolic tangent.",
+            "value:f = math_tanh(1.0);";
+        "math_modulo" => "std_lib::math::modulo", (value: f, divisor: f) -> (f!e),
+            "Returns the remainder with the sign of the divisor, so -1 modulo 12 is 11. What clock arithmetic and wrapping an index round an array need, and what % does not give.",
+            "wrapped:f = danger(math_modulo(-1.0, 12.0));";
+        "math_log_base" => "std_lib::math::log_base", (value: f, base: f) -> (f!e),
+            "Returns the logarithm in a base of your choosing; errors on a value at or below zero or an unusable base.",
+            "power:f = danger(math_log_base(81.0, 3.0));";
+        "math_is_nan" => "std_lib::math::is_nan", (value: f) -> b,
+            "Returns whether this is the not-a-number value. It is the one value not equal to itself, so == cannot be used to ask.",
+            "broken:b = math_is_nan(computed);";
+        "math_is_infinite" => "std_lib::math::is_infinite", (value: f) -> b,
+            "Returns whether this is positive or negative infinity.",
+            "overflowed:b = math_is_infinite(computed);";
+        "math_is_finite" => "std_lib::math::is_finite", (value: f) -> b,
+            "Returns whether this is an ordinary number - neither infinite nor not-a-number. The check to make before trusting a computed value.",
+            "usable:b = math_is_finite(computed);";
     }
 }

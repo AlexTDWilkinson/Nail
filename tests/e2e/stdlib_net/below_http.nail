@@ -1,0 +1,14 @@
+// E2E: the network below HTTP. Only localhost is touched, and only ports that
+// nothing listens on, so the answers are the same on any machine.
+print(array_length(danger(net_dns_lookup(`localhost`))) > 0);
+
+// Port 9 is discard; nothing listens on it here.
+print(danger(net_tcp_is_open(`127.0.0.1`, 9, 500)));
+
+f unreachable(err:e):b { r false; }
+print(safe(net_tcp_is_open(`this-name-does-not-exist.invalid`, 80, 500), unreachable));
+
+f no_answer(err:e):s { r `refused`; }
+print(safe(net_tcp_request(`127.0.0.1`, 0, `x`, 500), no_answer));
+print(safe(net_tcp_request(`127.0.0.1`, 80, `x`, 0), no_answer));
+print(safe(net_udp_request(`127.0.0.1`, 9, `STATUS`, 200), no_answer));

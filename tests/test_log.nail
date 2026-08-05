@@ -1,0 +1,27 @@
+// Logging: what a program says about itself, on standard error.
+
+log_set_level(LOG_Level::Debug);
+
+log_debug(`cache miss for key session:42`);
+log_info(`server listening on 8080`);
+log_warn(`retrying after a timeout`);
+log_error(`could not reach the database`);
+
+// Named values are what turn a log line into something searchable.
+fields:h<s,s> = hashmap_new();
+hashmap_set(fields, `path`, `/orders`);
+hashmap_set(fields, `duration_ms`, `12`);
+log_with_fields(LOG_Level::Info, `request served`, fields);
+
+// One JSON object per line is what a log collector wants.
+log_set_json(true);
+log_info(`the same message, now machine readable`);
+log_with_fields(LOG_Level::Warn, `slow request`, fields);
+log_set_json(false);
+
+// Raising the level hides everything quieter than it.
+log_set_level(LOG_Level::Error);
+log_info(`this line is hidden`);
+log_error(`this line is not`);
+
+print(`logging finished`);

@@ -1,0 +1,35 @@
+// An upload arrives as bytes over the network, so the server writes it to a file
+// before UTF-8 is ever involved and hands the handler the path. This is what
+// makes uploads work without a bytes type.
+
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    // A text body arrives in `body` as usual; a binary one arrives as a path.
+    saved:s = if {
+        string_is_empty(request.body_path) => { r `nothing to save`; },
+        else => { r request.body_path; }
+    };
+
+    // What a real handler does with it: check it is what it claims to be, then
+    // move it somewhere permanent.
+    r HTTP_Response {
+        status = 200,
+        body = saved,
+        content_type = `text/plain`,
+        headers = hashmap_new()
+    };
+}
+
+// The server is not started here - this file exists to prove the handler
+// signature type checks and transpiles with the new field in place.
+empty_strings:h<s,s> = hashmap_new();
+request:HTTP_Request = HTTP_Request {
+    method = `POST`,
+    path = `/upload`,
+    query = empty_strings,
+    headers = empty_strings,
+    body = ``,
+    body_path = `/tmp/nail_upload_example.bin`
+};
+answer:HTTP_Response = handle_request(request, empty_strings);
+test_assert_equal_string(answer.body, `/tmp/nail_upload_example.bin`, `the handler was given the path`);
+print(`upload handling held`);

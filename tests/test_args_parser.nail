@@ -1,0 +1,65 @@
+// Describing a command line as data, and getting the help page from that
+// description so the two can never disagree.
+
+options:a:ARGS_Option = [
+    ARGS_Option {
+        name = `output`,
+        short = `o`,
+        description = `Where to write the report`,
+        takes_value = true,
+        required = false
+    },
+    ARGS_Option {
+        name = `verbose`,
+        short = `v`,
+        description = `Say more about what is happening`,
+        takes_value = false,
+        required = false
+    },
+    ARGS_Option {
+        name = `retries`,
+        short = ``,
+        description = `How many times to try again`,
+        takes_value = true,
+        required = false
+    }
+];
+
+// The help page is built from the description above, so a flag the program
+// accepts can never be missing from it.
+page:s = args_help_text(`mytool`, `Builds a report.`, options);
+print(page);
+test_assert_contains(page, `Builds a report.`, `the description is at the top`);
+test_assert_contains(page, `Usage: mytool [options]`, `the usage line`);
+test_assert_contains(page, `-o, --output <value>`, `an option that takes a value`);
+test_assert_contains(page, `-v, --verbose`, `an option that does not`);
+test_assert_contains(page, `--retries <value>`, `an option with no short form`);
+test_assert_contains(page, `-h, --help`, `help lists itself`);
+
+// Reading the command line this test was run with. Nothing here was passed a
+// flag, so the checks are about shape rather than particular values.
+asked_for_help:b = args_wants_help();
+test_assert_equal_bool(asked_for_help, false, `this program was not asked for help`);
+
+// A flag that was not passed falls back rather than erroring.
+destination:s = args_value_or(`output`, `report.txt`);
+test_assert_equal_string(destination, `report.txt`, `a missing flag falls back`);
+
+// One call reads and checks the whole command line against the description
+// above, and hands it back as data. It is also where an unknown flag, a
+// missing value or a missing required option is reported.
+parsed:ARGS_Parsed = danger(args_parse(options));
+
+print(`subcommand, positional arguments, flags:`);
+print(parsed.command);
+print(array_length(parsed.positional));
+print(array_length(parsed.flags));
+
+// The description is what makes this readable at all. Given
+// `mytool --output report.txt deploy`, nothing could tell whether report.txt
+// is the value of --output or the subcommand without knowing --output takes
+// one. Here nothing was passed, so both are empty.
+test_assert_equal_string(parsed.command, ``, `no subcommand was passed`);
+test_assert_equal_int(hashmap_len(parsed.values), 0, `no values were passed`);
+
+print(`every argument check held`);

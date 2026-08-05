@@ -94,6 +94,19 @@ $HOST {
 	reverse_proxy 127.0.0.1:$PORT
 }
 EOF
+	# The www. form of the same name is a hostname a visitor will type or a
+	# link will carry, and without a block for it Caddy has no certificate to
+	# offer, so the browser fails the handshake before it can be told where to
+	# go. One canonical host: www redirects to the bare name, path and query
+	# intact. Skipped when --host is itself a www. name, which would loop.
+	if [[ "$HOST" != www.* ]]; then
+		cat >>"/etc/caddy/sites.d/$NAME.caddy" <<EOF
+
+www.$HOST {
+	redir https://$HOST{uri} permanent
+}
+EOF
+	fi
 else
 	# Bare-IP mode. Only one app can answer for "any hostname", so take the
 	# placeholder's slot and refuse if a different app already holds it.

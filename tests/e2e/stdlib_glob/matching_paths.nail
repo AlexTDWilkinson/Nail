@@ -1,0 +1,22 @@
+// E2E: shell glob patterns, matched against a path without touching the disk
+print(path_matches_glob(`*.nail`, `main.nail`));
+print(path_matches_glob(`*.nail`, `tests/main.nail`));
+print(path_matches_glob(`**/*.nail`, `tests/deep/main.nail`));
+print(path_matches_glob(`**/*.nail`, `main.nail`));
+print(path_matches_glob(`src/**`, `src/parser/std_lib/path.rs`));
+print(path_matches_glob(`test_?.nail`, `test_1.nail`));
+print(path_matches_glob(`test_?.nail`, `test_11.nail`));
+print(path_matches_glob(`test_[123].nail`, `test_2.nail`));
+print(path_matches_glob(`test_[123].nail`, `test_4.nail`));
+print(path_matches_glob(`[a-z]*.rs`, `main.rs`));
+print(path_matches_glob(`[a-z]*.rs`, `Main.rs`));
+print(path_matches_glob(`src/main.rs`, `src/main.rs`));
+
+// fs_glob walks a directory and keeps what matches. The working directory is
+// empty, so the files are made first.
+danger(fs_create_dir(`project/src`));
+danger(fs_write(`project/main.nail`, `x`));
+danger(fs_write(`project/src/deep.nail`, `x`));
+danger(fs_write(`project/notes.txt`, `x`));
+print(danger(fs_glob(`project`, `**/*.nail`)));
+print(danger(fs_glob(`project`, `*.nail`)));

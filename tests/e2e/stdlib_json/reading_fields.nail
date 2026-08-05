@@ -1,0 +1,20 @@
+// E2E: reading a few fields out of JSON without describing the whole shape
+answer:s = `{"user":{"name":"Ada","age":36,"score":9.5,"active":true,"nickname":null},"items":[{"name":"first"},{"name":"second"}],"count":"12"}`;
+print(danger(json_get_string(answer, `user.name`)));
+print(danger(json_get_int(answer, `user.age`)));
+print(danger(json_get_float(answer, `user.score`)));
+print(danger(json_get_bool(answer, `user.active`)));
+print(danger(json_get_string(answer, `items.0.name`)));
+print(danger(json_get_string(answer, `items.1.name`)));
+print(danger(json_array_length(answer, `items`)));
+print(danger(json_array_length(`[1,2,3]`, ``)));
+print(danger(json_get_int(answer, `count`)));
+print(json_has(answer, `user.name`));
+print(json_has(answer, `user.email`));
+print(json_has(answer, `user.nickname`));
+print(json_has(`not json`, `user`));
+f missing(err:e):s { r `missing`; }
+print(safe(json_get_string(answer, `user.email`), missing));
+print(safe(json_get_string(answer, `user.nickname`), missing));
+print(danger(json_pretty(`{"a":1}`)));
+print(danger(json_compact(`{ "a" : 1 }`)));

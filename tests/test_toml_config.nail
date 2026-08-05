@@ -1,0 +1,45 @@
+// TOML, the format a person edits a configuration file in.
+
+struct Settings {
+    host:s,
+    port:i,
+    debug:b,
+    allowed:a:s
+}
+
+// Writing a struct out.
+settings:Settings = Settings {
+    host = `127.0.0.1`,
+    port = 8080,
+    debug = false,
+    allowed = [`/`, `/health`]
+};
+
+text:s = danger(toml_serialize(settings));
+print(`written as TOML:`);
+print(text);
+test_assert_contains(text, `host = "127.0.0.1"`, `the host is written`);
+test_assert_contains(text, `port = 8080`, `the port is written`);
+
+// And reading it back. The type on the left says what to read it as.
+read_back:Settings = danger(toml_deserialize(text));
+test_assert_equal_string(read_back.host, `127.0.0.1`, `the host round-trips`);
+test_assert_equal_int(read_back.port, 8080, `the port round-trips`);
+test_assert_equal_bool(read_back.debug, false, `the flag round-trips`);
+
+// A document a person actually typed: comments, uneven spacing, a trailing
+// comment on a value. All of it is ignored.
+hand_written:s = `# which interface to bind
+host = "0.0.0.0"
+
+port   = 9000    # the port
+debug = true
+allowed = ["/"]
+`;
+
+from_hand:Settings = danger(toml_deserialize(hand_written));
+test_assert_equal_string(from_hand.host, `0.0.0.0`, `a hand-written document reads`);
+test_assert_equal_int(from_hand.port, 9000, `comments and spacing are ignored`);
+test_assert_equal_bool(from_hand.debug, true, `the flag reads`);
+
+print(`every configuration check held`);

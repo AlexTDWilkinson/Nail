@@ -1,0 +1,30 @@
+// Pulling the pieces out of a match, and handling a pattern that came from
+// outside the program.
+
+parts:a:s = danger(regex_captures(`(\d+)-(\d+)`, `order 12-34 shipped`));
+expected:a:s = [`12-34`, `12`, `34`];
+test_assert_equal_array(parts, expected, `the whole match, then each group`);
+
+year:s = danger(regex_capture_named(`(?<year>\d{4})-(?<month>\d{2})`, `2026-08`, `year`));
+month:s = danger(regex_capture_named(`(?<year>\d{4})-(?<month>\d{2})`, `2026-08`, `month`));
+test_assert_equal_string(year, `2026`, `the year by name`);
+test_assert_equal_string(month, `08`, `the month by name`);
+
+once:s = danger(regex_replace_first(`\d`, `a1b2`, `#`));
+every:s = danger(regex_replace(`\d`, `a1b2`, `#`));
+test_assert_equal_string(once, `a#b2`, `only the first`);
+test_assert_equal_string(every, `a#b#`, `and every one`);
+
+test_assert_equal_int(danger(regex_count(`\d`, `a1b2`)), 2, `two digits`);
+test_assert_equal_int(danger(regex_count(`\d`, `abc`)), 0, `counting none is still counting`);
+
+// A search term a visitor typed is not a pattern until it is checked, and is
+// not safe inside one until it is escaped.
+test_assert(regex_is_valid(`\d+`), `a usable pattern`);
+test_assert_false(regex_is_valid(`(unclosed`), `a stray bracket is not a pattern`);
+
+literal:s = regex_escape(`1+1 (really)`);
+test_assert(danger(regex_match(literal, `1+1 (really)`)), `escaped text matches itself`);
+test_assert_false(danger(regex_match(literal, `11 really`)), `and nothing else`);
+
+print(`every pattern held`);

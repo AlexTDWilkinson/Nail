@@ -31,7 +31,7 @@ log = "0.4.22"
 ratatui = { version = "0.28.1", features = ["all-widgets", "crossterm"] }
 rayon = "1.10.0"
 regex = "1.10.6"
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["fs"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -40,20 +40,47 @@ rand = "0.8"
 futures = "0.3"
 pulldown-cmark = "0.9"
 # rustls instead of native-tls: bundle builds must not need system openssl
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "multipart"] }
 sha2 = "0.10"
 hmac = "0.12"
+aes-gcm = "0.10"
 md5 = "0.7"
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.0", features = ["v4", "v7"] }
+argon2 = "0.5"
+toml = "0.8"
+serde_yaml = "0.9"
+quick-xml = { version = "0.36", features = ["serialize"] }
+feed-rs = "2"
+notify = "6"
 urlencoding = "2.1"
 flate2 = "1.0"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tar = "0.4"
 base64 = "0.21"
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde_rusqlite = "0.35"
 arboard = "3.2"
+crossterm = "0.28"
+chrono = "0.4"
 datafusion = { version = "50", optional = true }
+rodio = { version = "0.19", optional = true }
+scraper = { version = "0.20", optional = true }
+tokio-postgres = { version = "0.7", optional = true }
+printpdf = { version = "0.7", optional = true }
+pdf-extract = { version = "0.7", optional = true }
+calamine = { version = "0.24", optional = true }
+rust_xlsxwriter = { version = "0.64", optional = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"], optional = true }
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1-rustls-tls", "builder"], optional = true }
 
 [features]
 default = []
 datafusion = ["dep:datafusion"]
+audio = ["dep:rodio"]
+email = ["dep:lettre"]
+html = ["dep:scraper"]
+postgres = ["dep:tokio-postgres"]
+image = ["dep:image"]
+pdf = ["dep:printpdf", "dep:pdf-extract"]
+xlsx = ["dep:calamine", "dep:rust_xlsxwriter"]
 

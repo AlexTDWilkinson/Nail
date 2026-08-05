@@ -1,0 +1,70 @@
+// Time: writing a moment out, reading it back, and the calendar arithmetic in
+// between. Everything is UTC, and every example uses a fixed timestamp so the
+// answers are the same on every machine and every run.
+
+// 2009-02-13T23:31:30Z, a Friday.
+reference:i = 1234567890;
+
+// The standard spellings.
+as_unix:s = danger(time_format(reference, TIME_Format::Unix));
+as_millis:s = danger(time_format(reference, TIME_Format::UnixMillis));
+as_iso:s = danger(time_format(reference, TIME_Format::ISO8601));
+as_rfc3339:s = danger(time_format(reference, TIME_Format::RFC3339));
+as_rfc2822:s = danger(time_format(reference, TIME_Format::RFC2822));
+print(`the same moment, five ways:`);
+print(as_unix);
+print(as_millis);
+print(as_iso);
+print(as_rfc3339);
+print(as_rfc2822);
+
+// And back again.
+from_iso:i = danger(time_parse(as_iso, TIME_Format::ISO8601));
+from_rfc2822:i = danger(time_parse(as_rfc2822, TIME_Format::RFC2822));
+test_assert_equal_int(from_iso, reference, `an ISO 8601 date reads back to the moment it was written from`);
+test_assert_equal_int(from_rfc2822, reference, `an RFC 2822 date reads back to the moment it was written from`);
+
+// A layout of your own, in the strftime notation.
+short_date:s = danger(time_format_custom(reference, `%Y-%m-%d`));
+long_date:s = danger(time_format_custom(reference, `%A %d %B %Y`));
+test_assert_equal_string(short_date, `2009-02-13`, `the short date`);
+test_assert_equal_string(long_date, `Friday 13 February 2009`, `the long date`);
+
+from_custom:i = danger(time_parse_custom(`2009-02-13 23:31:30`, `%Y-%m-%d %H:%M:%S`));
+test_assert_equal_int(from_custom, reference, `a custom layout reads back`);
+
+// The parts of the date.
+test_assert_equal_int(danger(time_year(reference)), 2009, `the year`);
+test_assert_equal_int(danger(time_month(reference)), 2, `the month`);
+test_assert_equal_int(danger(time_day(reference)), 13, `the day`);
+test_assert_equal_int(danger(time_hour(reference)), 23, `the hour`);
+test_assert_equal_int(danger(time_minute(reference)), 31, `the minute`);
+test_assert_equal_int(danger(time_second(reference)), 30, `the second`);
+test_assert_equal_int(danger(time_day_of_year(reference)), 44, `the day of the year`);
+test_assert_equal_string(danger(time_weekday(reference)), `Friday`, `the day of the week`);
+
+// Building a moment out of its parts.
+rebuilt:i = danger(time_from_parts(2009, 2, 13, 23, 31, 30));
+test_assert_equal_int(rebuilt, reference, `a date built from its parts`);
+
+// Shifting by fixed units is plain arithmetic; shifting by months is not, so
+// the 31st moved into February lands on the 28th.
+tomorrow:i = time_add_days(reference, 1);
+an_hour_on:i = time_add_hours(reference, 1);
+test_assert_equal_int(time_diff(tomorrow, reference), 86400, `a day is 86400 seconds`);
+test_assert_equal_int(time_diff(an_hour_on, reference), 3600, `an hour is 3600 seconds`);
+
+january_31:i = danger(time_from_parts(2009, 1, 31, 12, 0, 0));
+a_month_later:i = danger(time_add_months(january_31, 1));
+test_assert_equal_string(danger(time_format_custom(a_month_later, `%Y-%m-%d`)), `2009-02-28`, `a month after the 31st of January`);
+
+// Midnight at the start of the day, which is what every "today" query needs.
+midnight:i = danger(time_start_of_day(reference));
+test_assert_equal_string(danger(time_format(midnight, TIME_Format::ISO8601)), `2009-02-13T00:00:00Z`, `the start of the day`);
+
+// A length of time as a person says it.
+test_assert_equal_string(time_format_duration(45), `45s`, `three quarters of a minute`);
+test_assert_equal_string(time_format_duration(3900), `1h 5m`, `an hour and a bit`);
+test_assert_equal_string(time_format_duration(183845), `2d 3h`, `a couple of days`);
+
+print(`every date check held`);

@@ -1,0 +1,20 @@
+// E2E: the calendar arithmetic a billing cycle or a page timestamp needs
+// 2024-03-15 12:30:45 UTC
+moment:i = danger(time_from_parts(2024, 3, 15, 12, 30, 45));
+print(danger(time_end_of_day(moment)) - danger(time_start_of_day(moment)));
+print(danger(time_format_custom(danger(time_end_of_day(moment)), `%Y-%m-%d %H:%M:%S`)));
+print(danger(time_format_custom(time_add_weeks(moment, 2), `%Y-%m-%d`)));
+print(danger(time_format_custom(time_add_weeks(moment, -1), `%Y-%m-%d`)));
+print(time_is_leap_year(2024));
+print(time_is_leap_year(1900));
+print(time_is_leap_year(2000));
+print(danger(time_days_in_month(2024, 2)));
+print(danger(time_days_in_month(2023, 2)));
+print(danger(time_days_in_month(2023, 9)));
+f no_month(err:e):i { r 0; }
+print(safe(time_days_in_month(2023, 13), no_month));
+print(time_ago(moment - 10, moment));
+print(time_ago(moment - 300, moment));
+print(time_ago(moment - 7200, moment));
+print(time_ago(moment - 259200, moment));
+print(time_ago(moment + 7200, moment));

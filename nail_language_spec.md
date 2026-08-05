@@ -87,6 +87,52 @@ some_number:i = 5; // This is an inline comment
 - String literals: `hello`, `nail is awesome`
 - Boolean literals: `true`, `false`
 
+#### 4.4.1 Tagged String Literals
+
+A string literal may carry a language tag written flush against its opening
+backtick:
+
+```nail
+page:s = html`<section class="hero"><h1>Nail</h1></section>`;
+rules:s = css`.hero { color: #86efac; }`;
+query:s = sql`SELECT name FROM users WHERE active = 1;`;
+```
+
+The tag has no meaning to the compiler. A tagged string is an ordinary `s` in
+every respect - it has the same type, the same escape rules, and transpiles to
+exactly the same Rust string as an untagged one. Its only purpose is to tell an
+editor or a highlighter which language the contents are written in, so a page
+built out of long HTML strings reads as HTML rather than as one flat colour.
+
+The compiler keeps no list of languages: any identifier-shaped tag lexes, and
+each highlighter recognizes the tags it knows and ignores the rest. A tag must
+touch the backtick - `html \`x\`` with a space between them is an identifier
+followed by a plain string, not a tagged one.
+
+The highlighters that ship with Nail - the editor's colorizer and
+`code_highlight_html` - tokenize these tags:
+
+| Language | Tags |
+| --- | --- |
+| Markup | `html`, `htm`, `xhtml`, `svg`, `xml`, `rss`, `atom` |
+| Stylesheets | `css`, `scss`, `sass`, `less` |
+| JavaScript family | `js`, `javascript`, `mjs`, `cjs`, `jsx`, `ts`, `typescript`, `tsx`, `json`, `jsonc` |
+| SQL | `sql`, `postgres`, `postgresql`, `mysql`, `sqlite` |
+| Shell | `sh`, `bash`, `zsh`, `shell`, `dockerfile` |
+| Other languages | `py`, `rb`, `rs`, `go`, `java`, `cs`, `c`, `cpp`, `php`, `swift`, `kt`, `lua`, `graphql` |
+| Configuration | `yaml`, `yml`, `toml`, `ini`, `cfg`, `conf`, `properties` |
+| Markdown | `md`, `markdown` |
+
+A tag outside this list is still legal, and its string keeps one plain string
+colour rather than being run through the wrong tokenizer.
+
+`code_highlight_html` renders a tagged string as
+`<span class="tok-str tok-str-html">`, so a page can style tagged strings apart
+from plain ones without losing the base string styling. Inside it, each piece of
+the embedded language gets a `tok-md-*` class - `tok-md-el` for an element name
+or a CSS selector, `tok-md-kw` for a keyword, `tok-md-val` for a string, and so
+on - so one set of rules styles every language.
+
 ### 4.5 Operators
 
 #### 4.5.1 Arithmetic Operators
@@ -677,8 +723,8 @@ f add(num_a:i, num_b:i):i {
 
 f process_data(data:s):s!e {
     if {
-        string_len(data) == 0 => { r err(`Empty data`); },
-        else => { r ok(data); }
+        string_length(data) == 0 => { r e(`Empty data`); },
+        else => { r data; }
     }
 }
 ```
@@ -736,10 +782,10 @@ Functions must use `r` for return statements. Functions that can fail must retur
 f calculate_monthly_payment(principal:i, annual_rate:i, years:i):f!e {
     if {
         annual_rate == 0 => { 
-            r err(`Annual rate cannot be zero`); 
+            r e(`Annual rate cannot be zero`); 
         },
         years <= 0 => { 
-            r err(`Loan term must be positive`); 
+            r e(`Loan term must be positive`); 
         },
         else => {
             monthly_rate:f = expect(float_from(annual_rate)) / 12.0 / 100.0;
@@ -749,11 +795,11 @@ f calculate_monthly_payment(principal:i, annual_rate:i, years:i):f!e {
             denominator:f = 1.0 - pow(1.0 + monthly_rate, -payments);
             if {
                 denominator == 0.0 => { 
-                    r err(`Cannot calculate payment: invalid parameters`);
+                    r e(`Cannot calculate payment: invalid parameters`);
                 },
                 else => {
                     payment:f = expect(float_from(principal)) * monthly_rate / denominator;
-                    r ok(payment);
+                    r payment;
                 }
             }
         }
@@ -966,7 +1012,7 @@ it in lower case and types in upper case:
 ```nail
 reader:CSV_Reader = danger(csv_open(`big.csv`, csv_default_options()));
 config:HTTP_Config = HTTP_Config { static_mounts = [], max_body_bytes = 0, timeout_seconds = 0, state = state };
-stamp:s = time_format(time_now(), TIME_Format::ISO8601);
+stamp:s = danger(time_format(time_now(), TIME_Format::ISO8601));
 ```
 
 `csv_*` and `CSV_*` belong to the CSV library, `http_*` and `HTTP_*` to the
@@ -978,6 +1024,31 @@ without a namespace reads as a word of the language itself.
 The language's own words are the only names with no namespace: `print`,
 `danger`, `safe`, `expect`, `panic`, `todo` and `spawn`. Two registry tests
 enforce the rule, so a new stdlib name cannot skip it.
+
+### The Library Describes Itself
+
+There is no package manager, so what ships with the compiler is the whole set
+of what a program can call - which makes the question "does this library go far
+enough for what I am building?" worth answering exactly. `stdlib_functions()`
+answers it in the program itself:
+
+```nail
+functions:a:STDLIB_Function = stdlib_functions();
+modules:a:s = stdlib_modules();
+
+string_functions:a:STDLIB_Function = filter function in functions {
+    y function.module == `Strings`;
+};
+```
+
+Each `STDLIB_Function` carries `name`, `module`, `signature`, `description` and
+`example`, sorted by module and then by name. The list is read from the registry
+the type checker itself consults, so it is exactly what the compiler running the
+program can call, never a list someone has to remember to update. The library
+section of the Nail website is that list, printed by a Nail program.
+
+The lists below are kept by hand for reading; `stdlib_functions()` is the
+authority.
 
 ### Core Operations
 - `print(value)` - Print any value to stdout
@@ -1003,9 +1074,9 @@ enforce the rule, so a new stdlib name cannot skip it.
 - `string_trim(s:s):s` - Remove leading/trailing whitespace
 - `string_trim_start(s:s):s` - Remove leading whitespace
 - `string_trim_end(s:s):s` - Remove trailing whitespace
-- `string_pad_left(s:s, length:i, pad:s):s` - Pad string on the left to specified length
-- `string_pad_right(s:s, length:i, pad:s):s` - Pad string on the right to specified length
-- `string_len(s:s):i` - Get string length
+- `string_pad_start(s:s, length:i, pad:s):s` - Pad string on the left to specified length
+- `string_pad_end(s:s, length:i, pad:s):s` - Pad string on the right to specified length
+- `string_length(s:s):i` - Get string length
 - `string_chars(s:s):a:s` - Convert string to array of single-character strings
 - `string_starts_with(s:s, prefix:s):b` - Check if string starts with prefix
 - `string_ends_with(s:s, suffix:s):b` - Check if string ends with suffix
@@ -1052,6 +1123,48 @@ enforce the rule, so a new stdlib name cannot skip it.
 - `array_rotate_left(arr:a:T, positions:i):a:T` - Rotate array elements left by n positions
 - `array_rotate_right(arr:a:T, positions:i):a:T` - Rotate array elements right by n positions
 
+Editing an array means building the new one, since arrays are immutable:
+- `array_insert(arr:a:T, index:i, item:T):a:T!e` - With the item put in, moving the rest along
+- `array_remove_at(arr:a:T, index:i):a:T!e` - Without the element at the index
+- `array_replace_at(arr:a:T, index:i, item:T):a:T!e` - With that one element changed
+- `array_swap(arr:a:T, first:i, second:i):a:T!e` - With two elements exchanged
+- `array_index_of(arr:a:T, item:T):i!e` - Where it first appears; absent is an error, not `-1`
+- `array_count_of(arr:a:T, item:T):i` - How many times it appears
+- `array_is_empty(arr:a:T):b`, `array_all_equal(arr:a:T):b`
+- `array_sort_descending(arr:a:T):a:T` - Largest first, for a leaderboard
+
+Where the interesting part of an element is one field of it, the key comes from a
+function the program has already named - which is not a closure, and needs none:
+
+```nail
+struct Book { title:s, author:s, year:i }
+f book_year(book:Book):i    { r book.year; }
+f book_author(book:Book):s  { r book.author; }
+
+by_year:a:Book         = array_sort_by(books, book_year);
+newest:Book            = danger(array_max_by(books, book_year));
+year_total:i           = array_sum_by(books, book_year);
+by_author:h<s,a:Book>  = array_group_by(books, book_author);
+per_author:h<s,i>      = array_count_by(books, book_author);
+```
+
+- `array_sort_by(arr:a:T, key:f(T):K):a:T` / `array_sort_by_descending(...)`
+- `array_min_by(arr:a:T, key:f(T):K):T!e` / `array_max_by(...)` - an empty array is an error
+- `array_sum_by(arr:a:T, key:f(T):K):K` - K is `i` or `f`
+- `array_group_by(arr:a:T, key:f(T):K):h<K,a:T>` - buckets, in the order they appeared
+- `array_count_by(arr:a:T, key:f(T):K):h<K,i>` - the bucket sizes alone
+
+Nothing calls the key function while it works: the keys are worked out over the
+array first, and only then is anything sorted, bucketed or totalled. So a key
+function may read a file or make a request -
+`array_sort_by(reports, report_size)` where `report_size` calls `fs_size` is fine,
+and costs one read per element rather than one per comparison.
+
+These are the bucketing and ordering that fit in an array. Counting inside groups,
+ordering groups by their totals, joining two sets of rows - those are what
+`db_sqlite_*` and `db_datafusion_*` are for, and SQL says them better than any
+number of array functions would.
+
 ### HashMap Operations
 **Note**: HashMap keys and values must be concrete types (i, f, s, b, arrays, structs, enums). Void type cannot be used as a value.
 
@@ -1094,42 +1207,278 @@ parameter as text and applies the column's affinity, so a number held in a
 string still stores and compares as a number.
 
 ### Math Operations (`math_*`)
-- `math_abs(n:i):i` - Absolute value (integer)
-- `math_abs(n:f):f` - Absolute value (float)
-- `math_min(a:i, b:i):i` - Minimum of two integers
-- `math_max(a:i, b:i):i` - Maximum of two integers
-- `math_min(a:f, b:f):f` - Minimum of two floats
-- `math_max(a:f, b:f):f` - Maximum of two floats
-- `math_pow(base:f, exp:f):f` - Power operation
-- `math_sqrt(n:f):f!e` - Square root (can fail for negative)
-- `math_ceil(n:f):i` - Round up to nearest integer
-- `math_floor(n:f):i` - Round down to nearest integer
-- `math_round(n:f):i` - Round to nearest integer
-- `math_gcd(a:i, b:i):i` - Greatest common divisor
-- `math_lcm(a:i, b:i):i` - Least common multiple
-- `math_factorial(n:i):i!e` - Factorial (can fail for negative or overflow)
-- `math_is_prime(n:i):b` - Check if number is prime
-- `math_sin(angle:f):f` - Sine function (radians)
-- `math_cos(angle:f):f` - Cosine function (radians)
-- `math_tan(angle:f):f` - Tangent function (radians)
-- `math_log(n:f):f!e` - Natural logarithm (can fail for non-positive)
-- `math_log10(n:f):f!e` - Base-10 logarithm (can fail for non-positive)
-- `math_log2(n:f):f!e` - Base-2 logarithm (can fail for non-positive)
-- `math_sigmoid(x:f):f` - Sigmoid function (1 / (1 + e^-x))
+
+Rounding returns a float, so the shape of a calculation does not change halfway
+through; `math_round_to_int` is the one that leaves the number line of floats.
+
+- `math_abs(value:f):f` - Absolute value
+- `math_sign(value:f):i` - -1, 0 or 1 according to the direction of the value
+- `math_min(a:f, b:f):f` / `math_max(a:f, b:f):f` - Smaller and larger of two values
+- `math_clamp(value:f, min:f, max:f):f` - Restrict a value to a range
+- `math_pow(base:f, exponent:f):f` - Raise to a power
+- `math_sqrt(value:f):f` - Square root
+- `math_cbrt(value:f):f` - Cube root, defined for negative numbers too
+- `math_hypot(x:f, y:f):f` - Distance from the origin to (x, y), exact where squaring would overflow
+- `math_ceil(value:f):f` / `math_floor(value:f):f` / `math_round(value:f):f` - Rounding, as a float
+- `math_round_to_int(value:f):i` - Rounding, as a whole number
+- `math_trunc(value:f):f` - Drop the fraction towards zero, so -2.7 gives -2.0 where `math_floor` gives -3.0
+- `math_fract(value:f):f` - Just the fractional part, keeping the sign
+- `math_divide(a:f, b:f):f!e` - Division that errors instead of producing infinity
+- `math_modulo(value:f, divisor:f):f!e` - Remainder with the sign of the divisor, so -1 modulo 12 is 11
+- `math_gcd(a:i, b:i):i` / `math_lcm(a:i, b:i):i` - Greatest common divisor, least common multiple
+- `math_factorial(n:i):i!e` - Factorial; errors below zero and above 20, where it overflows
+- `math_is_prime(n:i):b` - Whether a number is prime
+- `math_sin(angle:f):f` / `math_cos` / `math_tan` - Trigonometry, in radians
+- `math_asin(value:f):f!e` / `math_acos(value:f):f!e` - Inverses; error outside -1 to 1
+- `math_atan(value:f):f` - Arc tangent of a ratio
+- `math_atan2(y:f, x:f):f` - The angle to the point (x, y), from -pi to pi. **Use this, not `math_atan`, for angles** - a ratio alone cannot tell the second quadrant from the fourth
+- `math_sinh(value:f):f` / `math_cosh` / `math_tanh` - Hyperbolic functions
+- `math_to_degrees(radians:f):f` / `math_to_radians(degrees:f):f` - Angle conversion
+- `math_log(value:f):f!e` / `math_log2` / `math_log10` - Logarithms; error at or below zero
+- `math_log_base(value:f, base:f):f!e` - Logarithm in a base of your choosing
+- `math_exp(value:f):f` - e raised to a power
+- `math_sigmoid(value:f):f` - 1 / (1 + e^-x)
 - `math_lerp(start:f, end:f, t:f):f` - Linear interpolation
-- `math_clamp(value:f, min:f, max:f):f` - Clamp value between min and max
+- `math_is_nan(value:f):b` / `math_is_infinite(value:f):b` / `math_is_finite(value:f):b` - What kind of number this is. Not-a-number is the one value not equal to itself, so `==` cannot be used to ask
+- `math_random():f` - A fraction from 0.0 up to 1.0. **Not for secrets** - see `crypto_random_hex`
+- `math_pi():f` / `math_e():f` - Constants
+
+### Statistics (`stats_*`)
+
+Every one of these is undefined on an empty array, so every one returns a
+result rather than a number invented out of nothing.
+
+- `stats_mean(values:a:f):f!e` - The average
+- `stats_median(values:a:f):f!e` - The middle value, which one outlier cannot move
+- `stats_variance(values:a:f):f!e` / `stats_stddev(values:a:f):f!e` - Sample spread; need at least two values
+- `stats_percentile(values:a:f, share:f):f!e` - The value below which that share falls, `0.95` for the ninety-fifth percentile
+- `stats_range(values:a:f):f!e` - Distance from smallest to largest
+- `stats_correlation(first:a:f, second:a:f):f!e` - How closely two columns move together, -1.0 to 1.0
+
+### Bits (`bits_*`)
+
+Whole numbers are 64-bit and signed; every function works on that pattern of 64
+bits. A shift or index outside 0 to 63 is an error rather than a silently
+different answer.
+
+- `bits_and(left:i, right:i):i` / `bits_or` / `bits_xor` / `bits_not(value:i):i`
+- `bits_shift_left(value:i, places:i):i!e` / `bits_shift_right` - Fill with zeros
+- `bits_rotate_left(value:i, places:i):i!e` / `bits_rotate_right` - Bits that fall off return at the other end
+- `bits_count_ones(value:i):i` / `bits_count_zeros` - Population count, the size of a set held as a bitmask
+- `bits_leading_zeros(value:i):i` / `bits_trailing_zeros` - 64 for zero itself
+- `bits_get(value:i, index:i):b!e` / `bits_set(value:i, index:i, on:b):i!e` - One bit at a time
+- `bits_to_binary(value:i):s` / `bits_from_binary(text:s):i!e` - Ones and zeros; underscores allowed as separators
+- `bits_to_hex(value:i):s`
+
+### Drawing (`draw_*`)
+
+Every function returns a string. A shape is a string, a group of shapes is a
+string, and a drawing is a string that happens to be an SVG document - which
+browsers, editors, README files and print all understand, and which `fs_write`
+saves like any other text. There is no window, no canvas to mutate and no
+drawing context to hold on to, so a chart is a map and a join like anything
+else. Coordinates start at the top left and y grows downward.
+
+- `draw_svg(width:f, height:f, background:s, shapes:a:s):s!e` - Wrap shapes in a document; an empty background leaves it transparent
+- `draw_rect(x:f, y:f, width:f, height:f, fill:s, corner_radius:f):s!e`
+- `draw_circle(center_x:f, center_y:f, radius:f, fill:s):s!e`
+- `draw_ellipse(center_x:f, center_y:f, radius_x:f, radius_y:f, fill:s):s!e`
+- `draw_line(x1:f, y1:f, x2:f, y2:f, stroke:s, stroke_width:f):s!e`
+- `draw_polyline(points:a:f, stroke:s, stroke_width:f):s!e` - Connected segments from a flat array of x and y values; the shape a line chart is made of
+- `draw_polygon(points:a:f, fill:s):s!e` - The same, closed and filled
+- `draw_text(x:f, y:f, content:s, size:f, fill:s, anchor:s):s!e` - Anchor is `start`, `middle` or `end`
+- `draw_path(commands:s, stroke:s, stroke_width:f, fill:s):s!e` - SVG path notation, for a shape none of the others can make
+- `draw_group(offset_x:f, offset_y:f, shapes:a:s):s` - Move several shapes together
+- `draw_scale(value:f, from_low:f, from_high:f, to_low:f, to_high:f):f!e` - Move a value between ranges. To plot upward on a screen whose y grows downward, pass the height as `to_low` and `0.0` as `to_high`
+
+Text is XML-escaped, so a label containing `&` or `<` cannot produce a document
+nothing will open.
+
+### Audio (`audio_*`)
+
+Two things a program wants from sound: play this file, and beep when something
+finishes. Playing is synchronous - the call returns when the sound has finished
+- so a notification is one line; put it in a `spawn` block to carry on while it
+plays.
+
+- `audio_play_file(path:s):v!e` - Play a WAV, MP3, FLAC or Ogg Vorbis file
+- `audio_play_tone(hertz:f, seconds:f, volume:f):v!e` - 440.0 hertz is a concert A; 0.2 is a better volume for a notification than 1.0
+- `audio_is_available():b` - Whether this machine has a sound device. Ask before playing anything on a server, where the answer is usually no
+
+This module is behind the `audio` feature. A sound device is not something
+every machine has, and on Linux building against one needs ALSA's development
+headers - a server that will never make a sound should not have to install
+them. `nailc --cargo-toml` turns the feature on only for a program that
+actually calls one of these.
+
+### Machine Learning (`ml_*`)
+
+A fitted model is data - a plain struct you can print, store as JSON and
+predict with later - not a handle to something living inside the library.
+Everything involving randomness takes the seed as an argument, because a model
+that trains differently every run cannot be debugged. Features are an array of
+rows, each row an array of numbers of the same length.
+
+- `ml_split_train_test(features:a:a:f, labels:a:i, train_share:f, seed:i):ML_Split!e` - Cut a dataset into a part to learn from and a part to be judged on, shuffled first
+- `ml_normalize(values:a:f):a:f!e` - Rescale to 0.0 through 1.0, so a column in millions does not drown out one in single digits
+- `ml_standardize(values:a:f):a:f!e` - Rescale to sit around zero with a spread of one; the one to use when outliers matter
+- `ml_tree_fit(features:a:a:f, labels:a:i, max_depth:i):ML_Tree!e` - A decision tree
+- `ml_tree_predict(tree:ML_Tree, row:a:f):i!e`
+- `ml_tree_explain(tree:ML_Tree, feature_names:a:s):s!e` - The rules the tree actually applies, written out. The reason to reach for a tree over something more accurate
+- `ml_linear_fit(features:a:a:f, targets:a:f):ML_Linear!e` - The straight line closest to the data, exactly rather than iteratively
+- `ml_linear_predict(model:ML_Linear, row:a:f):f!e`
+- `ml_knn_predict(features:a:a:f, labels:a:i, query:a:f, k:i):i!e` - Ask the k nearest rows what they are. No fitting happens, so this is what to reach for when there is very little data
+- `ml_kmeans(points:a:a:f, k:i, seed:i, iterations:i):ML_Clusters!e` - Group points by nearness
+- `ml_forest_fit(features:a:a:f, labels:a:i, trees:i, max_depth:i, seed:i):ML_Forest!e` / `ml_forest_predict(forest:ML_Forest, row:a:f):i!e` - Trees that vote. Far less sensitive to settings than boosting, so reach for it when there is no time to tune anything
+- `ml_boost_default_config():ML_BoostConfig` / `ml_boost_fit(features:a:a:f, targets:a:f, config:ML_BoostConfig):ML_Boost!e` - Gradient boosting
+- `ml_boost_fit_validated(features:a:a:f, targets:a:f, validation_features:a:a:f, validation_targets:a:f, config:ML_BoostConfig):ML_Boost!e` - The same, stopping once a held-out set stops improving
+- `ml_boost_predict(model:ML_Boost, row:a:f):f!e`
+- `ml_boost_predict_probability(model:ML_Boost, row:a:f):f!e` - For a model fitted with `ML_Objective::Logistic`
+- `ml_boost_importance(model:ML_Boost):a:f!e` - How much each column contributed, as a share of the total gain
+- `ml_cross_validate_boost(features:a:a:f, targets:a:f, folds:i, config:ML_BoostConfig, seed:i):ML_Regression!e` - Every row takes a turn being held out
+- `ml_one_hot(values:a:s):ML_OneHot!e` / `ml_one_hot_with(values:a:s, categories:a:s):a:a:f!e` - A column of words as one column of 0s and 1s per word
+- `ml_target_encode(values:a:s, targets:a:f, smoothing:f):h<s,f>!e` / `ml_encode_with(values:a:s, encoding:h<s,f>, fallback:f):a:f` - For columns where one-hot would add a thousand columns
+- `ml_score(predicted:a:i, actual:a:i):ML_Scores!e` - Classification, counted four ways
+- `ml_regression_scores(predicted:a:f, actual:a:f):ML_Regression!e` - Regression, measured six ways
+
+**Choosing an objective.** `ML_Objective::Squared` fits a number.
+`ML_Objective::Logistic` fits a yes-or-no answer, and is not the same as
+fitting `Squared` against 0 and 1: it optimises the odds rather than the
+distance, so a confident wrong answer is punished far more than a hesitant one.
+Read a logistic model with `ml_boost_predict_probability`.
+
+**How many trees is the only hard question**, and `ml_boost_fit_validated`
+answers it. Too few and the model has not finished learning; too many and it
+starts memorising - and the *training* score improves the whole time, so it
+cannot tell you which side you are on. Watching data the model is not learning
+from can. Trees grown after the best one are thrown away, and `trees_used` says
+how many were kept.
+
+**Missing values are learned, not guessed at.** A `NaN` in a column is routed
+by whichever side of each split it helps more, so a model can learn that an
+absent value means something - an absent income and an absent postcode do not
+mean the same thing. `ml_tree_fit` refuses rows with gaps instead of deciding
+for you; `ml_boost_fit` handles them.
+
+**Fit encodings on training rows only.** `ml_target_encode`'s smoothing is what
+stops a category with one row being encoded as that row's own answer, which
+hands the model what it is supposed to predict and produces something that
+scores brilliantly in training and fails completely in use. And keep the
+vocabulary `ml_one_hot` returns: encoding new data against a different one
+silently shifts every column along.
+
+**ML_Objective values:** `Squared`, `Logistic`.
+
+**Gradient boosting** (`ml_boost_*`) is the method that wins on ordinary
+tabular data - the kind that comes out of a database with a few dozen columns -
+and it is what LightGBM and XGBoost implement. It grows many small trees, each
+one fitted to what the model still gets wrong. Two ideas make it fast enough to
+be worth having, and both are here: split points are chosen once from quantiles
+rather than searched over every value, and each tree is fitted to the gradient
+of the loss rather than to the target, so the arithmetic per node is a pair of
+sums. It predicts a number; for yes-or-no questions, fit against 0 and 1 and
+treat anything above 0.5 as yes.
+
+**Judge a model on data it never saw.** A tree deep enough will predict its
+training rows perfectly and predict nothing else at all, and only the test half
+will tell you. That is what `ml_split_train_test` is for, and why `max_depth`
+is a required argument rather than an optional one.
+
+**Never trust accuracy alone.** On data where one case in a thousand is
+positive, a model answering "no" every time scores 99.9%. That is why
+`ml_score` returns precision, recall and f1 beside it, and why
+`ml_regression_scores` returns six numbers rather than one - the absolute
+measures and the percentage ones disagree, and the disagreement is information.
+
+**ML_BoostConfig fields:** `trees`, `learning_rate`, `max_depth`,
+`min_samples_leaf`, `bins`, `lambda_l2`. Start from
+`ml_boost_default_config()` and change what you need.
+
+### Randomness (`rand_*`)
+
+Two halves. The plain functions draw from a generator seeded by the operating
+system - fine for a dice roll or a jitter delay, never for a session id. The
+`rand_seeded_*` functions take the seed as an argument, so the same seed always
+gives the same answer: that is what makes a test that samples data reproducible.
+
+- `rand_int(min:i, max:i):i!e` - A whole number, both ends included
+- `rand_float():f` / `rand_float_range(min:f, max:f):f!e` - A fraction
+- `rand_bool():b` / `rand_chance(probability:f):b!e` - True with the given odds
+- `rand_pick(items:a:T):T!e` - One element, chosen evenly
+- `rand_sample(items:a:T, count:i):a:T!e` - Several elements without repeats
+- `rand_seeded_int(seed:i, min:i, max:i):i!e` / `rand_seeded_float(seed:i):f` / `rand_seeded_shuffle(seed:i, items:a:T):a:T`
 
 ### I/O Operations (`io_*`)
-- `io_read_line():s!e` - Read line from stdin
-- `io_read_line_prompt(prompt:s):s!e` - Read with prompt
-- `io_write_file(path:s, content:s):v!e` - Write to file
-- `io_read_file(path:s):s!e` - Read file contents
+- `io_read_line():s!e` - Read a line from standard input
+- `io_read_line_prompt(prompt:s):s!e` - Print a prompt, then read a line
+- `io_read_int():i!e` / `io_read_int_prompt(prompt:s):i!e` - Read a whole number
+- `io_read_float():f!e` / `io_read_float_prompt(prompt:s):f!e` - Read a fraction
+
+Asking a person something, for a command-line tool or a setup script:
+- `io_confirm(question:s, default_answer:b):s!e` - Asks until it gets `yes` or `no`; an empty line means the default
+- `io_select(question:s, options:a:s):i!e` - A numbered list, answered with the index chosen
+- `io_read_secret(prompt:s):s!e` - A line with nothing shown as it is typed
+- `io_read_line_or(prompt:s, default_answer:s):s!e` - The default when nothing is typed
+
+Files are read and written with `fs_*` below, not here.
 
 ### File System (`fs_*`)
-- `fs_exists(path:s):b` - Check if path exists
-- `fs_read_dir(path:s):a:s!e` - List directory contents
-- `fs_create_dir(path:s):v!e` - Create directory
-- `fs_remove_file(path:s):v!e` - Delete file
+- `fs_read(path:s):s!e` - Read a whole file into a string
+- `fs_read_lines(path:s):a:s!e` - Read a file as lines, without the line endings
+- `fs_write(path:s, content:s):v!e` - Write a file, creating or truncating it
+- `fs_append(path:s, content:s):v!e` - Add to the end of a file, creating it if missing
+- `fs_copy(from:s, to:s):v!e` / `fs_move(from:s, to:s):v!e`
+- `fs_remove_file(path:s):v!e` - Delete a file
+- `fs_create_dir(path:s):v!e` - Create a directory and any missing parents
+- `fs_read_dir(path:s):a:s!e` - The sorted paths directly inside a directory
+- `fs_walk(path:s):a:s!e` - The sorted paths of every file underneath, however deep. Links are not followed
+- `fs_remove_dir(path:s):v!e` - Remove an empty directory; anything inside it is an error
+- `fs_remove_dir_all(path:s):v!e` - Remove a directory and everything in it. There is no undoing this
+- `fs_size(path:s):i!e` - How many bytes a file holds
+- `fs_modified(path:s):i!e` - When it last changed, as a Unix timestamp
+- `fs_is_dir(path:s):b` / `fs_is_file(path:s):b` - False for a path that is not there
+- `fs_temp_dir():s` - Where this machine keeps temporary files
+- `fs_glob(directory:s, pattern:s):a:s!e` - Every file underneath whose path matches a shell pattern
+
+#### Reading a file too large to hold
+
+`fs_read` and `fs_read_lines` load the whole file, which is right until the file is
+larger than the machine's memory. Three ways to read one without holding it:
+
+- `fs_reduce_lines(path:s, initial:A, step:f(A, s):A):A!e` - a fold over the lines,
+  the way `reduce` folds an array. Nothing to open, nothing to close, and the step
+  function may read files or make requests itself
+- `fs_open(path:s):FS_Reader!e` / `fs_next_lines(reader:FS_Reader, count:i):a:s!e` /
+  `fs_close(reader:FS_Reader):v!e` - the general form, for a loop that stops early
+  or does something a fold cannot say. An empty answer from `fs_next_lines` means
+  the file is finished, and the reader has closed itself by then
+- `fs_append_file(from_path:s, to_path:s):v!e` - one file onto the end of another,
+  copied in blocks. How the pieces of a resumable upload are reassembled
+
+```nail
+f count_errors(total:i, line:s):i {
+    r if { string_contains(line, `ERROR`) => { r total + 1; }, else => { r total; } };
+}
+errors:i = danger(fs_reduce_lines(`app.log`, 0, count_errors));
+```
+
+A file that is not text needs none of this: copying, moving, hashing, archiving and
+serving it are all path operations already. To look inside one - a header, a footer,
+the bytes that say what format it is:
+
+- `fs_read_range_base64(path:s, offset:i, length:i):s!e`
+- `fs_read_range_hex(path:s, offset:i, length:i):s!e` - a PNG starts `89504e47`, a zip `504b0304`
+
+Both read exactly the slice asked for and nothing before or after it. For a large
+CSV or Parquet file, `db_datafusion_*` is better than any of this: register the file
+and write SQL, and the query engine streams it.
+
+`path_matches_glob(pattern:s, path:s):b` matches a path against a pattern
+without touching the disk: `*` stays inside one segment, `**` crosses segments,
+`?` is one character, and `[abc]` is one of those listed.
+
+Whether a path exists at all is `path_exists`, with the rest of the path
+functions.
 
 ### HTTP Operations (`http_*`)
 - `http_request(method:HTTP_Method, url:s, headers:h<s,s>, body:s):HTTP_Response!e` - Make an outbound HTTP request. `HTTP_Method` is `Get`, `Post`, `Put`, `Delete` or `Patch`
@@ -1140,6 +1489,48 @@ string still stores and compares as a number.
 - `http_default_cookie(name:s, value:s):HTTP_Cookie` - A cookie with the safe defaults: `/` path, session lifetime, HttpOnly, Secure, SameSite=Lax
 - `http_build_cookie(cookie:HTTP_Cookie):s!e` - The `Set-Cookie` header value for a cookie
 - `http_parse_cookies(header:s):h<s,s>` - Parse the browser's `Cookie` header, which holds every cookie at once
+- `http_request_multipart(method:HTTP_Method, url:s, headers:h<s,s>, parts:a:HTTP_Part):HTTP_Response!e` - Send a `multipart/form-data` request, the encoding a file upload uses
+- `http_part_text(name:s, value:s):HTTP_Part` - One text field of a multipart form
+- `http_part_file(name:s, file_path:s):HTTP_Part` - One file field, read from disk when the request is sent
+- `http_request_retry(method:HTTP_Method, url:s, headers:h<s,s>, body:s, retry:HTTP_Retry):HTTP_Response!e` - Make a request, sending it again while it keeps failing temporarily
+- `http_default_retry():HTTP_Retry` - Retry settings worth having: three attempts, 250ms doubling to 5s, 30s per attempt
+
+An upload is a `multipart/form-data` request, and the file's bytes never pass
+through the program - a part names a path, and the request reads it on its way
+out. That is how a PNG is uploaded from a language with no byte type. The
+boundary belongs to the body, so `http_request_multipart` sets `Content-Type`
+itself and rejects one passed in `headers` rather than sending a body no server
+can parse.
+
+```nail
+parts:a:HTTP_Part = [
+    http_part_text(`purpose`, `avatar`),
+    http_part_file(`file`, `portrait.png`),
+];
+response:HTTP_Response = danger(http_request_multipart(HTTP_Method::Post, url, headers, parts));
+```
+
+`http_request_retry` sends the request again only when the failure might not
+happen next time: no answer at all, or a 408, 429, 500, 502, 503 or 504. A 4xx
+the server understood and refused comes straight back, because asking again
+would be refused again. Each wait doubles up to the ceiling with half of it
+randomised, a `Retry-After` header is honoured over that, and the last response
+is returned whatever its status - a program still sees the server's own 500
+rather than an error from the library.
+
+The request is sent again exactly as it was, so an API that must not act twice
+on the same call - a payment, an order - wants an idempotency key in the
+headers, which is the same thing its own documentation asks for.
+
+```nail
+settings:HTTP_Retry = HTTP_Retry {
+    attempts = 4,
+    initial_delay_ms = 200,
+    max_delay_ms = 3000,
+    timeout_ms = 10000
+};
+response:HTTP_Response = danger(http_request_retry(HTTP_Method::Post, url, headers, body, settings));
+```
 
 `http_server` hands **every** request, whatever its method or path, to a
 function the program must define:
@@ -1186,7 +1577,7 @@ travels in through `config`.
 `headers:h<s,s>`; set `location` in its headers with status 301 to redirect.
 
 `HTTP_Config` fields: `static_mounts` (directories served as static files,
-including binary ones; an empty array serves none), `max_body_bytes` (0 means 1 MiB; larger bodies get 413), `timeout_seconds`
+including binary ones; an empty array serves none), `max_body_bytes` (0 means 8 MiB; larger bodies get 413), `timeout_seconds`
 (0 means 30; a handler that overruns gives the client 504), and `state`.
 
 Each `HTTP_Static` pairs a URL `prefix` with the `directory` on disk behind
@@ -1203,6 +1594,54 @@ computed at startup reaches the handler.
 A pattern segment beginning with `:` matches any one segment, and a trailing
 `*` matches the rest of the path. Set `BIND_ADDR=127.0.0.1` to serve only to a
 local reverse proxy.
+
+#### Receiving an upload
+
+`HTTP_Request` carries `body_path` alongside `body`. Exactly one of them is ever
+set: a text body arrives in `body` as usual, and a body that is not valid UTF-8 -
+a photo, a PDF, a zip - is written to a file by the server before any of it is
+read as text, with the path in `body_path`.
+
+```nail
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    kind:s = danger(image_format(request.body_path));   // what it really is
+    danger(image_resize_within(request.body_path, `public/avatars/small.png`, 200, 200));
+    danger(fs_remove_file(request.body_path));
+    r ok_response(`saved`);
+}
+```
+
+The decision is made on the bytes rather than on `Content-Type`, because a client
+that mislabels a PNG is not a reason to corrupt it. A body over a mebibyte goes to
+a file whatever it is, written as it arrives, so what a request costs in memory
+does not depend on how large the cap is. `max_body_bytes` defaults to 8 MiB - a
+photograph off a phone is three to five.
+
+**The server deletes the file once the handler returns**, however it returns. A
+handler that wants to keep an upload moves or copies it (`fs_move`, `fs_copy`);
+one that returns early, fails or times out leaves nothing behind.
+
+A browser form with a file in it sends `multipart/form-data`, which is several
+parts in one body. `http_multipart_extract(body_path, content_type, into_directory)`
+takes it apart, reading in blocks and writing each file part as it finds it:
+
+```nail
+content_type:s = danger(hashmap_get(request.headers, `content-type`));
+fields:h<s,s> = danger(http_multipart_extract(request.body_path, content_type, `uploads`));
+
+caption:s = danger(hashmap_get(fields, `caption`));          // a text field's value
+photo:s = danger(hashmap_get(fields, `photo`));              // the file's written path
+original:s = danger(hashmap_get(fields, `photo.filename`));  // the name the client gave
+kind:s = danger(hashmap_get(fields, `photo.type`));          // the type it declared
+```
+
+The written name is chosen by the server, not the client: a part claiming to be
+called `../../etc/cron.d/anything` is written as `anything` under a fresh id, so a
+file name can neither escape the directory nor overwrite somebody else's
+upload.
+
+This is why Nail has no bytes type. The bytes that cannot be a Nail string never
+become one - they go to a file, and the program works in paths.
 
 ### CSV Operations (`csv_*`)
 - `csv_parse(text:s, options:CSV_Options):a:h<s,s>!e` - Parse CSV text into one hashmap per row, keyed by the header row
@@ -1254,34 +1693,253 @@ means unset), `double_quote`, `has_headers`, `flexible`, `ignore_errors`
 read as empty, e.g. `NA`).
 
 ### Time Operations (`time_*`)
+
+A moment is a Unix timestamp - whole seconds since the start of 1970 - because
+one number is the only representation two machines never disagree about. Every
+calendar function below works in UTC: store UTC, convert once at the edge where
+a person reads it, and daylight saving never costs you an hour.
+
 - `time_sleep(seconds:f):v` - Sleep for specified seconds
 - `time_now():i` - Current timestamp in seconds
 - `time_now_millis():i` - Current timestamp in milliseconds
-- `time_format(timestamp:i, format:TIME_Format):s` - Format timestamp using TIME_Format enum
-- `time_parse(time_str:s, format:TIME_Format):i!e` - Parse time string using TIME_Format enum
-- `time_add_seconds(timestamp:i, seconds:i):i` - Add seconds to timestamp
-- `time_diff(t1:i, t2:i):i` - Get absolute difference between timestamps
+- `time_format(timestamp:i, format:TIME_Format):s!e` - Write a timestamp out in a standard spelling
+- `time_parse(time_str:s, format:TIME_Format):i!e` - Read a timestamp back out of text
+- `time_format_custom(timestamp:i, layout:s):s!e` - Write a timestamp in a layout of your own, in strftime notation (`%Y-%m-%d`, `%H:%M`, `%A %d %B %Y`)
+- `time_parse_custom(time_str:s, layout:s):i!e` - Read a timestamp from text in that same notation
+- `time_from_parts(year:i, month:i, day:i, hour:i, minute:i, second:i):i!e` - Build a moment from a UTC date; a day not on the calendar is an error
+- `time_add_seconds(timestamp:i, seconds:i):i` - Shift by seconds (negative to subtract)
+- `time_add_minutes(timestamp:i, minutes:i):i` - Shift by minutes
+- `time_add_hours(timestamp:i, hours:i):i` - Shift by hours
+- `time_add_days(timestamp:i, days:i):i` - Shift by days
+- `time_add_months(timestamp:i, months:i):i!e` - Shift by months, keeping the day of the month where it can
+- `time_start_of_day(timestamp:i):i!e` - Midnight UTC at the start of that day
+- `time_diff(t1:i, t2:i):i` - Absolute difference between two timestamps
+- `time_format_duration(seconds:i):s` - Write a length of time as a person says it: `2d 3h`, `1h 5m`, `45s`
+- `time_year(timestamp:i):i!e`, `time_month`, `time_day`, `time_hour`, `time_minute`, `time_second` - The parts of a UTC date
+- `time_weekday(timestamp:i):s!e` - The day of the week written out, `Monday` to `Sunday`
+- `time_day_of_year(timestamp:i):i!e` - Which day of the year, from 1 to 366
 
 **TIME_Format enum values:**
-- `Unix` - Unix timestamp in seconds
-- `UnixMillis` - Unix timestamp in milliseconds
-- `ISO8601` - ISO 8601 format
-- `RFC3339` - RFC 3339 format
-- `RFC2822` - RFC 2822 format
+- `Unix` - Unix timestamp in seconds: `1234567890`
+- `UnixMillis` - Unix timestamp in milliseconds: `1234567890000`
+- `ISO8601` - `2009-02-13T23:31:30Z`
+- `RFC3339` - `2009-02-13T23:31:30+00:00`
+- `RFC2822` - `Fri, 13 Feb 2009 23:31:30 +0000`
+
+Cron schedules are arithmetic here rather than a scheduler: a program asks when
+the next run is, sleeps until then with `time_sleep`, does the work, and asks
+again, so the loop and its error handling stay in the program.
+- `time_cron_valid(expression:s):b` - Whether it is a five-field expression this understands
+- `time_cron_matches(expression:s, timestamp:i):b!e` - Whether it matches a moment, to the minute
+- `time_cron_next(expression:s, after_timestamp:i):i!e` - The next moment it matches
 
 ### Cryptography Operations (`crypto_*`)
-- `crypto_hash_sha256(s:s):s` - Calculate SHA-256 hash of string
-- `crypto_hash_md5(s:s):s` - Calculate MD5 hash of string (for checksums, not security)
-- `crypto_uuid_v4():s` - Generate a UUID v4 string
+- `crypto_hash_password(password:s):s!e` - Store a password. Argon2id with a fresh random salt
+- `crypto_verify_password(password:s, stored_hash:s):b` - Check a password against a stored hash
+- `crypto_hash_sha256(s:s):s` / `crypto_hash_sha512(s:s):s` - Digests, as hex
+- `crypto_hash_md5(s:s):s` - MD5, for checksums, not security
+- `crypto_hmac_sha256(key:s, message:s):s` - HMAC-SHA256 under a secret key, as hex
+- `crypto_uuid_v4():s` - A random UUID
+- `crypto_uuid_v7():s` - A UUID with the time it was made in the leading bits, so sorting the ids sorts them by age. The one to use for a database key
 - `crypto_random_hex(bytes:i):s!e` - Operating-system random bytes as hex, for session ids, nonces and anything an attacker must not guess
 - `crypto_secure_equal(left:s, right:s):b` - Compare two secrets in time that does not reveal how much of them matched
-- `crypto_hmac_sha256(key:s, message:s):s` - HMAC-SHA256 of a message under a secret key, as hex
 
-`math_random` is a fast generator for simulations and shuffles, and its output
-can be predicted from earlier output - use `crypto_random_hex` for secrets.
-Compare secrets with `crypto_secure_equal`, never with `==`: a normal
+Three rules this library exists to enforce:
+
+**Never store a password with `crypto_hash_sha256`.** A graphics card computes
+SHA-256 billions of times a second, so a stolen table of digests is a stolen
+table of passwords. `crypto_hash_password` is deliberately slow and
+memory-hungry, which is what makes guessing at scale cost real money. Its
+answer carries its own salt, so the same password hashed twice gives two
+different strings - store the whole thing and hand it back unchanged.
+
+**`math_random` is not for secrets.** It is a fast generator for simulations
+and shuffles, and its output can be predicted from earlier output. Use
+`crypto_random_hex`.
+
+**Compare secrets with `crypto_secure_equal`, never with `==`.** A normal
 comparison stops at the first differing byte, and how long it took says how
 much of the value was right.
+
+Identifiers for a URL, alongside the UUIDs:
+- `crypto_ulid():s!e` - 26 typable characters, sorted by when it was made, no hyphens
+- `crypto_random_id(length:i):s!e` - Letters, digits, hyphen and underscore, so it needs no escaping
+
+### Configuration (`toml_*`)
+- `toml_serialize(value):s!e` - Write a struct, hashmap or array out as TOML
+- `toml_deserialize(text:s):T!e` - Read TOML into a value; the type on the left of the assignment says what to read it as
+
+The same shape as `json_*`. TOML rather than JSON for anything a person edits:
+it has comments, and nobody has to count closing braces.
+
+`env_load_dotenv(path:s):h<s,s>!e` reads a `.env` file, sets every variable in
+it, and returns what it read. Variables the process was already started with
+always win over what the file says, which is what makes such a file safe to
+leave lying around in production.
+
+`yaml_serialize(value):s!e` and `yaml_deserialize(text:s):T!e` are the same two
+functions again, for the documents a program does not get to choose the format
+of - a CI file, a manifest, a compose file.
+
+### Logging (`log_*`)
+
+Logging goes to standard error, so whatever the program was actually asked for
+stays pipeable on standard output.
+
+- `log_debug(message:s):v` / `log_info` / `log_warn` / `log_error` - One line at a level
+- `log_with_fields(level:LOG_Level, message:s, fields:h<s,s>):v` - A message with named values beside it, which is what turns a log line from prose into something searchable
+- `log_set_level(level:LOG_Level):v` - Hide everything below this level. `Info` by default
+- `log_set_json(enabled:b):v` - Switch to one JSON object per line, which is what a log collector wants
+
+**LOG_Level values:** `Debug`, `Info`, `Warn`, `Error`.
+
+### Terminals (`term_*`)
+
+Everything that adds colour returns a string rather than printing it, so a
+coloured value can be built up, joined, put in a table cell and printed once.
+Colour written to a file is noise in the file - ask `term_is_tty` first, or
+strip it back out with `term_strip_styles`.
+
+- `term_paint(text:s, color:TERM_Color):s` / `term_background(text:s, color:TERM_Color):s`
+- `term_bold(text:s):s` / `term_dim` / `term_italic` / `term_underline` / `term_inverse`
+- `term_strip_styles(text:s):s` - Remove every escape sequence
+- `term_display_width(text:s):i` - How wide the text is once printed, counting what a person sees
+- `term_is_tty():b` - Whether output is a terminal rather than a file or a pipe
+- `term_width():i` / `term_height():i` - The terminal's size, or 80 by 24 when there is none to ask
+- `term_table(headers:a:s, rows:a:a:s):s!e` - A table with aligned columns, measured by visible width so a coloured cell does not throw the alignment out
+- `term_progress_bar(share:f, width:i):s!e` - A bar filled to a share from 0.0 to 1.0
+- `term_hyperlink(text:s, url:s):s` - A clickable link where the terminal supports it, plain text where it does not
+
+**TERM_Color values:** `Black`, `Red`, `Green`, `Yellow`, `Blue`, `Magenta`,
+`Cyan`, `White`, and a `Bright` form of each.
+
+### Terminal Interfaces (`tui_*`)
+
+Full-screen terminal programs, described rather than drawn. A program supplies
+two ordinary functions and `tui_run` owns everything else:
+
+```nail
+struct App { count:i, finished:b }
+
+f view(state:App):TUI_Screen {
+    r TUI_Screen {
+        title = `Counter`,
+        lines = [tui_line(string_from(state.count))],
+        status = `up and down to change, q to quit`,
+        quit = state.finished
+    };
+}
+
+f update(state:App, event:TUI_Event):App {
+    if {
+        event.key == `q` => { r App { count = state.count, finished = true }; },
+        event.key == `Up` => { r App { count = state.count + 1, finished = false }; },
+        else => { r state; }
+    }
+}
+
+final_state:App = danger(tui_run(App { count = 0, finished = false }));
+```
+
+- `tui_run(initial:T):T!e` - Run until `view` reports `quit`, and return the state it finished with
+- `tui_line(text:s):TUI_Line` - A plain line in the terminal's own colour
+- `tui_styled(text:s, color:TERM_Color, bold:b, selected:b):TUI_Line` - A line with its appearance said explicitly
+
+`tui_run` is the only stdlib function that calls back into the program twice,
+and the only one whose callbacks are written in terms of a type it cannot name:
+`T` is bound from its own argument, so `App` is whatever struct the program
+uses. The names `view` and `update` are fixed, the way `handle_request` is for
+`http_server`.
+
+**Why this is not how other terminal libraries work.** Every one of them is
+retained-mode: build widget objects, hold onto them, mutate them as things
+change. That cannot be the default in a language where nothing is mutable - and
+it turns out not to be needed. `view` is a pure function of the state, so the
+same state always draws the same screen, and a whole interface can be tested
+without a terminal to test it on.
+
+**What `tui_run` takes off your hands** is the part hand-written terminal
+programs get wrong: raw mode, the alternate screen, polling for input without
+blocking the async runtime, drawing each frame in one write so it does not
+flicker, and putting the terminal back exactly as it was - on a normal exit, on
+an early return, and while a panic unwinds. A Nail program cannot leave someone's
+shell in raw mode with no echo, because it never turns raw mode on itself.
+
+**Resizing needs no handling**: every event carries `width` and `height`, so
+the next frame simply knows more. **Quitting is a field on the screen** rather
+than a special return, so the state decides when it is over.
+
+**TUI_Screen fields:** `title`, `lines` (`a:TUI_Line`), `status`, `quit`.
+Lines past the bottom of the terminal are not drawn - that is the program's cue
+to scroll by choosing different lines, a decision `view` is better placed to
+make than the library.
+
+**TUI_Line fields:** `text`, `color` (a `TERM_Color`), `bold`, `selected` (drawn
+with foreground and background swapped).
+
+**TUI_Event fields:** `key`, `tick`, `width`, `height`. `key` is a single
+character for an ordinary key, or one of `Enter`, `Esc`, `Up`, `Down`, `Left`,
+`Right`, `Backspace`, `Tab`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`,
+`F1`-`F12`, or a combination like `Ctrl+c`. `tick` is true for the event
+delivered when nothing was pressed, which is what drives a clock or a spinner.
+
+### Testing (`test_*`)
+
+Each assertion either does nothing or stops the program with a message naming
+what was expected and what turned up. A failing assertion exits with a non-zero
+status, which is all any test runner needs to tell pass from fail. The message
+argument is required on purpose: "assertion failed" tells you nothing at three
+in the morning.
+
+- `test_assert(condition:b, message:s):v` / `test_assert_false(condition:b, message:s):v`
+- `test_assert_equal_int(actual:i, expected:i, message:s):v`
+- `test_assert_equal_string(actual:s, expected:s, message:s):v`
+- `test_assert_equal_bool(actual:b, expected:b, message:s):v`
+- `test_assert_equal_float(actual:f, expected:f, tolerance:f, message:s):v` - Floats are never compared exactly; 0.1 plus 0.2 is not 0.3 on any machine with hardware floats
+- `test_assert_contains(haystack:s, needle:s, message:s):v`
+- `test_assert_equal_array(actual:a:T, expected:a:T, message:s):v` - Names the first position that differs
+
+### Command-Line Arguments (`args_*`)
+
+Two ways in, for two sizes of program.
+
+A script that wants one setting reads it directly, with no description to keep
+in step:
+
+- `args_get(index:i):s!e` - The argument at a position
+- `args_count():i` - How many there are
+- `args_flag(name:s):b` - Whether a flag like `--verbose` was passed
+- `args_value(name:s):s!e` - The value of `--name value` or `--name=value`
+- `args_value_or(name:s, fallback:s):s` - The same, with a default instead of an error
+- `args_value_int(name:s):i!e` / `args_value_float(name:s):f!e` - Read as a number
+- `args_wants_help():b` - Whether `--help` or `-h` was passed. Check this first
+
+A real command-line tool describes what it accepts once, as an array of
+`ARGS_Option`, and hands that description to both functions below:
+
+- `args_parse(options:a:ARGS_Option):ARGS_Parsed!e` - Read and check the whole command line in one call
+- `args_help_text(program:s, description:s, options:a:ARGS_Option):s` - The `--help` page, built from that same description
+
+`args_parse` errors on an unknown flag, an option that takes a value and was
+not given one, a value handed to an option that takes none, and a missing
+required option - all in one place, so a person fixes one thing and runs it
+again.
+
+The description is not ceremony. Given `mytool --output report.txt deploy`,
+nothing can tell whether `report.txt` is the value of `--output` or the
+subcommand without knowing that `--output` takes a value. Every argument parser
+needs this; most hide it inside a builder. Here it is plain data, which is also
+why the help page cannot describe a flag the program does not accept.
+
+**ARGS_Option fields:** `name`, `short` (a single letter without its dash, or
+empty), `description`, `takes_value`, `required`.
+
+**ARGS_Parsed fields:** `command` (the first positional argument, or empty),
+`positional` (everything that is neither a flag nor a flag's value, in order -
+`command` is its first element, so `array_skip(parsed.positional, 1)` is what
+came after), `values` (`h<s,s>`, keyed by long name however the flag was
+written, so `-o x`, `--output x` and `--output=x` all arrive as `output`), and
+`flags` (the long names of the present options that take no value).
 
 ### URL Operations (`url_*`)
 - `url_encode(text:s):s` - Percent-encode a string for use in a URL
@@ -1304,12 +1962,221 @@ The string library is large; the one that matters for building pages:
 - `string_escape_html(text:s):s` - Escape `&`, `<`, `>`, `"` and `'` so text a
   visitor supplied can be put in a page without becoming markup
 
+Alongside the usual splitting, trimming and case conversions, the text
+utilities every program ends up writing for itself:
+- `string_slugify(text:s):s` - A title as a URL part: `Hello, World!` becomes `hello-world`
+- `string_truncate(text:s, max_length:i, ellipsis:s):s` - Cut to a length, counting the ellipsis
+- `string_word_wrap(text:s, width:i):s` - Break into lines, splitting between words
+- `string_levenshtein(first:s, second:s):i` / `string_similarity(first:s, second:s):f` - How far apart two strings are
+- `string_closest(text:s, candidates:a:s):s!e` - Answer a mistyped command with a suggestion
+- `string_dedent(text:s):s` / `string_indent(text:s, prefix:s):s` - Reshape a block
+- `string_normalize_whitespace(text:s):s` - Collapse every run of whitespace to one space
+- `string_unescape_html(text:s):s` - The reverse of `string_escape_html`
+- `string_mask(text:s, visible_tail:i, mask_character:s):s` - Show which secret is in use without printing it
+
+### Formatting Numbers (`format_*`)
+Nail has no format strings, so the roundings and comma insertions every program
+writes for itself live here instead. Everything returns text for a reader, never
+text to parse again:
+- `format_decimals(value:f, places:i):s` - Fixed decimals, keeping trailing zeros
+- `format_thousands(value:i):s` / `format_thousands_float(value:f, places:i):s` - Grouped digits
+- `format_currency(amount:f, symbol:s):s` - A symbol and two decimals
+- `format_percent(fraction:f, places:i):s` - `0.125` at one place is `12.5%`
+- `format_bytes(count:i):s` - `1.5 KB`, in steps of 1024
+- `format_compact(value:i):s` - `1.2k`, `3.4M`, in steps of 1000
+- `format_ordinal(number:i):s` - `1st`, `2nd`, `13th`
+- `format_plural(count:i, singular:s, plural:s):s` - Both forms given, since English guesses wrongly
+- `format_list(items:a:s, conjunction:s):s` - `a, b and c`
+
+### Money (`money_*`)
+An amount is a whole number of cents, because a float cannot hold `0.10`.
+Adding and subtracting need nothing from this module - cents are integers - so
+these are the operations plain arithmetic cannot do safely:
+- `money_from_dollars(dollars:f):i` / `money_to_dollars(cents:i):f` - The boundary where a float stops being involved
+- `money_parse(text:s):i!e` - Read what a person typed; more precision than a cent is an error, not a rounding
+- `money_format(cents:i, symbol:s):s` - Write it the way a receipt does
+- `money_percent_of(cents:i, rate:f):i` - Tax or a discount, to the nearest cent
+- `money_times(cents:i, count:i):i!e` - A line item
+- `money_split(cents:i, ways:i):a:i!e` - Split evenly, handing out the leftover cents rather than dropping them
+- `money_allocate(cents:i, weights:a:i):a:i!e` - Split in proportion, with every cent accounted for
+
+### Templates (`template_*`)
+Values filled into text, escaped on the way in, so no call site has to remember
+to escape anything:
+- `template_render(template:s, values:h<s,s>):s!e` - Fill in one set of values
+- `template_render_rows(template:s, rows:a:h<s,s>):s!e` - Render once per row, for a table body
+- `template_names_used(template:s):a:s!e` - The names a template asks for
+
+The syntax is `{{name}}` for an escaped value, `{{{name}}}` for raw markup,
+`{{#if name}}...{{else}}...{{/if}}`, `{{#unless name}}...{{/unless}}`, and
+`{{! a comment }}`. There is no loop tag: a loop belongs in the program, where
+Nail's own `map` already does it better. A name the values do not hold is an
+error rather than a blank, because a blank in a page is a bug every time.
+
+### Charts (`chart_*`)
+Each returns a whole SVG document, which is a string like any other - written to
+a file or put straight into a page:
+- `chart_line(width:f, height:f, values:a:f, labels:a:s, colour:s, title:s):s!e`
+- `chart_bar(width:f, height:f, values:a:f, labels:a:s, colour:s, title:s):s!e`
+- `chart_scatter(width:f, height:f, x_values:a:f, y_values:a:f, colour:s, title:s):s!e`
+- `chart_sparkline(width:f, height:f, values:a:f, colour:s):s!e` - No axis or labels, for beside a number
+
+Anything more particular - a second axis, a legend, stacked bars - is built from
+`draw_*` directly.
+
+### Validation (`validate_*`)
+The questions every program asks of input from outside itself. Each answers with
+a boolean, because a failed check is an expected answer rather than an error:
+- `validate_email(text:s):b`, `validate_url(text:s):b`, `validate_hostname(text:s):b`
+- `validate_uuid(text:s):b`, `validate_ipv4(text:s):b`, `validate_ipv6(text:s):b`, `validate_port(number:i):b`
+- `validate_credit_card(text:s):b` - The Luhn check, which catches a mistyped digit
+- `validate_hex_color(text:s):b`, `validate_slug(text:s):b`, `validate_json(text:s):b`
+- `validate_length_between(text:s, minimum:i, maximum:i):b` - Counted in characters
+- `validate_password_strength(text:s):i` - 0 to 4, and 0 for the passwords everybody tries first
+
+### Signed Tokens (`jwt_*`)
+How a server recognises a visitor it has seen before without trusting what the
+browser sent back. Claims go in and come out as JSON text, which
+`json_serialize` and `json_deserialize` turn into a struct:
+- `jwt_sign(claims_json:s, secret:s, expires_in_seconds:i):s!e` - Zero seconds means no expiry
+- `jwt_verify(token:s, secret:s):s!e` - The claims, if the signature holds and the expiry has not passed
+- `jwt_is_expired(token:s):b!e` - For deciding whether to refresh a token, not whether to trust one
+- `jwt_read_unverified(token:s):s!e` - The claims without checking anything; nothing it returns has been verified
+
+Only HS256 is accepted. A token arriving with any other algorithm is refused
+rather than trusted, which is how JWT libraries come to accept `alg: none`.
+
+### Version Numbers (`semver_*`)
+Comparing versions as numbers rather than as text, since `1.10.0` is newer than
+`1.9.0` but sorts before it:
+- `semver_valid(version:s):b`, `semver_compare(first:s, second:s):i!e`
+- `semver_is_newer(first:s, second:s):b!e`, `semver_is_older(first:s, second:s):b!e`
+- `semver_major/minor/patch(version:s):i!e`, `semver_prerelease(version:s):s!e`
+- `semver_bump_major/minor/patch(version:s):s!e`
+- `semver_satisfies(version:s, requirement:s):b!e` - Exact, `>=1.2.0`, `^1.2.3`, `~1.2.3`, `*`, or several separated by commas
+- `semver_sort(versions:a:s):a:s!e`, `semver_newest(versions:a:s):s!e`
+
+### Pictures (`image_*`)
+File to file, so nothing binary crosses into the program:
+- `image_resize(from_path:s, to_path:s, width:i, height:i):v!e` - exactly that size, stretching if the shape differs
+- `image_resize_within(from_path:s, to_path:s, width:i, height:i):v!e` - fits inside the box, keeps the proportions, never enlarges
+- `image_convert(from_path:s, to_path:s):v!e` - the written extension decides the format
+- `image_width(path:s):i!e` / `image_height(path:s):i!e`
+- `image_format(path:s):s!e` - what the file really is, read from its bytes rather than its name
+
+Nothing works on pixels one at a time: that needs the picture in memory as
+values, and a Nail program has no use for four million of them.
+
+### Files That Are Not Text
+The three functions that handle a binary file without reading it into the program:
+- `crypto_hash_file_sha256(path:s):s!e` - the checksum, read in blocks so the file never has to fit in memory
+- `fs_read_base64(path:s):s!e` - a small file as base64, for a `data:` URI or a JSON field
+- `fs_write_base64(path:s, data:s):v!e` - and back out again; text that is not base64 is an error
+
+Alongside `HTTP_Request.body_path` for uploads and `archive_*` for zip and tar,
+that is the whole binary story, and none of it needs a bytes type.
+
+### Media Types (`mime_*`)
+- `mime_for_path(path:s):s` - What to tell a browser a file is; anything unknown is `application/octet-stream`
+- `mime_is_text(media_type:s):b` - Whether it is text a program could read as a string
+- `mime_extension_for(media_type:s):s!e` - For naming a file that arrived with a type but no name
+
+### Archives (`archive_*`)
+Path to path throughout, since an archive worth making does not fit in memory:
+- `archive_zip_create(zip_path:s, directory:s):v!e`, `archive_zip_extract(zip_path:s, directory:s):v!e`, `archive_zip_list(zip_path:s):a:s!e`
+- `archive_targz_create(archive_path:s, directory:s):v!e`, `archive_targz_extract(archive_path:s, directory:s):v!e`, `archive_targz_list(archive_path:s):a:s!e`
+
+An entry naming a path outside the directory being extracted into stops the
+extraction rather than being written, and links and devices are skipped - a
+downloaded archive is data from somewhere else.
+
+### Networks (`net_*`)
+The network below HTTP, for checking a port before deploying to it and speaking
+the line-based protocols that predate HTTP. Every call takes a deadline in
+milliseconds, because a network operation without one is how a program hangs
+forever with nothing in the log:
+- `net_tcp_request(host:s, port:i, text:s, timeout_milliseconds:i):s!e`
+- `net_tcp_is_open(host:s, port:i, timeout_milliseconds:i):b!e` - A refused connection is false, not an error
+- `net_udp_request(host:s, port:i, text:s, timeout_milliseconds:i):s!e`
+- `net_dns_lookup(hostname:s):a:s!e`
+
+### Reading HTML (`html_*`)
+Reading HTML somebody else wrote - a fetched page, a feed, an export. Elements
+are found by CSS selector, and real HTML is recovered from rather than refused:
+- `html_text(html:s):s`, `html_title(html:s):s!e`, `html_meta(html:s, meta_name:s):s!e`
+- `html_select_text(html:s, selector:s):a:s!e`, `html_select_html(html:s, selector:s):a:s!e`
+- `html_select_attribute(html:s, selector:s, attribute:s):a:s!e`, `html_count(html:s, selector:s):i!e`
+- `html_links(html:s):a:s!e`, `html_images(html:s):a:s!e`
+
+Nothing here writes HTML: that is what `template_render` and `markdown_to_html`
+are for.
+
+### Live Updates (SSE and Websockets)
+`http_server_realtime(port, config, live_path)` is `http_server` with a live
+endpoint beside the ordinary routes. A GET to `live_path` is a server-sent-event
+stream - what htmx's sse extension and the browser's EventSource consume - and a
+websocket upgrade on the same path joins the same channel; `?channel=name` picks
+the channel either way.
+
+- `http_live_send(channel:s, message:s):i` - broadcast to every subscriber on the
+  channel, SSE and websocket alike; returns how many heard it, and nobody is 0
+- `http_live_count(channel:s):i` - subscribers right now
+
+Each websocket text frame is answered by the program's `handle_message(message:s,
+state:h<s,s>):s` - the return goes back to that one client, and the empty string
+means no reply. Broadcasts stay in `http_live_send`, called from wherever the
+program likes: a handler, a `spawn` loop, a watcher.
+
+### XML (`xml_*`) and Feeds (`feed_*`)
+`xml_serialize(value, root_name:s):s!e` and `xml_deserialize(text:s):T!e` are the
+same two functions as TOML and YAML, for the systems that still want XML.
+`feed_parse(text:s):FEED_Feed!e` reads RSS or Atom - whichever it is - into one
+shape: title, link, description, and entries with id, title, link, summary and a
+published timestamp. What a feed omits is empty rather than missing.
+
+### Watching Files (`fs_watch_*`)
+- `fs_watch_start(path:s):FS_Watcher!e` - directories are watched all the way down
+- `fs_watch_next(watcher, timeout_milliseconds:i):a:s!e` - the paths that changed,
+  or an empty array when the time passed quietly; changes pile up between calls
+- `fs_watch_stop(watcher):v!e`
+
+### PDFs (`pdf_*`)
+- `pdf_text(path:s):s!e` - the text of a PDF; a scanned one is photographs and gives nothing
+- `pdf_from_text(path:s, title:s, body:s):v!e` - a paginated A4 report of plain text
+
+### Spreadsheets (`xlsx_*`)
+The same shape as CSV on purpose - rows keyed by the header row, every cell text:
+- `xlsx_sheets(path:s):a:s!e`, `xlsx_read(path:s, sheet:s):a:h<s,s>!e`
+- `xlsx_write(path:s, sheet:s, headers:a:s, rows:a:h<s,s>):v!e`
+
+### Sending Mail (`email_*`)
+- `email_default_server():EMAIL_Server` - Port 587 with TLS, which is what almost every provider wants
+- `email_send(server:EMAIL_Server, to:s, subject:s, body:s):v!e`
+- `email_send_html(server:EMAIL_Server, to:s, subject:s, html:s):v!e`
+
+Success means the server accepted the message, not that it was delivered. Only
+sending is here; reading mail is not something a Nail program should be doing.
+
+### Postgres (`db_postgres_*`)
+The same shape as the SQLite module, for when the data lives on a server rather
+than in a file. Placeholders are Postgres's own `$1`, `$2`:
+- `db_postgres_connect(url:s):DB_Postgres!e`, `db_postgres_close(db:DB_Postgres):v!e`
+- `db_postgres_execute(db:DB_Postgres, sql:s, params:a:s):DB_PostgresResult!e`
+- `db_postgres_execute_batch(db:DB_Postgres, statements:s):v!e`
+- `db_postgres_query(db:DB_Postgres, sql:s, params:a:s):a:T!e`
+- `db_postgres_query_single(db:DB_Postgres, sql:s, params:a:s):T!e`
+
+The connection is not encrypted, so it belongs on localhost or a private
+network; across the internet, tunnel it.
+
 ### Error Handling
 - `safe(result:T!e, handler:f(e:e):T):T` - Handle error with function
 - `danger(result:T!e):T` - Unwrap or panic (use carefully)
 - `expect(result:T!e):T` - Unwrap or panic (for impossible errors)
-- `ok(value:T):T!e` - Wrap value in Ok result
-- `err(message:s):T!e` - Create error result
+- `e(message:s):T!e` - Create an error result, inside a function whose return type is `T!e`
+
+There is no wrapper for the success case: a function returning `T!e` returns the
+value itself with `r value;`, and only the error case is written out with `e(...)`.
 
 ## Memory Management and Execution
 
@@ -1729,8 +2596,8 @@ f print_message(msg:s):v {
 // Result type for error handling
 f divide(a:i, b:i):i!e {
     if {
-        b == 0 => { r err(`Division by zero`); },
-        else => { r ok(a / b); }
+        b == 0 => { r e(`Division by zero`); },
+        else => { r a / b; }
     }
 }
 ```
@@ -1820,13 +2687,13 @@ p
 ```js
 // Example 1: Parallel API calls for a dashboard
 p
-    user_profile:s = http_get(`https://api.example.com/user/123`);
-    recent_orders:s = http_get(`https://api.example.com/orders?user=123`);
-    account_balance:s = http_get(`https://api.example.com/balance/123`);
+    user_profile:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://api.example.com/user/123`, headers, ``));
+    recent_orders:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://api.example.com/orders?user=123`, headers, ``));
+    account_balance:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://api.example.com/balance/123`, headers, ``));
 /p
 
 // All data is available after parallel block completes
-print(`Profile: `, user_profile);
+print(`Profile: `, user_profile.body);
 print(`Orders: `, recent_orders);
 print(`Balance: `, account_balance);
 

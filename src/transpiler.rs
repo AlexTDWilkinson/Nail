@@ -310,7 +310,14 @@ impl Transpiler {
                         _ => true,
                     }
                 } else if let Some(stdlib_fn) = stdlib_registry::get_stdlib_function(name) {
-                    !stdlib_fn.rust_path.ends_with('!') && stdlib_registry::is_stdlib_fn_async(name)
+                    // A key function is run before the call, in a loop this
+                    // emits; if that function is async, so is the call.
+                    let key_is_async = stdlib_registry::precomputes_key_argument(name)
+                        && matches!(args.get(1), Some(ASTNode::Identifier { name: key, .. }) if !pure.contains(key));
+                    // A file fold is emitted as a loop that reads the file, so it
+                    // is always awaited whatever its step function does.
+                    let folds_a_file = stdlib_registry::file_fold(name).is_some();
+                    key_is_async || folds_a_file || (!stdlib_fn.rust_path.ends_with('!') && stdlib_registry::is_stdlib_fn_async(name))
                 } else {
                     !pure.contains(name)
                 };
@@ -343,7 +350,12 @@ impl Transpiler {
     /// Fixpoint purity analysis: start assuming every user function is pure,
     /// then repeatedly demote any whose body needs async under the current
     /// assumption, until stable.
-    fn compute_pure_functions(program: &ASTNode) -> HashSet<String> {
+    ///
+    /// Visible to the checker as well as the emitter: whether a function ends up
+    /// async is a property of code generation, and the checker has to know it to
+    /// reject a program that passes an async function where a stdlib function
+    /// will call it synchronously.
+    pub(crate) fn compute_pure_functions(program: &ASTNode) -> HashSet<String> {
         let mut declarations = Vec::new();
         Self::collect_function_declarations(program, &mut declarations);
         // A function a stdlib callback dispatches to is invoked from async glue
@@ -1665,6 +1677,16 @@ impl Transpiler {
             }
         }
         
+        // Every stdlib type is reachable by its full path, whether or not a
+        // called function imported it. A program can name TUI_Screen in its
+        // own signatures without having called tui_run yet, and the type
+        // annotations below resolve either way.
+        for type_name in stdlib_registry::get_stdlib_type_names() {
+            if let Some(full_path) = stdlib_registry::stdlib_type_rust_path(&type_name) {
+                self.stdlib_types.insert(type_name, full_path);
+            }
+        }
+
         // Generate imports for custom types and populate stdlib_types map
         for (type_name, module_path) in custom_type_imports {
             writeln!(output, "use {}::{};", module_path, type_name)?;
@@ -2587,8 +2609,10 @@ impl Transpiler {
             NailDataTypeDescriptor::Int => "i64".to_string(),
             NailDataTypeDescriptor::Float => "f64".to_string(),
             NailDataTypeDescriptor::Boolean => "bool".to_string(),
-            NailDataTypeDescriptor::Struct(name) => name.to_string(),
-            NailDataTypeDescriptor::Enum(name) => name.to_string(),
+            // A stdlib type is written by its full path, so a signature
+            // mentioning one compiles whether or not anything imported it.
+            NailDataTypeDescriptor::Struct(name) => self.stdlib_types.get(name).cloned().unwrap_or_else(|| name.to_string()),
+            NailDataTypeDescriptor::Enum(name) => self.stdlib_types.get(name).cloned().unwrap_or_else(|| name.to_string()),
             NailDataTypeDescriptor::Void => "()".to_string(),
             NailDataTypeDescriptor::Never => "!".to_string(),
             NailDataTypeDescriptor::Error => "String".to_string(),
@@ -2714,6 +2738,60 @@ impl Transpiler {
             return Ok(());
         }
 
+        // A stdlib function that folds a file gets a loop rather than a call: the
+        // file is read a batch of lines at a time and the program's step function
+        // is run over each one, awaited when that function does I/O. The runtime
+        // function names come from the registry.
+        if let (Some(fold), 3) = (stdlib_registry::file_fold(name), args.len()) {
+            if let ASTNode::Identifier { name: step_function, .. } = &args[2] {
+                self.used_stdlib_functions.insert(name.to_string());
+                let step_is_async = !self.pure_functions.contains(step_function);
+
+                if add_indent {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "async {{ let nail_fold_reader = {}(", fold.open)?;
+                self.transpile_node_internal(&args[0], output, false)?;
+                write!(output, ").await?; let mut nail_fold_total = ")?;
+                self.transpile_node_internal(&args[1], output, false)?;
+                write!(output, "; loop {{ let nail_fold_lines = {}(&nail_fold_reader, {}).await?; if nail_fold_lines.is_empty() {{ break; }} for nail_fold_line in nail_fold_lines {{ nail_fold_total = {}(nail_fold_total, nail_fold_line)", fold.next_lines, fold.lines_at_a_time, step_function)?;
+                if step_is_async {
+                    write!(output, ".await")?;
+                }
+                write!(output, "; }} }} {}(&nail_fold_reader).await?; Ok::<_, String>(nail_fold_total) }}.await", fold.close)?;
+                if add_indent {
+                    writeln!(output, ";")?;
+                }
+                return Ok(());
+            }
+        }
+
+        // A stdlib function that takes a key function gets the keys rather than
+        // the function: they are worked out here, in a loop that can await, so
+        // nothing downstream ever calls back into the program. The registry says
+        // which functions these are, so no name is baked in here.
+        if stdlib_registry::precomputes_key_argument(name) && args.len() == 2 {
+            if let (Some(stdlib_fn), ASTNode::Identifier { name: key_function, .. }) = (stdlib_registry::get_stdlib_function(name), &args[1]) {
+                self.used_stdlib_functions.insert(name.to_string());
+                let key_is_async = !self.pure_functions.contains(key_function);
+
+                if add_indent {
+                    write!(output, "{}", self.indent())?;
+                }
+                write!(output, "{{ let nail_key_items = ")?;
+                self.transpile_node_internal(&args[0], output, false)?;
+                write!(output, "; let mut nail_keys = Vec::with_capacity(nail_key_items.len()); for nail_key_item in nail_key_items.iter() {{ nail_keys.push({}(nail_key_item.clone())", key_function)?;
+                if key_is_async {
+                    write!(output, ".await")?;
+                }
+                write!(output, "); }} {}(nail_key_items, nail_keys) }}", stdlib_fn.rust_path)?;
+                if add_indent {
+                    writeln!(output, ";")?;
+                }
+                return Ok(());
+            }
+        }
+
         // Check if it's a stdlib function
         if let Some(stdlib_fn) = stdlib_registry::get_stdlib_function(name) {
             // Track that we're using this stdlib function
@@ -2766,10 +2844,10 @@ impl Transpiler {
                 // Stdlib functions that dispatch back into the program receive
                 // the target function as a trailing argument. The name comes
                 // from the registry, so no function name is baked in here.
-                if let Some(callback) = stdlib_registry::get_handler_callback(name) {
+                for (position, callback) in stdlib_registry::get_handler_callbacks(name).map(|callbacks| callbacks.as_slice()).unwrap_or(&[]).iter().enumerate() {
                     let parameters: Vec<String> = (0..callback.parameter_types.len()).map(|index| format!("callback_argument_{}", index)).collect();
                     let argument_list = parameters.join(", ");
-                    if !args.is_empty() {
+                    if !args.is_empty() || position > 0 {
                         write!(output, ", ")?;
                     }
                     write!(output, "move |{}| Box::pin({}({}))", argument_list, callback.function_name, argument_list)?;

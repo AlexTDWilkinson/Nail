@@ -1,0 +1,34 @@
+// Matching paths against shell patterns, and the identifiers that go in URLs.
+
+// `*` stays inside one path segment, so `*.nail` is the files here and
+// `**/*.nail` is the files anywhere below.
+test_assert(path_matches_glob(`*.nail`, `main.nail`), `a file here`);
+test_assert_false(path_matches_glob(`*.nail`, `tests/main.nail`), `not one a directory down`);
+test_assert(path_matches_glob(`**/*.nail`, `tests/deep/main.nail`), `unless the pattern crosses segments`);
+test_assert(path_matches_glob(`**/*.nail`, `main.nail`), `and then it matches here too`);
+test_assert(path_matches_glob(`src/**`, `src/parser/std_lib/path.rs`), `everything below a directory`);
+
+test_assert(path_matches_glob(`test_?.nail`, `test_1.nail`), `one character`);
+test_assert_false(path_matches_glob(`test_?.nail`, `test_11.nail`), `and only one`);
+test_assert(path_matches_glob(`test_[123].nail`, `test_2.nail`), `one of those listed`);
+test_assert_false(path_matches_glob(`test_[123].nail`, `test_4.nail`), `and nothing else`);
+test_assert(path_matches_glob(`[a-z]*.rs`, `main.rs`), `a range`);
+test_assert_false(path_matches_glob(`[a-z]*.rs`, `Main.rs`), `which is case sensitive`);
+
+// Every Nail test file is found by walking this directory with a pattern.
+own_tests:a:s = danger(fs_glob(`tests`, `*.nail`));
+test_assert(array_length(own_tests) > 20, `the test directory has tests in it`);
+test_assert(array_contains(own_tests, `tests/test_glob_and_ids.nail`), `including this one`);
+
+// A ULID is 26 typable characters and sorts by when it was made.
+first_id:s = danger(crypto_ulid());
+second_id:s = danger(crypto_ulid());
+test_assert_equal_int(string_length(first_id), 26, `a ULID is 26 characters`);
+test_assert_false(first_id == second_id, `two ids differ`);
+test_assert_false(string_contains(first_id, `-`), `and carry no hyphens`);
+
+invite_code:s = danger(crypto_random_id(12));
+test_assert_equal_int(string_length(invite_code), 12, `an invite code is the length asked for`);
+test_assert_false(string_contains(invite_code, `/`), `and needs no escaping in a URL`);
+
+print(`every pattern and id held`);

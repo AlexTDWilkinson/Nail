@@ -1,0 +1,38 @@
+// E2E: XML round trip, feed reading, and the live channel functions.
+struct Invoice {
+    number:s,
+    total_cents:i,
+    paid:b
+}
+
+invoice:Invoice = Invoice { number = `INV-7`, total_cents = 12345, paid = false };
+written:s = danger(xml_serialize(invoice, `invoice`));
+print(string_contains(written, `<number>INV-7</number>`));
+read_back:Invoice = danger(xml_deserialize(written));
+print(read_back.number);
+print(read_back.total_cents);
+
+// A feed, whichever of the two formats it arrived in.
+rss:s = xml`<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Nail Blog</title>
+  <link>https://nail-lang.org/blog</link>
+  <description>What changed and why</description>
+  <item><guid>post-2</guid><title>Second post</title><link>https://nail-lang.org/blog/2</link><description>Newer</description><pubDate>Tue, 04 Aug 2026 12:00:00 GMT</pubDate></item>
+  <item><guid>post-1</guid><title>First post</title><link>https://nail-lang.org/blog/1</link><description>Older</description><pubDate>Mon, 03 Aug 2026 12:00:00 GMT</pubDate></item>
+</channel></rss>`;
+feed:FEED_Feed = danger(feed_parse(rss));
+print(feed.title);
+print(array_length(feed.entries));
+first_entry:FEED_Entry = danger(array_first(feed.entries));
+print(first_entry.title);
+print(first_entry.link);
+print(first_entry.published > 0);
+
+f no_feed(err:e):FEED_Feed { r FEED_Feed { title = ``, link = ``, description = ``, entries = [] }; }
+not_a_feed:FEED_Feed = safe(feed_parse(`<html><body>a page</body></html>`), no_feed);
+print(string_is_empty(not_a_feed.title));
+
+// The live channels: sending to nobody is zero, not an error.
+print(http_live_send(`empty_room`, `hello?`));
+print(http_live_count(`empty_room`));

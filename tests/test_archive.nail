@@ -1,0 +1,46 @@
+// Archives: a directory in one file, and back out again. Everything here works
+// from path to path, so nothing has to fit in memory.
+
+scratch:s = path_join(fs_temp_dir(), `nail_archive_test`);
+source:s = path_join(scratch, `source`);
+nested:s = path_join(source, `nested`);
+unpacked:s = path_join(scratch, `unpacked`);
+
+danger(fs_create_dir(nested));
+danger(fs_write(path_join(source, `top.txt`), `the top file`));
+danger(fs_write(path_join(nested, `under.txt`), `the nested file`));
+
+// Zip: what the rest of the world sends.
+zip_file:s = path_join(scratch, `backup.zip`);
+danger(archive_zip_create(zip_file, source));
+test_assert(fs_is_file(zip_file), `the archive was written`);
+
+listed:a:s = danger(archive_zip_list(zip_file));
+test_assert_equal_int(array_length(listed), 2, `both files are in it`);
+test_assert(array_contains(listed, `nested/under.txt`), `with the shape of the directory kept`);
+
+danger(archive_zip_extract(zip_file, unpacked));
+recovered:s = danger(fs_read(path_join(path_join(unpacked, `nested`), `under.txt`)));
+test_assert_equal_string(recovered, `the nested file`, `and the contents came back`);
+
+// Tar.gz: what Unix sends.
+tar_file:s = path_join(scratch, `backup.tar.gz`);
+tar_unpacked:s = path_join(scratch, `tar_unpacked`);
+danger(archive_targz_create(tar_file, source));
+tar_listed:a:s = danger(archive_targz_list(tar_file));
+test_assert_equal_int(array_length(tar_listed), 2, `both files are in the tarball too`);
+
+danger(archive_targz_extract(tar_file, tar_unpacked));
+tar_recovered:s = danger(fs_read(path_join(tar_unpacked, `top.txt`)));
+test_assert_equal_string(tar_recovered, `the top file`, `and came back out of it`);
+
+// Archiving something that is not a directory says so rather than writing an
+// empty archive.
+missing_directory:s = path_join(scratch, `no_such_directory`);
+never_written:s = path_join(scratch, `never.zip`);
+f refused(err:e):v { }
+safe(archive_zip_create(never_written, missing_directory), refused);
+test_assert_false(fs_is_file(never_written), `a directory that is not there writes no archive`);
+
+danger(fs_remove_dir_all(scratch));
+print(`every archive held`);

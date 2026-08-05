@@ -1,0 +1,20 @@
+// E2E: a key function is run over the array before anything is sorted, so it is
+// allowed to do I/O. This used to be refused with an error about async functions.
+struct Report {
+    file:s
+}
+
+f report_size(report:Report):i {
+    r danger(fs_size(report.file));
+}
+
+danger(fs_write(`small.txt`, `x`));
+danger(fs_write(`large.txt`, `xxxxxxxxxx`));
+reports:a:Report = [Report { file = `large.txt` }, Report { file = `small.txt` }];
+
+by_size:a:Report = array_sort_by(reports, report_size);
+print(danger(array_first(by_size)).file);
+print(danger(array_last(by_size)).file);
+print(array_sum_by(reports, report_size));
+print(danger(array_min_by(reports, report_size)).file);
+print(danger(array_max_by(reports, report_size)).file);

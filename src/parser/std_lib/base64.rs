@@ -45,6 +45,18 @@ pub fn encode_url(text: String) -> String {
     return GeneralPurpose::new(&alphabet::URL_SAFE, NO_PAD).encode(text.as_bytes());
 }
 
+/// Encode raw bytes with the URL-safe alphabet and no padding. For the stdlib
+/// functions that carry bytes rather than text - a nonce and a ciphertext, say
+/// - through a string.
+pub fn encode_url_bytes(bytes: &[u8]) -> String {
+    return GeneralPurpose::new(&alphabet::URL_SAFE, NO_PAD).encode(bytes);
+}
+
+/// Decode URL-safe base64 back to raw bytes, padded or not.
+pub fn decode_url_bytes(data: &str) -> Result<Vec<u8>, String> {
+    return URL_SAFE_DECODER.decode(data.as_bytes()).map_err(|e| format!("base64_decode_url: the input is not valid URL-safe base64: {}", e));
+}
+
 /// Decode URL-safe base64 back to text, padded or not.
 pub fn decode_url(data: String) -> Result<String, String> {
     let bytes = URL_SAFE_DECODER.decode(data.as_bytes()).map_err(|e| format!("base64_decode_url: the input is not valid URL-safe base64: {}", e))?;

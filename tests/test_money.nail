@@ -1,0 +1,46 @@
+// Money counted in whole cents, because a float cannot hold a dime.
+
+// Ten dimes are exactly a dollar here. With floats they are not.
+dime:i = money_from_dollars(0.10);
+total:i = dime + dime + dime + dime + dime + dime + dime + dime + dime + dime;
+test_assert_equal_int(total, 100, `ten dimes are a dollar`);
+test_assert_equal_string(money_format(total, `$`), `$1.00`, `and are written as one`);
+
+test_assert_equal_int(money_from_dollars(12.34), 1234, `dollars to cents`);
+test_assert_equal_float(money_to_dollars(1234), 12.34, 0.000001, `and back again`);
+
+test_assert_equal_int(danger(money_parse(`$1,234.50`)), 123450, `what a person types`);
+test_assert_equal_int(danger(money_parse(`12`)), 1200, `a whole number of dollars`);
+test_assert_equal_int(danger(money_parse(`12.5`)), 1250, `one decimal place`);
+test_assert_equal_int(danger(money_parse(`-12.34`)), -1234, `a negative amount`);
+test_assert_equal_int(danger(money_parse(`($12.34)`)), -1234, `and how an accountant writes one`);
+
+// Rounding half a cent away silently is how a program loses money a thousand
+// times, so it is refused instead.
+f rejected(err:e):i { r -1; }
+too_precise:i = safe(money_parse(`1.005`), rejected);
+test_assert_equal_int(too_precise, -1, `more precision than a cent is refused`);
+not_money:i = safe(money_parse(`free`), rejected);
+test_assert_equal_int(not_money, -1, `and so is a word`);
+
+test_assert_equal_string(money_format(123450, `$`), `$1,234.50`, `a receipt line`);
+test_assert_equal_string(money_format(5, `$`), `$0.05`, `a nickel`);
+test_assert_equal_string(money_format(-999, `$`), `-$9.99`, `a refund`);
+
+subtotal:i = 12995;
+tax:i = money_percent_of(subtotal, 5.0);
+test_assert_equal_int(tax, 650, `five percent, to the nearest cent`);
+test_assert_equal_int(danger(money_times(1299, 3)), 3897, `three of them`);
+
+// The point of splitting through this module: the shares add back up.
+shares:a:i = danger(money_split(1000, 3));
+expected_shares:a:i = [334, 333, 333];
+test_assert_equal_array(shares, expected_shares, `the leftover cent goes to the first share`);
+test_assert_equal_int(array_sum(shares), 1000, `and nothing is lost`);
+
+allocated:a:i = danger(money_allocate(1000, [2, 1]));
+expected_allocation:a:i = [667, 333];
+test_assert_equal_array(allocated, expected_allocation, `two parts to one`);
+test_assert_equal_int(array_sum(allocated), 1000, `and still nothing is lost`);
+
+print(string_concat([`invoice total: `, money_format(subtotal + tax, `$`)]));

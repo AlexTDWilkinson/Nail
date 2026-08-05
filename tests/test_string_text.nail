@@ -1,0 +1,46 @@
+// The text utilities: reshaping words, measuring how alike two strings are,
+// and putting scraped or submitted text back into a usable state.
+
+test_assert_equal_string(string_to_camel_case(`user id number`), `userIdNumber`, `a camelCase key`);
+test_assert_equal_string(string_to_pascal_case(`user account`), `UserAccount`, `a PascalCase type name`);
+test_assert_equal_string(string_slugify(`Hello, World!`), `hello-world`, `a title as a URL part`);
+test_assert_equal_string(string_slugify(`Nail 1.0 Released`), `nail-1-0-released`, `digits are words too`);
+
+test_assert_equal_string(string_truncate(`hello world`, 8, `...`), `hello...`, `the ellipsis counts toward the limit`);
+test_assert_equal_string(string_truncate(`hello`, 8, `...`), `hello`, `short text is left whole`);
+
+test_assert_equal_string(string_word_wrap(`the quick brown fox`, 10), `the quick
+brown fox`, `wrapping breaks between words`);
+
+test_assert_equal_int(string_levenshtein(`kitten`, `sitting`), 3, `three edits apart`);
+test_assert_equal_int(string_levenshtein(`same`, `same`), 0, `no edits apart`);
+test_assert_equal_float(string_similarity(`same`, `same`), 1.0, 0.000001, `identical strings`);
+test_assert_equal_float(string_similarity(`abc`, `xyz`), 0.0, 0.000001, `nothing in common`);
+
+commands:a:s = [`transpile`, `check`, `format`];
+suggestion:s = danger(string_closest(`transpil`, commands));
+test_assert_equal_string(suggestion, `transpile`, `a typo finds its command`);
+
+test_assert_equal_int(string_word_count(`one two three`), 3, `three words`);
+test_assert_equal_string(string_normalize_whitespace(`  a
+	b   c  `), `a b c`, `scraped text collapses`);
+
+test_assert_equal_string(string_indent(`first
+second`, `> `), `> first
+> second`, `a quoted reply`);
+test_assert_equal_string(string_dedent(`    outer
+        inner`), `outer
+    inner`, `dedent keeps the relative shape`);
+
+test_assert_equal_string(string_unescape_html(`&lt;b&gt;hi&lt;/b&gt;`), `<b>hi</b>`, `entities become characters again`);
+round_trip:s = string_unescape_html(string_escape_html(`it's 5 > 3 & true`));
+test_assert_equal_string(round_trip, `it's 5 > 3 & true`, `escaping and unescaping are opposites`);
+
+test_assert_equal_string(danger(string_char_at(`hello`, 1)), `e`, `a character by index`);
+test_assert_equal_string(string_common_prefix([`/srv/app/one`, `/srv/app/two`]), `/srv/app/`, `the directory they share`);
+test_assert_equal_string(string_strip_prefix(`> quoted`, `> `), `quoted`, `an affix that is there`);
+test_assert_equal_string(string_strip_suffix(`main.nail`, `.nail`), `main`, `a file stem`);
+test_assert_equal_string(string_strip_prefix(`plain`, `> `), `plain`, `an affix that is not there`);
+test_assert_equal_string(string_mask(`sk_live_abcd1234`, 4, `*`), `************1234`, `a secret shown safely`);
+
+print(`every text utility held`);

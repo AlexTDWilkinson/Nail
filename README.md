@@ -28,13 +28,40 @@ More detailed info in the [Nail Language Spec](nail_language_spec.md).
 - **Type Inference:** Nail figures out types. Less typing for you.
 
 ### Standard Library (All Working!)
-- **String Operations:** `string_trim()`, `string_to_uppercase()`, `string_replace()`, etc.
-- **Math Functions:** `math_sqrt()`, `math_abs()`, `math_pow()`, `math_random()`, etc.
-- **Array Functions:** `array_len()`, `array_join()`, `array_take()`, `array_skip()`, etc.
-- **I/O Operations:** `file_read()`, `file_write()`, `path_exists()`, etc.
-- **Time Functions:** `time_now()`, `time_format()`, `time_sleep()`, etc.
-- **HTTP Client:** `http_get()`, `http_post()` - async networking built-in!
-- **Environment:** `env_args()`, `env_var()` for system interaction
+
+Nail has no package manager, on purpose. That means the standard library has to
+ship the things people actually need, audited and pinned, instead of leaving
+you to pull a stranger's crate to generate a UUID.
+
+- **Strings & Arrays:** `string_trim()`, `string_replace()`, `array_length()`, `array_join()`, `array_take()`, etc.
+- **Math & Numbers:** `math_sqrt()`, `math_atan2()`, `math_modulo()`, `bits_count_ones()`, `stats_median()`, `stats_percentile()`
+- **Files & Paths:** `fs_read()`, `fs_write()`, `fs_append()`, `fs_walk()`, `path_join()`, `path_exists()`
+- **Time & Dates:** `time_now()`, `time_format()`, `time_add_months()`, `time_weekday()` - real calendar arithmetic, all in UTC
+- **HTTP:** `http_request()` for clients, `http_server()` for servers - async networking built-in
+- **Data:** `json_serialize()`, `toml_deserialize()`, `csv_open()`, `db_sqlite_query()`
+- **Security:** `crypto_hash_password()` (Argon2id), `crypto_hmac_sha256()`, `crypto_random_hex()`, `crypto_secure_equal()`
+- **Command line:** `args_parse()` - describe your flags once and get the `--help` page from the same description
+- **Terminal:** `term_paint()`, `term_table()`, and `tui_run()` for full-screen programs
+- **Machine learning:** `ml_boost_fit()` (gradient boosting), `ml_tree_explain()`, `ml_kmeans()`, `ml_score()`
+- **Drawing:** `draw_svg()` and friends - charts and diagrams with no window and no graphics card
+- **Testing & logging:** `test_assert_equal_int()`, `log_info()`, `log_with_fields()`
+
+Two of these are worth calling out because nothing else ships them in a
+standard library:
+
+**`tui_run()` - full-screen terminal programs, described rather than drawn.**
+Every other TUI library in every other language makes you build widget objects
+and mutate them. Nail has nothing mutable, so instead you write two ordinary
+functions - `view(state)` says what the screen looks like, `update(state, event)`
+says what the state becomes - and the runtime owns raw mode, input, redrawing,
+resizing, and putting the terminal back even if your program panics. See
+`examples/tui_counter.nail`.
+
+**`ml_boost_*` - gradient boosted trees, hand-written, no dependencies.** The
+method that actually wins on tabular data, with quantile binning, missing-value
+routing learned per split, early stopping against a held-out set, and feature
+importance. `ml_tree_explain()` prints the rules a decision tree learned,
+because a model you can read beats a slightly better one you cannot.
 
 ### What Actually Works
 - **Full Compiler Pipeline:** Lexer → Parser → Type Checker → Transpiler → Rust
@@ -52,7 +79,7 @@ Nail not baby anymore. Nail teenager with attitude:
 - ✅ **Type Checker:** Catches errors before runtime
 - ✅ **Transpiler:** Generates clean, async Rust code
 - ✅ **IDE:** Full terminal IDE with syntax highlighting
-- ✅ **Standard Library:** 50+ functions across 15 modules
+- ✅ **Standard Library:** 500 functions across 50 modules, listed in full at [the website's library section](https://nail-idtq.onrender.com/#stdlib) or by calling `stdlib_functions()`
 - ✅ **Compiler Binary:** `nailc` for standalone compilation
 
 ## 📝 Example Nail Code
@@ -60,43 +87,43 @@ Nail not baby anymore. Nail teenager with attitude:
 ```nail
 // Structs for data
 struct User {
-    name: s,
-    age: i,
-    score: f
+    name:s,
+    age:i,
+    score:f
 }
 
-// Create user
-user: User = User { 
-    name: `Grug`, 
-    age: 42, 
-    score: 99.5 
+// Create user - struct literals use = for their fields
+user:User = User {
+    name = `Grug`,
+    age = 42,
+    score = 99.5
 };
 
 // Pattern matching
-message: s = if {
+message:s = if {
     user.age > 40 => { `Senior Grug`; },
     user.age > 20 => { `Adult Grug`; },
     else => { `Baby Grug`; }
 };
 
 // Functional programming
-numbers: a:i = [1, 2, 3, 4, 5];
-doubled: a:i = map num in numbers {
+numbers:a:i = [1, 2, 3, 4, 5];
+doubled:a:i = map num in numbers {
     y num * 2;
 };
-sum: i = reduce acc num in doubled from 0 {
+sum:i = reduce acc num in doubled from 0 {
     y acc + num;
 };
 
 // Parallel execution
 p
     print(`Computing...`);
-    expensive_result: f = math_sqrt(16.0);
-    time_sleep(1000);
+    expensive_result:f = math_sqrt(16.0);
+    time_sleep(1.0);
 /p
 
-// Error handling
-content: s = danger(file_read(`data.txt`));
+// Error handling - a result must be handled where it occurs
+content:s = danger(fs_read(`data.txt`));
 print(content);
 ```
 
@@ -133,7 +160,9 @@ print(content);
 
 4. **Run tests:**
    ```bash
-   ./run_comprehensive_tests.sh
+   ./test_all_stages.sh          # lexer/parser, type checker, transpiler
+   ./test_e2e.sh                 # compile and run every example, compare output
+   ./test_rust_compilation.sh    # compile the generated Rust (slow)
    ```
 
 ## 🎮 IDE Controls

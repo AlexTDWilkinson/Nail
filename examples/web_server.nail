@@ -34,7 +34,7 @@ html_content:s = array_join([`
     <div class="nail-box">
         <h1>🔨 Hello from Nail!</h1>
         <p>This webpage is being served by a Nail program using Axum under the hood.</p>
-        <p>The server is running on port <code>`, port_string, `</code></p>
+        <p>The server is running on port <code>`, port_string, html`</code></p>
         <p>Nail features demonstrated:</p>
         <ul>
             <li>String interpolation with backticks</li>
@@ -88,7 +88,7 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
         else => {
             r HTTP_Response {
                 status = 404,
-                body = `<pre>404 - not found</pre>`,
+                body = html`<pre>404 - not found</pre>`,
                 content_type = `text/html`,
                 headers = headers
             };
