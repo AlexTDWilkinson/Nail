@@ -14,5 +14,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "expect" => "std_lib::error::expect", (value: (T!e)) -> T,
             "Unwraps a result, crashing on error. Like danger, but signals the failure is considered impossible.",
             "config:s = expect(fs_read(`config.txt`));";
+        "error_message" => "std_lib::error::message", (err: e) -> s,
+            "The text inside an error value, for handlers that want to show it or wrap it.",
+            "f fallback(err:e):s { r error_message(err); }";
     }
 }

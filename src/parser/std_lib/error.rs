@@ -33,3 +33,11 @@ pub fn danger<T, E: std::fmt::Display>(value: Result<T, E>) -> T {
 pub fn expect<T, E: std::fmt::Display>(value: Result<T, E>) -> T {
     value.unwrap_or_else(|e| panic!("🔨 Nail Error: {}", e))
 }
+
+/// The text inside an error value, via Display rather than Debug, so a string
+/// error comes back without added quotes or escapes.
+///
+/// Usage inside a handler: f fallback(err:e):s { r error_message(err); }
+pub fn message<E: std::fmt::Display>(err: E) -> String {
+    format!("{}", err)
+}
