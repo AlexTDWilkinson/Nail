@@ -42,8 +42,7 @@ pub fn functions() -> Vec<STDLIB_Function> {
 }
 
 /// The namespaces that actually export something, alphabetically - the order
-/// `functions` lists them. Modules that share a namespace (SQLite, Postgres
-/// and DataFusion are all `db`) appear once.
+/// `functions` lists them.
 pub fn modules() -> Vec<String> {
     let exported: Vec<&StdlibModule> = STDLIB_FUNCTIONS.values().map(|function| &function.module).collect();
     let mut names: Vec<String> = Vec::new();

@@ -805,7 +805,7 @@ impl Transpiler {
     /// Every direct child expression/statement node of an AST node, used by the
     /// move-analysis walks below. Binder names (iterators, params) are handled
     /// by the callers, not here. The enumeration itself lives on ASTNode so
-    /// other passes (like the checker's sealed-code walk) share one definition.
+    /// other passes (like the checker's sandboxed-code walk) share one definition.
     fn ast_children(node: &ASTNode) -> Vec<&ASTNode> {
         node.children()
     }
@@ -3103,7 +3103,7 @@ mod tests {
 
     #[test]
     fn test_insert_safe_transpiles_identically_to_insert() {
-        // Sealing is a compile-time proof with zero runtime cost: a compliant
+        // Sandboxing is a compile-time proof with zero runtime cost: a compliant
         // file must produce byte-identical Rust either way it is included.
         let trusted_side = "greeting:s = shout_greeting(`world`);\nprint(greeting);";
         let via_insert = format!("insert(`tests/test_insert_safe_helper.nail`)\n{}", trusted_side);

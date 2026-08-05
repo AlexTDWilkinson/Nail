@@ -1,6 +1,6 @@
 // Fixture for the insert_safe checker unit tests. Valid on its own, but a
 // program that includes it with insert_safe must be rejected, because the
-// sealed function reads the disk.
-f sealed_read_config():s {
+// sandboxed function reads the disk.
+f sandboxed_read_config():s {
     r danger(fs_read(`config.txt`));
 }

@@ -150,7 +150,7 @@ pub fn checker(ast: &mut ASTNode) -> Result<(), Vec<CodeError>> {
     visit_node(ast, &mut state);
     check_recursive_structs(&mut state);
     check_unused_symbols(&mut state);
-    check_sealed_code(ast, &mut state);
+    check_sandboxed_code(ast, &mut state);
     if state.errors.is_empty() {
         Ok(())
     } else {
@@ -158,30 +158,30 @@ pub fn checker(ast: &mut ASTNode) -> Result<(), Vec<CodeError>> {
     }
 }
 
-/// Enforcement for insert_safe: code that arrived sealed may only compute,
-/// never touch the world. The taint set starts with the bodies of sealed
-/// functions and the initializers of sealed constants, then closes
-/// transitively over the user function call graph, so sealed code cannot
-/// launder an effect through an unsealed helper defined elsewhere. Every
-/// stdlib call reachable from sealed code must satisfy the registry's single
-/// policy question, is_sealed_safe. The checker itself knows no function or
+/// Enforcement for insert_safe: code that arrived sandboxed may only compute,
+/// never touch the world. The taint set starts with the bodies of sandboxed
+/// functions and the initializers of sandboxed constants, then closes
+/// transitively over the user function call graph, so sandboxed code cannot
+/// launder an effect through an unsandboxed helper defined elsewhere. Every
+/// stdlib call reachable from sandboxed code must satisfy the registry's single
+/// policy question, is_sandbox_safe. The checker itself knows no function or
 /// module names.
-fn check_sealed_code(ast: &ASTNode, state: &mut AnalyzerState) {
+fn check_sandboxed_code(ast: &ASTNode, state: &mut AnalyzerState) {
     let mut functions: HashMap<&str, (&ASTNode, bool)> = HashMap::new();
     collect_function_declarations(ast, &mut functions);
 
-    let mut worklist: Vec<&str> = functions.iter().filter(|(_, (_, sealed))| *sealed).map(|(name, _)| *name).collect();
+    let mut worklist: Vec<&str> = functions.iter().filter(|(_, (_, sandboxed))| *sandboxed).map(|(name, _)| *name).collect();
 
-    // Sealed constant initializers run when the program starts, so they are
+    // Sandboxed constant initializers run when the program starts, so they are
     // checked directly and any user function they mention becomes tainted
-    let mut sealed_const_initializers: Vec<&ASTNode> = Vec::new();
-    collect_sealed_const_initializers(ast, &mut sealed_const_initializers);
-    for initializer in sealed_const_initializers {
+    let mut sandboxed_const_initializers: Vec<&ASTNode> = Vec::new();
+    collect_sandboxed_const_initializers(ast, &mut sandboxed_const_initializers);
+    for initializer in sandboxed_const_initializers {
         let mut calls = Vec::new();
         let mut references = HashSet::new();
         collect_calls_and_references(initializer, &mut calls, &mut references);
         for (call_name, code_span) in calls {
-            check_sealed_stdlib_call(call_name, code_span, None, state);
+            check_sandboxed_stdlib_call(call_name, code_span, None, state);
         }
         for reference in references {
             if functions.contains_key(reference) {
@@ -196,13 +196,13 @@ fn check_sealed_code(ast: &ASTNode, state: &mut AnalyzerState) {
         if !visited.insert(function_name) {
             continue;
         }
-        let Some((body, directly_sealed)) = functions.get(function_name).copied() else { continue };
+        let Some((body, directly_sandboxed)) = functions.get(function_name).copied() else { continue };
         let mut calls = Vec::new();
         let mut references = HashSet::new();
         collect_calls_and_references(body, &mut calls, &mut references);
-        let caller = if directly_sealed { None } else { Some(function_name) };
+        let caller = if directly_sandboxed { None } else { Some(function_name) };
         for (call_name, code_span) in calls {
-            check_sealed_stdlib_call(call_name, code_span, caller, state);
+            check_sandboxed_stdlib_call(call_name, code_span, caller, state);
         }
         for reference in references {
             if functions.contains_key(reference) {
@@ -213,30 +213,30 @@ fn check_sealed_code(ast: &ASTNode, state: &mut AnalyzerState) {
 }
 
 /// One tainted call site: if it is a stdlib call the registry denies to
-/// sealed code, report it. Unknown names are skipped, the main visit already
-/// reported those, so one bad call does not cascade. `unsealed_caller` names
-/// the function holding the call when it is only reachable from sealed code
-/// rather than sealed itself, which changes how the error reads.
-fn check_sealed_stdlib_call(call_name: &str, code_span: CodeSpan, unsealed_caller: Option<&str>, state: &mut AnalyzerState) {
+/// sandboxed code, report it. Unknown names are skipped, the main visit already
+/// reported those, so one bad call does not cascade. `unsandboxed_caller` names
+/// the function holding the call when it is only reachable from sandboxed code
+/// rather than sandboxed itself, which changes how the error reads.
+fn check_sandboxed_stdlib_call(call_name: &str, code_span: CodeSpan, unsandboxed_caller: Option<&str>, state: &mut AnalyzerState) {
     if crate::stdlib_registry::get_stdlib_function(call_name).is_none() {
         return;
     }
-    if crate::stdlib_registry::is_sealed_safe(call_name) {
+    if crate::stdlib_registry::is_sandbox_safe(call_name) {
         return;
     }
-    let reason = crate::stdlib_registry::sealed_deny_reason(call_name).unwrap_or("is not allowed in sealed code");
+    let reason = crate::stdlib_registry::sandbox_deny_reason(call_name).unwrap_or("is not allowed in sandboxed code");
     let module = crate::stdlib_registry::get_stdlib_function(call_name).map(|function| function.module.display_name()).unwrap_or("stdlib");
     let mut span = code_span;
-    match unsealed_caller {
+    match unsandboxed_caller {
         None => add_error_with_help(
             state,
-            format!("Sealed code cannot call '{}': the '{}' module {}", call_name, module, reason),
+            format!("Sandboxed code inserted by insert_safe cannot access '{}': the '{}' module {}", call_name, module, reason),
             Some(format!("call '{}' from your own trusted code instead, or include the file with plain insert if you trust it", call_name)),
             &mut span,
         ),
         Some(caller) => add_error_with_help(
             state,
-            format!("'{}' is reachable from sealed code, so it cannot call '{}': the '{}' module {}", caller, call_name, module, reason),
+            format!("'{}' is reachable from sandboxed code inserted by insert_safe, so it cannot access '{}': the '{}' module {}", caller, call_name, module, reason),
             Some(format!("keep '{}' out of reach of code included with insert_safe, or include that file with plain insert if you trust it", caller)),
             &mut span,
         ),
@@ -247,8 +247,8 @@ fn check_sealed_stdlib_call(call_name: &str, code_span: CodeSpan, unsealed_calle
 /// of a name wins, matching how duplicate definitions are already reported
 /// during signature hoisting.
 fn collect_function_declarations<'a>(node: &'a ASTNode, functions: &mut HashMap<&'a str, (&'a ASTNode, bool)>) {
-    if let ASTNode::FunctionDeclaration { name, body, sealed, .. } = node {
-        functions.entry(name.as_str()).or_insert((body.as_ref(), *sealed));
+    if let ASTNode::FunctionDeclaration { name, body, sandboxed, .. } = node {
+        functions.entry(name.as_str()).or_insert((body.as_ref(), *sandboxed));
     }
     for child in node.children() {
         collect_function_declarations(child, functions);
@@ -256,12 +256,12 @@ fn collect_function_declarations<'a>(node: &'a ASTNode, functions: &mut HashMap<
 }
 
 /// Initializer expressions of constants that arrived through insert_safe.
-fn collect_sealed_const_initializers<'a>(node: &'a ASTNode, initializers: &mut Vec<&'a ASTNode>) {
-    if let ASTNode::ConstDeclaration { value, sealed: true, .. } = node {
+fn collect_sandboxed_const_initializers<'a>(node: &'a ASTNode, initializers: &mut Vec<&'a ASTNode>) {
+    if let ASTNode::ConstDeclaration { value, sandboxed: true, .. } = node {
         initializers.push(value.as_ref());
     }
     for child in node.children() {
-        collect_sealed_const_initializers(child, initializers);
+        collect_sandboxed_const_initializers(child, initializers);
     }
 }
 
@@ -2944,67 +2944,67 @@ mod tests {
                     greeting:s = shout_greeting(`world`);\n\
                     print(greeting);";
         let errors = check_errors(code);
-        assert!(errors.is_empty(), "Pure sealed helper should pass, got: {:?}", errors);
+        assert!(errors.is_empty(), "Pure sandboxed helper should pass, got: {:?}", errors);
     }
 
     #[test]
-    fn test_insert_safe_rejects_fs_read_in_sealed_function() {
+    fn test_insert_safe_rejects_fs_read_in_sandboxed_function() {
         let code = "insert_safe(`tests/test_insert_safe_fixture_fs.nail`)\n\
-                    content:s = sealed_read_config();\n\
+                    content:s = sandboxed_read_config();\n\
                     print(content);";
         let errors = check_errors(code);
-        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'fs_read'")), "Expected a sealed fs_read rejection, got: {:?}", errors);
+        assert!(errors.iter().any(|message| message.contains("Sandboxed code inserted by insert_safe cannot access 'fs_read'")), "Expected a sandboxed fs_read rejection, got: {:?}", errors);
     }
 
     #[test]
-    fn test_insert_safe_rejects_laundering_through_unsealed_helper() {
-        // The sealed file calls fetch_report, which the trusted side defines
-        // and which performs a network call. Reachability from sealed code
+    fn test_insert_safe_rejects_laundering_through_unsandboxed_helper() {
+        // The sandboxed file calls fetch_report, which the trusted side defines
+        // and which performs a network call. Reachability from sandboxed code
         // must taint it.
         let code = "insert_safe(`tests/test_insert_safe_fixture_launder.nail`)\n\
                     f fetch_report():s {\n\
                         written:i = danger(http_download_file(`https://example.com/x`, `x.bin`));\n\
                         r string_from(written);\n\
                     }\n\
-                    report:s = sealed_launder();\n\
+                    report:s = sandboxed_launder();\n\
                     print(report);";
         let errors = check_errors(code);
         assert!(
-            errors.iter().any(|message| message.contains("'fetch_report' is reachable from sealed code") && message.contains("http_download_file")),
+            errors.iter().any(|message| message.contains("'fetch_report' is reachable from sandboxed code") && message.contains("http_download_file")),
             "Expected a laundering rejection through fetch_report, got: {:?}",
             errors
         );
     }
 
     #[test]
-    fn test_insert_safe_seals_nested_plain_insert() {
-        // The sealed file plain-inserts another file whose function reads the
-        // disk. The whole subtree is sealed, so the read is still rejected.
+    fn test_insert_safe_sandboxes_nested_plain_insert() {
+        // The sandboxed file plain-inserts another file whose function reads the
+        // disk. The whole subtree is sandboxed, so the read is still rejected.
         let code = "insert_safe(`tests/test_insert_safe_fixture_nested.nail`)\n\
-                    value:s = sealed_wrapper();\n\
+                    value:s = sandboxed_wrapper();\n\
                     print(value);";
         let errors = check_errors(code);
-        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'fs_read'")), "Expected the nested plain insert to stay sealed, got: {:?}", errors);
+        assert!(errors.iter().any(|message| message.contains("Sandboxed code inserted by insert_safe cannot access 'fs_read'")), "Expected the nested plain insert to stay sandboxed, got: {:?}", errors);
     }
 
     #[test]
     fn test_insert_safe_rejects_time_sleep_and_print_but_allows_log() {
         let code = "insert_safe(`tests/test_insert_safe_fixture_seize.nail`)\n\
-                    sealed_wait();\n\
-                    sealed_shout();\n\
+                    sandboxed_wait();\n\
+                    sandboxed_shout();\n\
                     log_line();";
         let errors = check_errors(code);
-        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'time_sleep'")), "Expected time_sleep to be denied, got: {:?}", errors);
-        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'print'")), "Expected print to be denied, got: {:?}", errors);
-        assert!(!errors.iter().any(|message| message.contains("log_info")), "log_info must stay allowed in sealed code, got: {:?}", errors);
+        assert!(errors.iter().any(|message| message.contains("Sandboxed code inserted by insert_safe cannot access 'time_sleep'")), "Expected time_sleep to be denied, got: {:?}", errors);
+        assert!(errors.iter().any(|message| message.contains("Sandboxed code inserted by insert_safe cannot access 'print'")), "Expected print to be denied, got: {:?}", errors);
+        assert!(!errors.iter().any(|message| message.contains("log_info")), "log_info must stay allowed in sandboxed code, got: {:?}", errors);
     }
 
     #[test]
-    fn test_insert_safe_rejects_sealed_const_initializer_effect() {
+    fn test_insert_safe_rejects_sandboxed_const_initializer_effect() {
         let code = "insert_safe(`tests/test_insert_safe_fixture_const.nail`)\n\
-                    print(sealed_home);";
+                    print(sandboxed_home);";
         let errors = check_errors(code);
-        assert!(errors.iter().any(|message| message.contains("Sealed code cannot call 'env_get'")), "Expected the sealed const initializer to be rejected, got: {:?}", errors);
+        assert!(errors.iter().any(|message| message.contains("Sandboxed code inserted by insert_safe cannot access 'env_get'")), "Expected the sandboxed const initializer to be rejected, got: {:?}", errors);
     }
 
     #[test]
@@ -3024,13 +3024,13 @@ mod tests {
     }
 
     #[test]
-    fn test_plain_insert_is_not_sealed() {
+    fn test_plain_insert_is_not_sandboxed() {
         // The fs-reading fixture is fine through plain insert: trust is the
-        // programmer's call there, insert_safe is the sealed variant.
+        // programmer's call there, insert_safe is the sandboxed variant.
         let code = "insert(`tests/test_insert_safe_fixture_fs.nail`)\n\
-                    content:s = sealed_read_config();\n\
+                    content:s = sandboxed_read_config();\n\
                     print(content);";
         let errors = check_errors(code);
-        assert!(errors.is_empty(), "Plain insert must not seal anything, got: {:?}", errors);
+        assert!(errors.is_empty(), "Plain insert must not sandbox anything, got: {:?}", errors);
     }
 }

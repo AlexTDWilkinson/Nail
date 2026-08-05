@@ -8,7 +8,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap, CrateDependency::Uuid, CrateDependency::Serde],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
         ],
@@ -23,7 +23,7 @@ m.insert("db_sqlite_memory", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap, CrateDependency::Uuid, CrateDependency::Serde],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![],
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_SQLite".to_string()))),
         diverging: false,
@@ -36,7 +36,7 @@ m.insert("db_sqlite_execute", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap, CrateDependency::Serde],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database"), ("DB_Result", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -52,7 +52,7 @@ m.insert("db_sqlite_execute_params", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap, CrateDependency::Serde],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database"), ("DB_Result", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
@@ -69,7 +69,7 @@ m.insert("db_sqlite_query", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
         struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -85,7 +85,7 @@ m.insert("db_sqlite_query_single", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
         struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false }
@@ -101,7 +101,7 @@ m.insert("db_sqlite_query_params", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
         struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
@@ -118,7 +118,7 @@ m.insert("db_sqlite_query_single_params", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::Serde],
         struct_derives: vec![StructDerive::SerdeSerialize, StructDerive::SerdeDeserialize],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "sql".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
@@ -135,7 +135,7 @@ m.insert("db_sqlite_close", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true }
         ],
@@ -150,7 +150,7 @@ m.insert("db_sqlite_begin", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true }
         ],
@@ -165,7 +165,7 @@ m.insert("db_sqlite_commit", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true }
         ],
@@ -180,7 +180,7 @@ m.insert("db_sqlite_rollback", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true }
         ],
@@ -195,7 +195,7 @@ m.insert("db_sqlite_execute_batch", StdlibFunction {
         crate_deps: vec![CrateDependency::Rusqlite, CrateDependency::DashMap],
         struct_derives: vec![],
         custom_type_imports: vec![("DB_SQLite", "nail::std_lib::database"), ("DB_Result", "nail::std_lib::database")],
-        module: StdlibModule::Database,
+        module: StdlibModule::Sqlite,
         parameters: vec![
             StdlibParameter { name: "db".to_string(), param_type: NailDataTypeDescriptor::Struct("DB_SQLite".to_string()), pass_by_reference: true },
             StdlibParameter { name: "statements".to_string(), param_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false }

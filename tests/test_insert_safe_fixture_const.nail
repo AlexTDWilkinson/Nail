@@ -1,4 +1,4 @@
 // Fixture for the insert_safe checker unit tests. Valid on its own, but a
 // program that includes it with insert_safe must be rejected, because this
 // constant's initializer runs at startup and reads the environment.
-sealed_home:s = danger(env_get(`HOME`));
+sandboxed_home:s = danger(env_get(`HOME`));

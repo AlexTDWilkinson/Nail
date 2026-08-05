@@ -1,15 +1,15 @@
 // Fixture for the insert_safe checker unit tests. Valid on its own, but a
-// program that includes it with insert_safe must be rejected twice: sealed
+// program that includes it with insert_safe must be rejected twice: sandboxed
 // code may not block the program with time_sleep and may not seize stdout
 // with print. The log_line function is the allowed case, stderr logging.
-f sealed_wait():v {
+f sandboxed_wait():v {
     time_sleep(0.1);
 }
 
-f sealed_shout():v {
-    print(`sealed code should not own stdout`);
+f sandboxed_shout():v {
+    print(`sandboxed code should not own stdout`);
 }
 
 f log_line():v {
-    log_info(`stderr logging is allowed in sealed code`);
+    log_info(`stderr logging is allowed in sandboxed code`);
 }

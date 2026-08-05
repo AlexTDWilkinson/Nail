@@ -95,9 +95,9 @@ pub enum TokenType {
     Dot,                                     // For dot operator (.)
     IfDeclaration,                           // For if keyword
     InsertKeyword,                           // For insert keyword (file insertion)
-    InsertSafeKeyword,                       // For insert_safe keyword (sealed file insertion)
-    SealedStart,                             // Marks where tokens spliced by insert_safe begin
-    SealedEnd,                               // Marks where tokens spliced by insert_safe end
+    InsertSafeKeyword,                       // For insert_safe keyword (sandboxed file insertion)
+    SandboxStart,                             // Marks where tokens spliced by insert_safe begin
+    SandboxEnd,                               // Marks where tokens spliced by insert_safe end
     ElseDeclaration,                         // For else keyword
     ParallelStart,                           // For p keyword
     ParallelEnd,                             // For /p keyword
@@ -191,8 +191,8 @@ impl TokenType {
             TokenType::ElseDeclaration => "the 'else' keyword".to_string(),
             TokenType::InsertKeyword => "the 'insert' keyword".to_string(),
             TokenType::InsertSafeKeyword => "the 'insert_safe' keyword".to_string(),
-            TokenType::SealedStart => "the start of a sealed insert_safe inclusion".to_string(),
-            TokenType::SealedEnd => "the end of a sealed insert_safe inclusion".to_string(),
+            TokenType::SandboxStart => "the start of a sandboxed insert_safe inclusion".to_string(),
+            TokenType::SandboxEnd => "the end of a sandboxed insert_safe inclusion".to_string(),
             TokenType::ParallelStart => "the 'p' (parallel) keyword".to_string(),
             TokenType::ParallelEnd => "the '/p' (end parallel) keyword".to_string(),
             TokenType::ConcurrentStart => "the 'c' (concurrent) keyword".to_string(),
@@ -442,10 +442,10 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                 
                 // Check if this is an insert or insert_safe keyword followed by a
                 // file path. Both splice the included file's tokens in place.
-                // insert_safe additionally wraps the splice in SealedStart and
-                // SealedEnd markers so later stages know the code is untrusted.
+                // insert_safe additionally wraps the splice in SandboxStart and
+                // SandboxEnd markers so later stages know the code is untrusted.
                 if lexer_output.token_type == TokenType::InsertKeyword || lexer_output.token_type == TokenType::InsertSafeKeyword {
-                    let sealed = lexer_output.token_type == TokenType::InsertSafeKeyword;
+                    let sandboxed = lexer_output.token_type == TokenType::InsertSafeKeyword;
                     // Skip whitespace
                     while let Some(&c) = chars.peek() {
                         if c.is_whitespace() {
@@ -511,17 +511,17 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                         Ok(inserted_tokens) => {
                                             // A plain insert nested inside a safe-inserted
                                             // file already lands between the outer markers,
-                                            // so the whole subtree is sealed either way.
-                                            if sealed {
+                                            // so the whole subtree is sandboxed either way.
+                                            if sandboxed {
                                                 tokens.push(Token {
-                                                    token_type: TokenType::SealedStart,
+                                                    token_type: TokenType::SandboxStart,
                                                     code_span: CodeSpan { start_line: lexer_output.start_line, end_line: lexer_output.end_line, start_column: lexer_output.start_column, end_column: lexer_output.end_column },
                                                 });
                                             }
                                             tokens.extend(inserted_tokens);
-                                            if sealed {
+                                            if sandboxed {
                                                 tokens.push(Token {
-                                                    token_type: TokenType::SealedEnd,
+                                                    token_type: TokenType::SandboxEnd,
                                                     code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column },
                                                 });
                                             }

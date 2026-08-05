@@ -292,11 +292,11 @@ macro_rules! stdlib_modules {
 
             /// What the module is called anywhere a person reads it - the IDE's
             /// library browser, the website's function list, documentation.
-            /// It is the namespace the programmer actually types: the function
-            /// prefix up to its first underscore, so `db_`, `db_postgres_` and
-            /// `db_datafusion_` all read `db`. Derived rather than written by
-            /// hand so the name a listing shows can never drift from the name
-            /// a program calls.
+            /// It is the module's whole function prefix without the trailing
+            /// underscore, so `db_sqlite_` reads `db_sqlite` and `ml_boost_`
+            /// reads `ml_boost`. Derived rather than written by hand so the
+            /// name a listing shows can never drift from the name a program
+            /// calls.
             pub fn display_name(&self) -> &'static str {
                 // The whole prefix, so families read as their own groups:
                 // db_postgres and ml_boost, not one giant db or ml.
@@ -388,7 +388,7 @@ stdlib_modules! {
     Compress => "std_lib::compress", "compress_",
     Archive => "std_lib::archive", "archive_",
     Net => "std_lib::net", "net_",
-    Database => "std_lib::database", "db_",
+    Sqlite => "std_lib::database", "db_sqlite_",
     DataFusion => "std_lib::datafusion", "db_datafusion_",
     Postgres => "std_lib::postgres", "db_postgres_",
     Valkey => "std_lib::valkey", "db_valkey_",
@@ -653,38 +653,38 @@ pub fn file_fold(name: &str) -> Option<FileFold> {
     };
 }
 
-/// Deny phrases for sealed-code policy, shared between the module defaults
+/// Deny phrases for sandboxed-code policy, shared between the module defaults
 /// and the per-function overrides below.
-const SEALED_TOUCHES_MACHINE: &str = "touches the machine";
-const SEALED_READS_MACHINE_STATE: &str = "reads machine state";
-const SEALED_HOLDS_GLOBAL_STATE: &str = "holds global state";
-const SEALED_SEIZES_RESOURCE: &str = "seizes a resource";
+const SANDBOX_TOUCHES_MACHINE: &str = "touches the machine";
+const SANDBOX_READS_MACHINE_STATE: &str = "reads machine state";
+const SANDBOX_HOLDS_GLOBAL_STATE: &str = "holds global state";
+const SANDBOX_SEIZES_RESOURCE: &str = "seizes a resource";
 
-/// Functions denied inside sealed code even though their module is otherwise
+/// Functions denied inside sandboxed code even though their module is otherwise
 /// allowed, each with the phrase explaining why.
-const SEALED_DENIED_FUNCTIONS: &[(&str, &str)] = &[
+const SANDBOX_DENIED_FUNCTIONS: &[(&str, &str)] = &[
     // Time arithmetic is pure, but sleeping holds the thread hostage
-    ("time_sleep", SEALED_SEIZES_RESOURCE),
+    ("time_sleep", SANDBOX_SEIZES_RESOURCE),
     // CSV text work is pure, but these take a file path or hold a file handle
-    ("csv_write", SEALED_TOUCHES_MACHINE),
-    ("csv_open", SEALED_TOUCHES_MACHINE),
-    ("csv_next_rows", SEALED_TOUCHES_MACHINE),
-    ("csv_close", SEALED_TOUCHES_MACHINE),
+    ("csv_write", SANDBOX_TOUCHES_MACHINE),
+    ("csv_open", SANDBOX_TOUCHES_MACHINE),
+    ("csv_next_rows", SANDBOX_TOUCHES_MACHINE),
+    ("csv_close", SANDBOX_TOUCHES_MACHINE),
     // Hashing is pure, but these two read the file themselves
-    ("crypto_hash_file_sha256", SEALED_TOUCHES_MACHINE),
-    ("crypto_hash_file_blake3", SEALED_TOUCHES_MACHINE),
+    ("crypto_hash_file_sha256", SANDBOX_TOUCHES_MACHINE),
+    ("crypto_hash_file_blake3", SANDBOX_TOUCHES_MACHINE),
     // Path strings are pure, but these two consult the real filesystem
-    ("path_exists", SEALED_READS_MACHINE_STATE),
-    ("path_absolute", SEALED_READS_MACHINE_STATE),
+    ("path_exists", SANDBOX_READS_MACHINE_STATE),
+    ("path_absolute", SANDBOX_READS_MACHINE_STATE),
     // Terminal styling builds strings, but these three ask the real terminal
-    ("term_is_tty", SEALED_READS_MACHINE_STATE),
-    ("term_width", SEALED_READS_MACHINE_STATE),
-    ("term_height", SEALED_READS_MACHINE_STATE),
+    ("term_is_tty", SANDBOX_READS_MACHINE_STATE),
+    ("term_width", SANDBOX_READS_MACHINE_STATE),
+    ("term_height", SANDBOX_READS_MACHINE_STATE),
 ];
 
-/// Functions allowed inside sealed code even though their module is otherwise
+/// Functions allowed inside sandboxed code even though their module is otherwise
 /// denied.
-const SEALED_ALLOWED_FUNCTIONS: &[&str] = &[
+const SANDBOX_ALLOWED_FUNCTIONS: &[&str] = &[
     // Pure IP and CIDR arithmetic on values passed in, no sockets involved
     "net_ip_in_cidr",
     "net_ip_is_private",
@@ -692,19 +692,19 @@ const SEALED_ALLOWED_FUNCTIONS: &[&str] = &[
     "net_ip_version",
     "net_ip_to_int",
     "net_ip_from_int",
-    // Writes to stderr, which sealed code may use like log_* does
+    // Writes to stderr, which sandboxed code may use like log_* does
     "print_error",
 ];
 
-/// Why a stdlib function is denied inside sealed (insert_safe) code, as a
+/// Why a stdlib function is denied inside sandboxed (insert_safe) code, as a
 /// short phrase for error messages, or None when the function is safe there.
-/// Sealed code may only compute: module-level defaults with per-function
+/// Sandboxed code may only compute: module-level defaults with per-function
 /// overrides, so all policy lives here and the checker asks one question.
-pub fn sealed_deny_reason(name: &str) -> Option<&'static str> {
-    if SEALED_ALLOWED_FUNCTIONS.contains(&name) {
+pub fn sandbox_deny_reason(name: &str) -> Option<&'static str> {
+    if SANDBOX_ALLOWED_FUNCTIONS.contains(&name) {
         return None;
     }
-    if let Some((_, reason)) = SEALED_DENIED_FUNCTIONS.iter().find(|(denied, _)| *denied == name) {
+    if let Some((_, reason)) = SANDBOX_DENIED_FUNCTIONS.iter().find(|(denied, _)| *denied == name) {
         return Some(reason);
     }
     match get_stdlib_function(name).map(|f| &f.module) {
@@ -723,29 +723,29 @@ pub fn sealed_deny_reason(name: &str) -> Option<&'static str> {
             | StdlibModule::Image
             | StdlibModule::Pdf
             | StdlibModule::Xlsx
-            | StdlibModule::Database
+            | StdlibModule::Sqlite
             | StdlibModule::DataFusion
             | StdlibModule::Postgres
             | StdlibModule::Valkey,
-        ) => Some(SEALED_TOUCHES_MACHINE),
+        ) => Some(SANDBOX_TOUCHES_MACHINE),
         // Reads machine or invocation state: environment, system facts,
         // command-line arguments, and stdin
-        Some(StdlibModule::Env | StdlibModule::Sys | StdlibModule::Args | StdlibModule::IO) => Some(SEALED_READS_MACHINE_STATE),
+        Some(StdlibModule::Env | StdlibModule::Sys | StdlibModule::Args | StdlibModule::IO) => Some(SANDBOX_READS_MACHINE_STATE),
         // Process-global state visible across the whole program
-        Some(StdlibModule::Cache | StdlibModule::I18n) => Some(SEALED_HOLDS_GLOBAL_STATE),
+        Some(StdlibModule::Cache | StdlibModule::I18n) => Some(SANDBOX_HOLDS_GLOBAL_STATE),
         // Seizes a resource the program owns: stdout, the terminal, or the
         // scheduler
-        Some(StdlibModule::Print | StdlibModule::Tui | StdlibModule::Sched) => Some(SEALED_SEIZES_RESOURCE),
+        Some(StdlibModule::Print | StdlibModule::Tui | StdlibModule::Sched) => Some(SANDBOX_SEIZES_RESOURCE),
         // Everything else is pure computation on values passed in, plus
-        // log_* (stderr cannot exfiltrate and keeps sealed code debuggable)
+        // log_* (stderr cannot exfiltrate and keeps sandboxed code debuggable)
         Some(_) => None,
         None => None,
     }
 }
 
-/// Whether sealed (insert_safe) code may call this stdlib function.
-pub fn is_sealed_safe(name: &str) -> bool {
-    sealed_deny_reason(name).is_none()
+/// Whether sandboxed (insert_safe) code may call this stdlib function.
+pub fn is_sandbox_safe(name: &str) -> bool {
+    sandbox_deny_reason(name).is_none()
 }
 
 pub fn is_stdlib_fn_async(name: &str) -> bool {
@@ -758,7 +758,7 @@ pub fn is_stdlib_fn_async(name: &str) -> bool {
     }
     matches!(
         get_stdlib_function(name).map(|f| &f.module),
-        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx | StdlibModule::Sched | StdlibModule::Valkey | StdlibModule::Mcp)
+        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Sqlite | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx | StdlibModule::Sched | StdlibModule::Valkey | StdlibModule::Mcp)
     )
 }
 
@@ -1541,20 +1541,47 @@ pub fn is_stdlib_enum(name: &str) -> bool {
     STDLIB_ENUMS.contains_key(name)
 }
 
-/// Where a stdlib type lives in Rust, worked out from the namespace its name
-/// carries rather than from a second table that could disagree with the first.
+lazy_static! {
+    /// Where each stdlib type lives in Rust, collected from the
+    /// `custom_type_imports` the functions already declare rather than from a
+    /// second hand-written table that could disagree with them. A drift test
+    /// asserts no two functions import the same type from different paths.
+    static ref STDLIB_TYPE_PATHS: HashMap<&'static str, &'static str> = {
+        let mut paths = HashMap::new();
+        for function in STDLIB_FUNCTIONS.values() {
+            for (type_name, path) in &function.custom_type_imports {
+                paths.insert(*type_name, *path);
+            }
+        }
+        paths
+    };
+}
+
+/// Where a stdlib type lives in Rust. This is what lets a program name a
+/// stdlib type in its own function signatures without having called a stdlib
+/// function that happens to import it - writing `view` and `update` before
+/// ever calling `tui_run`, for instance.
 ///
-/// `TUI_Screen` starts with the Terminal Interfaces module's namespace, so it
-/// lives at `nail::std_lib::tui::TUI_Screen`. This is what lets a program name
-/// a stdlib type in its own function signatures without having called a
-/// stdlib function that happens to import it - writing `view` and `update`
-/// before ever calling `tui_run`, for instance.
+/// The path comes from the `custom_type_imports` of whichever function ships
+/// the type. A few types no function imports (the linalg structs) fall back
+/// to the namespace their name carries: `LINALG_Vec2` starts with the linear
+/// algebra module's namespace, so it lives at `nail::std_lib::linalg`. The
+/// fallback only matches modules whose prefix is a single word, because a
+/// family like `db_sqlite_` and `db_postgres_` shares one `DB_` namespace
+/// across different Rust modules, which a name alone cannot tell apart.
 pub fn stdlib_type_rust_path(type_name: &str) -> Option<String> {
     if !STDLIB_TYPES.contains_key(type_name) && !STDLIB_ENUMS.contains_key(type_name) {
         return None;
     }
+    if let Some(path) = STDLIB_TYPE_PATHS.get(type_name) {
+        return Some(format!("{}::{}", path, type_name));
+    }
     for module in StdlibModule::all() {
-        let namespace = module.name_prefix().trim_end_matches('_').to_uppercase() + "_";
+        let prefix = module.name_prefix().trim_end_matches('_');
+        if prefix.contains('_') {
+            continue;
+        }
+        let namespace = prefix.to_uppercase() + "_";
         if type_name.starts_with(&namespace) {
             return Some(format!("nail::{}::{}", module.to_module_path(), type_name));
         }
@@ -1686,22 +1713,57 @@ mod stdlib_types_drift_tests {
         }
     }
 
-    /// The type side of the same rule. Every stdlib struct and enum starts with
-    /// a module namespace in upper case, so a Nail program can tell a library
-    /// type from one of its own at a glance.
+    /// The type side of the same rule. Every stdlib struct and enum starts
+    /// with a module family's namespace in upper case, so a Nail program can
+    /// tell a library type from one of its own at a glance. The family is the
+    /// first word of the prefix: db_sqlite and db_postgres types both wear
+    /// `DB_`, the way ml_boost types wear `ML_`.
     #[test]
     fn stdlib_type_names_carry_their_namespace() {
         let namespaces: Vec<String> = StdlibModule::all()
             .iter()
-            .map(|module| module.name_prefix().trim_end_matches('_').to_uppercase() + "_")
+            .map(|module| module.name_prefix().trim_end_matches('_').split('_').next().unwrap().to_uppercase() + "_")
             .collect();
         let named = STDLIB_TYPES.keys().copied().chain(STDLIB_ENUMS.keys().copied());
         for name in named {
             assert!(
                 namespaces.iter().any(|namespace| name.starts_with(namespace.as_str())),
-                "stdlib type '{}' must start with its library's namespace, e.g. CSV_ or HTTP_",
+                "stdlib type '{}' must start with its library family's namespace, e.g. CSV_ or DB_",
                 name
             );
+        }
+    }
+
+    /// Every registered type must resolve to its Rust home, through a
+    /// function's custom_type_imports or the single-word namespace fallback,
+    /// so the transpiler can import it whenever a program names it.
+    #[test]
+    fn stdlib_types_all_resolve_to_a_rust_path() {
+        let named = STDLIB_TYPES.keys().copied().chain(STDLIB_ENUMS.keys().copied());
+        for name in named {
+            assert!(
+                stdlib_type_rust_path(name).is_some(),
+                "stdlib type '{}' has no resolvable Rust path: no function imports it and no single-word module namespace matches it",
+                name
+            );
+        }
+    }
+
+    /// Two functions importing one type from different paths would make the
+    /// resolved import depend on registry iteration order.
+    #[test]
+    fn stdlib_type_imports_agree_on_paths() {
+        let mut seen: HashMap<&str, &str> = HashMap::new();
+        for (function_name, function) in STDLIB_FUNCTIONS.iter() {
+            for (type_name, path) in &function.custom_type_imports {
+                if let Some(existing) = seen.insert(*type_name, *path) {
+                    assert_eq!(
+                        existing, *path,
+                        "stdlib type '{}' is imported from two different paths (second one seen at function '{}')",
+                        type_name, function_name
+                    );
+                }
+            }
         }
     }
 

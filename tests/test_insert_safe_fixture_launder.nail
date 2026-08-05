@@ -1,7 +1,7 @@
 // should FAIL type checking: on its own this file calls a function that does
 // not exist. It is a fixture for the insert_safe checker unit tests, where
-// the including program defines fetch_report as an unsealed helper and the
-// sealed code below tries to launder a network call through it.
-f sealed_launder():s {
+// the including program defines fetch_report as an unsandboxed helper and the
+// sandboxed code below tries to launder a network call through it.
+f sandboxed_launder():s {
     r fetch_report();
 }

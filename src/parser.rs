@@ -12,10 +12,10 @@ pub mod std_lib;
 #[derive(Debug, PartialEq, Clone)]
 pub enum ASTNode {
     Program { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
-    FunctionDeclaration { name: String, params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, sealed: bool, code_span: CodeSpan, scope: usize },
+    FunctionDeclaration { name: String, params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, sandboxed: bool, code_span: CodeSpan, scope: usize },
     LambdaDeclaration { params: Vec<(String, NailDataTypeDescriptor)>, data_type: NailDataTypeDescriptor, body: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     FunctionCall { name: String, args: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
-    ConstDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode>, sealed: bool, code_span: CodeSpan, scope: usize },
+    ConstDeclaration { name: String, data_type: NailDataTypeDescriptor, value: Box<ASTNode>, sandboxed: bool, code_span: CodeSpan, scope: usize },
     IfStatement { condition_branches: Vec<(Box<ASTNode>, Box<ASTNode>)>, else_branch: Option<Box<ASTNode>>, code_span: CodeSpan, scope: usize },
     ForLoop { 
         iterator: String, 
@@ -261,36 +261,36 @@ pub struct ParserState {
     current_token: Option<Token>,
     previous_token: Option<Token>,
     // How many insert_safe inclusions the parser is currently inside. The
-    // lexer wraps each safe-inserted file's tokens in SealedStart/SealedEnd
+    // lexer wraps each safe-inserted file's tokens in SandboxStart/SandboxEnd
     // markers, and nesting simply nests the marker pairs.
-    sealed_depth: usize,
+    sandbox_depth: usize,
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, CodeError> {
-    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None, sealed_depth: 0 };
+    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None, sandbox_depth: 0 };
     parse_inner(&mut state)
 }
 
 fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     let mut program = vec![];
     while let Some(token) = state.tokens.peek() {
-        // Sealed markers drive a depth counter and produce no AST nodes
+        // Sandboxed markers drive a depth counter and produce no AST nodes
         match token.token_type {
-            TokenType::SealedStart => {
+            TokenType::SandboxStart => {
                 advance(state);
-                state.sealed_depth += 1;
+                state.sandbox_depth += 1;
                 continue;
             }
-            TokenType::SealedEnd => {
+            TokenType::SandboxEnd => {
                 advance(state);
-                state.sealed_depth = state.sealed_depth.saturating_sub(1);
+                state.sandbox_depth = state.sandbox_depth.saturating_sub(1);
                 continue;
             }
             _ => {}
         }
         let statement = parse_statement(state)?;
-        if state.sealed_depth > 0 {
-            check_sealed_statement(&statement)?;
+        if state.sandbox_depth > 0 {
+            check_sandboxed_statement(&statement)?;
         }
         program.push(statement);
     }
@@ -299,8 +299,8 @@ fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
 
 /// A file included with insert_safe may only declare things: functions,
 /// structs, enums, and constants. Anything that runs at the top level is
-/// rejected, so the including program alone decides when sealed code executes.
-fn check_sealed_statement(statement: &ASTNode) -> Result<(), CodeError> {
+/// rejected, so the including program alone decides when sandboxed code executes.
+fn check_sandboxed_statement(statement: &ASTNode) -> Result<(), CodeError> {
     match statement {
         ASTNode::FunctionDeclaration { .. } | ASTNode::StructDeclaration { .. } | ASTNode::EnumDeclaration { .. } | ASTNode::ConstDeclaration { .. } => Ok(()),
         other => Err(CodeError {
@@ -821,7 +821,7 @@ fn parse_function_declaration(state: &mut ParserState) -> Result<ASTNode, CodeEr
         // Parse function body
         let body = Box::new(parse_block(state)?);
 
-        Ok(ASTNode::FunctionDeclaration { name, params, data_type, body, sealed: state.sealed_depth > 0, code_span, scope: GLOBAL_SCOPE })
+        Ok(ASTNode::FunctionDeclaration { name, params, data_type, body, sandboxed: state.sandbox_depth > 0, code_span, scope: GLOBAL_SCOPE })
     } else {
         Err(CodeError { help: None, message: "Expected function declaration".to_string(), code_span: state.previous_token.as_ref().map_or(CodeSpan::default(), |t| t.code_span.clone()) })
     }
@@ -912,7 +912,7 @@ fn parse_const_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError
     let value = Box::new(parse_expression(state, 0)?);
     let code_span = expect_token(state, TokenType::EndStatementOrExpression)?;
 
-    Ok(ASTNode::ConstDeclaration { name, data_type, value, sealed: state.sealed_depth > 0, code_span, scope: GLOBAL_SCOPE })
+    Ok(ASTNode::ConstDeclaration { name, data_type, value, sandboxed: state.sandbox_depth > 0, code_span, scope: GLOBAL_SCOPE })
 }
 
 fn parse_type_annotation(state: &mut ParserState) -> Result<NailDataTypeDescriptor, CodeError> {
