@@ -29,6 +29,7 @@ DATA_PATHS=(
 	examples/website_screenshots
 	examples/website_assets
 	examples/nail_website.nail
+	examples/mcp_dice_server.nail
 	tests
 	nail_language_spec.md
 	README.md
