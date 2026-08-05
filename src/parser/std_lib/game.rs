@@ -753,6 +753,41 @@ where
 /// new canvas appended to the body if it does not.
 #[cfg(target_arch = "wasm32")]
 mod web_backend {
+    /// The CSS properties this backend ever sets. A closed choice, so it is
+    /// an enum rather than free text at the call sites.
+    enum CanvasStyle {
+        Width,
+        Height,
+        ImageRendering,
+    }
+
+    impl CanvasStyle {
+        fn name(&self) -> &'static str {
+            match self {
+                CanvasStyle::Width => "width",
+                CanvasStyle::Height => "height",
+                CanvasStyle::ImageRendering => "image-rendering",
+            }
+        }
+    }
+
+    /// How the browser scales the canvas back up. Also a closed choice.
+    enum CanvasScaling {
+        Pixelated,
+    }
+
+    impl CanvasScaling {
+        fn value(&self) -> &'static str {
+            match self {
+                CanvasScaling::Pixelated => "pixelated",
+            }
+        }
+    }
+
+    fn set_style(style: &web_sys::CssStyleDeclaration, property: CanvasStyle, value: &str) {
+        let _ = style.set_property(property.name(), value);
+    }
+
     use super::*;
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -834,10 +869,10 @@ mod web_backend {
         canvas.set_width(buffer_width);
         canvas.set_height(buffer_height);
         let style = canvas.style();
-        let _ = style.set_property("width", &format!("{}px", width));
-        let _ = style.set_property("height", &format!("{}px", height));
+        set_style(&style, CanvasStyle::Width, &format!("{}px", width));
+        set_style(&style, CanvasStyle::Height, &format!("{}px", height));
         if pixel_size > 1 {
-            let _ = style.set_property("image-rendering", "pixelated");
+            set_style(&style, CanvasStyle::ImageRendering, CanvasScaling::Pixelated.value());
         }
         let context: web_sys::CanvasRenderingContext2d = canvas
             .get_context("2d")
