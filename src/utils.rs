@@ -612,7 +612,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
             // End-of-line annotations: function timings from the last run,
             // then errors, and an error always wins its line
-            if editor.profile_data.is_some() {
+            if editor.profile_data.is_some() || !editor.profile_dumps.is_empty() {
                 let cache_outdated = profile_line_cache.as_ref().map_or(true, |(cached_hash, _, _)| *cached_hash != content_hash);
                 if cache_outdated {
                     let current_tab = editor.get_current_tab();
@@ -808,7 +808,13 @@ struct LineAnnotation {
 fn build_line_annotations(editor: &Editor, profile_cache: Option<&(u64, String, HashMap<String, usize>)>) -> BTreeMap<usize, LineAnnotation> {
     let mut annotations: BTreeMap<usize, LineAnnotation> = BTreeMap::new();
 
-    if let (Some(profile), Some((_, fingerprint, decl_lines))) = (&editor.profile_data, profile_cache) {
+    // The dump matching the open buffer's fingerprint wins even if another
+    // program wrote the dump file more recently. Only when no dump ever
+    // matched does the latest one show, dimmed as stale.
+    let chosen = profile_cache
+        .and_then(|(_, fingerprint, _)| editor.profile_dumps.get(fingerprint))
+        .or(editor.profile_data.as_ref());
+    if let (Some(profile), Some((_, fingerprint, decl_lines))) = (chosen, profile_cache) {
         let stale = *fingerprint != profile.source_hash;
         for function in &profile.functions {
             if function.calls == 0 {
@@ -2256,6 +2262,7 @@ pub fn profile_watcher_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver
                     last_mtime = Some(mtime);
                     if let Some(data) = fs::read_to_string(PROFILE_DUMP_PATH).ok().and_then(|text| parse_profile_dump(&text)) {
                         let mut editor = lock(&editor_arc);
+                        editor.profile_dumps.insert(data.source_hash.clone(), data.clone());
                         editor.profile_data = Some(data);
                     }
                 }

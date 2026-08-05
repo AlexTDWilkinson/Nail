@@ -316,6 +316,11 @@ struct Editor {
     // Latest per-function timings from a running instrumented program,
     // updated by the profile watcher thread and read by the draw thread
     profile_data: Option<ProfileData>,
+    // Every dump seen this session, keyed by the source fingerprint it
+    // carries. Two Nail programs sharing a working directory rewrite the
+    // same dump file in turns, and this keeps the one that matches the
+    // open buffer available whichever program wrote last.
+    profile_dumps: std::collections::HashMap<String, ProfileData>,
 }
 
 #[derive(Clone, Debug)]
@@ -433,6 +438,7 @@ impl Editor {
             // Bracket matching state
             matching_bracket_pos: None,
             profile_data: None,
+            profile_dumps: std::collections::HashMap::new(),
         }
     }
 
