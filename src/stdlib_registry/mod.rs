@@ -143,7 +143,7 @@ mod postgres;
 mod print;
 mod process;
 mod rand;
-mod redis;
+mod valkey;
 mod regex;
 mod semver;
 mod sched;
@@ -264,7 +264,7 @@ crate_dependencies! {
     SysInfo => { cargo: "sysinfo = \"0.31\"", name: "sysinfo", import: "use sysinfo;", feature: "sys" },
     Ammonia => { cargo: "ammonia = \"4\"", name: "ammonia", import: "use ammonia;", feature: "html" },
     TokioTungstenite => { cargo: "tokio-tungstenite = { version = \"0.23\", features = [\"rustls-tls-webpki-roots\"] }", name: "tokio-tungstenite", import: "use tokio_tungstenite;", feature: "websocket" },
-    Redis => { cargo: "redis = { version = \"0.27\", features = [\"tokio-comp\"] }", name: "redis", import: "use redis;", feature: "redis" },
+    ValkeyClient => { cargo: "redis = { version = \"0.27\", features = [\"tokio-comp\"] }", name: "redis", import: "use redis;", feature: "valkey" },
 }
 
 /// Defines the StdlibModule enum, its runtime module path, the namespace
@@ -389,7 +389,7 @@ stdlib_modules! {
     Database => "std_lib::database", "db_",
     DataFusion => "std_lib::datafusion", "db_datafusion_",
     Postgres => "std_lib::postgres", "db_postgres_",
-    Redis => "std_lib::redis", "db_redis_",
+    Valkey => "std_lib::valkey", "db_valkey_",
     Stdlib => "std_lib::stdlib", "stdlib_",
 }
 
@@ -508,7 +508,7 @@ lazy_static! {
         print::register(&mut m);
         process::register(&mut m);
         rand::register(&mut m);
-        redis::register(&mut m);
+        valkey::register(&mut m);
         regex::register(&mut m);
         semver::register(&mut m);
         sched::register(&mut m);
@@ -660,7 +660,7 @@ pub fn is_stdlib_fn_async(name: &str) -> bool {
     }
     matches!(
         get_stdlib_function(name).map(|f| &f.module),
-        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx | StdlibModule::Sched | StdlibModule::Redis)
+        Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Database | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx | StdlibModule::Sched | StdlibModule::Valkey)
     )
 }
 
@@ -861,9 +861,9 @@ lazy_static! {
             }
         });
 
-        // DB_Redis struct
-        m.insert("DB_Redis", StdlibTypeInfo {
-            name: "DB_Redis".to_string(),
+        // DB_Valkey struct
+        m.insert("DB_Valkey", StdlibTypeInfo {
+            name: "DB_Valkey".to_string(),
             fields: {
                 let mut fields = HashMap::new();
                 fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
@@ -1626,8 +1626,8 @@ mod stdlib_types_drift_tests {
             assert_matches_registry::<crate::parser::std_lib::email::EMAIL_Server>("EMAIL_Server");
             assert_matches_registry::<crate::parser::std_lib::email::EMAIL_Attachment>("EMAIL_Attachment");
         }
-        #[cfg(feature = "redis")]
-        assert_matches_registry::<crate::parser::std_lib::redis::DB_Redis>("DB_Redis");
+        #[cfg(feature = "valkey")]
+        assert_matches_registry::<crate::parser::std_lib::valkey::DB_Valkey>("DB_Valkey");
         #[cfg(feature = "websocket")]
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Websocket>("HTTP_Websocket");
         assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Handle>("PROCESS_Handle");
@@ -1656,7 +1656,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Redis", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

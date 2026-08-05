@@ -63,8 +63,8 @@ pub mod postgres;
 pub mod print;
 pub mod process;
 pub mod rand;
-#[cfg(feature = "redis")]
-pub mod redis;
+#[cfg(feature = "valkey")]
+pub mod valkey;
 pub mod regex;
 pub mod semver;
 pub mod sched;
