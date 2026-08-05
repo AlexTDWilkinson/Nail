@@ -31,6 +31,9 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "time_now_millis" => "std_lib::time::now_millis", () -> i,
             "Returns the current Unix timestamp in milliseconds.",
             "now_ms:i = time_now_millis();";
+        "time_now_micros" => "std_lib::time::now_micros", () -> i,
+            "Returns the current Unix timestamp in microseconds, for timing short work.",
+            "now_us:i = time_now_micros();";
         "time_add_seconds" => "std_lib::time::add_seconds", (timestamp: i, seconds: i) -> i,
             "Returns the timestamp shifted by the given number of seconds (negative to subtract).",
             "later:i = time_add_seconds(now, 3600);";

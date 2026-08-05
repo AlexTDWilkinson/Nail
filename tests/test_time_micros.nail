@@ -1,0 +1,8 @@
+// time_now_micros gives a finer clock than millis for timing short work.
+
+started:i = time_now_micros();
+total:i = array_sum(array_range_inclusive(1, 1000));
+elapsed:i = time_now_micros() - started;
+
+print(total);
+print(elapsed >= 0);

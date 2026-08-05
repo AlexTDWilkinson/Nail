@@ -6,7 +6,7 @@
 //! pipeline (lex → parse → check → transpile) and returns the generated Rust.
 
 use crate::checker::checker;
-use crate::lexer::{collect_lexer_errors, lexer, Token, TokenType};
+use crate::lexer::{collect_lexer_errors, lexer, lexer_without_inserts, Token, TokenType};
 use crate::parser::parse;
 use crate::embedded::{self, Piece};
 use crate::transpiler::Transpiler;
@@ -205,7 +205,9 @@ fn embedded_class(piece: Piece) -> Option<&'static str> {
 /// wrapped in a `<span class="tok-*">`; text is HTML-escaped. Intended for
 /// embedding inside a `<pre>` element.
 pub fn highlight_html(source: String) -> String {
-    let tokens = lexer(&source);
+    // Highlighting shows one file, so insert lines stay as they are written:
+    // expanding them would splice in tokens carrying another file's positions.
+    let tokens = lexer_without_inserts(&source);
     let mut spans: Vec<SpanEntry> = Vec::new();
     flatten(&tokens, &mut spans);
     spans.sort_by_key(|entry| (entry.0, entry.1));
@@ -302,6 +304,7 @@ pub fn highlight_html(source: String) -> String {
 /// Runs the full Nail compiler pipeline on a source string and returns the
 /// generated Rust code, or the first error encountered at any stage.
 pub fn transpile_to_rust(source: String) -> Result<String, String> {
+    // Compiling, so inserts are followed: the program is the whole tree.
     let tokens = lexer(&source);
     let lex_errors = collect_lexer_errors(&tokens);
     if let Some(first) = lex_errors.first() {
@@ -324,6 +327,36 @@ pub fn escape_html(text: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Highlighting displays one file. Following its insert would splice in
+    /// tokens whose line and column numbers belong to the included file, and
+    /// those land on whatever happens to sit at those positions here.
+    #[test]
+    fn highlighting_does_not_follow_inserts() {
+        let source = "insert(`tests/test_helper.nail`)\n\nsum:i = add_numbers(5, 3);\nprint(sum);\n";
+        let html = highlight_html(source.to_string());
+
+        // Strip the markup: what is left must be the file that was handed in,
+        // character for character.
+        let mut text = String::new();
+        let mut inside_tag = false;
+        for character in html.chars() {
+            match character {
+                '<' => inside_tag = true,
+                '>' => inside_tag = false,
+                _ if !inside_tag => text.push(character),
+                _ => {}
+            }
+        }
+        let text = text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&");
+
+        assert_eq!(text, source, "highlighting must reproduce the file's own text exactly");
+        // The included file's tokens carry its own positions. Painted here they
+        // land mid-word, which is how this showed up: `print` came out as
+        // `<span class="tok-kw">p</span>r<span class="tok-fn">int(...`.
+        assert!(html.contains("print(sum);"), "identifiers must not be split by spans from another file, got: {}", html);
+        assert!(html.contains("<span class=\"tok-kw\">insert</span>"), "the insert keyword itself should still be styled, got: {}", html);
+    }
 
     #[test]
     fn markup_inside_a_tagged_string_is_wrapped_piece_by_piece() {

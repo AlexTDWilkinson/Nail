@@ -329,6 +329,16 @@ pub fn collect_lexer_errors(tokens: &[Token]) -> Vec<crate::common::CodeError> {
     errors
 }
 
+/// What the lexer does when it meets insert() or insert_safe(). Compiling a
+/// program splices the included file in. A tool that displays one file must
+/// not, since the spliced tokens carry the other file's line and column
+/// numbers and would paint the wrong characters.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InsertMode {
+    Expand,
+    Keep,
+}
+
 pub fn lexer(input: &str) -> Vec<Token> {
     lexer_with_context(input, None)
 }
@@ -336,10 +346,18 @@ pub fn lexer(input: &str) -> Vec<Token> {
 pub fn lexer_with_context(input: &str, current_file: Option<&Path>) -> Vec<Token> {
     let mut state = LexerState { line: 1, column: 1 };
     let mut included_files = HashSet::new();
-    lexer_inner(input, &mut state, current_file, &mut included_files)
+    lexer_inner(input, &mut state, current_file, &mut included_files, InsertMode::Expand)
 }
 
-fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>, included_files: &mut HashSet<PathBuf>) -> Vec<Token> {
+/// Lex one file's own text: insert lines stay ordinary tokens, so every span
+/// belongs to the text that was handed in. For highlighting and formatting.
+pub fn lexer_without_inserts(input: &str) -> Vec<Token> {
+    let mut state = LexerState { line: 1, column: 1 };
+    let mut included_files = HashSet::new();
+    lexer_inner(input, &mut state, None, &mut included_files, InsertMode::Keep)
+}
+
+fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>, included_files: &mut HashSet<PathBuf>, insert_mode: InsertMode) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
     let mut chars = input.chars().peekable();
 
@@ -444,7 +462,7 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                 // file path. Both splice the included file's tokens in place.
                 // insert_safe additionally wraps the splice in SandboxStart and
                 // SandboxEnd markers so later stages know the code is untrusted.
-                if lexer_output.token_type == TokenType::InsertKeyword || lexer_output.token_type == TokenType::InsertSafeKeyword {
+                if insert_mode == InsertMode::Expand && (lexer_output.token_type == TokenType::InsertKeyword || lexer_output.token_type == TokenType::InsertSafeKeyword) {
                     let sandboxed = lexer_output.token_type == TokenType::InsertSafeKeyword;
                     // Skip whitespace
                     while let Some(&c) = chars.peek() {
@@ -1959,7 +1977,7 @@ fn handle_insert(
     
     // Lex the included file with its own context
     let mut sub_state = LexerState { line: state.line, column: 1 };
-    let tokens = lexer_inner(&content, &mut sub_state, Some(&canonical_path), included_files);
+    let tokens = lexer_inner(&content, &mut sub_state, Some(&canonical_path), included_files, InsertMode::Expand);
     
     // Remove the file from included set after processing (allows same file in different branches)
     included_files.remove(&canonical_path);

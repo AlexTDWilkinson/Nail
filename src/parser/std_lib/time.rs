@@ -55,6 +55,13 @@ pub fn now_millis() -> i64 {
     }
 }
 
+pub fn now_micros() -> i64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_micros() as i64,
+        Err(e) => -(e.duration().as_micros() as i64),
+    }
+}
+
 pub async fn sleep(seconds: f64) {
     let duration = StdDuration::from_secs_f64(seconds);
     tokio_sleep(duration).await;
