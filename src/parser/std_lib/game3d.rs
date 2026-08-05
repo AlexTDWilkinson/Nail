@@ -247,7 +247,12 @@ pub fn mesh(camera: GAME3D_Camera, handle: i64, x: f64, y: f64, z: f64, rotation
                 break;
             }
             points[index] = [half_width + view_x * focal / view_z, half_height - view_y * focal / view_z];
-            depth += view_z;
+            // The sort key is the farthest corner, not the mean. A floor
+            // face's far corners stretch behind the wall standing on it, so
+            // mean depth can jump the floor in front of the wall at some
+            // angles and eat a triangle out of it. The farthest corner keeps
+            // touching geometry in a stable order.
+            depth = if view_z > depth { view_z } else { depth };
         }
         if behind {
             continue;
