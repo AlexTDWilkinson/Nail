@@ -299,11 +299,19 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
     // that distance is what the legs actually do and it sounds like a drum
     // roll, so only one foot of the pair is heard.
     // Ground covered means the distance actually travelled, not the speed
-    // asked for, so running into a wall makes no footsteps at all.
+    // asked for, so running into a wall makes no footsteps at all. Creeping
+    // slower than a third of a pixel a frame does not count as walking, but
+    // it does not throw the stride away either: turning around passes
+    // through standing still, and a stride reset there would swallow the
+    // step that should land as the player sets off the other way. Only
+    // leaving the ground breaks the stride.
     ground_covered:f = math_abs(pos_x - state.player_x);
-    walking:b = landing.grounded && ground_covered > 0.4;
+    moved:f = if {
+        ground_covered > 0.35 -> { r ground_covered; },
+        else -> { r 0.0; }
+    };
     walked:f = if {
-        walking -> { r state.step_phase + ground_covered; },
+        landing.grounded -> { r state.step_phase + moved; },
         else -> { r 0.0; }
     };
     stepped:b = walked > 62.0;
@@ -583,7 +591,7 @@ f view(state:Platformer):GAME_Frame {
     };
 }
 
-config:GAME_Config = GAME_Config { title = `Nail platformer`, width = 800, height = 600, target_fps = 60, pixel_size = 2 };
+config:GAME_Config = GAME_Config { title = `Nail platformer`, width = 800, height = 600, target_fps = 60, pixel_size = 2, physics_hz = 60 };
 
 final_state:Platformer = danger(game_run(config, new_game()));
 closing_taken:a:Coin = filter coin in final_state.coins {

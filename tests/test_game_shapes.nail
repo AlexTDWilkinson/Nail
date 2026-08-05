@@ -77,6 +77,6 @@ print(`every game check held`);
 
 // Running it for real opens a window, so it is not done here. It would be:
 //
-//   config:GAME_Config = GAME_Config { title = `Pong`, width = 800, height = 600, target_fps = 60, pixel_size = 1 };
+//   config:GAME_Config = GAME_Config { title = `Pong`, width = 800, height = 600, target_fps = 60, pixel_size = 1, physics_hz = 0 };
 //   final_state:Paddle = danger(game_run(config, start));
 //   print(string_from(final_state.score));

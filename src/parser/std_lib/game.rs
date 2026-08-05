@@ -28,6 +28,12 @@ use std::sync::{Mutex, OnceLock};
 /// half size and scales up chunky, which quarters the pixels the CPU
 /// rasterizer has to fill. Coordinates in the game stay in window pixels
 /// whatever the value.
+///
+/// `physics_hz` is how many times a second `update` runs. At 0 it runs once
+/// a frame and is handed however long that frame really took, which is
+/// simplest and fine for anything that is not simulating. Set it and update
+/// instead runs in fixed slices, as many as the elapsed time has banked, so
+/// the same jump clears the same gap on a slow machine and a fast one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GAME_Config {
     pub title: String,
@@ -35,6 +41,7 @@ pub struct GAME_Config {
     pub height: i64,
     pub target_fps: i64,
     pub pixel_size: i64,
+    pub physics_hz: i64,
 }
 
 /// One thing to paint. Programs never fill this in by hand - the constructor
@@ -525,6 +532,21 @@ where
     let mut frames: u64 = 0;
     let mut work_ms = 0.0_f64;
 
+    // A fixed step hands update the same slice of time every time it runs, so
+    // the arithmetic is identical whatever the frame rate does. Elapsed time
+    // is banked and spent a whole step at a time, which is what makes a jump
+    // clear the same gap on every machine.
+    let step_ms = if config.physics_hz > 0 { 1000.0 / config.physics_hz as f64 } else { 0.0 };
+    let mut banked_ms = 0.0_f64;
+    // Presses and wheel turns are moments rather than states, so they wait
+    // here until a step actually runs. A tap between two steps is then never
+    // lost, and never counted twice when several steps run at once.
+    let mut waiting_pressed: Vec<String> = Vec::new();
+    let mut waiting_scroll = 0.0_f64;
+    // Enough steps to catch up after a hitch, few enough that a long stall
+    // does not send the game racing to make up minutes of missed time.
+    const CATCH_UP_STEPS: u32 = 5;
+
     loop {
         let polled = backend.poll()?;
         if polled.close_requested {
@@ -539,21 +561,49 @@ where
         }
 
         let frame_start_ms = backend.now_ms();
-        let delta_ms = frame_start_ms - last_ms;
+        let elapsed_ms = frame_start_ms - last_ms;
         last_ms = frame_start_ms;
 
-        let input = GAME_Input {
-            keys_down: polled.keys_down,
-            keys_pressed: polled.keys_pressed,
-            mouse_x: polled.mouse_x,
-            mouse_y: polled.mouse_y,
-            mouse_down: polled.mouse_down,
-            mouse_right: polled.mouse_right,
-            scroll: polled.scroll,
-            delta_ms,
-        };
+        waiting_pressed.extend(polled.keys_pressed);
+        waiting_scroll += polled.scroll;
 
-        state = update(state, input).await;
+        if step_ms > 0.0 {
+            banked_ms += elapsed_ms;
+            let mut steps = 0;
+            while banked_ms >= step_ms && steps < CATCH_UP_STEPS {
+                let input = GAME_Input {
+                    keys_down: polled.keys_down.clone(),
+                    keys_pressed: std::mem::take(&mut waiting_pressed),
+                    mouse_x: polled.mouse_x,
+                    mouse_y: polled.mouse_y,
+                    mouse_down: polled.mouse_down,
+                    mouse_right: polled.mouse_right,
+                    scroll: std::mem::take(&mut waiting_scroll),
+                    delta_ms: step_ms,
+                };
+                state = update(state, input).await;
+                banked_ms -= step_ms;
+                steps += 1;
+            }
+            if steps == CATCH_UP_STEPS {
+                // The machine cannot keep up with the step rate this game
+                // asked for. Drop the backlog rather than fall further behind
+                // on every frame from here on.
+                banked_ms = 0.0;
+            }
+        } else {
+            let input = GAME_Input {
+                keys_down: polled.keys_down,
+                keys_pressed: std::mem::take(&mut waiting_pressed),
+                mouse_x: polled.mouse_x,
+                mouse_y: polled.mouse_y,
+                mouse_down: polled.mouse_down,
+                mouse_right: polled.mouse_right,
+                scroll: std::mem::take(&mut waiting_scroll),
+                delta_ms: elapsed_ms,
+            };
+            state = update(state, input).await;
+        }
         let frame = view(state.clone()).await;
         if let Some(full) = overlay.as_mut() {
             full.fill(tiny_skia::Color::TRANSPARENT);

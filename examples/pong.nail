@@ -83,7 +83,7 @@ f update(state:Pong, input:GAME_Input):Pong {
     }
 }
 
-config:GAME_Config = GAME_Config { title = `Nail Pong`, width = 800, height = 600, target_fps = 60, pixel_size = 1 };
+config:GAME_Config = GAME_Config { title = `Nail Pong`, width = 800, height = 600, target_fps = 60, pixel_size = 1, physics_hz = 0 };
 start:Pong = Pong { paddle_y = 250.0, ball_x = 400.0, ball_y = 300.0, ball_dx = -0.3, ball_dy = 0.25, hits = 0, done = false };
 
 final_state:Pong = danger(game_run(config, start));
