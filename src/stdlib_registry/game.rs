@@ -23,7 +23,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((T!e)),
         diverging: false,
         description: "Opens a window and runs a game until its view reports quit or the player closes the window, then returns the state it finished with. The program supplies two functions - view(state) returns a GAME_Frame and update(state, input) returns the next state. Input names keys as lowercase letters and digits plus Up, Down, Left, Right, Space, Enter, Esc, Shift, Ctrl, Alt, Tab and Backspace. A target_fps of 0 runs unpaced.",
-        example: "final_state:Pong = danger(game_run(GAME_Config { title = `Pong`, width = 800, height = 600, target_fps = 60 }, Pong { ball_x = 400.0, ball_y = 300.0 }));",
+        example: "final_state:Pong = danger(game_run(GAME_Config { title = `Pong`, width = 800, height = 600, target_fps = 60, pixel_size = 1 }, Pong { ball_x = 400.0, ball_y = 300.0 }));",
     });
 
     m.insert("game_rect", StdlibFunction {

@@ -44,13 +44,18 @@ use winit::platform::pump_events::EventLoopExtPumpEvents;
 use winit::window::{Window, WindowId};
 
 /// How the window starts out. A `target_fps` of 0 means unpaced - the loop
-/// runs as fast as update and view come back.
+/// runs as fast as update and view come back. `pixel_size` is how many
+/// screen pixels one drawn pixel covers: 1 is full resolution, 2 draws at
+/// half size and scales up chunky, which quarters the pixels the CPU
+/// rasterizer has to fill. Coordinates in the game stay in window pixels
+/// whatever the value.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GAME_Config {
     pub title: String,
     pub width: i64,
     pub height: i64,
     pub target_fps: i64,
+    pub pixel_size: i64,
 }
 
 /// One thing to paint. Programs never fill this in by hand - the constructor
@@ -426,6 +431,12 @@ impl ApplicationHandler for App {
     }
 }
 
+/// The clamped chunky-pixel factor from a config: at least 1, at most 8,
+/// and 0 (an unset-feeling value) means full resolution.
+fn pixel_size_of(config: &GAME_Config) -> u32 {
+    return config.pixel_size.clamp(1, 8) as u32;
+}
+
 /// A shape's loose bounding box, for skipping what is not on screen. None
 /// means the bounds are unknown (text and unscaled sprites) and the shape
 /// always draws.
@@ -453,20 +464,25 @@ fn shape_bounds(shape: &GAME_Shape) -> Option<(f64, f64, f64, f64)> {
     }
 }
 
-/// Paints one frame's shapes into the pixmap.
-fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame) -> Result<(), String> {
+/// Paints one frame's shapes into the pixmap. Shapes speak window pixels
+/// whatever `pixel_size` says, the scale transform is what maps them onto
+/// the possibly smaller pixmap.
+fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32) -> Result<(), String> {
     pixmap.fill(parse_color(&frame.background)?);
+    let scale = 1.0 / pixel_size as f32;
+    let logical_width = (pixmap.width() * pixel_size) as f64;
+    let logical_height = (pixmap.height() * pixel_size) as f64;
 
     for shape in &frame.shapes {
         // A scrolling game hands over its whole world every frame, parallax
         // layers included, and most of it is off screen. Skipping here is
         // cheaper than letting the rasterizer clip path by path.
         if let Some((min_x, min_y, max_x, max_y)) = shape_bounds(shape) {
-            if max_x < 0.0 || min_x > pixmap.width() as f64 || max_y < 0.0 || min_y > pixmap.height() as f64 {
+            if max_x < 0.0 || min_x > logical_width || max_y < 0.0 || min_y > logical_height {
                 continue;
             }
         }
-        let identity = tiny_skia::Transform::identity();
+        let identity = tiny_skia::Transform::from_scale(scale, scale);
         match shape.kind.as_str() {
             "rect" => {
                 let Some(rect) = tiny_skia::Rect::from_xywh(shape.x_coordinate as f32, shape.y_coordinate as f32, shape.width as f32, shape.height as f32) else { continue };
@@ -515,7 +531,7 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame) -> Result<(), S
                 pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, identity, None);
             }
             "text" => {
-                draw_text(pixmap, shape)?;
+                draw_text(pixmap, shape, scale)?;
             }
             "sprite" | "sprite_scaled" => {
                 let store = sprites().lock().map_err(|_| "game_run: the sprite store is poisoned".to_string())?;
@@ -525,9 +541,9 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame) -> Result<(), S
                 let transform = if shape.kind == "sprite_scaled" && loaded.width() > 0 && loaded.height() > 0 {
                     let scale_x = shape.width as f32 / loaded.width() as f32;
                     let scale_y = shape.height as f32 / loaded.height() as f32;
-                    tiny_skia::Transform::from_scale(scale_x, scale_y).post_translate(shape.x_coordinate as f32, shape.y_coordinate as f32)
+                    tiny_skia::Transform::from_scale(scale_x, scale_y).post_translate(shape.x_coordinate as f32, shape.y_coordinate as f32).post_scale(scale, scale)
                 } else {
-                    tiny_skia::Transform::from_translate(shape.x_coordinate as f32, shape.y_coordinate as f32)
+                    tiny_skia::Transform::from_translate(shape.x_coordinate as f32, shape.y_coordinate as f32).post_scale(scale, scale)
                 };
                 pixmap.draw_pixmap(0, 0, loaded.as_ref(), &tiny_skia::PixmapPaint::default(), transform, None);
             }
@@ -541,17 +557,19 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame) -> Result<(), S
 
 /// Draws one text shape glyph by glyph, blending each coverage bitmap from
 /// fontdue straight into the pixmap.
-fn draw_text(pixmap: &mut tiny_skia::Pixmap, shape: &GAME_Shape) -> Result<(), String> {
+fn draw_text(pixmap: &mut tiny_skia::Pixmap, shape: &GAME_Shape, scale: f32) -> Result<(), String> {
     let font = font()?;
     let color = parse_color(&shape.color)?;
     let red = (color.red() * 255.0) as u16;
     let green = (color.green() * 255.0) as u16;
     let blue = (color.blue() * 255.0) as u16;
-    let size = shape.size as f32;
+    // Glyphs rasterize at the already scaled size, so chunky-pixel text is
+    // shaped for the small buffer instead of shrunk after the fact.
+    let size = shape.size as f32 * scale;
     // The shape's y is the top of the text, glyphs hang from the baseline
     // below it. The size itself is a workable ascent for one line.
-    let baseline = shape.y_coordinate as f32 + size;
-    let mut cursor = shape.x_coordinate as f32;
+    let baseline = shape.y_coordinate as f32 * scale + size;
+    let mut cursor = shape.x_coordinate as f32 * scale;
     let pixmap_width = pixmap.width() as i32;
     let pixmap_height = pixmap.height() as i32;
 
@@ -657,7 +675,8 @@ where
     let mut event_loop = EventLoop::new().map_err(|e| format!("game_run: could not talk to the display - a game needs a desktop to draw on: {}", e))?;
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App::new(config.title.clone(), width, height);
-    let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or_else(|| "game_run: could not make the frame".to_string())?;
+    let pixel_size = pixel_size_of(&config);
+    let mut pixmap = tiny_skia::Pixmap::new((width / pixel_size).max(1), (height / pixel_size).max(1)).ok_or_else(|| "game_run: could not make the frame".to_string())?;
 
     let mut state = initial;
     let mut last_frame = Instant::now();
@@ -701,7 +720,7 @@ where
 
         state = update(state, input).await;
         let frame = view(state.clone()).await;
-        rasterize(&mut pixmap, &frame)?;
+        rasterize(&mut pixmap, &frame, pixel_size)?;
         present(&mut app, &pixmap)?;
         let used = last_frame.elapsed();
         frames += 1;
@@ -806,8 +825,20 @@ mod web_backend {
                 element.dyn_into().map_err(|_| "game_run: could not make a canvas".to_string())?
             }
         };
-        canvas.set_width(width);
-        canvas.set_height(height);
+        // The canvas holds the small chunky-pixel buffer, CSS stretches it
+        // back to the configured size, and pixelated keeps the edges crisp
+        // instead of smeared.
+        let pixel_size = pixel_size_of(&config);
+        let buffer_width = (width / pixel_size).max(1);
+        let buffer_height = (height / pixel_size).max(1);
+        canvas.set_width(buffer_width);
+        canvas.set_height(buffer_height);
+        let style = canvas.style();
+        let _ = style.set_property("width", &format!("{}px", width));
+        let _ = style.set_property("height", &format!("{}px", height));
+        if pixel_size > 1 {
+            let _ = style.set_property("image-rendering", "pixelated");
+        }
         let context: web_sys::CanvasRenderingContext2d = canvas
             .get_context("2d")
             .ok()
@@ -892,8 +923,8 @@ mod web_backend {
         listen(canvas.as_ref(), "mouseup", mouseup.as_ref());
         listen(canvas.as_ref(), "wheel", wheel.as_ref());
 
-        let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or_else(|| "game_run: could not make the frame".to_string())?;
-        let mut straight = vec![0u8; width as usize * height as usize * 4];
+        let mut pixmap = tiny_skia::Pixmap::new(buffer_width, buffer_height).ok_or_else(|| "game_run: could not make the frame".to_string())?;
+        let mut straight = vec![0u8; buffer_width as usize * buffer_height as usize * 4];
         let mut state = initial;
         let mut last_stamp = next_frame(&window).await?;
         let mut delta_ms = 0.0;
@@ -917,7 +948,7 @@ mod web_backend {
 
             state = update(state, frame_input).await;
             let frame = view(state.clone()).await;
-            if let Err(error) = rasterize(&mut pixmap, &frame) {
+            if let Err(error) = rasterize(&mut pixmap, &frame, pixel_size) {
                 break Err(error);
             }
 
@@ -1010,14 +1041,14 @@ mod tests {
         let mut shape = blank("nonsense");
         shape.color = "red".to_string();
         let frame = GAME_Frame { shapes: vec![shape], background: "black".to_string(), quit: false };
-        assert!(rasterize(&mut pixmap, &frame).is_err());
+        assert!(rasterize(&mut pixmap, &frame, 1).is_err());
     }
 
     #[test]
     fn rasterizing_a_frame_paints_the_background() {
         let mut pixmap = tiny_skia::Pixmap::new(4, 4).unwrap();
         let frame = GAME_Frame { shapes: vec![rect(1.0, 1.0, 2.0, 2.0, "white".to_string())], background: "#000000".to_string(), quit: false };
-        rasterize(&mut pixmap, &frame).unwrap();
+        rasterize(&mut pixmap, &frame, 1).unwrap();
         let corner = pixmap.pixels()[0].demultiply();
         assert_eq!((corner.red(), corner.green(), corner.blue()), (0, 0, 0));
         let middle = pixmap.pixels()[1 * 4 + 1].demultiply();

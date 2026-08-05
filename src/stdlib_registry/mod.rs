@@ -1296,6 +1296,7 @@ lazy_static! {
                 fields.insert("width".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("height".to_string(), NailDataTypeDescriptor::Int);
                 fields.insert("target_fps".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("pixel_size".to_string(), NailDataTypeDescriptor::Int);
                 fields
             }
         });
