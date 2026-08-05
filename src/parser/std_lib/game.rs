@@ -317,6 +317,10 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32
     let scale = 1.0 / pixel_size as f32;
     let logical_width = (pixmap.width() * pixel_size) as f64;
     let logical_height = (pixmap.height() * pixel_size) as f64;
+    // Chunky rendering wants hard edges. Antialiased edges in the small
+    // buffer become two-pixel smears once upscaled, which reads as blur
+    // instead of pixel art, so above pixel_size 1 the edges go crisp.
+    let anti_alias = pixel_size == 1;
 
     for shape in &frame.shapes {
         // A scrolling game hands over its whole world every frame, parallax
@@ -333,7 +337,7 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32
                 let Some(rect) = tiny_skia::Rect::from_xywh(shape.x_coordinate as f32, shape.y_coordinate as f32, shape.width as f32, shape.height as f32) else { continue };
                 let mut paint = tiny_skia::Paint::default();
                 paint.set_color(parse_color(&shape.color)?);
-                paint.anti_alias = true;
+                paint.anti_alias = anti_alias;
                 pixmap.fill_rect(rect, &paint, identity, None);
             }
             "rect_outline" => {
@@ -341,7 +345,7 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32
                 let path = tiny_skia::PathBuilder::from_rect(rect);
                 let mut paint = tiny_skia::Paint::default();
                 paint.set_color(parse_color(&shape.color)?);
-                paint.anti_alias = true;
+                paint.anti_alias = anti_alias;
                 let stroke = tiny_skia::Stroke { width: shape.thickness as f32, ..tiny_skia::Stroke::default() };
                 pixmap.stroke_path(&path, &paint, &stroke, identity, None);
             }
@@ -349,7 +353,7 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32
                 let Some(path) = tiny_skia::PathBuilder::from_circle(shape.x_coordinate as f32, shape.y_coordinate as f32, shape.radius as f32) else { continue };
                 let mut paint = tiny_skia::Paint::default();
                 paint.set_color(parse_color(&shape.color)?);
-                paint.anti_alias = true;
+                paint.anti_alias = anti_alias;
                 pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, identity, None);
             }
             "line" => {
@@ -359,7 +363,7 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32
                 let Some(path) = builder.finish() else { continue };
                 let mut paint = tiny_skia::Paint::default();
                 paint.set_color(parse_color(&shape.color)?);
-                paint.anti_alias = true;
+                paint.anti_alias = anti_alias;
                 let stroke = tiny_skia::Stroke { width: shape.thickness as f32, ..tiny_skia::Stroke::default() };
                 pixmap.stroke_path(&path, &paint, &stroke, identity, None);
             }
@@ -372,11 +376,11 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32
                 let Some(path) = builder.finish() else { continue };
                 let mut paint = tiny_skia::Paint::default();
                 paint.set_color(parse_color(&shape.color)?);
-                paint.anti_alias = true;
+                paint.anti_alias = anti_alias;
                 pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, identity, None);
             }
             "text" => {
-                draw_text(pixmap, shape, scale)?;
+                draw_text(pixmap, shape, scale, !anti_alias)?;
             }
             "sprite" | "sprite_scaled" => {
                 let store = sprites().lock().map_err(|_| "game_run: the sprite store is poisoned".to_string())?;
@@ -402,7 +406,7 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32
 
 /// Draws one text shape glyph by glyph, blending each coverage bitmap from
 /// fontdue straight into the pixmap.
-fn draw_text(pixmap: &mut tiny_skia::Pixmap, shape: &GAME_Shape, scale: f32) -> Result<(), String> {
+fn draw_text(pixmap: &mut tiny_skia::Pixmap, shape: &GAME_Shape, scale: f32, crisp: bool) -> Result<(), String> {
     let font = font()?;
     let color = parse_color(&shape.color)?;
     let red = (color.red() * 255.0) as u16;
@@ -425,7 +429,13 @@ fn draw_text(pixmap: &mut tiny_skia::Pixmap, shape: &GAME_Shape, scale: f32) -> 
         let data = pixmap.data_mut();
         for row in 0..metrics.height {
             for column in 0..metrics.width {
-                let alpha = coverage[row * metrics.width + column] as u16;
+                // Crisp mode snaps glyph coverage to on or off, a bitmap
+                // font look that upscales into sharp blocks instead of fuzz.
+                let alpha = if crisp {
+                    if coverage[row * metrics.width + column] < 128 { 0u16 } else { 255u16 }
+                } else {
+                    coverage[row * metrics.width + column] as u16
+                };
                 if alpha == 0 {
                     continue;
                 }
