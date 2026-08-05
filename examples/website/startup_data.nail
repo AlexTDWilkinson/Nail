@@ -2,7 +2,7 @@
 // values it computes at startup by really running the code the page displays.
 
 // Website configuration
-site_title:s = `Nail - A small language with a huge standard library`;
+site_title:s = `Nail - a small language with a huge standard library`;
 site_description:s = `Few constructs, a thousand built-in functions. No null, no mutation, no package manager, no unsafe. Errors you cannot ignore, and iteration that uses every core without being asked.`;
 
 // Navigation structure
@@ -14,7 +14,7 @@ struct NavItem {
 nav_items:a:NavItem = [
     NavItem { name = `Examples`, path = `#examples` },
     NavItem { name = `Library`, path = `/stdlib` },
-    NavItem { name = `Get Started`, path = `#start` },
+    NavItem { name = `Get started`, path = `#start` },
     NavItem { name = `Documentation`, path = `https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md` }
 ];
 

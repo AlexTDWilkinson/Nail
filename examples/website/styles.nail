@@ -584,7 +584,7 @@ f generate_css():s {
         to { opacity: 1; transform: translateY(0); }
     }`;
 
-    seal_styles:s = css`
+    sandbox_styles:s = css`
     .sandbox-points {
         display: flex;
         flex-wrap: wrap;
@@ -672,6 +672,6 @@ f generate_css():s {
         author_styles,
         philosophy_styles,
         animation_styles,
-        seal_styles
+        sandbox_styles
     ], ``);
 }

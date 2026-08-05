@@ -5,9 +5,9 @@
 // each line below splices that file in at lex time, in this order, as if its
 // contents were typed here.
 //
-//   website/safe/demo_math.nail       arithmetic for the live demos, sealed
-//   website/safe/stdlib_listing.nail  sort and row helpers for the library page, sealed
-//   website/safe/text_helpers.nail    small string shapers, sealed
+//   website/safe/demo_math.nail       arithmetic for the live demos, sandboxed
+//   website/safe/stdlib_listing.nail  sort and row helpers for the library page, sandboxed
+//   website/safe/text_helpers.nail    small string shapers, sandboxed
 //   website/startup_data.nail         site config, file reads, demo values computed at startup
 //   website/styles.nail               the page stylesheet
 //   website/page_sections.nail        the HTML builders, one function per section
@@ -19,10 +19,10 @@
 port:i = 8080;
 
 // insert() trusts a file completely: it is for code you wrote yourself.
-// insert_safe() is for code you did not write. The compiler seals the file so
+// insert_safe() is for code you did not write. The compiler sandboxes the file so
 // it can compute anything and touch nothing: no network, no disk, no
 // environment, no processes, no global state, checked at compile time and
-// enforced through every function the sealed code reaches. The three files
+// enforced through every function the sandboxed code reaches. The three files
 // below could be downloaded from the internet and inserted unread, nothing in
 // them can act on this machine. If Nail ever grows a package repository, it
 // will be a folder of simple files brought in exactly like this.

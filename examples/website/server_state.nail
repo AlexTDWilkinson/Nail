@@ -36,7 +36,7 @@ hashmap_set(state, `page_main`, website_html);
 // The standard library listing is its own page: it is massive, so the front
 // page carries a teaser and this carries the whole thing.
 stdlib_page_html:s = generate_stdlib_page(
-    `Nail Standard Library - every function that ships with the compiler`,
+    `Nail standard library - every function that ships with the compiler`,
     `The full Nail standard library, printed by the compiler that serves this page.`,
     stdlib_function_list,
     stdlib_module_list

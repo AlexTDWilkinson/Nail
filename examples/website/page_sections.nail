@@ -62,8 +62,8 @@ f generate_hero(hero_code:s):s {
         you get Rust's speed and memory safety whether or not you know Rust.
     </p>
     <div class="hero-actions">
-        <a href="#start" class="btn btn-primary">Get Started</a>
-        <a href="#examples" class="btn btn-secondary">See Examples</a>
+        <a href="#start" class="btn btn-primary">Get started</a>
+        <a href="#examples" class="btn btn-secondary">See examples</a>
     </div>
     <div class="code-example" style="max-width: 680px; margin: 3rem auto 1rem; text-align: left;">
         <span class="code-label">Nail</span><pre>`,
@@ -85,7 +85,7 @@ f generate_whole_language(snippet_html:s, rust_line_count:i):s {
     hashmap_set(values, `rust_lines`, string_from(rust_line_count));
     r danger(template_render(html`<section id="philosophy" class="philosophy">
     <div class="section-header">
-        <h2>The Whole Language on One Screen</h2>
+        <h2>The whole language on one screen</h2>
         <p>If it is not on this screen, Nail does not have it</p>
     </div>
     <div class="code-example">
@@ -125,7 +125,7 @@ f generate_refusals(error_html:s, error_verdict:s, field_html:s, field_verdict:s
     ], ``);
     r array_join([html`<section id="refusals" class="refusals">
     <div class="section-header">
-        <h2>Bugs That Do Not Compile</h2>
+        <h2>Bugs do not compile</h2>
         <p>Three everyday mistakes. The errors are real: this server fed each file to its own compiler at startup</p>
     </div>
     <div class="refusal-grid">`, panes, html`</div>
@@ -136,61 +136,61 @@ f generate_features():s {
     features_data:a:s = [
         html`<div class="feature-card">
             <div class="feature-icon">🔒</div>
-            <h3>Nothing Changes Behind Your Back</h3>
+            <h3>Nothing changes behind your back</h3>
             <p>Once a name has a value it keeps it. Nothing elsewhere can overwrite it, so there is
                never a hunt for what did.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">👻</div>
-            <h3>Nothing Is Ever Empty</h3>
+            <h3>Nothing is ever empty</h3>
             <p>No null, no undefined, no declared-but-unset. Every name has a real value from the
                moment it exists.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🔄</div>
-            <h3>Say What You Want, Not How to Loop</h3>
+            <h3>Say what you want, not how to loop</h3>
             <p>map to change every item, filter to keep some, reduce to fold them into one. No
                counters, so no off-by-one.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">⚡</div>
-            <h3>Many Things at Once, Safely</h3>
+            <h3>Many things at once, safely</h3>
             <p>A c block waits on files and networks together. A p block spreads CPU work over every
                core. You never touch a thread.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🔀</div>
-            <h3>Errors Can't Be Ignored</h3>
+            <h3>Errors can't be ignored</h3>
             <p>Anything that can fail returns something you must handle: safe() for a fallback,
                danger() to accept the crash.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🚫</div>
-            <h3>No Escape Hatch, No Supply Chain</h3>
+            <h3>No escape hatch, no supply chain</h3>
             <p>No unsafe to switch the rules off, no package manager pulling in dependency trees.
                Your program is what you wrote.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🛡️</div>
-            <h3>Foreign Code Runs Sandboxed</h3>
+            <h3>Foreign code runs sandboxed</h3>
             <p>insert_safe puts downloaded code in a compile-time sandbox: no network, no disk,
                no way to phone home. The compiler enforces it.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">📦</div>
-            <h3>Batteries Included</h3>
+            <h3>Batteries included</h3>
             <p>A standard library with a thousand functions: servers, databases, stats, money,
                geo. No package manager, nothing to install.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🗣️</div>
-            <h3>Errors That Explain Themselves</h3>
+            <h3>Errors that explain themselves</h3>
             <p>Every message says what broke, where, why, and how to fix it, in plain words. The
                wording is pinned by tests.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🧳</div>
-            <h3>One File Becomes One Binary</h3>
+            <h3>One file becomes one binary</h3>
             <p>Your program transpiles to Rust and builds into a single static executable.
                Deploying is copying it.</p>
         </div>`
@@ -201,7 +201,7 @@ f generate_features():s {
     section_html:s = array_join([
         html`<section id="features" class="features">
     <div class="section-header">
-        <h2>Key Features</h2>
+        <h2>Key features</h2>
         <p>Every feature here exists to make a whole family of bugs impossible to write</p>
     </div>
     <div class="features-grid">`,
@@ -217,14 +217,14 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
     examples_html:s = array_join([
         html`<section id="examples" class="examples">
     <div class="section-header">
-        <h2>Code Examples</h2>
+        <h2>Code examples</h2>
         <p>Nothing here is a mockup. ▶ Run serves output this server really computed, the
            highlighting is Nail's own lexer, and every Rust panel is what the transpiler emitted.</p>
     </div>
     
     <div style="display: grid; gap: 2rem;">
         <div>
-            <h3 style="margin-bottom: 1rem;">Concurrent I/O Operations (c.../c)</h3>
+            <h3 style="margin-bottom: 1rem;">Concurrent I/O operations (c.../c)</h3>
             <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
                 <button onclick="fetch('/run-example?name=concurrent').then(r=>r.json()).then(d=>{let el=document.getElementById('concurrent-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
@@ -248,7 +248,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
         </div>
         
         <div>
-            <h3 style="margin-bottom: 1rem;">Parallel CPU Work (p.../p)</h3>
+            <h3 style="margin-bottom: 1rem;">Parallel CPU work (p.../p)</h3>
             <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
                 <button onclick="fetch('/run-example?name=parallel').then(r=>r.json()).then(d=>{let el=document.getElementById('parallel-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
@@ -271,7 +271,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
         </div>
         
         <div>
-            <h3 style="margin-bottom: 1rem;">Error Handling Done Right</h3>
+            <h3 style="margin-bottom: 1rem;">Error handling done right</h3>
             <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
                 <button onclick="fetch('/run-example?name=error').then(r=>r.json()).then(d=>{let el=document.getElementById('error-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
@@ -301,7 +301,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
 f generate_get_started():s {
     r html`<section id="start" class="philosophy">
     <div class="section-header">
-        <h2>Get Started</h2>
+        <h2>Get started</h2>
         <p>A Rust toolchain and one clone. Rust does the building. The editor comes with the language.</p>
     </div>
     <div class="philosophy-content">
@@ -343,7 +343,7 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
     ide_html:s = array_join([
         html`<section id="ide" class="ide">
     <div class="section-header">
-        <h2>The Editor Is Part of the Language</h2>
+        <h2>The editor is part of the language</h2>
         <p>Real frames captured from a terminal. The compiler underneath them is the same one that
            builds your program.</p>
     </div>
@@ -418,14 +418,10 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
 f generate_performance():s {
     r html`<section id="performance" class="performance">
     <div class="section-header">
-        <h2>Performance, Honestly</h2>
-        <p>The optimizations that actually matter are the ones you never have to write</p>
+        <h2>Performance overview</h2>
+        <p>What runs in parallel automatically, and what it measures out to</p>
     </div>
     <div class="philosophy-content">
-        <p>
-            Most code is sequential because parallelism is painful: threads, locks, queues, races.
-            You write the obvious version. The compiler writes the fast one.
-        </p>
         <div style="background: var(--bg-primary); border-radius: 0.75rem; padding: 1.5rem 2rem; margin: 2rem 0;">
             <p style="margin-bottom: 0.75rem;"><strong>Uses every core, automatically:</strong></p>
             <ul style="margin: 0 0 1rem 1.5rem;">
@@ -441,22 +437,19 @@ f generate_performance():s {
                 where every value depends on the ones before it.</p>
         </div>
 
-        <h3 style="margin-top: 2.5rem;">Why naming the operation is what makes it fast</h3>
-        <p>
-            A loop is opaque: the compiler can't tell whether order matters, so it stays sequential.
-            <strong>sum</strong> says order doesn't matter. Clearer code and faster code are the same edit.
+        <p style="margin-top: 2rem;">
+            A hand-written loop is opaque, so it runs in order. A named operation carries its own
+            rules: <strong>sum</strong> says order does not matter, and that is what lets it spread
+            across cores.
         </p>
         <p>
-            <strong>reduce</strong> is the interesting case, because you write the step yourself, and
-            splitting a fold regroups it: <em>(a+b)+c</em> becomes <em>a+(b+c)</em>. Fine for addition,
-            wrong for subtraction. So Nail reads the step. Add or multiply whole numbers into the total,
-            or keep the larger or smaller value, and regrouping provably cannot change the answer: it runs
-            on every core, with the per-element work (<em>acc + num * num</em>) split too. Subtraction,
-            division and floats stay in order. There is no flag to promise your step is safe. A wrong
-            promise is a number quietly wrong, and differently wrong each run.
+            <strong>reduce</strong> parallelizes only when the compiler can prove regrouping cannot
+            change the answer: integer addition and multiplication, min, max. Subtraction, division
+            and floats stay in order, and there is no flag to override that, because a wrong promise
+            is a silently wrong number.
         </p>
         <p>
-            Threads aren't free, so parallelism switches on above a measured size:
+            Threads are not free, so parallelism switches on above a measured size:
         </p>
         <div style="overflow-x: auto; margin: 1.5rem 0;">
             <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
@@ -488,9 +481,9 @@ f generate_performance():s {
             Nail skips the parallel path entirely.
         </p>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            Microbenchmarks of single operations, not whole programs. Most software waits on I/O and gains
-            nothing here. The floor is the promise: with nothing to parallelize, Nail emits the sequential
-            Rust you'd have written anyway.
+            Microbenchmarks of single operations, not whole programs. Most software waits on I/O and
+            gains nothing here. With nothing to parallelize, Nail emits the sequential Rust you would
+            have written anyway.
         </p>
         <div style="overflow-x: auto; margin: 2rem 0;">
             <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
@@ -512,8 +505,9 @@ f generate_performance():s {
             </table>
         </div>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            24-core Linux machine, both --release. Unless you parallelize by hand, your code runs on one
-            core. Nail uses the other 23 for free where the work justifies it.
+            24-core Linux machine, both built with --release. Hand-written Rust runs on one core
+            unless you parallelize it yourself. Nail spreads across the rest when the work
+            justifies it.
         </p>
     </div>
 </section>`;
@@ -522,7 +516,7 @@ f generate_performance():s {
 f generate_versioning():s {
     r html`<section id="versioning" class="philosophy">
     <div class="section-header">
-        <h2>Planned: Programs That Don't Rot</h2>
+        <h2>Planned: programs that don't rot</h2>
         <p>Not built yet. This is what we're building next, and why</p>
     </div>
     <div class="philosophy-content">
@@ -544,7 +538,7 @@ f generate_mcp(mcp_source:s):s {
     r array_join([
         html`<section id="mcp" class="examples">
     <div class="section-header">
-        <h2>Instant MCP Server</h2>
+        <h2>Instant MCP server</h2>
         <p>The Model Context Protocol is how AI assistants call outside tools. In Nail it is a tool list and one function.</p>
     </div>
     <div class="code-example" style="position: relative;">
@@ -579,7 +573,7 @@ f generate_insert_safe(helper_html:s, entry_html:s, verdict_html:s):s {
     hashmap_set(values, `verdict`, verdict_html);
     r danger(template_render(html`<section id="insertsafe" class="insertsafe">
     <div class="section-header">
-        <h2>Use a Stranger's Code Safely</h2>
+        <h2>Use a stranger's code safely</h2>
         <p>insert_safe pulls a file into your program, seals it and sandboxes it: it can compute anything and touch nothing</p>
     </div>
     <div class="sandbox-points">
@@ -628,7 +622,7 @@ f generate_stdlib_teaser(function_count:i, module_count:i, rows:a:h<s,s>):s {
     r danger(template_render(html`<section id="stdlib" class="stdlib">
     <style>.battery-row { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; align-items: baseline; padding: 0.5rem 0; } .battery-answer { color: var(--success); font-weight: 600; }</style>
     <div class="section-header">
-        <h2>Standard Library</h2>
+        <h2>Standard library</h2>
         <p>{{function_count}} functions across {{module_count}} modules, all built in. Every answer below was computed by this server at startup, by running the expression on its left</p>
     </div>
     {{{entries}}}
@@ -671,7 +665,7 @@ f generate_stdlib_page(page_title:s, page_description:s, functions:a:STDLIB_Func
 
     listing:s = danger(template_render(html`<section id="stdlib" class="stdlib">
     <div class="section-header">
-        <h2>Standard Library</h2>
+        <h2>Standard library</h2>
         <p>{{function_count}} functions across {{module_count}} modules, all built in</p>
     </div>
     <p class="stdlib-intro">
@@ -709,7 +703,7 @@ f generate_author(avatar_base64:s):s {
     author_html:s = array_join([
         html`<section id="author" class="author">
     <div class="section-header">
-        <h2>Made By</h2>
+        <h2>Made by</h2>
     </div>
     <div class="author-card">
         <img class="author-photo" src="data:image/jpeg;base64,`,
