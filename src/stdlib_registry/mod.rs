@@ -655,7 +655,7 @@ pub fn file_fold(name: &str) -> Option<FileFold> {
 
 pub fn is_stdlib_fn_async(name: &str) -> bool {
     // Per-function overrides of the module default
-    if name == "time_sleep" || name == "tui_run" || name == "crypto_hash_file_sha256" || name == "csv_write" || name == "sys_cpu_usage_percent" || name == "sys_process_cpu_percent" {
+    if name == "time_sleep" || name == "tui_run" || name == "crypto_hash_file_sha256" || name == "crypto_hash_file_blake3" || name == "csv_write" || name == "sys_cpu_usage_percent" || name == "sys_process_cpu_percent" {
         return true;
     }
     if SYNC_STDLIB_FUNCTIONS.contains(&name) {

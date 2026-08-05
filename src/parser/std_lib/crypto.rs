@@ -39,6 +39,32 @@ pub fn uuid_v7() -> String {
     Uuid::now_v7().to_string()
 }
 
+/// A version 5 UUID, RFC 4122: the SHA-1 of a namespace UUID and a name,
+/// folded into UUID shape with the version and variant bits set. The same
+/// namespace and name always give the same id, which is the point - it turns
+/// any stable name into a stable UUID with no table to remember what was
+/// handed out. The well-known DNS namespace is
+/// 6ba7b810-9dad-11d1-80b4-00c04fd430c8. Errors on a namespace that is not a
+/// UUID.
+pub fn uuid_v5(namespace_uuid: String, name: String) -> Result<String, String> {
+    use sha1::Digest;
+
+    let namespace = Uuid::parse_str(namespace_uuid.trim())
+        .map_err(|_| format!("crypto_uuid_v5: '{}' is not a UUID to use as a namespace", namespace_uuid.trim()))?;
+
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(namespace.as_bytes());
+    hasher.update(name.as_bytes());
+    let digest = hasher.finalize();
+
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    // The version nibble says 5 and the variant bits say RFC 4122.
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    return Ok(Uuid::from_bytes(bytes).to_string());
+}
+
 /// Turns a password into something safe to store, using Argon2id with a fresh
 /// random salt each time.
 ///
@@ -188,6 +214,30 @@ mod tests {
     }
 
     #[test]
+    fn a_version_five_id_matches_the_published_example() {
+        // The DNS namespace and name from RFC 9562's worked example, which
+        // Python's uuid.uuid5 reproduces byte for byte.
+        let dns = "6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string();
+        let id = uuid_v5(dns, "www.example.com".to_string()).expect("a valid namespace");
+        assert_eq!(id, "2ed6657d-e927-568b-95e1-2665a8aea6a2");
+    }
+
+    #[test]
+    fn the_same_namespace_and_name_always_give_the_same_id() {
+        let dns = "6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string();
+        let first = uuid_v5(dns.clone(), "www.example.com".to_string()).expect("a valid namespace");
+        let second = uuid_v5(dns, "www.example.com".to_string()).expect("a valid namespace");
+        assert_eq!(first, second, "a version 5 id is a pure function of its inputs");
+    }
+
+    #[test]
+    fn a_namespace_that_is_not_a_uuid_is_refused() {
+        let failure = uuid_v5("not a uuid".to_string(), "www.example.com".to_string()).unwrap_err();
+        assert!(failure.contains("crypto_uuid_v5"), "got: {}", failure);
+        assert!(failure.contains("not a UUID"), "got: {}", failure);
+    }
+
+    #[test]
     fn random_hex_is_the_length_asked_for_and_refuses_nonsense() {
         assert_eq!(random_hex(16).expect("a usable amount").len(), 32);
         assert!(random_hex(0).unwrap_err().contains("not a usable amount"));
@@ -318,6 +368,28 @@ pub async fn hash_file_sha256(path: String) -> Result<String, String> {
     return Ok(format!("{:x}", hasher.finalize()));
 }
 
+/// The BLAKE3 of a file's contents, as hex - the fast fingerprint for content
+/// addressing and dedup keys when the file may be huge.
+///
+/// Takes a path rather than the contents for the same reasons as
+/// `crypto_hash_file_sha256`, and reads in blocks the same way, so the file
+/// never has to fit in memory.
+pub async fn hash_file_blake3(path: String) -> Result<String, String> {
+    use tokio::io::AsyncReadExt;
+
+    let mut file = tokio::fs::File::open(&path).await.map_err(|failure| format!("crypto_hash_file_blake3: could not read '{}': {}", path, failure))?;
+    let mut hasher = blake3::Hasher::new();
+    let mut block = vec![0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut block).await.map_err(|failure| format!("crypto_hash_file_blake3: could not read '{}': {}", path, failure))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&block[..read]);
+    }
+    return Ok(hasher.finalize().to_hex().to_string());
+}
+
 #[cfg(test)]
 mod file_hash_tests {
     use super::*;
@@ -352,6 +424,22 @@ mod file_hash_tests {
         let failure = hash_file_sha256("/tmp/nail_no_such_file_to_hash".to_string()).await.unwrap_err();
         assert!(failure.contains("crypto_hash_file_sha256"), "got: {}", failure);
         assert!(failure.contains("nail_no_such_file_to_hash"), "got: {}", failure);
+    }
+
+    #[tokio::test]
+    async fn a_file_hashes_to_the_same_blake3_as_its_contents() {
+        let path = std::env::temp_dir().join("nail_hash_file_blake3_test.txt");
+        std::fs::write(&path, "hello").expect("a writable file");
+        let from_file = hash_file_blake3(path.to_string_lossy().to_string()).await.expect("a readable file");
+        assert_eq!(from_file, hash_blake3("hello".to_string()));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn a_missing_file_names_the_blake3_function() {
+        let failure = hash_file_blake3("/tmp/nail_no_such_file_to_blake3".to_string()).await.unwrap_err();
+        assert!(failure.contains("crypto_hash_file_blake3"), "got: {}", failure);
+        assert!(failure.contains("nail_no_such_file_to_blake3"), "got: {}", failure);
     }
 }
 
@@ -500,21 +588,38 @@ pub fn hash_blake3(input: String) -> String {
     return blake3::hash(input.as_bytes()).to_hex().to_string();
 }
 
-fn totp_from(secret_base32: &str, timestamp: i64, what: &str) -> Result<String, String> {
+/// The RFC 4226 machinery both HOTP and TOTP share: HMAC-SHA1 of the counter
+/// under the decoded secret, dynamically truncated to six digits.
+fn code_from_counter(secret_base32: &str, counter: u64, what: &str) -> Result<String, String> {
     let secret = super::base32::decode_to_bytes(secret_base32, what)?;
     if secret.is_empty() {
         return Err(format!("{}: the secret is empty", what));
     }
-    if timestamp < 0 {
-        return Err(format!("{}: a timestamp before 1970 makes no code", what));
-    }
     use hmac::Mac;
     let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(&secret).expect("an hmac key can be any length");
-    mac.update(&((timestamp / 30) as u64).to_be_bytes());
+    mac.update(&counter.to_be_bytes());
     let digest = mac.finalize().into_bytes();
     let offset = (digest[19] & 0x0f) as usize;
     let value = u32::from_be_bytes([digest[offset] & 0x7f, digest[offset + 1], digest[offset + 2], digest[offset + 3]]);
     return Ok(format!("{:06}", value % 1_000_000));
+}
+
+fn totp_from(secret_base32: &str, timestamp: i64, what: &str) -> Result<String, String> {
+    if timestamp < 0 {
+        return Err(format!("{}: a timestamp before 1970 makes no code", what));
+    }
+    return code_from_counter(secret_base32, (timestamp / 30) as u64, what);
+}
+
+/// The six-digit code a base32 secret makes for a counter, RFC 4226. The
+/// counter-stepped cousin of TOTP: hardware tokens and printed back-up code
+/// lists step a number instead of a clock, and the truncation underneath is
+/// the same one. The counter must not be negative.
+pub fn hotp(secret_base32: String, counter: i64) -> Result<String, String> {
+    if counter < 0 {
+        return Err(format!("crypto_hotp: a counter below zero makes no code, got {}", counter));
+    }
+    return code_from_counter(&secret_base32, counter as u64, "crypto_hotp");
 }
 
 fn unix_now(what: &str) -> Result<i64, String> {
@@ -580,5 +685,17 @@ mod checksum_tests {
         assert_eq!(totp_at(secret.clone(), 1111111109).unwrap(), "081804");
         assert!(totp_at(secret, -5).is_err());
         assert!(totp_at("".to_string(), 59).unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn the_rfc_4226_vectors_hold() {
+        // Appendix D of the RFC: the secret `12345678901234567890` in base32,
+        // with the six-digit codes its table publishes.
+        let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_string();
+        assert_eq!(hotp(secret.clone(), 0).unwrap(), "755224");
+        assert_eq!(hotp(secret.clone(), 1).unwrap(), "287082");
+        assert_eq!(hotp(secret.clone(), 9).unwrap(), "520489");
+        assert!(hotp(secret, -1).unwrap_err().contains("below zero"));
+        assert!(hotp("".to_string(), 0).unwrap_err().contains("empty"));
     }
 }

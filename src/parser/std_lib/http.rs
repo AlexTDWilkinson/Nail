@@ -716,6 +716,56 @@ pub async fn http_request(method: HTTP_Method, url: String, headers: DashMap<Str
     return read_response(response, &url, "http_request").await;
 }
 
+/// Downloads a URL straight into a file, answering how many bytes were
+/// written. The body is streamed to disk piece by piece as it arrives, so a
+/// download costs the same memory whatever its size - this is the function for
+/// fetching a release archive or a dataset, where `http_request` would read
+/// the whole body into a string.
+///
+/// A response outside the 2xx range is an error naming the status, and any
+/// failure once writing has begun removes the partial file rather than leaving
+/// a half-download that looks whole.
+pub async fn http_download_file(url: String, path: String) -> Result<i64, String> {
+    use tokio::io::AsyncWriteExt;
+
+    let client = reqwest::Client::new();
+    let mut response = client.get(&url).send().await.map_err(|e| format!("http_download_file: request to '{}' failed: {}", url, e))?;
+
+    let status = response.status().as_u16() as i64;
+    if !(200..300).contains(&status) {
+        return Err(format!("http_download_file: '{}' answered {} rather than success", url, status));
+    }
+
+    let mut file = tokio::fs::File::create(&path).await.map_err(|e| format!("http_download_file: could not write '{}': {}", path, e))?;
+    let mut written: i64 = 0;
+
+    loop {
+        let piece = match response.chunk().await {
+            Ok(Some(piece)) => piece,
+            Ok(None) => break,
+            Err(e) => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err(format!("http_download_file: the download from '{}' broke off partway: {}", url, e));
+            }
+        };
+        if let Err(e) = file.write_all(&piece).await {
+            drop(file);
+            let _ = tokio::fs::remove_file(&path).await;
+            return Err(format!("http_download_file: could not write '{}': {}", path, e));
+        }
+        written += piece.len() as i64;
+    }
+
+    if let Err(e) = file.flush().await {
+        drop(file);
+        let _ = tokio::fs::remove_file(&path).await;
+        return Err(format!("http_download_file: could not write '{}': {}", path, e));
+    }
+
+    return Ok(written);
+}
+
 /// One part of a `multipart/form-data` body (RFC 7578) - the encoding a form
 /// with a file in it uses, and the one file-upload APIs expect.
 ///
@@ -1018,6 +1068,91 @@ mod retry_tests {
         // failure path without waiting on a real network.
         let error = http_request_retry(HTTP_Method::Get, "http://127.0.0.1:1/".to_string(), DashMap::new(), String::new(), retry).await.unwrap_err();
         assert!(error.contains("after 3 attempts"), "{}", error);
+    }
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::*;
+
+    /// The smallest server a download can be tested against: a loopback
+    /// listener answering every connection with the same canned response.
+    async fn a_server_answering(canned: &'static str) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free loopback port");
+        let address = listener.local_addr().expect("the port that was bound");
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    let mut request = [0u8; 2048];
+                    let _ = socket.read(&mut request).await;
+                    let _ = socket.write_all(canned.as_bytes()).await;
+                    let _ = socket.shutdown().await;
+                });
+            }
+        });
+        return format!("http://{}/file", address);
+    }
+
+    fn a_download_path(name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("nail_download_{}", name));
+        let _ = std::fs::remove_file(&path);
+        return path;
+    }
+
+    #[tokio::test]
+    async fn a_body_arrives_on_disk_with_its_byte_count() {
+        let url = a_server_answering("HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\nthe downloaded bytes").await;
+        let path = a_download_path("whole_body");
+        let written = http_download_file(url, path.to_string_lossy().to_string()).await.expect("a downloadable file");
+        assert_eq!(written, 20);
+        assert_eq!(std::fs::read_to_string(&path).expect("the downloaded file"), "the downloaded bytes");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn a_status_outside_success_is_an_error_naming_it_and_writes_nothing() {
+        let url = a_server_answering("HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nnot found").await;
+        let path = a_download_path("not_found");
+        let error = http_download_file(url, path.to_string_lossy().to_string()).await.unwrap_err();
+        assert!(error.contains("404"), "{}", error);
+        assert!(!path.exists(), "a refused download must not create the file");
+    }
+
+    #[tokio::test]
+    async fn a_path_that_cannot_be_written_names_itself() {
+        let url = a_server_answering("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok").await;
+        let error = http_download_file(url, "/nowhere/at/all/download.bin".to_string()).await.unwrap_err();
+        assert!(error.contains("could not write"), "{}", error);
+        assert!(error.contains("/nowhere/at/all/download.bin"), "{}", error);
+    }
+
+    /// A server that promises more bytes than it sends breaks the download
+    /// partway, and the partial file must not be left looking whole.
+    #[tokio::test]
+    async fn a_download_that_breaks_off_leaves_no_partial_file() {
+        let url = a_server_answering("HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\nonly this much").await;
+        let path = a_download_path("broken_off");
+        let error = http_download_file(url, path.to_string_lossy().to_string()).await.unwrap_err();
+        assert!(error.contains("broke off"), "{}", error);
+        assert!(!path.exists(), "the partial file must be removed");
+    }
+
+    #[tokio::test]
+    async fn a_url_that_is_not_a_url_fails_before_anything_is_written() {
+        let path = a_download_path("bad_url");
+        let error = http_download_file("not a url at all".to_string(), path.to_string_lossy().to_string()).await.unwrap_err();
+        assert!(error.contains("failed"), "{}", error);
+        assert!(!path.exists(), "a request that never went out must not create the file");
+    }
+
+    #[tokio::test]
+    async fn a_connection_nobody_answers_is_an_error_not_a_file() {
+        let path = a_download_path("refused");
+        // Port 1 on loopback refuses at once, the same trick the retry tests use.
+        let error = http_download_file("http://127.0.0.1:1/file".to_string(), path.to_string_lossy().to_string()).await.unwrap_err();
+        assert!(error.contains("failed"), "{}", error);
+        assert!(!path.exists());
     }
 }
 

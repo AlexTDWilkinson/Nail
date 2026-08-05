@@ -46,5 +46,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "format_phone_na" => "std_lib::format::phone_na", (digits: s) -> (s!e),
             "Formats a ten-digit North American phone number as (780) 555-0100, forgiving formatting characters and an eleventh leading 1. Any other count of digits is an error saying how many were found.",
             "line:s = danger(format_phone_na(`1-780-555-0100`));";
+        "format_number_words" => "std_lib::format::number_words", (value: i) -> s,
+            "A whole number in English words, so 42 becomes forty-two and -8000 becomes negative eight thousand. American style with no and, hyphenated twenty-one through ninety-nine, reaching the quintillions.",
+            "spelled:s = format_number_words(42);";
     }
 }

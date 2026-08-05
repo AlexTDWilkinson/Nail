@@ -19,6 +19,9 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "crypto_uuid_v7" [Uuid] => "std_lib::crypto::uuid_v7", () -> s,
             "Generates a version 7 UUID: random, but with the time it was made in the leading bits, so sorting the ids sorts them by age. The one to use for a database key.",
             "id:s = crypto_uuid_v7();";
+        "crypto_uuid_v5" [Uuid, Sha1] => "std_lib::crypto::uuid_v5", (namespace_uuid: s, name: s) -> (s!e),
+            "A version 5 UUID, RFC 4122: the SHA-1 of a namespace UUID and a name folded into UUID shape. The same namespace and name always give the same id, which is the point - it turns any stable name into a stable UUID. The well-known DNS namespace is 6ba7b810-9dad-11d1-80b4-00c04fd430c8. Errors on a namespace that is not a UUID.",
+            "id:s = danger(crypto_uuid_v5(`6ba7b810-9dad-11d1-80b4-00c04fd430c8`, `www.example.com`));";
         "crypto_encrypt" [AesGcm, Sha2, Rand, Base64] => "std_lib::crypto::encrypt", (text: s, secret: s) -> (s!e),
             "Encrypts text with a secret so only somebody holding the same secret can read it back, using AES-256-GCM. The result is URL-safe base64 and is different every time, and text changed afterwards fails to decrypt rather than decrypting to something else. For data at rest - a session cookie, a stored token. Passwords go through crypto_hash_password instead.",
             "sealed:s = danger(crypto_encrypt(token, danger(env_get(`SECRET_KEY`))));";
@@ -70,5 +73,11 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "crypto_totp_verify" [Sha1, Hmac] => "std_lib::crypto::totp_verify", (secret_base32: s, code: s) -> (b!e),
             "Whether a code someone typed is the secret's current one. One clock step of drift on either side is forgiven, since phones and servers disagree by seconds.",
             "valid:b = danger(crypto_totp_verify(user_secret, typed_code));";
+        "crypto_hotp" [Sha1, Hmac] => "std_lib::crypto::hotp", (secret_base32: s, counter: i) -> (s!e),
+            "The six-digit code a base32 secret makes for a counter, RFC 4226. The counter-stepped cousin of TOTP, for hardware tokens and printed back-up code lists. The counter must not be negative.",
+            "code:s = danger(crypto_hotp(user_secret, 3));";
+        "crypto_hash_file_blake3" [Blake3, Tokio] => "std_lib::crypto::hash_file_blake3", (path: s) -> (s!e),
+            "The BLAKE3 of a file's contents as hex, read in blocks so the file never has to fit in memory. The fast fingerprint for content addressing and dedup keys.",
+            "digest:s = danger(crypto_hash_file_blake3(`release.tar.gz`));";
     }
 }

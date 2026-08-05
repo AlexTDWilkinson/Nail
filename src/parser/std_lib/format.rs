@@ -239,6 +239,70 @@ pub fn phone_na(digits: String) -> Result<String, String> {
     return Ok(format!("({}) {}-{}", &text[..3], &text[3..6], &text[6..]));
 }
 
+/// The words for a number from 1 to 999, the group the bigger scales repeat.
+fn words_under_thousand(n: u64) -> String {
+    const ONES: [&str; 20] = [
+        "", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen",
+    ];
+    const TENS: [&str; 10] = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+
+    let mut out = String::new();
+    if n >= 100 {
+        out.push_str(ONES[(n / 100) as usize]);
+        out.push_str(" hundred");
+    }
+    let rest = n % 100;
+    if rest == 0 {
+        return out;
+    }
+    if !out.is_empty() {
+        out.push(' ');
+    }
+    if rest < 20 {
+        out.push_str(ONES[rest as usize]);
+    } else {
+        out.push_str(TENS[(rest / 10) as usize]);
+        if rest % 10 != 0 {
+            out.push('-');
+            out.push_str(ONES[(rest % 10) as usize]);
+        }
+    }
+    return out;
+}
+
+/// A whole number in English words: 42 is `forty-two` and -8000 is `negative
+/// eight thousand`. American style with no `and`, so 105 is `one hundred
+/// five`, and the tens are hyphenated from twenty-one through ninety-nine.
+/// Reaches the quintillions, which is as far as a Nail integer goes.
+pub fn number_words(value: i64) -> String {
+    if value == 0 {
+        return "zero".to_string();
+    }
+    const SCALES: [&str; 7] = ["", " thousand", " million", " billion", " trillion", " quadrillion", " quintillion"];
+
+    // unsigned_abs keeps the most negative integer honest - its magnitude does
+    // not fit back into the signed type, but it fits here.
+    let mut remaining = value.unsigned_abs();
+    let mut groups: Vec<u64> = Vec::new();
+    while remaining > 0 {
+        groups.push(remaining % 1000);
+        remaining /= 1000;
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    if value < 0 {
+        parts.push("negative".to_string());
+    }
+    for (scale, group) in groups.iter().enumerate().rev() {
+        if *group == 0 {
+            continue;
+        }
+        parts.push(format!("{}{}", words_under_thousand(*group), SCALES[scale]));
+    }
+    return parts.join(" ");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,5 +484,41 @@ mod tests {
         assert!(phone_na("780555010".to_string()).unwrap_err().contains("has 9"));
         assert!(phone_na("78055501000".to_string()).unwrap_err().contains("has 11"), "eleven digits without the 1 prefix are not a number");
         assert!(phone_na("call me".to_string()).unwrap_err().contains("has 0"));
+    }
+
+    #[test]
+    fn numbers_read_as_english_words() {
+        assert_eq!(number_words(0), "zero");
+        assert_eq!(number_words(7), "seven");
+        assert_eq!(number_words(21), "twenty-one");
+        assert_eq!(number_words(42), "forty-two");
+        assert_eq!(number_words(100), "one hundred");
+        assert_eq!(number_words(105), "one hundred five", "American style has no `and`");
+        assert_eq!(number_words(999), "nine hundred ninety-nine");
+        assert_eq!(number_words(1000), "one thousand");
+        assert_eq!(number_words(1000000), "one million");
+        assert_eq!(number_words(-8000), "negative eight thousand");
+    }
+
+    /// A group of zero contributes no words, so the scales around it must
+    /// still read correctly.
+    #[test]
+    fn empty_groups_drop_out_of_the_words() {
+        assert_eq!(number_words(1000001), "one million one");
+        assert_eq!(number_words(2000000000), "two billion");
+    }
+
+    /// The most negative integer has no positive twin, so it is the value a
+    /// naive `abs` breaks on. Both ends of the range are pinned in full.
+    #[test]
+    fn the_edges_of_the_integer_range_spell_out_fully() {
+        assert_eq!(
+            number_words(i64::MAX),
+            "nine quintillion two hundred twenty-three quadrillion three hundred seventy-two trillion thirty-six billion eight hundred fifty-four million seven hundred seventy-five thousand eight hundred seven"
+        );
+        assert_eq!(
+            number_words(i64::MIN),
+            "negative nine quintillion two hundred twenty-three quadrillion three hundred seventy-two trillion thirty-six billion eight hundred fifty-four million seven hundred seventy-five thousand eight hundred eight"
+        );
     }
 }

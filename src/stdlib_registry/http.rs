@@ -273,6 +273,9 @@ m.insert("http_request", StdlibFunction {
         "http_live_count" [Tokio] => "std_lib::http::http_live_count", (channel: s) -> i,
             "How many live subscribers a channel has right now.",
             "watching:i = http_live_count(`chat`);";
+        "http_download_file" [Tokio, Reqwest] => "std_lib::http::http_download_file", (url: s, path: s) -> (i!e),
+            "Downloads a URL straight into a file, streamed to disk piece by piece so the whole body is never in memory, and answers how many bytes were written. A response outside the 2xx range is an error naming the status, and a failure partway removes the partial file rather than leaving a half-download that looks whole.",
+            "bytes:i = danger(http_download_file(`https://example.com/release.tar.gz`, `release.tar.gz`));";
     }
 
     let websocket_parameter = || StdlibParameter { name: "socket".to_string(), param_type: NailDataTypeDescriptor::Struct("HTTP_Websocket".to_string()), pass_by_reference: true };

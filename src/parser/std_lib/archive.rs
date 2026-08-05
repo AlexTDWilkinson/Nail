@@ -206,6 +206,78 @@ pub async fn targz_list(archive_path: String) -> Result<Vec<String>, String> {
     return Ok(names);
 }
 
+/// Writes every file at or below a directory into one zstd compressed tar
+/// file - the same shape as `targz_create` with a newer, faster compressor.
+#[cfg(feature = "compress")]
+pub async fn tarzst_create(archive_path: String, directory: String) -> Result<(), String> {
+    let root = directory_must_exist(&directory, "archive_tarzst_create")?;
+    let file = File::create(&archive_path).map_err(|failure| format!("archive_tarzst_create: could not write '{}': {}", archive_path, failure))?;
+    let encoder = zstd::stream::write::Encoder::new(file, 0).map_err(|failure| format!("archive_tarzst_create: could not write '{}': {}", archive_path, failure))?;
+    let mut builder = tar::Builder::new(encoder);
+
+    for (path, inside) in files_to_archive(&root).map_err(|detail| format!("archive_tarzst_create: {}", detail))? {
+        let mut source = File::open(&path).map_err(|failure| format!("archive_tarzst_create: could not read '{}': {}", path.display(), failure))?;
+        builder.append_file(&inside, &mut source).map_err(|failure| format!("archive_tarzst_create: could not add '{}': {}", inside, failure))?;
+    }
+    builder
+        .into_inner()
+        .and_then(|encoder| encoder.finish())
+        .map_err(|failure| format!("archive_tarzst_create: could not finish '{}': {}", archive_path, failure))?;
+    return Ok(());
+}
+
+/// Unpacks a zstd compressed tar file into a directory. As with the others, an
+/// entry naming a path outside that directory stops the extraction.
+#[cfg(feature = "compress")]
+pub async fn tarzst_extract(archive_path: String, directory: String) -> Result<(), String> {
+    let file = File::open(&archive_path).map_err(|failure| format!("archive_tarzst_extract: could not read '{}': {}", archive_path, failure))?;
+    let root = PathBuf::from(&directory);
+    std::fs::create_dir_all(&root).map_err(|failure| format!("archive_tarzst_extract: could not create '{}': {}", directory, failure))?;
+
+    let decoder = zstd::stream::read::Decoder::new(file).map_err(|failure| format!("archive_tarzst_extract: '{}' is not a zstd compressed tar file: {}", archive_path, failure))?;
+    let mut archive = tar::Archive::new(decoder);
+    let entries = archive.entries().map_err(|failure| format!("archive_tarzst_extract: '{}' is not a zstd compressed tar file: {}", archive_path, failure))?;
+    for entry in entries {
+        let mut entry = entry.map_err(|failure| format!("archive_tarzst_extract: could not read an entry of '{}': {}", archive_path, failure))?;
+        let name = entry.path().map_err(|failure| format!("archive_tarzst_extract: an entry of '{}' has an unreadable name: {}", archive_path, failure))?.to_string_lossy().to_string();
+        if entry.header().entry_type().is_dir() {
+            let target = safe_member_path(&root, &name).map_err(|detail| format!("archive_tarzst_extract: {}", detail))?;
+            std::fs::create_dir_all(&target).map_err(|failure| format!("archive_tarzst_extract: could not create '{}': {}", target.display(), failure))?;
+            continue;
+        }
+        if !entry.header().entry_type().is_file() {
+            // Links and devices are skipped rather than recreated: a symlink out
+            // of the directory is the same attack as a `..` in a path.
+            continue;
+        }
+        let target = safe_member_path(&root, &name).map_err(|detail| format!("archive_tarzst_extract: {}", detail))?;
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|failure| format!("archive_tarzst_extract: could not create '{}': {}", parent.display(), failure))?;
+        }
+        let mut contents = Vec::new();
+        entry.read_to_end(&mut contents).map_err(|failure| format!("archive_tarzst_extract: could not read '{}': {}", name, failure))?;
+        std::fs::write(&target, contents).map_err(|failure| format!("archive_tarzst_extract: could not write '{}': {}", target.display(), failure))?;
+    }
+    return Ok(());
+}
+
+/// The paths inside a zstd compressed tar file, without unpacking it.
+#[cfg(feature = "compress")]
+pub async fn tarzst_list(archive_path: String) -> Result<Vec<String>, String> {
+    let file = File::open(&archive_path).map_err(|failure| format!("archive_tarzst_list: could not read '{}': {}", archive_path, failure))?;
+    let decoder = zstd::stream::read::Decoder::new(file).map_err(|failure| format!("archive_tarzst_list: '{}' is not a zstd compressed tar file: {}", archive_path, failure))?;
+    let mut archive = tar::Archive::new(decoder);
+    let entries = archive.entries().map_err(|failure| format!("archive_tarzst_list: '{}' is not a zstd compressed tar file: {}", archive_path, failure))?;
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|failure| format!("archive_tarzst_list: could not read an entry of '{}': {}", archive_path, failure))?;
+        let name = entry.path().map_err(|failure| format!("archive_tarzst_list: an entry of '{}' has an unreadable name: {}", archive_path, failure))?;
+        names.push(name.to_string_lossy().to_string());
+    }
+    names.sort();
+    return Ok(names);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,5 +363,56 @@ mod tests {
         let failure = zip_list(not_an_archive.to_string_lossy().to_string()).await.unwrap_err();
         assert!(failure.contains("is not a zip file"), "got: {}", failure);
         let _ = std::fs::remove_file(&not_an_archive);
+    }
+}
+
+#[cfg(all(test, feature = "compress"))]
+mod tarzst_tests {
+    use super::*;
+
+    /// The same little tree the other round trips use, under a name of its own.
+    fn a_directory_with_files(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("nail_archive_{}", name));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("nested")).expect("a writable temporary directory");
+        std::fs::write(root.join("top.txt"), "the top file").expect("a writable file");
+        std::fs::write(root.join("nested").join("under.txt"), "the nested file").expect("a writable file");
+        return root;
+    }
+
+    #[tokio::test]
+    async fn a_tarzst_round_trips_a_directory() {
+        let source = a_directory_with_files("tarzst_round_trip");
+        let archive = std::env::temp_dir().join("nail_archive_tarzst_round_trip.tar.zst");
+        let destination = std::env::temp_dir().join("nail_archive_tarzst_round_trip_out");
+        let _ = std::fs::remove_file(&archive);
+        let _ = std::fs::remove_dir_all(&destination);
+
+        tarzst_create(archive.to_string_lossy().to_string(), source.to_string_lossy().to_string()).await.expect("a writable archive");
+        let listed = tarzst_list(archive.to_string_lossy().to_string()).await.expect("a readable archive");
+        assert_eq!(listed, vec!["nested/under.txt".to_string(), "top.txt".to_string()]);
+
+        tarzst_extract(archive.to_string_lossy().to_string(), destination.to_string_lossy().to_string()).await.expect("an extractable archive");
+        assert_eq!(std::fs::read_to_string(destination.join("top.txt")).expect("the extracted file"), "the top file");
+        assert_eq!(std::fs::read_to_string(destination.join("nested").join("under.txt")).expect("the extracted file"), "the nested file");
+
+        let _ = std::fs::remove_dir_all(&source);
+        let _ = std::fs::remove_file(&archive);
+        let _ = std::fs::remove_dir_all(&destination);
+    }
+
+    #[tokio::test]
+    async fn an_archive_that_is_not_there_is_refused_by_name() {
+        let missing = "/tmp/nail_archive_no_such_file.tar.zst".to_string();
+        let failure = tarzst_list(missing.clone()).await.unwrap_err();
+        assert!(failure.contains("could not read") && failure.contains(&missing), "got: {}", failure);
+        let failure = tarzst_extract(missing.clone(), "/tmp/nail_archive_never_created".to_string()).await.unwrap_err();
+        assert!(failure.contains("could not read") && failure.contains(&missing), "got: {}", failure);
+    }
+
+    #[tokio::test]
+    async fn creating_from_something_that_is_not_a_directory_says_so() {
+        let failure = tarzst_create("/tmp/nail_archive_never_written.tar.zst".to_string(), "/tmp/nail_archive_no_such_directory".to_string()).await.unwrap_err();
+        assert!(failure.contains("is not a directory"), "got: {}", failure);
     }
 }

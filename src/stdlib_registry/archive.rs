@@ -24,5 +24,14 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "archive_targz_list" [Tar, Flate2, Tokio] => "std_lib::archive::targz_list", (archive_path: s) -> ([s]!e),
             "Returns the paths inside a gzipped tar file without unpacking it.",
             "contents:a:s = danger(archive_targz_list(`release.tar.gz`));";
+        "archive_tarzst_create" [Tar, Zstd, Tokio] => "std_lib::archive::tarzst_create", (archive_path: s, directory: s) -> (v!e),
+            "Writes every file at or below the directory into one zstd compressed tar file.",
+            "danger(archive_tarzst_create(`backup.tar.zst`, `reports`));";
+        "archive_tarzst_extract" [Tar, Zstd, Tokio] => "std_lib::archive::tarzst_extract", (archive_path: s, directory: s) -> (v!e),
+            "Unpacks a zstd compressed tar file into a directory. An entry naming a path outside that directory is refused, and links and devices are skipped.",
+            "danger(archive_tarzst_extract(`release.tar.zst`, `unpacked`));";
+        "archive_tarzst_list" [Tar, Zstd, Tokio] => "std_lib::archive::tarzst_list", (archive_path: s) -> ([s]!e),
+            "Returns the paths inside a zstd compressed tar file without unpacking it.",
+            "contents:a:s = danger(archive_tarzst_list(`release.tar.zst`));";
     }
 }
