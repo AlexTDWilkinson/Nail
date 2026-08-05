@@ -16,6 +16,7 @@ f generate_head(site_title:s, site_description:s):s {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f1117">
     <meta name="description" content="{{description}}">
     <title>{{title}}</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
@@ -126,7 +127,9 @@ f generate_refusals(error_html:s, error_verdict:s, field_html:s, field_verdict:s
     r array_join([html`<section id="refusals" class="refusals">
     <div class="section-header">
         <h2>Bugs do not compile</h2>
-        <p>Three everyday mistakes. The errors are real: this server fed each file to its own compiler at startup</p>
+        <p>Three everyday mistakes. The errors are real: this server fed each file to its own
+           compiler at startup. The panes are editable, so fix a mistake and watch the same
+           compiler, running in your browser, change its verdict</p>
     </div>
     <div class="refusal-grid">`, panes, html`</div>
 </section>`], ``);
@@ -221,13 +224,22 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
         <p>Nothing here is a mockup. ▶ Run serves output this server really computed, the
            highlighting is Nail's own lexer, and every Rust panel is what the transpiler emitted.</p>
     </div>
-    
+
+    <p style="color: var(--text-secondary); max-width: 56rem; margin: 0 auto 2rem;">
+        Nail has two blocks that run statements at the same time, and they attack different
+        bottlenecks. A c block is concurrency: one thread starts every wait at once, so it
+        wins when the slow part is the outside world (disks, networks, timers). A p block is
+        parallelism: every statement gets its own CPU core, so it wins when the slow part is
+        your own computation. Overlapping waits is nearly free, multiplying work takes more
+        hardware. That is the whole difference.
+    </p>
+
     <div style="display: grid; gap: 2rem;">
         <div>
             <h3 style="margin-bottom: 1rem;">Concurrent I/O operations (c.../c)</h3>
             <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
-                <button onclick="fetch('/run-example?name=concurrent').then(r=>r.json()).then(d=>{let el=document.getElementById('concurrent-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
+                <button onclick="fetch('/run-example?name=concurrent').then(r=>r.json()).then(d=>{let el=document.getElementById('concurrent-output');el.style.display='block';el.textContent=d.output})" class="run-btn">▶ Run</button>
                 <pre>`,
         concurrent_example,
         html`</pre>
@@ -238,12 +250,18 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
         concurrent_rust,
         html`</pre></div>
             </details>
-            <pre id="concurrent-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
+            <pre id="concurrent-output" class="run-output" style="display: none;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 Everything inside c.../c starts at once and the block ends when all of it finishes.
-                The compiler emits tokio::join!. That's a hand-built Promise.all in JavaScript, or
-                goroutines plus a WaitGroup in Go. Past /c the values are ordinary and immutable,
-                with no await left to forget.
+                One thread juggles all three reads: while one waits on the disk the others make
+                progress, so three waits cost one. The compiler emits tokio::join!, which is a
+                hand-built Promise.all in JavaScript or goroutines plus a WaitGroup in Go. What a
+                c block cannot do is make computation faster, since there is still only one thread
+                computing. Its job is to stack waiting on top of waiting. Why not just use p here?
+                An OS thread costs megabytes of stack and kernel scheduling, and a thread that
+                sleeps on a disk read wastes all of that. A c task waits for close to free, so c
+                scales to thousands of simultaneous waits where threads would choke. Past /c the
+                values are ordinary and immutable, with no await left to forget.
             </p>
         </div>
         
@@ -251,7 +269,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
             <h3 style="margin-bottom: 1rem;">Parallel CPU work (p.../p)</h3>
             <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
-                <button onclick="fetch('/run-example?name=parallel').then(r=>r.json()).then(d=>{let el=document.getElementById('parallel-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
+                <button onclick="fetch('/run-example?name=parallel').then(r=>r.json()).then(d=>{let el=document.getElementById('parallel-output');el.style.display='block';el.textContent=d.output})" class="run-btn">▶ Run</button>
                 <pre>`,
         parallel_example,
         html`</pre>
@@ -262,11 +280,15 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
         parallel_rust,
         html`</pre></div>
             </details>
-            <pre id="parallel-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
+            <pre id="parallel-output" class="run-output" style="display: none;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
-                Each statement in p.../p gets its own OS thread, joined at /p, so every value below
-                the block is ready. No locks, because there is nothing mutable to lock. Rule of
-                thumb: c blocks to wait on the outside world, p blocks to burn CPU.
+                Each statement in p.../p gets its own OS thread on its own core, joined at /p, so
+                every value below the block is ready. This is the part c cannot do: three
+                computations happening in the same instant, so the block takes as long as its
+                slowest statement instead of the sum of all three. Spawning threads only pays off
+                because these jobs burn CPU instead of waiting. No locks, because there is nothing
+                mutable to lock. Rule of thumb: c when the bottleneck is waiting, p when the
+                bottleneck is computing.
             </p>
         </div>
         
@@ -274,7 +296,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
             <h3 style="margin-bottom: 1rem;">Error handling done right</h3>
             <div class="code-example" style="position: relative;">
                 <span class="code-label">Nail</span>
-                <button onclick="fetch('/run-example?name=error').then(r=>r.json()).then(d=>{let el=document.getElementById('error-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
+                <button onclick="fetch('/run-example?name=error').then(r=>r.json()).then(d=>{let el=document.getElementById('error-output');el.style.display='block';el.textContent=d.output})" class="run-btn">▶ Run</button>
                 <pre>`,
         error_example,
         html`</pre>
@@ -285,7 +307,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
         error_rust,
         html`</pre></div>
             </details>
-            <pre id="error-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
+            <pre id="error-output" class="run-output" style="display: none;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 divide returns i!e, an integer or an error, and Nail will not compile code that
                 ignores the error half. Handle it with safe() and a fallback, or accept the crash
@@ -422,7 +444,7 @@ f generate_performance():s {
         <p>What runs in parallel automatically, and what it measures out to</p>
     </div>
     <div class="philosophy-content">
-        <div style="background: var(--bg-primary); border-radius: 0.75rem; padding: 1.5rem 2rem; margin: 2rem 0;">
+        <div class="perf-card">
             <p style="margin-bottom: 0.75rem;"><strong>Uses every core, automatically:</strong></p>
             <ul style="margin: 0 0 1rem 1.5rem;">
                 <li><strong>map</strong> and <strong>filter</strong>: spread across all cores</li>
@@ -451,27 +473,27 @@ f generate_performance():s {
         <p>
             Threads are not free, so parallelism switches on above a measured size:
         </p>
-        <div style="overflow-x: auto; margin: 1.5rem 0;">
-            <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
-                <tr style="border-bottom: 2px solid var(--border);">
-                    <th style="text-align: left; padding: 0.75rem 1rem;">Elements</th>
-                    <th style="text-align: right; padding: 0.75rem 1rem;">min / max</th>
-                    <th style="text-align: right; padding: 0.75rem 1rem;">sum</th>
-                </tr>
-                <tr style="border-bottom: 1px solid var(--border);">
-                    <td style="padding: 0.75rem 1rem;">200,000</td>
-                    <td style="text-align: right; padding: 0.75rem 1rem;">0.42x (slower)</td>
-                    <td style="text-align: right; padding: 0.75rem 1rem;">slower</td>
-                </tr>
-                <tr style="border-bottom: 1px solid var(--border);">
-                    <td style="padding: 0.75rem 1rem;">1,000,000</td>
-                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">1.23x</td>
-                    <td style="text-align: right; padding: 0.75rem 1rem;">0.63x (slower)</td>
+        <div class="bench-wrap">
+            <table class="bench-table">
+                <tr>
+                    <th>Elements</th>
+                    <th>min / max</th>
+                    <th>sum</th>
                 </tr>
                 <tr>
-                    <td style="padding: 0.75rem 1rem;">4,000,000</td>
-                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">2.64x</td>
-                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">1.98x</td>
+                    <td>200,000</td>
+                    <td>0.42x (slower)</td>
+                    <td>slower</td>
+                </tr>
+                <tr>
+                    <td>1,000,000</td>
+                    <td class="bench-win">1.23x</td>
+                    <td>0.63x (slower)</td>
+                </tr>
+                <tr>
+                    <td>4,000,000</td>
+                    <td class="bench-win">2.64x</td>
+                    <td class="bench-win">1.98x</td>
                 </tr>
             </table>
         </div>
@@ -485,22 +507,22 @@ f generate_performance():s {
             gains nothing here. With nothing to parallelize, Nail emits the sequential Rust you would
             have written anyway.
         </p>
-        <div style="overflow-x: auto; margin: 2rem 0;">
-            <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
-                <tr style="border-bottom: 2px solid var(--border);">
-                    <th style="text-align: left; padding: 1rem;">Workload</th>
-                    <th style="text-align: right; padding: 1rem;">Hand-written sequential Rust</th>
-                    <th style="text-align: right; padding: 1rem;">Nail</th>
-                </tr>
-                <tr style="border-bottom: 1px solid var(--border);">
-                    <td style="padding: 1rem;">Primes below 50,000 by trial division (CPU-heavy filter)</td>
-                    <td style="text-align: right; padding: 1rem;">132 ms</td>
-                    <td style="text-align: right; padding: 1rem; color: var(--success); font-weight: 700;">12 ms (11x faster)</td>
+        <div class="bench-wrap">
+            <table class="bench-table">
+                <tr>
+                    <th>Workload</th>
+                    <th>Hand-written sequential Rust</th>
+                    <th>Nail</th>
                 </tr>
                 <tr>
-                    <td style="padding: 1rem;">Doubling 1,000,000 integers (trivial per-element work)</td>
-                    <td style="text-align: right; padding: 1rem;">&lt;1 ms</td>
-                    <td style="text-align: right; padding: 1rem;">1 ms (same)</td>
+                    <td>Primes below 50,000 by trial division (CPU-heavy filter)</td>
+                    <td>132 ms</td>
+                    <td class="bench-win">12 ms (11x faster)</td>
+                </tr>
+                <tr>
+                    <td>Doubling 1,000,000 integers (trivial per-element work)</td>
+                    <td>&lt;1 ms</td>
+                    <td>1 ms (same)</td>
                 </tr>
             </table>
         </div>
@@ -511,6 +533,33 @@ f generate_performance():s {
         </p>
     </div>
 </section>`;
+}
+
+f generate_profiling(shot_timings:s):s {
+    r array_join([html`<section id="profiling" class="performance">
+    <div class="section-header">
+        <h2>The server profiles itself</h2>
+        <p>Every build times every function, with nothing turned on</p>
+    </div>
+    <div class="philosophy-content">
+        <p>
+            The table below is not a benchmark. It is the live profiler dump of the Nail program
+            serving you this page: every function it has run since it started, counted and timed,
+            refreshed as you watch. Recording a call costs about 30 nanoseconds. A build that
+            should run dark uses <code>nailc --no-profile</code>.
+        </p>
+        <div hx-get="/profile-live" hx-trigger="load, every 2s" hx-swap="innerHTML"></div>
+        <h3 style="margin-top: 2.5rem;">The same numbers, pinned in the IDE</h3>
+        <div class="ide-shot"><pre>`,
+        shot_timings,
+        html`</pre></div>
+        <p class="ide-caption">
+            A real frame from the editor. Each function declaration wears the timings its last
+            run measured: total, share of wall time, average with call count, and max. Edit the
+            file and the numbers dim as stale until the next run.
+        </p>
+    </div>
+</section>`], ``);
 }
 
 f generate_versioning():s {
@@ -729,16 +778,16 @@ f generate_author(avatar_base64:s):s {
 }
 
 f generate_footer():s {
-    r html`<footer style="background: var(--text-primary); color: white; padding: 3rem 2rem; margin-top: 4rem;">
-    <div style="max-width: 1200px; margin: 0 auto; text-align: center;">
-        <p style="font-size: 1.1rem; margin-bottom: 1rem;">
+    r html`<footer class="site-footer">
+    <div class="footer-inner">
+        <p class="footer-note">
             Made with Nail 🔨. This page is a Nail program.
         </p>
-        <div style="display: flex; gap: 2rem; justify-content: center; margin-top: 1.5rem;">
-            <a href="https://github.com/AlexTDWilkinson/Nail" target="_blank" style="color: white; text-decoration: none;">
+        <div class="footer-links">
+            <a href="https://github.com/AlexTDWilkinson/Nail" target="_blank">
                 GitHub
             </a>
-            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md" target="_blank" style="color: white; text-decoration: none;">
+            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md" target="_blank">
                 Documentation
             </a>
         </div>
@@ -749,6 +798,59 @@ f generate_footer():s {
 // The hamburger. Every listener is on `document` rather than on the button:
 // the page is boosted by htmx, which replaces the body on navigation, and a
 // listener bound to the nav itself would go with it.
+// Makes the three refusal panes editable, checked by the real compiler
+// compiled to WebAssembly (playground_wasm/, served from /wasm). Fix the
+// bug and the verdict flips: that section's payoff is the compiler's
+// answer, so it works completely client side. The example panes stay
+// read-only on purpose: their payoff is run output, which nothing can
+// produce for edited code until an interpreter exists. Purely structural,
+// it finds the panes by classes they already carry. The wasm loads on
+// first focus, visitors who only read pay nothing.
+f generate_playground_script():s {
+    behavior:s = js`
+    let compiler = null;
+    let loading = null;
+    const loadCompiler = () => {
+        if (!loading) {
+            loading = import('/wasm/playground/pkg/playground_wasm.js')
+                .then(mod => mod.default().then(() => { compiler = mod.playground_review; }))
+                .catch(() => { loading = null; });
+        }
+        return loading;
+    };
+    const wire = (editor, onResult) => {
+        editor.contentEditable = 'plaintext-only';
+        if (!editor.isContentEditable) { editor.contentEditable = 'true'; }
+        editor.spellcheck = false;
+        editor.title = 'Editable. Type here and the compiler, running in this page, answers.';
+        let timer = null;
+        const refresh = () => {
+            if (!compiler) { return; }
+            onResult(JSON.parse(compiler(editor.innerText)));
+        };
+        editor.addEventListener('focus', () => { loadCompiler().then(refresh); });
+        editor.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(refresh, 250);
+        });
+        editor.addEventListener('blur', () => {
+            if (!compiler) { return; }
+            const result = JSON.parse(compiler(editor.innerText));
+            if (result.ok && result.highlighted) { editor.innerHTML = result.highlighted; }
+        });
+    };
+    document.querySelectorAll('.refusal-pane').forEach(pane => {
+        const editor = pane.querySelector('.sandbox-code pre');
+        const verdictPane = pane.querySelector('.sandbox-verdict pre');
+        if (!editor || !verdictPane) { return; }
+        wire(editor, result => {
+            verdictPane.textContent = result.ok ? 'Compiles clean. You fixed it.' : result.verdict;
+        });
+    });
+`;
+    r array_join([html`<script type="module">`, behavior, html`</script>`], ``);
+}
+
 f generate_menu_script():s {
     r html`<script>
 (function () {
@@ -794,4 +896,69 @@ f generate_menu_script():s {
     });
 })();
 </script>`;
+}
+
+// The browser games. Each demo is a Nail program compiled to WebAssembly
+// with nailc --target=wasm. A demo lives on a minimal embed page that the
+// home page frames: the frame gives each game its own base URL (so the
+// program's relative fetch paths resolve into the /wasm mount), its own
+// canvas, and its own keyboard focus, so a game only hears keys once it is
+// clicked and never steals scrolling from the page around it.
+
+f generate_game_embed_page(page_title:s, module_src:s):s {
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `title`, page_title);
+    hashmap_set(values, `module_src`, module_src);
+    r danger(template_render(html`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}}</title>
+    <base href="/wasm/">
+    <style>
+        html, body { margin: 0; height: 100%; background: #0f1117; }
+        body { display: flex; align-items: center; justify-content: center; }
+        canvas { max-width: 100%; max-height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="nail-game"></canvas>
+    <script type="module">import init from '{{{module_src}}}'; await init();</script>
+</body>
+</html>`, values));
+}
+
+f generate_games_section():s {
+    r html`<section id="games" class="section">
+    <div class="section-header">
+        <h2>Games, compiled to your browser</h2>
+        <p>
+            Both frames below are Nail programs, built with <code>nailc --target=wasm</code>.
+            The same source files open native windows on a desktop. Click a game to give
+            it your keyboard.
+        </p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2.5rem; align-items: center;">
+        <div style="width: 100%; max-width: 940px;">
+            <h3 style="margin: 0 0 0.5rem 0;">3D model viewer</h3>
+            <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
+                Drag to orbit, scroll to zoom. The monument is a glTF file the program fetches,
+                projected and lit by the standard library on the CPU - no graphics card, no
+                JavaScript renderer.
+                <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/model_viewer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
+            </p>
+            <iframe src="/games/viewer-embed" title="3D model viewer written in Nail" style="width: 100%; aspect-ratio: 900 / 640; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
+        </div>
+        <div style="width: 100%; max-width: 940px;">
+            <h3 style="margin: 0 0 0.5rem 0;">Pong</h3>
+            <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
+                Click it first, then Up and Down move the paddle. Sixty frames a second of
+                pure functions.
+                <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/pong.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
+            </p>
+            <iframe src="/games/pong-embed" title="Pong written in Nail" style="width: 100%; aspect-ratio: 800 / 600; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
+        </div>
+    </div>
+</section>`;
 }

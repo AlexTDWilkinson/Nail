@@ -21,8 +21,27 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 headers = headers
             };
         },
+        request.path == `/games/pong-embed` -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_pong_embed`)),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
+        request.path == `/games/viewer-embed` -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_viewer_embed`)),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
         request.path == `/run-example` -> {
             r run_example_response(request, state, headers);
+        },
+        request.path == `/profile-live` -> {
+            r profile_live_response(headers);
         },
         else -> {
             r HTTP_Response {
@@ -55,6 +74,125 @@ f run_example_response(request:HTTP_Request, state:h<s,s>, headers:h<s,s>):HTTP_
                 status = 404,
                 body = `{"output": "No such example."}`,
                 content_type = `application/json`,
+                headers = headers
+            };
+        }
+    }
+}
+
+// The live profiling table. Every Nail build carries the profiler, so this
+// server reads its own dump (.nail_profile.json in its working directory)
+// and serves it as HTML. The profiler rewrites the dump once a second, the
+// page polls this route every two.
+
+struct ProfRow {
+    name:s,
+    calls:i,
+    total_nanos:i,
+    max_nanos:i
+}
+
+f prof_row_total(row:ProfRow):i { r row.total_nanos; }
+
+f prof_json_zero(err:e):i { r 0; }
+
+f prof_json_blank(err:e):s { r ``; }
+
+f profile_dump_absent(err:e):s { r ``; }
+
+// Nanoseconds to a human label, same breakpoints as the exit timing sheet.
+f prof_nanos_label(nanos:i):s {
+    if {
+        nanos < 1000 -> { r array_join([string_from(nanos), ` ns`], ``); },
+        nanos < 1000000 -> { r array_join([string_from(nanos / 1000), `.`, string_from((nanos % 1000) / 100), ` µs`], ``); },
+        nanos < 1000000000 -> { r array_join([string_from(nanos / 1000000), `.`, string_from((nanos % 1000000) / 100000), ` ms`], ``); },
+        else -> { r array_join([string_from(nanos / 1000000000), `.`, string_from((nanos % 1000000000) / 10000000), ` s`], ``); }
+    }
+}
+
+// Share of program wall time, to one decimal, in integer math.
+f prof_percent_label(part:i, whole:i):s {
+    if {
+        whole < 1 -> { r `0.0%`; },
+        else -> {
+            tenths:i = (part * 1000) / whole;
+            r array_join([string_from(tenths / 10), `.`, string_from(tenths % 10), `%`], ``);
+        }
+    }
+}
+
+f prof_row_html(row:ProfRow, wall_nanos:i):s {
+    r array_join([
+        `<tr>`,
+        `<td style="font-family: var(--font-mono);">`, row.name,
+        `</td><td>`, string_from(row.calls),
+        `</td><td>`, prof_nanos_label(row.total_nanos),
+        `</td><td>`, prof_nanos_label(row.total_nanos / row.calls),
+        `</td><td>`, prof_nanos_label(row.max_nanos),
+        `</td><td>`, prof_percent_label(row.total_nanos, wall_nanos),
+        `</td></tr>`
+    ], ``);
+}
+
+f generate_profile_fragment(dump:s):s {
+    wall:i = safe(json_get_int(dump, `wall_nanos`), prof_json_zero);
+    count:i = safe(json_array_length(dump, `functions`), prof_json_zero);
+    rows:a:ProfRow = [];
+    for idx in array_range(0, count) {
+        prefix:s = array_join([`functions.`, string_from(idx), `.`], ``);
+        calls:i = safe(json_get_int(dump, array_join([prefix, `calls`], ``)), prof_json_zero);
+        if {
+            calls > 0 -> {
+                row:ProfRow = ProfRow {
+                    name = safe(json_get_string(dump, array_join([prefix, `name`], ``)), prof_json_blank),
+                    calls = calls,
+                    total_nanos = safe(json_get_int(dump, array_join([prefix, `total_nanos`], ``)), prof_json_zero),
+                    max_nanos = safe(json_get_int(dump, array_join([prefix, `max_nanos`], ``)), prof_json_zero)
+                };
+                rows = array_push(rows, row);
+            },
+            else -> {}
+        }
+    }
+    ordered:a:ProfRow = array_reverse(array_sort_by(rows, prof_row_total));
+    row_bits:a:s = [];
+    for row in ordered {
+        row_bits = array_push(row_bits, prof_row_html(row, wall));
+    }
+    r array_join([
+        `<div class="bench-wrap"><table class="bench-table">`,
+        `<tr>`,
+        `<th>function</th>`,
+        `<th>calls</th>`,
+        `<th>total</th>`,
+        `<th>avg</th>`,
+        `<th>max</th>`,
+        `<th>share</th>`,
+        `</tr>`,
+        array_join(row_bits, ``),
+        `</table></div>`,
+        `<p style="margin-top: 0.75rem; font-size: 0.85rem; opacity: 0.75;">Server up `,
+        prof_nanos_label(wall),
+        `. Times are cumulative wall time, a caller includes its callees.</p>`
+    ], ``);
+}
+
+f profile_live_response(headers:h<s,s>):HTTP_Response {
+    dump:s = safe(fs_read(`.nail_profile.json`), profile_dump_absent);
+    if {
+        dump == `` -> {
+            r HTTP_Response {
+                status = 200,
+                body = `<p style="opacity: 0.7;">No profiler dump found. This build ran with nailc --no-profile.</p>`,
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
+        else -> {
+            r HTTP_Response {
+                status = 200,
+                body = generate_profile_fragment(dump),
+                content_type = `text/html; charset=utf-8`,
                 headers = headers
             };
         }

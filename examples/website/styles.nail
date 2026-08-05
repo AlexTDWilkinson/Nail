@@ -1,4 +1,7 @@
 // The stylesheet for the whole page, one CSS block per area of the site.
+// Dark theme in the style of the current generation of language sites
+// (Astro, Bun, Deno, Gleam): near-black blue base, one warm amber accent,
+// borders made of white at low alpha, monospace as a design accent.
 
 // CSS styles - broken into sections for clarity
 f generate_css():s {
@@ -8,38 +11,91 @@ f generate_css():s {
         padding: 0;
         box-sizing: border-box;
     }
-    
+
     :root {
-        --primary: #2563eb;
-        --primary-dark: #1d4ed8;
-        --text-primary: #1f2937;
-        --text-secondary: #6b7280;
-        --bg-primary: #ffffff;
-        --bg-secondary: #f9fafb;
-        --border: #e5e7eb;
-        --success: #10b981;
-        --warning: #f59e0b;
-        --error: #ef4444;
+        --primary: #ffb454;
+        --primary-dark: #ffc57a;
+        --accent-2: #5ccfe6;
+        --text-primary: #e8ebf0;
+        --text-secondary: #9aa3b2;
+        --text-faint: #5c6773;
+        --bg-primary: #161a23;
+        --bg-secondary: #0f1117;
+        --bg-deep: #0c0e14;
+        --border: rgba(255,255,255,0.08);
+        --border-strong: rgba(255,255,255,0.16);
+        --success: #aad94c;
+        --warning: #ffd173;
+        --error: #ff6666;
+        --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, 'Liberation Mono', monospace;
     }
-    
+
     body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         line-height: 1.6;
         color: var(--text-primary);
         background-color: var(--bg-secondary);
+        background-image: radial-gradient(900px 420px at 50% -80px, rgba(255,180,84,0.09), transparent 70%);
+        background-repeat: no-repeat;
+    }
+
+    h1, h2, h3 {
+        letter-spacing: -0.02em;
+    }
+
+    code {
+        font-family: var(--font-mono);
+    }
+
+    p code, li code {
+        background: rgba(255,255,255,0.07);
+        border: 1px solid var(--border);
+        border-radius: 0.3rem;
+        padding: 0.1rem 0.4rem;
+        font-size: 0.88em;
+        color: var(--text-primary);
+    }
+
+    ::selection {
+        background: rgba(255,180,84,0.3);
+    }
+
+    a:focus-visible, button:focus-visible, summary:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.14);
+        border-radius: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255,255,255,0.22);
     }`;
-    
+
     navbar_styles:s = css`
     .navbar {
         position: sticky;
         top: 0;
         width: 100%;
-        background: var(--bg-primary);
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: rgba(15,17,23,0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
         z-index: 100;
         padding: 1rem 0;
     }
-    
+
     .nav-container {
         max-width: 1200px;
         margin: 0 auto;
@@ -48,9 +104,10 @@ f generate_css():s {
         justify-content: space-between;
         align-items: center;
     }
-    
+
     .nav-brand {
-        font-size: 1.5rem;
+        font-family: var(--font-mono);
+        font-size: 1.35rem;
         font-weight: 700;
         color: var(--text-primary);
         text-decoration: none;
@@ -58,7 +115,7 @@ f generate_css():s {
         align-items: center;
         gap: 0.5rem;
     }
-    
+
     .nav-links {
         display: flex;
         gap: 2.5rem;
@@ -78,7 +135,7 @@ f generate_css():s {
     .nav-toggle {
         display: none;
         background: none;
-        border: 1px solid var(--border);
+        border: 1px solid var(--border-strong);
         border-radius: 0.5rem;
         padding: 0.4rem 0.55rem;
         color: var(--text-primary);
@@ -106,9 +163,10 @@ f generate_css():s {
             right: 0;
             flex-direction: column;
             gap: 0;
-            background: var(--bg-primary);
+            background: var(--bg-secondary);
             border-top: 1px solid var(--border);
-            box-shadow: 0 8px 16px rgba(0,0,0,0.08);
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 16px 32px rgba(0,0,0,0.5);
             padding: 0.5rem 2rem 1rem;
             max-height: calc(100vh - 4.5rem);
             overflow-y: auto;
@@ -127,7 +185,7 @@ f generate_css():s {
             border-bottom: none;
         }
     }`;
-    
+
     hero_styles:s = css`
     .hero {
         max-width: 1200px;
@@ -135,40 +193,37 @@ f generate_css():s {
         padding: 6rem 2rem 4rem;
         text-align: center;
     }
-    
+
     .hero-title {
-        font-size: 4rem;
+        font-size: 4.5rem;
         font-weight: 800;
         margin-bottom: 1rem;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        background: linear-gradient(90deg, #ffb454 0%, #f28779 100%);
+        background-clip: text;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        animation: fadeIn 0.6s ease-out;
     }
-    
+
     .hero-tagline {
         font-size: 1.5rem;
-        color: var(--text-secondary);
+        color: var(--text-primary);
         margin-bottom: 2rem;
-        animation: fadeIn 0.8s ease-out;
     }
-    
+
     .hero-description {
         font-size: 1.1rem;
         color: var(--text-secondary);
         max-width: 800px;
         margin: 0 auto 2rem;
         line-height: 1.8;
-        animation: fadeIn 1s ease-out;
     }
-    
+
     .hero-actions {
         display: flex;
         gap: 1rem;
         justify-content: center;
-        animation: fadeIn 1.2s ease-out;
     }`;
-    
+
     button_styles:s = css`
     .btn {
         padding: 0.75rem 2rem;
@@ -177,144 +232,185 @@ f generate_css():s {
         text-decoration: none;
         transition: all 0.2s;
         display: inline-block;
-        border: 2px solid transparent;
+        border: 1px solid transparent;
+        cursor: pointer;
     }
-    
+
     .btn-primary {
         background: var(--primary);
-        color: white;
+        color: #0f1117;
     }
-    
+
     .btn-primary:hover {
         background: var(--primary-dark);
         transform: translateY(-2px);
-        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+        box-shadow: 0 10px 24px rgba(255,180,84,0.25);
     }
-    
+
     .btn-secondary {
-        background: white;
-        color: var(--primary);
-        border-color: var(--primary);
+        background: transparent;
+        color: var(--text-primary);
+        border-color: var(--border-strong);
     }
-    
+
     .btn-secondary:hover {
-        background: var(--bg-secondary);
+        background: rgba(255,255,255,0.05);
+        border-color: rgba(255,255,255,0.3);
         transform: translateY(-2px);
+    }
+
+    .run-btn {
+        position: absolute;
+        bottom: 1rem;
+        right: 1rem;
+        background: var(--success);
+        color: #0f1117;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 0.375rem;
+        cursor: pointer;
+        font-weight: 700;
+        font-family: var(--font-mono);
+        font-size: 0.85rem;
+        transition: all 0.2s;
+    }
+
+    .run-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(170,217,76,0.3);
+    }
+
+    .run-output {
+        background: var(--bg-deep);
+        border: 1px solid var(--border);
+        color: var(--success);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-top: 1rem;
+        font-family: var(--font-mono);
+        font-size: 0.9rem;
+        overflow-x: auto;
     }`;
-    
+
     section_styles:s = css`
     section {
         max-width: 1200px;
         margin: 0 auto;
         padding: 4rem 2rem;
     }
-    
+
     .section-header {
         text-align: center;
         margin-bottom: 3rem;
     }
-    
+
     .section-header h2 {
         font-size: 2.5rem;
         font-weight: 700;
         color: var(--text-primary);
         margin-bottom: 1rem;
     }
-    
+
     .section-header p {
         font-size: 1.2rem;
         color: var(--text-secondary);
     }`;
-    
+
     feature_styles:s = css`
     .features-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-        gap: 2rem;
+        gap: 1.5rem;
         margin-top: 3rem;
     }
-    
+
     .feature-card {
         background: var(--bg-primary);
         padding: 2rem;
-        border-radius: 1rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        transition: all 0.3s;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        transition: border-color 0.2s, transform 0.2s;
     }
-    
+
     .feature-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        transform: translateY(-3px);
+        border-color: var(--border-strong);
     }
-    
+
     .feature-icon {
         font-size: 2.5rem;
         margin-bottom: 1rem;
     }
-    
+
     .feature-card h3 {
         font-size: 1.3rem;
         margin-bottom: 0.5rem;
         color: var(--text-primary);
     }
-    
+
     .feature-card p {
         color: var(--text-secondary);
         line-height: 1.6;
     }`;
-    
+
     code_styles:s = css`
     .code-example {
-        background: #1e293b;
-        color: #e2e8f0;
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        color: var(--text-primary);
         padding: 2rem;
-        border-radius: 0.75rem;
+        border-radius: 0.5rem;
         overflow-x: auto;
         margin: 2rem 0;
         position: relative;
     }
-    
+
     .code-example pre {
         margin: 0;
-        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-family: var(--font-mono);
         font-size: 0.95rem;
         line-height: 1.6;
     }
-    
+
     .code-label {
         position: absolute;
         top: 0.5rem;
         right: 0.5rem;
-        background: rgba(255,255,255,0.1);
-        color: #94a3b8;
-        padding: 0.25rem 0.75rem;
-        border-radius: 0.25rem;
-        font-size: 0.85rem;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        padding: 0.2rem 0.7rem;
+        border-radius: 0.375rem;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        letter-spacing: 0.02em;
     }
 
-    /* Token colors emitted by code_highlight_html (Nail's own lexer) */
-    .tok-kw { color: #c084fc; }
-    .tok-cb { color: #f472b6; font-weight: 600; }
-    .tok-fn { color: #60a5fa; }
-    .tok-ty { color: #2dd4bf; }
-    .tok-str { color: #86efac; }
+    /* Token colors emitted by code_highlight_html (Nail's own lexer).
+       Ayu Mirage adjacent, keywords in the brand amber family so the
+       samples and the site read as one thing. */
+    .tok-kw { color: #ff8f40; }
+    .tok-cb { color: #f28779; font-weight: 600; }
+    .tok-fn { color: #5ccfe6; }
+    .tok-ty { color: #d2a6ff; }
+    .tok-str { color: #aad94c; }
     /* A tagged string keeps the plain string colour for its tag, backticks and
        untokenized text; the language shows only in the pieces below. */
     /* Pieces of the language inside a tagged string: an element name in html,
        a selector in css, a keyword in js - one set of colours for all of them */
-    .tok-md-punct { color: #94a3b8; }
-    .tok-md-el { color: #f472b6; }
-    .tok-md-attr { color: #7dd3fc; }
-    .tok-md-fn { color: #60a5fa; }
-    .tok-md-kw { color: #c084fc; }
-    .tok-md-op { color: #cbd5e1; }
-    .tok-md-val { color: #fdba74; }
-    .tok-md-num { color: #fbbf24; }
-    .tok-md-com { color: #64748b; font-style: italic; }
-    .tok-num { color: #fbbf24; }
-    .tok-com { color: #64748b; font-style: italic; }
-    .tok-op { color: #cbd5e1; }
-    .tok-err { color: #ef4444; text-decoration: underline wavy; }
+    .tok-md-punct { color: #6c7686; }
+    .tok-md-el { color: #f28779; }
+    .tok-md-attr { color: #73d0ff; }
+    .tok-md-fn { color: #5ccfe6; }
+    .tok-md-kw { color: #ff8f40; }
+    .tok-md-op { color: #b3b9c5; }
+    .tok-md-val { color: #ffd9a6; }
+    .tok-md-num { color: #ffd173; }
+    .tok-md-com { color: #5c6773; font-style: italic; }
+    .tok-num { color: #ffd173; }
+    .tok-com { color: #5c6773; font-style: italic; }
+    .tok-op { color: #b3b9c5; }
+    .tok-err { color: #ff6666; text-decoration: underline wavy; }
 
     .rust-details summary {
         cursor: pointer;
@@ -325,7 +421,7 @@ f generate_css():s {
         color: white;
         font-weight: 600;
         border-radius: 0.5rem;
-        border: 2px solid transparent;
+        border: 1px solid transparent;
         transition: all 0.2s;
         user-select: none;
         list-style: none;
@@ -345,7 +441,7 @@ f generate_css():s {
 
     .rust-details summary:hover {
         transform: translateY(-2px);
-        box-shadow: 0 10px 20px rgba(183, 65, 14, 0.25);
+        box-shadow: 0 10px 20px rgba(183, 65, 14, 0.35);
     }
 
     .rust-details .code-example {
@@ -353,7 +449,7 @@ f generate_css():s {
         max-height: 420px;
         overflow-y: auto;
     }`;
-    
+
     stdlib_styles:s = css`
     .stdlib-intro {
         max-width: 800px;
@@ -377,8 +473,8 @@ f generate_css():s {
 
     .stdlib-module {
         background: var(--bg-primary);
-        border-radius: 0.75rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
         margin-bottom: 1rem;
         padding: 1rem 1.5rem;
     }
@@ -412,7 +508,7 @@ f generate_css():s {
     }
 
     .stdlib-module-name {
-        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-family: var(--font-mono);
         font-size: 1.1rem;
         font-weight: 700;
         color: var(--text-primary);
@@ -424,7 +520,7 @@ f generate_css():s {
     }
 
     .stdlib-sig {
-        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-family: var(--font-mono);
         font-size: 0.95rem;
         font-weight: 700;
         color: var(--primary-dark);
@@ -442,8 +538,8 @@ f generate_css():s {
         max-width: 900px;
         margin: 0 auto;
         background: var(--bg-primary);
-        border-radius: 1rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
         padding: 2.5rem;
         font-size: 1.05rem;
         line-height: 1.8;
@@ -458,7 +554,7 @@ f generate_css():s {
         object-fit: cover;
         margin: 0 0 1.5rem 2rem;
         shape-outside: circle(50%);
-        background: var(--bg-secondary);
+        background: var(--bg-deep);
     }
 
     .author-name {
@@ -489,17 +585,17 @@ f generate_css():s {
 
     ide_styles:s = css`
     .ide-shot {
-        background: #11111b;
-        border-radius: 0.75rem;
+        background: var(--bg-deep);
+        border-radius: 0.5rem;
         padding: 1rem 1.25rem;
         margin: 0.75rem 0 0.5rem;
         overflow-x: auto;
-        border: 1px solid #313244;
+        border: 1px solid var(--border);
     }
 
     .ide-shot pre {
         margin: 0;
-        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-family: var(--font-mono);
         font-size: 0.68rem;
         line-height: 1.25;
         color: #cdd6f4;
@@ -515,7 +611,7 @@ f generate_css():s {
     .lang-tags {
         margin: 0 0 2rem;
         border: 1px solid var(--border);
-        border-radius: 0.75rem;
+        border-radius: 0.5rem;
         overflow: hidden;
         background: var(--bg-primary);
     }
@@ -552,10 +648,10 @@ f generate_css():s {
     .lang-list code {
         padding: 0.15rem 0.55rem;
         border-radius: 999px;
-        background: var(--bg-secondary);
+        background: var(--bg-deep);
         border: 1px solid var(--border);
         color: var(--text-primary);
-        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-family: var(--font-mono);
         font-size: 0.78rem;
     }`;
 
@@ -567,21 +663,108 @@ f generate_css():s {
         line-height: 1.8;
         color: var(--text-secondary);
     }
-    
+
     .philosophy-quote {
         background: var(--bg-primary);
+        border: 1px solid var(--border);
         border-left: 4px solid var(--primary);
+        border-radius: 0 0.5rem 0.5rem 0;
         padding: 1.5rem 2rem;
         margin: 2rem 0;
         font-style: italic;
         font-size: 1.2rem;
         color: var(--text-primary);
     }`;
-    
-    animation_styles:s = css`
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
+
+    table_styles:s = css`
+    .perf-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        padding: 1.5rem 2rem;
+        margin: 2rem 0;
+    }
+
+    .bench-wrap {
+        overflow-x: auto;
+        margin: 1.5rem 0;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+    }
+
+    .bench-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--bg-primary);
+    }
+
+    .bench-table th, .bench-table td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+    }
+
+    .bench-table th:not(:first-child), .bench-table td:not(:first-child) {
+        text-align: right;
+    }
+
+    .bench-table th {
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border-strong);
+    }
+
+    .bench-table td {
+        border-bottom: 1px solid var(--border);
+    }
+
+    .bench-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .bench-win {
+        color: var(--success);
+        font-weight: 700;
+    }`;
+
+    footer_styles:s = css`
+    .site-footer {
+        border-top: 1px solid var(--border);
+        background: var(--bg-deep);
+        padding: 3rem 2rem;
+        margin-top: 4rem;
+        color: var(--text-secondary);
+    }
+
+    .footer-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+        text-align: center;
+    }
+
+    .footer-note {
+        font-size: 1.05rem;
+        margin-bottom: 1rem;
+    }
+
+    .footer-links {
+        display: flex;
+        gap: 2rem;
+        justify-content: center;
+        margin-top: 1.5rem;
+    }
+
+    .footer-links a {
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+        color: var(--primary);
     }`;
 
     sandbox_styles:s = css`
@@ -598,7 +781,7 @@ f generate_css():s {
         border: 1px solid var(--border);
         border-radius: 2rem;
         padding: 0.4rem 1rem;
-        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-family: var(--font-mono);
         font-size: 0.9rem;
         color: var(--text-secondary);
         background: var(--bg-primary);
@@ -620,7 +803,7 @@ f generate_css():s {
     }
 
     .sandbox-verdict pre {
-        color: #fca5a5;
+        color: #ffa198;
         white-space: pre-wrap;
         word-break: break-word;
     }
@@ -671,7 +854,8 @@ f generate_css():s {
         stdlib_styles,
         author_styles,
         philosophy_styles,
-        animation_styles,
+        table_styles,
+        footer_styles,
         sandbox_styles
     ], ``);
 }
