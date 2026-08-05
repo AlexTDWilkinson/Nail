@@ -426,11 +426,46 @@ impl ApplicationHandler for App {
     }
 }
 
+/// A shape's loose bounding box, for skipping what is not on screen. None
+/// means the bounds are unknown (text and unscaled sprites) and the shape
+/// always draws.
+fn shape_bounds(shape: &GAME_Shape) -> Option<(f64, f64, f64, f64)> {
+    match shape.kind.as_str() {
+        "rect" | "sprite_scaled" => Some((shape.x_coordinate, shape.y_coordinate, shape.x_coordinate + shape.width, shape.y_coordinate + shape.height)),
+        "rect_outline" => {
+            let pad = shape.thickness / 2.0;
+            Some((shape.x_coordinate - pad, shape.y_coordinate - pad, shape.x_coordinate + shape.width + pad, shape.y_coordinate + shape.height + pad))
+        }
+        "circle" => Some((shape.x_coordinate - shape.radius, shape.y_coordinate - shape.radius, shape.x_coordinate + shape.radius, shape.y_coordinate + shape.radius)),
+        "line" => Some((
+            shape.x_coordinate.min(shape.end_x) - shape.thickness,
+            shape.y_coordinate.min(shape.end_y) - shape.thickness,
+            shape.x_coordinate.max(shape.end_x) + shape.thickness,
+            shape.y_coordinate.max(shape.end_y) + shape.thickness,
+        )),
+        "triangle" => Some((
+            shape.x_coordinate.min(shape.end_x).min(shape.third_x),
+            shape.y_coordinate.min(shape.end_y).min(shape.third_y),
+            shape.x_coordinate.max(shape.end_x).max(shape.third_x),
+            shape.y_coordinate.max(shape.end_y).max(shape.third_y),
+        )),
+        _ => None,
+    }
+}
+
 /// Paints one frame's shapes into the pixmap.
 fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame) -> Result<(), String> {
     pixmap.fill(parse_color(&frame.background)?);
 
     for shape in &frame.shapes {
+        // A scrolling game hands over its whole world every frame, parallax
+        // layers included, and most of it is off screen. Skipping here is
+        // cheaper than letting the rasterizer clip path by path.
+        if let Some((min_x, min_y, max_x, max_y)) = shape_bounds(shape) {
+            if max_x < 0.0 || min_x > pixmap.width() as f64 || max_y < 0.0 || min_y > pixmap.height() as f64 {
+                continue;
+            }
+        }
         let identity = tiny_skia::Transform::identity();
         match shape.kind.as_str() {
             "rect" => {
