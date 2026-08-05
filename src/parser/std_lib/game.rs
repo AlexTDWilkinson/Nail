@@ -312,7 +312,7 @@ fn shape_bounds(shape: &GAME_Shape) -> Option<(f64, f64, f64, f64)> {
 /// Paints one frame's shapes into the pixmap. Shapes speak window pixels
 /// whatever `pixel_size` says, the scale transform is what maps them onto
 /// the possibly smaller pixmap.
-fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32) -> Result<(), String> {
+fn rasterize(pixmap: &mut tiny_skia::Pixmap, mut overlay: Option<&mut tiny_skia::Pixmap>, frame: &GAME_Frame, pixel_size: u32) -> Result<(), String> {
     pixmap.fill(parse_color(&frame.background)?);
     let scale = 1.0 / pixel_size as f32;
     let logical_width = (pixmap.width() * pixel_size) as f64;
@@ -380,7 +380,12 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame, pixel_size: u32
                 pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, identity, None);
             }
             "text" => {
-                draw_text(pixmap, shape, scale, !anti_alias)?;
+                match overlay.as_deref_mut() {
+                    // Text goes on the full resolution overlay when there is
+                    // one, smooth and sized in window pixels.
+                    Some(full) => draw_text(full, shape, 1.0, false)?,
+                    None => draw_text(pixmap, shape, scale, !anti_alias)?,
+                }
             }
             "sprite" | "sprite_scaled" => {
                 let store = sprites().lock().map_err(|_| "game_run: the sprite store is poisoned".to_string())?;
@@ -505,6 +510,14 @@ where
     let mut backend = backend::Backend::create(&config, width, height).await?;
     let pixel_size = pixel_size_of(&config);
     let mut pixmap = tiny_skia::Pixmap::new((width / pixel_size).max(1), (height / pixel_size).max(1)).ok_or_else(|| "game_run: could not make the frame".to_string())?;
+    // Chunky worlds keep their text readable: glyphs render at full window
+    // resolution on this transparent overlay and the backend composites it
+    // over the upscaled world, the way pixel art games draw their UI.
+    let mut overlay = if pixel_size > 1 {
+        Some(tiny_skia::Pixmap::new(width, height).ok_or_else(|| "game_run: could not make the text overlay".to_string())?)
+    } else {
+        None
+    };
 
     let mut state = initial;
     let started_ms = backend.now_ms();
@@ -542,8 +555,11 @@ where
 
         state = update(state, input).await;
         let frame = view(state.clone()).await;
-        rasterize(&mut pixmap, &frame, pixel_size)?;
-        backend.present(&pixmap)?;
+        if let Some(full) = overlay.as_mut() {
+            full.fill(tiny_skia::Color::TRANSPARENT);
+        }
+        rasterize(&mut pixmap, overlay.as_mut(), &frame, pixel_size)?;
+        backend.present(&pixmap, overlay.as_ref())?;
         let used_ms = backend.now_ms() - frame_start_ms;
         frames += 1;
         work_ms += used_ms;
@@ -761,7 +777,7 @@ mod native_backend {
         /// Copies the finished pixmap into the window, stretching nearest-neighbour
         /// if the window's real pixel size differs from the game's (a high-DPI screen
         /// does this).
-        pub fn present(&mut self, pixmap: &tiny_skia::Pixmap) -> Result<(), String> {
+        pub fn present(&mut self, pixmap: &tiny_skia::Pixmap, overlay: Option<&tiny_skia::Pixmap>) -> Result<(), String> {
             let window = self.app.window.as_ref().ok_or_else(|| "game_run: the window disappeared".to_string())?;
             let real = window.inner_size();
             let real_width = real.width.max(1);
@@ -777,10 +793,32 @@ mod native_backend {
             let source_height = pixmap.height() as usize;
             for y in 0..real_height as usize {
                 let from_y = (y * source_height / real_height as usize).min(source_height - 1);
+                let text_row = overlay.map(|full| {
+                    let full_height = full.height() as usize;
+                    (y * full_height / real_height as usize).min(full_height - 1)
+                });
                 for x in 0..real_width as usize {
                     let from_x = (x * source_width / real_width as usize).min(source_width - 1);
                     let pixel = source[from_y * source_width + from_x].demultiply();
-                    buffer[y * real_width as usize + x] = ((pixel.red() as u32) << 16) | ((pixel.green() as u32) << 8) | pixel.blue() as u32;
+                    let mut red = pixel.red() as u32;
+                    let mut green = pixel.green() as u32;
+                    let mut blue = pixel.blue() as u32;
+                    // The full resolution text overlay composites over the
+                    // upscaled world, premultiplied source over an opaque
+                    // background.
+                    if let (Some(full), Some(text_y)) = (overlay, text_row) {
+                        let full_width = full.width() as usize;
+                        let text_x = (x * full_width / real_width as usize).min(full_width - 1);
+                        let ink = full.pixels()[text_y * full_width + text_x];
+                        let alpha = ink.alpha() as u32;
+                        if alpha > 0 {
+                            let keep = 255 - alpha;
+                            red = ink.red() as u32 + red * keep / 255;
+                            green = ink.green() as u32 + green * keep / 255;
+                            blue = ink.blue() as u32 + blue * keep / 255;
+                        }
+                    }
+                    buffer[y * real_width as usize + x] = (red.min(255) << 16) | (green.min(255) << 8) | blue.min(255);
                 }
             }
             buffer.present().map_err(|e| format!("game_run: could not put the frame on screen: {}", e))?;
@@ -848,7 +886,6 @@ mod web_backend {
     enum CanvasStyle {
         Width,
         Height,
-        ImageRendering,
     }
 
     impl CanvasStyle {
@@ -856,20 +893,6 @@ mod web_backend {
             match self {
                 CanvasStyle::Width => "width",
                 CanvasStyle::Height => "height",
-                CanvasStyle::ImageRendering => "image-rendering",
-            }
-        }
-    }
-
-    /// How the browser scales the canvas back up. Also a closed choice.
-    enum CanvasScaling {
-        Pixelated,
-    }
-
-    impl CanvasScaling {
-        fn value(&self) -> &'static str {
-            match self {
-                CanvasScaling::Pixelated => "pixelated",
             }
         }
     }
@@ -984,14 +1007,17 @@ mod web_backend {
             let pixel_size = pixel_size_of(config);
             let buffer_width = (width / pixel_size).max(1);
             let buffer_height = (height / pixel_size).max(1);
-            canvas.set_width(buffer_width);
-            canvas.set_height(buffer_height);
+            // With chunky pixels the world buffer is small but text renders
+            // full size on an overlay, so the canvas keeps full resolution
+            // and present upscales the world in software before compositing.
+            let composite = pixel_size > 1;
+            let canvas_width = if composite { width } else { buffer_width };
+            let canvas_height = if composite { height } else { buffer_height };
+            canvas.set_width(canvas_width);
+            canvas.set_height(canvas_height);
             let style = canvas.style();
             set_style(&style, CanvasStyle::Width, &format!("{}px", width));
             set_style(&style, CanvasStyle::Height, &format!("{}px", height));
-            if pixel_size > 1 {
-                set_style(&style, CanvasStyle::ImageRendering, CanvasScaling::Pixelated.value());
-            }
             let context: web_sys::CanvasRenderingContext2d = canvas
                 .get_context("2d")
                 .ok()
@@ -1073,7 +1099,7 @@ mod web_backend {
             listen(canvas.as_ref(), "mouseup", mouseup.as_ref());
             listen(canvas.as_ref(), "wheel", wheel.as_ref());
 
-            let straight = vec![0u8; buffer_width as usize * buffer_height as usize * 4];
+            let straight = vec![0u8; canvas_width as usize * canvas_height as usize * 4];
 
             next_frame(&window).await?;
 
@@ -1099,20 +1125,57 @@ mod web_backend {
             });
         }
 
-        /// Copies the finished pixmap onto the canvas.
-        pub fn present(&mut self, pixmap: &tiny_skia::Pixmap) -> Result<(), String> {
-            // The canvas wants straight alpha, the pixmap holds premultiplied.
-            for (index, pixel) in pixmap.pixels().iter().enumerate() {
-                let color = pixel.demultiply();
-                self.straight[index * 4] = color.red();
-                self.straight[index * 4 + 1] = color.green();
-                self.straight[index * 4 + 2] = color.blue();
-                self.straight[index * 4 + 3] = color.alpha();
-            }
-            // The image is the pixmap's size, which is smaller than the
-            // configured size when pixel_size shrinks the buffer. CSS does
-            // the stretching, the ImageData must match the actual pixels.
-            let image = web_sys::ImageData::new_with_u8_clamped_array_and_sh(Clamped(&self.straight), pixmap.width(), pixmap.height()).map_err(|_| "game_run: could not build the frame image".to_string())?;
+        /// Copies the finished pixmap onto the canvas. With an overlay the
+        /// world upscales in software and the full resolution text
+        /// composites over it, without one the pixmap copies straight in.
+        pub fn present(&mut self, pixmap: &tiny_skia::Pixmap, overlay: Option<&tiny_skia::Pixmap>) -> Result<(), String> {
+            let (image_width, image_height) = match overlay {
+                Some(full) => {
+                    let out_width = full.width() as usize;
+                    let out_height = full.height() as usize;
+                    let source = pixmap.pixels();
+                    let source_width = pixmap.width() as usize;
+                    let source_height = pixmap.height() as usize;
+                    let ink_pixels = full.pixels();
+                    for y in 0..out_height {
+                        let from_y = (y * source_height / out_height).min(source_height - 1);
+                        for x in 0..out_width {
+                            let from_x = (x * source_width / out_width).min(source_width - 1);
+                            let world = source[from_y * source_width + from_x].demultiply();
+                            let mut red = world.red() as u32;
+                            let mut green = world.green() as u32;
+                            let mut blue = world.blue() as u32;
+                            let ink = ink_pixels[y * out_width + x];
+                            let alpha = ink.alpha() as u32;
+                            if alpha > 0 {
+                                let keep = 255 - alpha;
+                                red = ink.red() as u32 + red * keep / 255;
+                                green = ink.green() as u32 + green * keep / 255;
+                                blue = ink.blue() as u32 + blue * keep / 255;
+                            }
+                            let index = (y * out_width + x) * 4;
+                            self.straight[index] = red.min(255) as u8;
+                            self.straight[index + 1] = green.min(255) as u8;
+                            self.straight[index + 2] = blue.min(255) as u8;
+                            self.straight[index + 3] = 255;
+                        }
+                    }
+                    (full.width(), full.height())
+                }
+                None => {
+                    // The canvas wants straight alpha, the pixmap holds
+                    // premultiplied.
+                    for (index, pixel) in pixmap.pixels().iter().enumerate() {
+                        let color = pixel.demultiply();
+                        self.straight[index * 4] = color.red();
+                        self.straight[index * 4 + 1] = color.green();
+                        self.straight[index * 4 + 2] = color.blue();
+                        self.straight[index * 4 + 3] = color.alpha();
+                    }
+                    (pixmap.width(), pixmap.height())
+                }
+            };
+            let image = web_sys::ImageData::new_with_u8_clamped_array_and_sh(Clamped(&self.straight), image_width, image_height).map_err(|_| "game_run: could not build the frame image".to_string())?;
             if self.context.put_image_data(&image, 0.0, 0.0).is_err() {
                 return Err("game_run: could not put the frame on the canvas".to_string());
             }
@@ -1200,14 +1263,14 @@ mod tests {
         let mut shape = blank("nonsense");
         shape.color = "red".to_string();
         let frame = GAME_Frame { shapes: vec![shape], background: "black".to_string(), quit: false };
-        assert!(rasterize(&mut pixmap, &frame, 1).is_err());
+        assert!(rasterize(&mut pixmap, None, &frame, 1).is_err());
     }
 
     #[test]
     fn rasterizing_a_frame_paints_the_background() {
         let mut pixmap = tiny_skia::Pixmap::new(4, 4).unwrap();
         let frame = GAME_Frame { shapes: vec![rect(1.0, 1.0, 2.0, 2.0, "white".to_string())], background: "#000000".to_string(), quit: false };
-        rasterize(&mut pixmap, &frame, 1).unwrap();
+        rasterize(&mut pixmap, None, &frame, 1).unwrap();
         let corner = pixmap.pixels()[0].demultiply();
         assert_eq!((corner.red(), corner.green(), corner.blue()), (0, 0, 0));
         let middle = pixmap.pixels()[1 * 4 + 1].demultiply();

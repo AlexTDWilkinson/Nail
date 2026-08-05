@@ -753,14 +753,34 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
     f.render_widget(status_paragraph, area);
 }
 
+/// Compiling is the only build step slow enough to be worth a progress
+/// reading. Cargo says nothing until it is finished, so the reading is time
+/// spent so far measured against the last build of the same kind. It stops at
+/// 99% because a build that beats its estimate is still not done.
+fn compiling_label(editor: &Editor) -> String {
+    let elapsed = match editor.compile_started {
+        Some(started) => started.elapsed(),
+        None => return "Compiling".to_string(),
+    };
+    match editor.compile_estimate {
+        Some(estimate) if estimate.as_secs_f64() > 0.0 => {
+            let percent = (elapsed.as_secs_f64() / estimate.as_secs_f64() * 100.0).min(99.0);
+            format!("Compiling {:.0}%", percent)
+        }
+        // No comparable build on record yet. This one counts up in seconds and
+        // becomes the estimate the next one is measured against.
+        _ => format!("Compiling {:.0}s", elapsed.as_secs_f64()),
+    }
+}
+
 fn display_build_status(f: &mut Frame, editor: &Editor) {
     let status_text = match &editor.build_status {
-        BuildStatus::Idle => "Ready",
-        BuildStatus::Parsing => "Starting",
-        BuildStatus::Transpiling => "Transpiling",
-        BuildStatus::Compiling => "Compiling",
-        BuildStatus::Complete(message) => message,
-        BuildStatus::Failed(err) => err,
+        BuildStatus::Idle => "Ready".to_string(),
+        BuildStatus::Parsing => "Starting".to_string(),
+        BuildStatus::Transpiling => "Transpiling".to_string(),
+        BuildStatus::Compiling => compiling_label(editor),
+        BuildStatus::Complete(message) => message.clone(),
+        BuildStatus::Failed(err) => err.clone(),
     };
 
     let build_status = Line::from(vec![Span::styled(status_text, Style::default().fg(editor.theme.default))]);
@@ -2162,19 +2182,32 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                 }
             }
 
-            // Step 4: Compile the Rust code
+            // Step 4: Compile the Rust code. This is the one step slow enough
+            // to report progress on, measured against the last build of the
+            // same kind: a changed Cargo.toml rebuilds dependencies and takes
+            // minutes, a changed main.rs alone takes seconds.
+            let deps_changed = !toml_unchanged;
+            let build_times_path = transpilation_dir.join(BUILD_TIMES_FILE);
+            let compile_started = std::time::Instant::now();
             let mut editor = editor_arc.lock().unwrap();
             editor.build_status = BuildStatus::Compiling;
+            editor.compile_started = Some(compile_started);
+            editor.compile_estimate = read_build_estimate(&build_times_path, deps_changed);
             drop(editor); // Release the lock
             let mut cargo = match &bundle {
                 Some(bundle) => bundle.cargo_command(),
                 None => Command::new("cargo"),
             };
             let output = cargo.arg("build").arg("--release").current_dir(transpilation_dir).output();
+            let compile_elapsed = compile_started.elapsed();
 
             match output {
                 Ok(output) => {
                     if output.status.success() {
+                        // Only a finished build is a fair estimate. A failed
+                        // one stops at the first error, far short of the work
+                        // the next successful build has to do.
+                        record_build_time(&build_times_path, deps_changed, compile_elapsed);
                         log::debug!("Compiler stdout: {}", String::from_utf8_lossy(&output.stdout));
 
                         let binary_path = match &bundle {
@@ -2211,10 +2244,51 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             // sleep for 1000 ms to display complete message before reset
             thread::sleep(std::time::Duration::from_millis(1000));
             let mut editor = editor_arc.lock().unwrap();
+            editor.compile_started = None;
             editor.build_status = BuildStatus::Idle;
         }
 
         thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// Where the IDE remembers how long builds take. It sits in the generated
+/// project beside the build it describes, and is disposable: a missing or
+/// unreadable file just means the next build reports seconds instead of a
+/// percentage, and then writes the file itself.
+const BUILD_TIMES_FILE: &str = ".nail_build_times.json";
+
+/// A build that rebuilt dependencies and one that only recompiled the program
+/// are minutes apart, so each kind remembers its own duration and is only ever
+/// compared against its own kind.
+fn build_time_key(deps_changed: bool) -> &'static str {
+    if deps_changed {
+        "deps_nanos"
+    } else {
+        "code_nanos"
+    }
+}
+
+fn read_build_estimate(path: &Path, deps_changed: bool) -> Option<std::time::Duration> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let nanos = value.get(build_time_key(deps_changed))?.as_u64()?;
+    Some(std::time::Duration::from_nanos(nanos))
+}
+
+/// Keeps the other kind's recorded time, so switching between dependency
+/// builds and program builds does not throw away either estimate.
+fn record_build_time(path: &Path, deps_changed: bool, took: std::time::Duration) {
+    let mut value = fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .filter(|value: &serde_json::Value| value.is_object())
+        .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+    if let Some(object) = value.as_object_mut() {
+        object.insert(build_time_key(deps_changed).to_string(), serde_json::Value::from(took.as_nanos() as u64));
+        if let Err(e) = fs::write(path, value.to_string()) {
+            log::warn!("Could not record build time: {}", e);
+        }
     }
 }
 

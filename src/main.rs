@@ -321,6 +321,11 @@ struct Editor {
     // same dump file in turns, and this keeps the one that matches the
     // open buffer available whichever program wrote last.
     profile_dumps: std::collections::HashMap<String, ProfileData>,
+    // When the cargo build now running started, and how long the last build
+    // of the same kind took. Together they turn the one slow build step into
+    // a percentage in the status line.
+    compile_started: Option<std::time::Instant>,
+    compile_estimate: Option<std::time::Duration>,
 }
 
 #[derive(Clone, Debug)]
@@ -439,6 +444,8 @@ impl Editor {
             matching_bracket_pos: None,
             profile_data: None,
             profile_dumps: std::collections::HashMap::new(),
+            compile_started: None,
+            compile_estimate: None,
         }
     }
 
