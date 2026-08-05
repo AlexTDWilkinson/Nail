@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Fs:
         "fs_read" [Tokio] => "std_lib::fs::read_file", (path: s) -> (s!e),
-            "Reads an entire file into a string; errors if the file cannot be read.",
+            "Reads an entire file into a string. Errors if the file cannot be read.",
             "content:s = danger(fs_read(`notes.txt`));";
         "fs_write" [Tokio] => "std_lib::fs::write_file", (path: s, content: s) -> (v!e),
             "Writes a string to a file, creating or truncating it.",
@@ -14,7 +14,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Creates a directory and any missing parent directories.",
             "danger(fs_create_dir(`output/reports`));";
         "fs_remove_file" [Tokio] => "std_lib::fs::remove_file", (path: s) -> (v!e),
-            "Deletes a file; errors if it does not exist or cannot be removed.",
+            "Deletes a file. Errors if it does not exist or cannot be removed.",
             "danger(fs_remove_file(`temp.txt`));";
         "fs_copy" [Tokio] => "std_lib::fs::copy", (from: s, to: s) -> (v!e),
             "Copies a file to a new location.",
@@ -35,7 +35,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns the sorted paths of every file underneath a directory, however deep. Directories themselves are not listed and links are not followed.",
             "files:a:s = danger(fs_walk(`src`));";
         "fs_remove_dir" [Tokio] => "std_lib::fs::remove_dir", (path: s) -> (v!e),
-            "Removes an empty directory; a directory with anything in it is an error.",
+            "Removes an empty directory. A directory with anything in it is an error.",
             "danger(fs_remove_dir(`empty_output`));";
         "fs_remove_dir_all" [Tokio] => "std_lib::fs::remove_dir_all", (path: s) -> (v!e),
             "Removes a directory and everything inside it. There is no undoing this.",
@@ -47,10 +47,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns when a file was last changed, as a Unix timestamp in seconds to compare with time_now.",
             "changed:i = danger(fs_modified(`notes.txt`));";
         "fs_is_dir" [Tokio] => "std_lib::fs::is_dir", (path: s) -> b,
-            "Returns whether the path names a directory; false for a file and false for a path that is not there.",
+            "Returns whether the path names a directory. False for a file and false for a path that is not there.",
             "folder:b = fs_is_dir(`reports`);";
         "fs_is_file" [Tokio] => "std_lib::fs::is_file", (path: s) -> b,
-            "Returns whether the path names a file; false for a directory and false for a path that is not there.",
+            "Returns whether the path names a file. False for a directory and false for a path that is not there.",
             "regular:b = fs_is_file(`notes.txt`);";
         "fs_write_atomic" [Tokio] => "std_lib::fs::write_atomic", (path: s, content: s) -> (v!e),
             "Writes a file by writing beside it and renaming into place, so a reader never sees a half-written file and a crash leaves the old one intact. The way to write a config, cache or state file.",
@@ -199,5 +199,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "fs_read_with_encoding" [EncodingRs, Tokio] => "std_lib::fs::read_with_encoding", (path: s, encoding_label: s) -> (s!e),
             "Reads a file that is not UTF-8 - the windows-1252 CSV a bank exports, the shift_jis page an old site serves. Labels are WHATWG style: `windows-1252`, `shift_jis`, `utf-16le`, `euc-kr`.",
             "text:s = danger(fs_read_with_encoding(`export.csv`, `windows-1252`));";
+        "fs_tail_lines" [Tokio] => "std_lib::fs::tail_lines", (path: s, count: i) -> ([s]!e),
+            "The last lines of a file, read from the end - how a person looks at a log. Walked backwards in blocks, so a huge file costs only as much as the lines asked for.",
+            "recent:a:s = danger(fs_tail_lines(`app.log`, 50));";
     }
 }

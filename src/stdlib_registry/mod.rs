@@ -99,6 +99,7 @@ mod cache;
 mod chart;
 mod code;
 mod compress;
+mod convert;
 mod crypto;
 mod csv;
 mod database;
@@ -291,11 +292,11 @@ macro_rules! stdlib_modules {
             /// hand so the name a listing shows can never drift from the name
             /// a program calls.
             pub fn display_name(&self) -> &'static str {
+                // The whole prefix, so families read as their own groups:
+                // db_postgres and ml_boost, not one giant db or ml.
                 let prefix = self.name_prefix();
-                match prefix.split_once('_') {
-                    Some((namespace, _)) => namespace,
-                    None => prefix,
-                }
+                let trimmed = prefix.trim_end_matches('_');
+                if trimmed.is_empty() { prefix } else { trimmed }
             }
 
             pub fn all() -> &'static [StdlibModule] {
@@ -319,6 +320,7 @@ stdlib_modules! {
     Int => "std_lib::int", "int_",
     Float => "std_lib::float", "float_",
     Format => "std_lib::format", "format_",
+    Convert => "std_lib::convert", "convert_",
     Array => "std_lib::array", "array_",
     Math => "std_lib::math", "math_",
     Linalg => "std_lib::linalg", "linalg_",
@@ -326,6 +328,10 @@ stdlib_modules! {
     Stats => "std_lib::stats", "stats_",
     Semver => "std_lib::semver", "semver_",
     Ml => "std_lib::ml", "ml_",
+    MlBoost => "std_lib::ml", "ml_boost_",
+    MlForest => "std_lib::ml", "ml_forest_",
+    MlTree => "std_lib::ml", "ml_tree_",
+    MlLinear => "std_lib::ml", "ml_linear_",
     Bits => "std_lib::bits", "bits_",
     Rand => "std_lib::rand", "rand_",
     Time => "std_lib::time", "time_",
@@ -448,6 +454,7 @@ lazy_static! {
         binary::register(&mut m);
         cache::register(&mut m);
         compress::register(&mut m);
+        convert::register(&mut m);
         crypto::register(&mut m);
         csv::register(&mut m);
         database::register(&mut m);

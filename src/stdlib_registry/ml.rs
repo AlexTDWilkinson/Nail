@@ -20,6 +20,16 @@ fn returns(type_name: &'static str) -> NailDataTypeDescriptor {
 /// The model type has to be imported wherever the function is used, and a
 /// bare struct name is not something the short form can express, so these are
 /// built here rather than written out five times.
+fn family_of(model_type: &str) -> StdlibModule {
+    return match model_type {
+        "ML_Boost" | "ML_BoostConfig" => StdlibModule::MlBoost,
+        "ML_Forest" => StdlibModule::MlForest,
+        "ML_Tree" => StdlibModule::MlTree,
+        "ML_Linear" => StdlibModule::MlLinear,
+        _ => StdlibModule::Ml,
+    };
+}
+
 fn about_a_model(rust_path: &'static str, model_type: &'static str, extra: Vec<StdlibParameter>, return_type: NailDataTypeDescriptor, description: &'static str, example: &'static str) -> StdlibFunction {
     let mut parameters = vec![model_parameter("model", model_type)];
     parameters.extend(extra);
@@ -34,7 +44,7 @@ fn about_a_model(rust_path: &'static str, model_type: &'static str, extra: Vec<S
         } else {
             vec![(model_type, "nail::std_lib::ml")]
         },
-        module: StdlibModule::Ml,
+        module: family_of(model_type),
         parameters,
         return_type,
         diverging: false,
@@ -134,7 +144,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         crate_deps: vec![],
         struct_derives: vec![],
         custom_type_imports: vec![("ML_Linear", "nail::std_lib::ml")],
-        module: StdlibModule::Ml,
+        module: StdlibModule::MlLinear,
         parameters: vec![nail_param!(features: [[f]]), nail_param!(targets: [f])],
         return_type: returns("ML_Linear"),
         diverging: false,
@@ -147,7 +157,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         crate_deps: vec![],
         struct_derives: vec![],
         custom_type_imports: vec![("ML_Tree", "nail::std_lib::ml")],
-        module: StdlibModule::Ml,
+        module: StdlibModule::MlTree,
         parameters: vec![nail_param!(features: [[f]]), nail_param!(labels: [i]), nail_param!(max_depth: i)],
         return_type: returns("ML_Tree"),
         diverging: false,
@@ -186,7 +196,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         crate_deps: vec![],
         struct_derives: vec![],
         custom_type_imports: vec![("ML_BoostConfig", "nail::std_lib::ml"), ("ML_Objective", "nail::std_lib::ml")],
-        module: StdlibModule::Ml,
+        module: StdlibModule::MlBoost,
         parameters: vec![],
         return_type: NailDataTypeDescriptor::Struct("ML_BoostConfig".to_string()),
         diverging: false,
@@ -199,11 +209,11 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         crate_deps: vec![],
         struct_derives: vec![],
         custom_type_imports: vec![("ML_Boost", "nail::std_lib::ml"), ("ML_BoostConfig", "nail::std_lib::ml"), ("ML_Objective", "nail::std_lib::ml")],
-        module: StdlibModule::Ml,
+        module: StdlibModule::MlBoost,
         parameters: vec![nail_param!(features: [[f]]), nail_param!(targets: [f]), model_parameter("config", "ML_BoostConfig")],
         return_type: returns("ML_Boost"),
         diverging: false,
-        description: "Fits a gradient boosting model - many small trees, each trained on what the ones before it still get wrong. The method that wins on ordinary tabular data, and the one LightGBM and XGBoost implement. Predicts a number; for yes-or-no questions fit against 0 and 1.",
+        description: "Fits a gradient boosting model - many small trees, each trained on what the ones before it still get wrong. Nail's own implementation of the technique LightGBM and XGBoost made famous - the method that wins on ordinary tabular data. Predicts a number. For yes-or-no questions fit against 0 and 1.",
         example: "model:ML_Boost = danger(ml_boost_fit(rows, prices, config));",
     });
 
@@ -249,7 +259,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         crate_deps: vec![],
         struct_derives: vec![],
         custom_type_imports: vec![("ML_Boost", "nail::std_lib::ml"), ("ML_BoostConfig", "nail::std_lib::ml"), ("ML_Objective", "nail::std_lib::ml")],
-        module: StdlibModule::Ml,
+        module: StdlibModule::MlBoost,
         parameters: vec![
             nail_param!(features: [[f]]),
             nail_param!(targets: [f]),
@@ -272,7 +282,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         parameters: vec![nail_param!(features: [[f]]), nail_param!(targets: [f]), nail_param!(folds: i), model_parameter("config", "ML_BoostConfig"), nail_param!(seed: i)],
         return_type: returns("ML_Regression"),
         diverging: false,
-        description: "Trains and scores a boosted model once per fold, holding out a different slice each time, and averages the held-out scores. One split on a small dataset says as much about which rows landed where as about the model; this does not.",
+        description: "Trains and scores a boosted model once per fold, holding out a different slice each time, and averages the held-out scores. One split on a small dataset says as much about which rows landed where as about the model. This does not.",
         example: "scores:ML_Regression = danger(ml_cross_validate_boost(rows, prices, 5, config, 42));",
     });
 
@@ -281,7 +291,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         crate_deps: vec![],
         struct_derives: vec![],
         custom_type_imports: vec![("ML_Forest", "nail::std_lib::ml")],
-        module: StdlibModule::Ml,
+        module: StdlibModule::MlForest,
         parameters: vec![nail_param!(features: [[f]]), nail_param!(labels: [i]), nail_param!(trees: i), nail_param!(max_depth: i), nail_param!(seed: i)],
         return_type: returns("ML_Forest"),
         diverging: false,

@@ -932,6 +932,58 @@ pub async fn read_with_encoding(path: String, encoding_label: String) -> Result<
     return Ok(text.into_owned());
 }
 
+/// The last lines of a file, read from the end - how a person looks at a log.
+/// The file is walked backwards in blocks, so a two-gigabyte log costs only
+/// as much as the lines asked for.
+pub async fn tail_lines(path: String, count: i64) -> Result<Vec<String>, String> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    if count < 1 {
+        return Err(format!("fs_tail_lines: asked for {} lines, which is not a number of lines to read", count));
+    }
+    let mut file = tokio::fs::File::open(&path).await.map_err(|failure| format!("fs_tail_lines: could not read '{}': {}", path, failure))?;
+    let length = file.metadata().await.map_err(|failure| format!("fs_tail_lines: could not read '{}': {}", path, failure))?.len();
+
+    let wanted = count as usize;
+    let mut collected: Vec<u8> = Vec::new();
+    let mut position = length;
+    let mut newlines_seen = 0usize;
+    while position > 0 && newlines_seen <= wanted {
+        let block = position.min(65536);
+        position -= block;
+        file.seek(std::io::SeekFrom::Start(position)).await.map_err(|failure| format!("fs_tail_lines: could not read '{}': {}", path, failure))?;
+        let mut buffer = vec![0u8; block as usize];
+        file.read_exact(&mut buffer).await.map_err(|failure| format!("fs_tail_lines: could not read '{}': {}", path, failure))?;
+        newlines_seen += buffer.iter().filter(|byte| **byte == b'\n').count();
+        buffer.extend_from_slice(&collected);
+        collected = buffer;
+    }
+
+    let text = String::from_utf8_lossy(&collected);
+    let lines: Vec<&str> = text.lines().collect();
+    return Ok(lines.iter().rev().take(wanted).rev().map(|line| line.to_string()).collect());
+}
+
+#[cfg(test)]
+mod tail_tests {
+    use super::tail_lines;
+
+    #[tokio::test]
+    async fn the_last_lines_come_back_in_order() {
+        let path = std::env::temp_dir().join(format!("nail_tail_test_{}", std::process::id()));
+        let body: String = (1..=500).map(|line_number| format!("line {}\n", line_number)).collect();
+        tokio::fs::write(&path, body).await.unwrap();
+        assert_eq!(tail_lines(path.to_string_lossy().to_string(), 3).await.unwrap(), vec!["line 498", "line 499", "line 500"]);
+        assert_eq!(tail_lines(path.to_string_lossy().to_string(), 1000).await.unwrap().len(), 500);
+        tokio::fs::remove_file(&path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn asking_for_nothing_or_nowhere_is_refused() {
+        assert!(tail_lines("/no/such/file".to_string(), 5).await.unwrap_err().contains("could not read"));
+        assert!(tail_lines("/etc/hostname".to_string(), 0).await.unwrap_err().contains("not a number of lines"));
+    }
+}
+
 #[cfg(test)]
 mod encoding_tests {
     use super::read_with_encoding;

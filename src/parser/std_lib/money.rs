@@ -286,3 +286,45 @@ mod tests {
         assert!(allocate(100, vec![1, -1]).is_err());
     }
 }
+
+/// The fixed monthly payment that clears a loan - the amortization formula
+/// every mortgage and car payment comes from. The rate is the yearly
+/// percentage as people quote it: 6.0 means six percent.
+pub fn loan_payment(principal_cents: i64, annual_rate_percent: f64, months: i64) -> Result<i64, String> {
+    if principal_cents < 0 {
+        return Err(format!("money_loan_payment: a loan of {} cents is not a loan", principal_cents));
+    }
+    if months < 1 {
+        return Err(format!("money_loan_payment: {} months gives nothing to spread the loan over", months));
+    }
+    if annual_rate_percent < 0.0 {
+        return Err(format!("money_loan_payment: a rate of {}% is negative - that is a gift, not a loan", annual_rate_percent));
+    }
+    if annual_rate_percent == 0.0 {
+        return Ok(((principal_cents as f64) / (months as f64)).round() as i64);
+    }
+    let monthly_rate = annual_rate_percent / 100.0 / 12.0;
+    let growth = (1.0 + monthly_rate).powi(months as i32);
+    let payment = principal_cents as f64 * monthly_rate * growth / (growth - 1.0);
+    return Ok(payment.round() as i64);
+}
+
+#[cfg(test)]
+mod loan_tests {
+    use super::loan_payment;
+
+    #[test]
+    fn the_textbook_mortgage_comes_out_to_the_cent() {
+        // $200,000 at 6% over 30 years is the classic worked example: $1,199.10.
+        assert_eq!(loan_payment(20_000_000, 6.0, 360).unwrap(), 119_910);
+        // No interest is just division.
+        assert_eq!(loan_payment(120_000, 0.0, 12).unwrap(), 10_000);
+    }
+
+    #[test]
+    fn nonsense_loans_are_refused() {
+        assert!(loan_payment(-1, 5.0, 12).is_err());
+        assert!(loan_payment(100, 5.0, 0).is_err());
+        assert!(loan_payment(100, -5.0, 12).is_err());
+    }
+}

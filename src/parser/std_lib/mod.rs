@@ -11,6 +11,7 @@ pub mod cache;
 pub mod chart;
 pub mod code;
 pub mod compress;
+pub mod convert;
 pub mod crypto;
 pub mod csv;
 pub mod database;

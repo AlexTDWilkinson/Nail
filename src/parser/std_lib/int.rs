@@ -76,9 +76,50 @@ pub fn to_radix(value: i64, radix: i64) -> Result<String, String> {
     return Ok(String::from_utf8(written).unwrap_or_default());
 }
 
+/// Whether the number divides evenly by two. Zero is even.
+pub fn is_even(value: i64) -> bool {
+    return value % 2 == 0;
+}
+
+/// Whether the number leaves a remainder when divided by two.
+pub fn is_odd(value: i64) -> bool {
+    return value % 2 != 0;
+}
+
+/// Restricts a value to the range from low to high, both included. The float
+/// version lives in the math module as math_clamp.
+pub fn clamp(value: i64, low: i64, high: i64) -> Result<i64, String> {
+    if low > high {
+        return Err(format!("int_clamp: the low bound {} is above the high bound {}", low, high));
+    }
+    return Ok(value.clamp(low, high));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn evenness_and_oddness_split_every_integer_between_them() {
+        assert!(is_even(0));
+        assert!(is_even(4));
+        assert!(is_even(-4));
+        assert!(!is_even(7));
+        assert!(is_odd(7));
+        assert!(is_odd(-7));
+        assert!(!is_odd(0));
+        assert!(is_even(i64::MIN));
+        assert!(is_odd(i64::MAX));
+    }
+
+    #[test]
+    fn clamping_pins_a_value_inside_its_bounds() {
+        assert_eq!(clamp(5, 0, 10).expect("bounds in order"), 5);
+        assert_eq!(clamp(-5, 0, 10).expect("bounds in order"), 0);
+        assert_eq!(clamp(15, 0, 10).expect("bounds in order"), 10);
+        assert_eq!(clamp(15, 10, 10).expect("equal bounds"), 10);
+        assert!(clamp(5, 10, 0).unwrap_err().contains("above the high bound"));
+    }
 
     #[test]
     fn hex_is_read_with_or_without_the_prefix() {

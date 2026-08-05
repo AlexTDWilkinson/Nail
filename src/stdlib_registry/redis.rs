@@ -37,7 +37,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
 
     let entries = vec![
         redis_fn("db_redis_get", "std_lib::redis::get", vec![nail_param!(key: s)], nail_type!((s!e)),
-            "The value under a key; an error when nothing is there.",
+            "The value under a key. An error when nothing is there.",
             "session:s = safe(db_redis_get(store, session_id), fresh_session);"),
         redis_fn("db_redis_set", "std_lib::redis::set", vec![nail_param!(key: s), nail_param!(value: s)], nail_type!((v!e)),
             "Stores a value that stays until something deletes it.",

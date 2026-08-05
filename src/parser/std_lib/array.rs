@@ -406,6 +406,33 @@ pub fn rotate<T: Clone>(arr: Vec<T>, n: i64) -> Vec<T> {
     result
 }
 
+/// Rotate elements count positions toward the front: the first count elements
+/// move to the back. The count wraps, and a negative count rotates the other
+/// way, matching array_rotate.
+pub fn rotate_left<T: Clone>(arr: Vec<T>, count: i64) -> Vec<T> {
+    if arr.is_empty() {
+        return Vec::new();
+    }
+    let len = arr.len() as i64;
+    let shift = ((count % len) + len) % len;
+    let mut out = arr;
+    out.rotate_left(shift as usize);
+    return out;
+}
+
+/// Rotate elements count positions toward the back: the last count elements
+/// move to the front.
+pub fn rotate_right<T: Clone>(arr: Vec<T>, count: i64) -> Vec<T> {
+    if arr.is_empty() {
+        return Vec::new();
+    }
+    let len = arr.len() as i64;
+    let shift = ((count % len) + len) % len;
+    let mut out = arr;
+    out.rotate_right(shift as usize);
+    return out;
+}
+
 // Shuffle array randomly
 pub fn shuffle<T: Clone>(mut arr: Vec<T>) -> Vec<T> {
     use rand::seq::SliceRandom;
@@ -841,5 +868,334 @@ mod keyed_tests {
         let keys: Vec<i64> = numbers.iter().map(|value| negate(*value)).collect();
         assert_eq!(sort_by_keys(numbers.clone(), keys.clone()), sort_by(numbers.clone(), negate));
         assert_eq!(sum_of_keys(numbers.clone(), keys), sum_by(numbers, negate));
+    }
+}
+
+/// Every step-th element, starting with the first. A step of 1 copies the
+/// array. A step below 1 is an error rather than an empty answer, because it
+/// almost always means a miscalculation upstream.
+pub fn step_by<T: Clone>(arr: Vec<T>, step: i64) -> Result<Vec<T>, String> {
+    if step < 1 {
+        return Err(format!("array_step_by: step must be at least 1, got {}", step));
+    }
+    return Ok(arr.into_iter().step_by(step as usize).collect());
+}
+
+/// The two arrays woven together - first[0], second[0], first[1], second[1] -
+/// and when one runs out, the rest of the other follows.
+pub fn interleave<T: Clone>(first: Vec<T>, second: Vec<T>) -> Vec<T> {
+    let mut out = Vec::with_capacity(first.len() + second.len());
+    let mut first_items = first.into_iter();
+    let mut second_items = second.into_iter();
+    loop {
+        match (first_items.next(), second_items.next()) {
+            (Some(from_first), Some(from_second)) => {
+                out.push(from_first);
+                out.push(from_second);
+            }
+            (Some(from_first), None) => {
+                out.push(from_first);
+                out.extend(first_items);
+                break;
+            }
+            (None, Some(from_second)) => {
+                out.push(from_second);
+                out.extend(second_items);
+                break;
+            }
+            (None, None) => break,
+        }
+    }
+    return out;
+}
+
+/// The array grown to the given length by appending the value; an array
+/// already that long (or longer) comes back unchanged.
+pub fn pad_end<T: Clone>(arr: Vec<T>, length: i64, value: T) -> Vec<T> {
+    let target = if length < 0 { 0 } else { length as usize };
+    let mut out = arr;
+    while out.len() < target {
+        out.push(value.clone());
+    }
+    return out;
+}
+
+/// The array grown to the given length by prepending the value - fixed-width
+/// alignment, where the existing elements keep the right-hand end.
+pub fn pad_start<T: Clone>(arr: Vec<T>, length: i64, value: T) -> Vec<T> {
+    let target = if length < 0 { 0 } else { length as usize };
+    if arr.len() >= target {
+        return arr;
+    }
+    let mut out = vec![value; target - arr.len()];
+    out.extend(arr);
+    return out;
+}
+
+/// Whether each element is less than or equal to the next, all the way
+/// through - the order array_sort would produce. Empty and single-element
+/// arrays are sorted; there is nothing in them that is out of place.
+pub fn is_sorted<T: PartialOrd>(arr: &Vec<T>) -> bool {
+    return arr.windows(2).all(|pair| pair[0] <= pair[1]);
+}
+
+/// The strings that actually say something: empty strings dropped, everything
+/// else kept in order. The usual cleanup after splitting text on a separator.
+pub fn compact_strings(arr: Vec<String>) -> Vec<String> {
+    return arr.into_iter().filter(|item| !item.is_empty()).collect();
+}
+
+/// The middle element - the lower-index of the two middles when the length is
+/// even. An empty array is an error, the same as array_first and array_last.
+pub fn middle<T: Clone>(arr: &Vec<T>) -> Result<T, String> {
+    if arr.is_empty() {
+        return Err("array_middle: cannot get the middle element of an empty array".to_string());
+    }
+    return Ok(arr[(arr.len() - 1) / 2].clone());
+}
+
+/// The last count elements, in their original order - array_take from the
+/// other end. Fewer come back if the array is shorter.
+pub fn take_last<T: Clone>(arr: Vec<T>, count: i64) -> Vec<T> {
+    if count <= 0 {
+        return Vec::new();
+    }
+    let keep = (count as usize).min(arr.len());
+    return arr[arr.len() - keep..].to_vec();
+}
+
+/// The array without its last count elements - array_skip from the other end.
+/// Skipping more than the array holds leaves nothing, not an error.
+pub fn skip_last<T: Clone>(arr: Vec<T>, count: i64) -> Vec<T> {
+    if count <= 0 {
+        return arr;
+    }
+    let drop = (count as usize).min(arr.len());
+    return arr[..arr.len() - drop].to_vec();
+}
+
+/// Whether the array begins with the given prefix, element for element. An
+/// empty prefix matches anything, the same way every string starts with "".
+pub fn starts_with<T: PartialEq>(arr: &Vec<T>, prefix: Vec<T>) -> bool {
+    return arr.starts_with(&prefix);
+}
+
+/// Whether the array ends with the given suffix, element for element.
+pub fn ends_with<T: PartialEq>(arr: &Vec<T>, suffix: Vec<T>) -> bool {
+    return arr.ends_with(&suffix);
+}
+
+/// Whether no value appears more than once. An empty array is unique - there
+/// is nothing in it to repeat.
+pub fn is_unique<T: PartialEq>(arr: &Vec<T>) -> bool {
+    for (index, item) in arr.iter().enumerate() {
+        if arr[index + 1..].contains(item) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// How many runs of consecutive equal elements the array has. [1, 1, 2, 1] is
+/// three runs; an empty array is zero. Counting the runs without building them
+/// - the run arrays themselves would be a nested collection.
+pub fn count_runs<T: PartialEq>(arr: &Vec<T>) -> i64 {
+    if arr.is_empty() {
+        return 0;
+    }
+    let mut runs = 1i64;
+    for index in 1..arr.len() {
+        if arr[index] != arr[index - 1] {
+            runs += 1;
+        }
+    }
+    return runs;
+}
+
+/// How many elements the two arrays share at their start - the point where two
+/// paths, or two versions of a list, begin to differ.
+pub fn common_prefix_length<T: PartialEq>(first: &Vec<T>, second: &Vec<T>) -> i64 {
+    return first.iter().zip(second.iter()).take_while(|(from_first, from_second)| from_first == from_second).count() as i64;
+}
+
+/// Where the largest element sits - array_max when the position matters more
+/// than the value. Ties go to the first occurrence; an empty array is an error.
+pub fn index_of_max<T: PartialOrd>(arr: &Vec<T>) -> Result<i64, String> {
+    if arr.is_empty() {
+        return Err("array_index_of_max: the array is empty, so there is no largest element".to_string());
+    }
+    let mut best = 0;
+    for index in 1..arr.len() {
+        if arr[index] > arr[best] {
+            best = index;
+        }
+    }
+    return Ok(best as i64);
+}
+
+/// Where the smallest element sits. Ties go to the first occurrence; an empty
+/// array is an error.
+pub fn index_of_min<T: PartialOrd>(arr: &Vec<T>) -> Result<i64, String> {
+    if arr.is_empty() {
+        return Err("array_index_of_min: the array is empty, so there is no smallest element".to_string());
+    }
+    let mut best = 0;
+    for index in 1..arr.len() {
+        if arr[index] < arr[best] {
+            best = index;
+        }
+    }
+    return Ok(best as i64);
+}
+
+#[cfg(test)]
+mod pure_function_tests {
+    use super::*;
+
+    fn words(items: &[&str]) -> Vec<String> {
+        return items.iter().map(|item| item.to_string()).collect();
+    }
+
+    #[test]
+    fn stepping_keeps_the_first_and_every_step_th_after() {
+        assert_eq!(step_by(vec![1, 2, 3, 4, 5], 2).expect("a valid step"), vec![1, 3, 5]);
+        assert_eq!(step_by(words(&["a", "b", "c", "d"]), 3).expect("a valid step"), words(&["a", "d"]));
+        assert_eq!(step_by(vec![1, 2, 3], 1).expect("a valid step"), vec![1, 2, 3]);
+        assert_eq!(step_by(vec![1, 2, 3], 10).expect("a valid step"), vec![1]);
+        assert_eq!(step_by(Vec::<i64>::new(), 2).expect("a valid step"), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn a_step_below_one_is_an_error() {
+        assert!(step_by(vec![1, 2, 3], 0).is_err());
+        assert!(step_by(vec![1, 2, 3], -2).is_err());
+    }
+
+    #[test]
+    fn interleaving_alternates_and_appends_the_leftover_tail() {
+        assert_eq!(interleave(vec![1, 3, 5], vec![2, 4, 6]), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(interleave(vec![1, 3, 5, 7, 9], vec![2, 4]), vec![1, 2, 3, 4, 5, 7, 9]);
+        assert_eq!(interleave(vec![1], vec![2, 4, 6]), vec![1, 2, 4, 6]);
+        assert_eq!(interleave(words(&["a", "b"]), words(&["x"])), words(&["a", "x", "b"]));
+        assert_eq!(interleave(Vec::<i64>::new(), vec![1, 2]), vec![1, 2]);
+        assert_eq!(interleave(Vec::<i64>::new(), Vec::<i64>::new()), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn padding_grows_short_arrays_and_leaves_long_ones_alone() {
+        assert_eq!(pad_end(vec![1, 2], 4, 0), vec![1, 2, 0, 0]);
+        assert_eq!(pad_end(vec![1, 2, 3], 3, 0), vec![1, 2, 3]);
+        assert_eq!(pad_end(vec![1, 2, 3], 2, 0), vec![1, 2, 3]);
+        assert_eq!(pad_end(Vec::<String>::new(), 2, "x".to_string()), words(&["x", "x"]));
+        assert_eq!(pad_end(vec![1], -3, 0), vec![1]);
+        assert_eq!(pad_start(vec![1, 2], 4, 0), vec![0, 0, 1, 2]);
+        assert_eq!(pad_start(vec![1, 2, 3], 2, 0), vec![1, 2, 3]);
+        assert_eq!(pad_start(words(&["end"]), 3, "-".to_string()), words(&["-", "-", "end"]));
+    }
+
+    #[test]
+    fn sortedness_allows_equal_neighbours_and_holds_for_the_trivial_arrays() {
+        assert!(is_sorted(&vec![1, 2, 2, 3]));
+        assert!(!is_sorted(&vec![3, 1, 2]));
+        assert!(is_sorted(&Vec::<i64>::new()));
+        assert!(is_sorted(&vec![42]));
+        assert!(is_sorted(&words(&["apple", "banana", "banana"])));
+        assert!(!is_sorted(&words(&["banana", "apple"])));
+        assert!(is_sorted(&vec![1.0, 1.5, 2.0]));
+    }
+
+    #[test]
+    fn compacting_drops_only_the_empty_strings() {
+        assert_eq!(compact_strings(words(&["a", "", "b", ""])), words(&["a", "b"]));
+        assert_eq!(compact_strings(words(&["", ""])), Vec::<String>::new());
+        assert_eq!(compact_strings(Vec::new()), Vec::<String>::new());
+        assert_eq!(compact_strings(words(&[" "])), words(&[" "]));
+    }
+
+    #[test]
+    fn the_middle_element_is_the_lower_of_two_for_even_lengths() {
+        assert_eq!(middle(&vec![1, 2, 3]).expect("a middle"), 2);
+        assert_eq!(middle(&vec![1, 2, 3, 4]).expect("a middle"), 2);
+        assert_eq!(middle(&vec![7]).expect("a middle"), 7);
+        assert_eq!(middle(&words(&["a", "b", "c"])).expect("a middle"), "b");
+        assert!(middle(&Vec::<i64>::new()).is_err());
+    }
+
+    #[test]
+    fn taking_and_skipping_from_the_end_mirror_take_and_skip() {
+        assert_eq!(take_last(vec![1, 2, 3, 4], 2), vec![3, 4]);
+        assert_eq!(take_last(vec![1, 2], 5), vec![1, 2]);
+        assert_eq!(take_last(vec![1, 2], 0), Vec::<i64>::new());
+        assert_eq!(take_last(vec![1, 2], -1), Vec::<i64>::new());
+        assert_eq!(take_last(words(&["a", "b", "c"]), 1), words(&["c"]));
+        assert_eq!(skip_last(vec![1, 2, 3, 4], 2), vec![1, 2]);
+        assert_eq!(skip_last(vec![1, 2], 5), Vec::<i64>::new());
+        assert_eq!(skip_last(vec![1, 2], 0), vec![1, 2]);
+        assert_eq!(skip_last(Vec::<i64>::new(), 3), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn prefix_and_suffix_checks_match_element_for_element() {
+        assert!(starts_with(&vec![1, 2, 3], vec![1, 2]));
+        assert!(!starts_with(&vec![1, 2, 3], vec![2]));
+        assert!(starts_with(&vec![1, 2], Vec::new()));
+        assert!(!starts_with(&vec![1], vec![1, 2]));
+        assert!(starts_with(&words(&["a", "b"]), words(&["a"])));
+        assert!(ends_with(&vec![1, 2, 3], vec![2, 3]));
+        assert!(!ends_with(&vec![1, 2, 3], vec![1]));
+        assert!(ends_with(&vec![1, 2], Vec::new()));
+        assert!(ends_with(&words(&["a", "b"]), words(&["b"])));
+        assert!(!ends_with(&Vec::<i64>::new(), vec![1]));
+    }
+
+    #[test]
+    fn uniqueness_means_no_value_repeats_anywhere() {
+        assert!(is_unique(&vec![1, 2, 3]));
+        assert!(!is_unique(&vec![1, 2, 1]));
+        assert!(is_unique(&Vec::<i64>::new()));
+        assert!(is_unique(&words(&["a", "b"])));
+        assert!(!is_unique(&words(&["a", "a"])));
+    }
+
+    #[test]
+    fn runs_count_stretches_of_equal_neighbours() {
+        assert_eq!(count_runs(&vec![1, 1, 2, 1]), 3);
+        assert_eq!(count_runs(&vec![5, 5, 5]), 1);
+        assert_eq!(count_runs(&vec![1, 2, 3]), 3);
+        assert_eq!(count_runs(&Vec::<i64>::new()), 0);
+        assert_eq!(count_runs(&words(&["a", "a", "b"])), 2);
+    }
+
+    #[test]
+    fn the_common_prefix_stops_at_the_first_difference() {
+        assert_eq!(common_prefix_length(&vec![1, 2, 3], &vec![1, 2, 9]), 2);
+        assert_eq!(common_prefix_length(&vec![1, 2], &vec![3, 4]), 0);
+        assert_eq!(common_prefix_length(&vec![1, 2], &vec![1, 2]), 2);
+        assert_eq!(common_prefix_length(&vec![1, 2, 3], &vec![1, 2]), 2);
+        assert_eq!(common_prefix_length(&Vec::<i64>::new(), &vec![1]), 0);
+        assert_eq!(common_prefix_length(&words(&["usr", "bin"]), &words(&["usr", "lib"])), 1);
+    }
+
+    #[test]
+    fn extreme_positions_go_to_the_first_of_a_tie() {
+        assert_eq!(index_of_max(&vec![1, 9, 3]).expect("a position"), 1);
+        assert_eq!(index_of_max(&vec![9, 2, 9]).expect("a position"), 0);
+        assert_eq!(index_of_min(&vec![4, 1, 7]).expect("a position"), 1);
+        assert_eq!(index_of_min(&vec![2, 5, 2]).expect("a position"), 0);
+        assert_eq!(index_of_max(&words(&["ant", "zebra", "cat"])).expect("a position"), 1);
+        assert_eq!(index_of_min(&vec![2.5, 1.5, 3.5]).expect("a position"), 1);
+        assert!(index_of_max(&Vec::<i64>::new()).is_err());
+        assert!(index_of_min(&Vec::<i64>::new()).is_err());
+    }
+
+    #[test]
+    fn rotations_wrap_and_agree_with_their_directions() {
+        assert_eq!(rotate_left(vec![1, 2, 3], 1), vec![2, 3, 1]);
+        assert_eq!(rotate_right(vec![1, 2, 3], 1), vec![3, 1, 2]);
+        assert_eq!(rotate_left(vec![1, 2, 3], 4), vec![2, 3, 1]);
+        assert_eq!(rotate_right(vec![1, 2, 3], 4), vec![3, 1, 2]);
+        assert_eq!(rotate_left(vec![1, 2, 3], -1), rotate_right(vec![1, 2, 3], 1));
+        assert_eq!(rotate_left(Vec::<i64>::new(), 2), Vec::<i64>::new());
+        assert_eq!(rotate_right(words(&["a", "b"]), 1), words(&["b", "a"]));
     }
 }

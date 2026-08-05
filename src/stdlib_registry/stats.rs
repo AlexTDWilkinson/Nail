@@ -5,28 +5,112 @@ use super::*;
 pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Stats:
         "stats_mean" => "std_lib::stats::mean", (values: (&[f])) -> (f!e),
-            "Returns the average of the values; errors on an empty array.",
+            "Returns the average of the values. Errors on an empty array.",
             "average:f = danger(stats_mean(prices));";
         "stats_median" => "std_lib::stats::median", (values: (&[f])) -> (f!e),
-            "Returns the middle value once sorted, which one outlier cannot move; errors on an empty array.",
+            "Returns the middle value once sorted, which one outlier cannot move. Errors on an empty array.",
             "middle:f = danger(stats_median(prices));";
         "stats_mode" => "std_lib::stats::mode", (values: (&[f])) -> (f!e),
-            "Returns the value that appears most often, the smallest one when several tie; errors on an empty array.",
+            "Returns the value that appears most often, the smallest one when several tie. Errors on an empty array.",
             "most_common:f = danger(stats_mode(ratings));";
         "stats_variance" => "std_lib::stats::variance", (values: (&[f])) -> (f!e),
-            "Returns the sample variance; errors on fewer than two values.",
+            "Returns the sample variance. Errors on fewer than two values.",
             "spread:f = danger(stats_variance(prices));";
         "stats_stddev" => "std_lib::stats::stddev", (values: (&[f])) -> (f!e),
-            "Returns the sample standard deviation, in the units of the data; errors on fewer than two values.",
+            "Returns the sample standard deviation, in the units of the data. Errors on fewer than two values.",
             "spread:f = danger(stats_stddev(prices));";
         "stats_percentile" => "std_lib::stats::percentile", (values: (&[f]), share: f) -> (f!e),
             "Returns the value below which the given share of the data falls, written from 0.0 to 1.0.",
             "p95:f = danger(stats_percentile(latencies, 0.95));";
         "stats_range" => "std_lib::stats::range", (values: (&[f])) -> (f!e),
-            "Returns the distance from the smallest value to the largest; errors on an empty array.",
+            "Returns the distance from the smallest value to the largest. Errors on an empty array.",
             "span:f = danger(stats_range(prices));";
         "stats_correlation" => "std_lib::stats::correlation", (first: (&[f]), second: (&[f])) -> (f!e),
-            "Returns how closely two columns move together, from -1.0 to 1.0; errors on mismatched lengths or a column that never changes.",
+            "Returns how closely two columns move together, from -1.0 to 1.0. Errors on mismatched lengths or a column that never changes.",
             "link:f = danger(stats_correlation(spend, revenue));";
+        "stats_geometric_mean" => "std_lib::stats::geometric_mean", (values: (&[f])) -> (f!e),
+            "Returns the n-th root of the product, the right average for growth rates and ratios. Errors unless every value is positive.",
+            "typical_growth:f = danger(stats_geometric_mean(growth_factors));";
+        "stats_harmonic_mean" => "std_lib::stats::harmonic_mean", (values: (&[f])) -> (f!e),
+            "Returns the reciprocal of the mean of reciprocals, the right average for rates like speeds. Errors unless every value is positive.",
+            "average_speed:f = danger(stats_harmonic_mean(speeds));";
+        "stats_weighted_mean" => "std_lib::stats::weighted_mean", (values: (&[f]), weights: (&[f])) -> (f!e),
+            "Returns the mean with each value counted by its weight. Errors on mismatched lengths or weights that do not sum to a positive total.",
+            "grade:f = danger(stats_weighted_mean(scores, credits));";
+        "stats_trimmed_mean" => "std_lib::stats::trimmed_mean", (values: (&[f]), trim_share: f) -> (f!e),
+            "Returns the mean after dropping the given share of values from each end, blunting outliers. The share runs from 0.0 up to but not including 0.5.",
+            "steady:f = danger(stats_trimmed_mean(latencies, 0.1));";
+        "stats_iqr" => "std_lib::stats::iqr", (values: (&[f])) -> (f!e),
+            "Returns the width of the middle half of the data, a spread one outlier cannot inflate. Errors on an empty array.",
+            "middle_spread:f = danger(stats_iqr(latencies));";
+        "stats_mad" => "std_lib::stats::mad", (values: (&[f])) -> (f!e),
+            "Returns the median distance from the median, the most outlier-resistant spread measure. Errors on an empty array.",
+            "spread:f = danger(stats_mad(prices));";
+        "stats_skewness" => "std_lib::stats::skewness", (values: (&[f])) -> (f!e),
+            "Returns adjusted sample skewness, positive when the long tail points right. Errors on fewer than three values or flat data.",
+            "lean:f = danger(stats_skewness(incomes));";
+        "stats_kurtosis" => "std_lib::stats::kurtosis", (values: (&[f])) -> (f!e),
+            "Returns excess sample kurtosis, positive for heavy tails and negative for flat-topped data. Errors on fewer than four values or flat data.",
+            "tails:f = danger(stats_kurtosis(returns));";
+        "stats_sem" => "std_lib::stats::sem", (values: (&[f])) -> (f!e),
+            "Returns the standard error of the mean, how far the sample mean likely sits from the true one. Errors on fewer than two values.",
+            "wobble:f = danger(stats_sem(measurements));";
+        "stats_cv" => "std_lib::stats::cv", (values: (&[f])) -> (f!e),
+            "Returns the standard deviation as a share of the mean, comparable across different units. Errors on fewer than two values or a zero mean.",
+            "relative_spread:f = danger(stats_cv(prices));";
+        "stats_pvariance" => "std_lib::stats::pvariance", (values: (&[f])) -> (f!e),
+            "Returns the population variance, dividing by n, for when the values are the whole population. Errors on an empty array.",
+            "spread:f = danger(stats_pvariance(census_ages));";
+        "stats_pstddev" => "std_lib::stats::pstddev", (values: (&[f])) -> (f!e),
+            "Returns the population standard deviation, in the units of the data. Errors on an empty array.",
+            "spread:f = danger(stats_pstddev(census_ages));";
+        "stats_rms" => "std_lib::stats::rms", (values: (&[f])) -> (f!e),
+            "Returns the root mean square, the natural magnitude for values that swing through zero. Errors on an empty array.",
+            "magnitude:f = danger(stats_rms(errors));";
+        "stats_midrange" => "std_lib::stats::midrange", (values: (&[f])) -> (f!e),
+            "Returns the midpoint between the smallest and largest value. Errors on an empty array.",
+            "center:f = danger(stats_midrange(temperatures));";
+        "stats_covariance" => "std_lib::stats::covariance", (first: (&[f]), second: (&[f])) -> (f!e),
+            "Returns the sample covariance, positive when two columns rise together, in the product of their units. Errors on mismatched lengths or fewer than two pairs.",
+            "together:f = danger(stats_covariance(spend, revenue));";
+        "stats_rank" => "std_lib::stats::rank", (values: (&[f])) -> [f],
+            "Returns the 1-based rank of each value in the original order, tied values sharing the average of their positions.",
+            "positions:[f] = stats_rank(scores);";
+        "stats_spearman" => "std_lib::stats::spearman", (first: (&[f]), second: (&[f])) -> (f!e),
+            "Returns rank correlation, which sees any steadily rising or falling relationship, straight line or not. Errors on mismatched lengths, fewer than two pairs, or a flat column.",
+            "link:f = danger(stats_spearman(spend, revenue));";
+        "stats_zscores" => "std_lib::stats::zscores", (values: (&[f])) -> ([f]!e),
+            "Returns each value as its distance from the mean in standard deviations. Errors on fewer than two values or flat data.",
+            "scores:[f] = danger(stats_zscores(measurements));";
+        "stats_normalize" => "std_lib::stats::normalize", (values: (&[f])) -> ([f]!e),
+            "Returns each value scaled linearly onto 0.0..1.0, smallest to largest. Errors on an empty array or flat data.",
+            "scaled:[f] = danger(stats_normalize(prices));";
+        "stats_cumulative_sum" => "std_lib::stats::cumulative_sum", (values: (&[f])) -> [f],
+            "Returns the running total after each value. An empty array stays empty.",
+            "totals:[f] = stats_cumulative_sum(daily_sales);";
+        "stats_differences" => "std_lib::stats::differences", (values: (&[f])) -> [f],
+            "Returns the step from each value to the next, one shorter than the input. An empty array stays empty.",
+            "steps:[f] = stats_differences(temperatures);";
+        "stats_percent_change" => "std_lib::stats::percent_change", (values: (&[f])) -> ([f]!e),
+            "Returns the percent change from each value to the next, one shorter than the input. Errors when a step starts from zero.",
+            "growth:[f] = danger(stats_percent_change(monthly_revenue));";
+        "stats_moving_average" => "std_lib::stats::moving_average", (values: (&[f]), window: i) -> ([f]!e),
+            "Returns the mean of each window-sized run of neighbours, smoothing a noisy series. Errors unless the window fits inside the array.",
+            "smooth:[f] = danger(stats_moving_average(prices, 7));";
+        "stats_ewma" => "std_lib::stats::ewma", (values: (&[f]), alpha: f) -> ([f]!e),
+            "Returns the exponentially weighted moving average - the factor is above 0.0 and at most 1.0, smaller meaning smoother. Errors on an empty array or a factor outside that range.",
+            "trend:[f] = danger(stats_ewma(prices, 0.3));";
+        "stats_histogram" => "std_lib::stats::histogram", (values: (&[f]), bins: i) -> ([i]!e),
+            "Returns counts per equal-width bin from the smallest value to the largest, the largest landing in the last bin. Errors on an empty array or fewer than one bin.",
+            "counts:[i] = danger(stats_histogram(latencies, 10));";
+        "stats_outliers" => "std_lib::stats::outliers", (values: (&[f])) -> [f],
+            "Returns the values beyond the 1.5-IQR boxplot fences, in their original order. Fewer than four values report none.",
+            "unusual:[f] = stats_outliers(latencies);";
+        "stats_percentile_rank" => "std_lib::stats::percentile_rank", (values: (&[f]), target: f) -> (f!e),
+            "Returns the share of values at or below the target, from 0.0 to 100.0 - the inverse question to stats_percentile. Errors on an empty array.",
+            "standing:f = danger(stats_percentile_rank(scores, 88.0));";
+        "stats_quartiles" => "std_lib::stats::quartiles", (values: (&[f])) -> ([f]!e),
+            "Returns the 25th, 50th and 75th percentiles as a three-value array, the box of a boxplot in one call. Errors on an empty array.",
+            "box:[f] = danger(stats_quartiles(latencies));";
     }
 }

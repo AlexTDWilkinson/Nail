@@ -12,7 +12,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Wraps shapes in an SVG document of the given size. An empty background leaves the drawing transparent. Save it with fs_write.",
             "picture:s = danger(draw_svg(400.0, 300.0, `white`, shapes));";
         "draw_rect" => "std_lib::draw::rect", (x: f, y: f, width: f, height: f, fill: s, corner_radius: f) -> (s!e),
-            "A rectangle; a corner radius of 0.0 gives square corners.",
+            "A rectangle. A corner radius of 0.0 gives square corners.",
             "bar:s = danger(draw_rect(10.0, 20.0, 30.0, 40.0, `steelblue`, 0.0));";
         "draw_circle" => "std_lib::draw::circle", (center_x: f, center_y: f, radius: f, fill: s) -> (s!e),
             "A circle, given its centre and radius.",

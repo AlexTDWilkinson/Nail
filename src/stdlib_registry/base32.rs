@@ -8,7 +8,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Text as base32, RFC 4648 - the alphabet authenticator apps and DNS records use.",
             "encoded:s = base32_encode(`hello`);";
         "base32_decode" => "std_lib::base32::decode", (text: s) -> (s!e),
-            "Base32 back to text. Case and padding are forgiven; characters outside the alphabet are not.",
+            "Base32 back to text. Case and padding are forgiven. Characters outside the alphabet are not.",
             "decoded:s = danger(base32_decode(encoded));";
         "base32_encode_hex" => "std_lib::base32::encode_hex", (hex: s) -> (s!e),
             "Hex bytes as base32 - how a binary secret becomes the code an authenticator app accepts.",

@@ -8,7 +8,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns a signed HS256 token carrying the given JSON claims, expiring that many seconds from now, or never if the number is zero or less.",
             "token:s = danger(jwt_sign(json_serialize(session), secret, 3600));";
         "jwt_verify" [Hmac, Sha2, Base64, SerdeJson] => "std_lib::jwt::verify", (token: s, secret: s) -> (s!e),
-            "Returns the claims of a token whose signature checks out and whose expiry has not passed, as JSON text; any other outcome is an error.",
+            "Returns the claims of a token whose signature checks out and whose expiry has not passed, as JSON text. Any other outcome is an error.",
             "claims_json:s = danger(jwt_verify(cookie_value, secret));";
         "jwt_is_expired" [Base64, SerdeJson] => "std_lib::jwt::is_expired", (token: s) -> (b!e),
             "Returns true if the token's expiry has passed, without checking the signature. For deciding whether to refresh a token, not whether to trust one.",

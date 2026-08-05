@@ -7,16 +7,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     // somebody else's API that nobody wants to describe as a struct first.
     simple_fns! { m, Json:
         "json_get_string" [SerdeJson] => "std_lib::json::get_string", (json: s, path: s) -> (s!e),
-            "Returns the text at a dotted path like user.name, where a number in the path indexes a list; a number or boolean there comes back as it was written. Errors if the path is not there.",
+            "Returns the text at a dotted path like user.name, where a number in the path indexes a list. A number or boolean there comes back as it was written. Errors if the path is not there.",
             "name:s = danger(json_get_string(body, `user.name`));";
         "json_get_int" [SerdeJson] => "std_lib::json::get_int", (json: s, path: s) -> (i!e),
-            "Returns the whole number at a dotted path; a fraction is an error rather than a silent rounding.",
+            "Returns the whole number at a dotted path. A fraction is an error rather than a silent rounding.",
             "age:i = danger(json_get_int(body, `user.age`));";
         "json_get_float" [SerdeJson] => "std_lib::json::get_float", (json: s, path: s) -> (f!e),
             "Returns the number at a dotted path, whole or fractional.",
             "score:f = danger(json_get_float(body, `user.score`));";
         "json_get_bool" [SerdeJson] => "std_lib::json::get_bool", (json: s, path: s) -> (b!e),
-            "Returns the true or false at a dotted path; the strings true and false count too.",
+            "Returns the true or false at a dotted path. The strings true and false count too.",
             "active:b = danger(json_get_bool(body, `user.active`));";
         "json_has" [SerdeJson] => "std_lib::json::has", (json: s, path: s) -> b,
             "Whether there is anything at a dotted path. A field that is present but null counts as missing, and text that is not JSON is simply false.",

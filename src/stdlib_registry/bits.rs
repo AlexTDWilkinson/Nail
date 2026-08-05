@@ -17,10 +17,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns the number with every bit flipped.",
             "inverted:i = bits_not(flags);";
         "bits_shift_left" => "std_lib::bits::shift_left", (value: i, places: i) -> (i!e),
-            "Shifts the bits up, filling with zeros; errors on a shift outside 0 to 63.",
+            "Shifts the bits up, filling with zeros. Errors on a shift outside 0 to 63.",
             "doubled:i = danger(bits_shift_left(value, 1));";
         "bits_shift_right" => "std_lib::bits::shift_right", (value: i, places: i) -> (i!e),
-            "Shifts the bits down, filling with zeros; errors on a shift outside 0 to 63.",
+            "Shifts the bits down, filling with zeros. Errors on a shift outside 0 to 63.",
             "halved:i = danger(bits_shift_right(value, 1));";
         "bits_rotate_left" => "std_lib::bits::rotate_left", (value: i, places: i) -> (i!e),
             "Shifts the bits up, with the bits that fall off the top returning at the bottom.",
@@ -41,16 +41,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns how many zero bits sit below the lowest set bit, and 64 for zero itself.",
             "alignment:i = bits_trailing_zeros(address);";
         "bits_get" => "std_lib::bits::get", (value: i, index: i) -> (b!e),
-            "Returns whether one particular bit is set, counting from 0 at the lowest; errors outside 0 to 63.",
+            "Returns whether one particular bit is set, counting from 0 at the lowest. Errors outside 0 to 63.",
             "enabled:b = danger(bits_get(flags, 3));";
         "bits_set" => "std_lib::bits::set", (value: i, index: i, on: b) -> (i!e),
-            "Returns the number with one particular bit turned on or off; errors outside 0 to 63.",
+            "Returns the number with one particular bit turned on or off. Errors outside 0 to 63.",
             "flags:i = danger(bits_set(flags, 3, true));";
         "bits_to_binary" => "std_lib::bits::to_binary", (value: i) -> s,
             "Writes the bit pattern as ones and zeros, highest bit first, with no leading zeros.",
             "pattern:s = bits_to_binary(5);";
         "bits_from_binary" => "std_lib::bits::from_binary", (text: s) -> (i!e),
-            "Reads a string of ones and zeros back into a number; underscores are allowed as separators.",
+            "Reads a string of ones and zeros back into a number. Underscores are allowed as separators.",
             "value:i = danger(bits_from_binary(`1010_1010`));";
         "bits_to_hex" => "std_lib::bits::to_hex", (value: i) -> s,
             "Writes the bit pattern in hex, highest digit first, with no leading zeros.",

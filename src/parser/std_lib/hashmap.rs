@@ -108,6 +108,21 @@ pub fn from_arrays<K: Hash + Eq + Clone, V: Clone>(keys: Vec<K>, values: Vec<V>)
     return Ok(map);
 }
 
+/// The value under a key, or the fallback when the key is not there. The map
+/// is not changed - the fallback is returned, never inserted - which is the
+/// difference between this and entry_or_insert.
+pub fn get_or<K: Hash + Eq + Clone, V: Clone>(map: &DashMap<K, V>, key: &K, fallback: V) -> V {
+    return map.get(key).map(|entry| entry.value().clone()).unwrap_or(fallback);
+}
+
+/// A key holding the given value, or an error when no key does - the lookup
+/// run backwards. A hashmap has no order, so with several keys holding the
+/// value, which one comes back is not defined; it is for values that appear
+/// once, the way an id does.
+pub fn key_of<K: Hash + Eq + Clone, V: Clone + PartialEq + std::fmt::Debug>(map: &DashMap<K, V>, value: &V) -> Result<K, String> {
+    return map.iter().find(|entry| entry.value() == value).map(|entry| entry.key().clone()).ok_or_else(|| format!("hashmap_key_of: no key holds the value {:?}", value));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +154,23 @@ mod tests {
     fn mismatched_lengths_are_an_error() {
         let error = from_arrays(vec!["a".to_string()], vec![1i64, 2]).unwrap_err();
         assert!(error.contains("same length"));
+    }
+
+    #[test]
+    fn a_missing_key_falls_back_without_changing_the_map() {
+        let map: DashMap<String, i64> = DashMap::new();
+        map.insert("alice".to_string(), 10);
+        assert_eq!(get_or(&map, &"alice".to_string(), 0), 10);
+        assert_eq!(get_or(&map, &"bob".to_string(), 0), 0);
+        assert_eq!(map.len(), 1, "the fallback is returned, not inserted");
+    }
+
+    #[test]
+    fn a_value_can_be_looked_up_backwards() {
+        let map: DashMap<String, i64> = DashMap::new();
+        map.insert("alice".to_string(), 10);
+        map.insert("bob".to_string(), 20);
+        assert_eq!(key_of(&map, &20).expect("a held value"), "bob");
+        assert!(key_of(&map, &99).unwrap_err().contains("no key holds"));
     }
 }

@@ -11,7 +11,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Stores a value that quietly disappears after the given number of seconds.",
             "cache_set_ttl(`weather`, city, report, 600);";
         "cache_get" => "std_lib::cache::get", (cache: s, key: s) -> (s!e),
-            "The stored value; an error when nothing is there or it has expired.",
+            "The stored value. An error when nothing is there or it has expired.",
             "page:s = safe(cache_get(`pages`, `/about`), render_about);";
         "cache_get_or" => "std_lib::cache::get_or", (cache: s, key: s, fallback: s) -> s,
             "The stored value, or the fallback when nothing is there.",

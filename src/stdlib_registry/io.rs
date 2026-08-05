@@ -11,7 +11,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Whether standard input is a pipe or a file rather than a person typing. Check this to decide between reading input and prompting for it.",
             "from_a_pipe:b = io_is_piped();";
         "io_read_line" => "std_lib::io::read_line", () -> (s!e),
-            "Reads a line from stdin (without the trailing newline); errors if stdin is closed.",
+            "Reads a line from stdin (without the trailing newline). Errors if stdin is closed.",
             "name:s = danger(io_read_line());";
         "io_read_line_prompt" => "std_lib::io::read_line_prompt", (prompt: s) -> (s!e),
             "Prints a prompt, then reads a line from stdin.",

@@ -49,6 +49,18 @@ cache_set_ttl(`e2e`, `flash`, `now`, 0);
 print(cache_get_or(`e2e`, `flash`, `already gone`));
 print(cache_len(`e2e`));
 
+// Units convert across names and plurals, never across dimensions.
+print(danger(convert_units(1.0, `mi`, `km`)));
+print(danger(convert_units(100.0, `c`, `f`)));
+print(danger(convert_units(3.0, `miles`, `kilometers`)));
+
+// The classic mortgage, to the cent.
+print(danger(money_loan_payment(20000000, 6.0, 360)));
+
+// The end of a log, without reading the whole log.
+danger(fs_write(`app.log`, `one\ntwo\nthree\nfour\n`));
+print(string_join(danger(fs_tail_lines(`app.log`, 2)), `|`));
+
 // Message catalogs load from disk and fall back sensibly.
 danger(fs_create_dir(`locales`));
 danger(fs_write(`locales/en.json`, `{"greeting": "Hello", "items.one": "{count} item", "items.other": "{count} items"}`));

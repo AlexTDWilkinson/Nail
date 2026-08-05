@@ -210,7 +210,7 @@ m.insert("http_request", StdlibFunction {
         parameters: vec![StdlibParameter { name: "cookie".to_string(), param_type: NailDataTypeDescriptor::Struct("HTTP_Cookie".to_string()), pass_by_reference: false }],
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
         diverging: false,
-        description: "Builds the Set-Cookie header value for a cookie; errors on a name, value or SameSite setting a browser would reject.",
+        description: "Builds the Set-Cookie header value for a cookie. Errors on a name, value or SameSite setting a browser would reject.",
         example: "header:s = danger(http_build_cookie(cookie));",
     });
 
@@ -314,7 +314,7 @@ m.insert("http_request", StdlibFunction {
         parameters: vec![websocket_parameter(), nail_param!(timeout_milliseconds: i)],
         return_type: nail_type!((s!e)),
         diverging: false,
-        description: "The next text frame the other side sends. Waits up to the timeout, or forever when the timeout is 0. Pings are answered quietly; a closed connection is an error and forgets the handle.",
+        description: "The next text frame the other side sends. Waits up to the timeout, or forever when the timeout is 0. Pings are answered quietly. A closed connection is an error and forgets the handle.",
         example: "update:s = danger(http_ws_receive(feed, 30000));",
     });
 

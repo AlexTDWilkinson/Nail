@@ -28,7 +28,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         parameters: vec![nail_param!(yaml_string: s)],
         return_type: nail_type!((T!e)),
         diverging: false,
-        description: "Reads YAML into a value; the type on the left of the assignment says what to read it as, and a document that does not match names the field that did not fit.",
+        description: "Reads YAML into a value. The type on the left of the assignment says what to read it as, and a document that does not match names the field that did not fit.",
         example: "job:Job = danger(yaml_deserialize(text));",
     });
 }

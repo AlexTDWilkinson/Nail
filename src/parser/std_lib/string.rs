@@ -1050,3 +1050,409 @@ mod unicode_tests {
         assert_eq!(normalize_nfkc("Ｎａｉｌ".to_string()), "Nail");
     }
 }
+
+/// The text between the first `start` and the next `end` after it - the
+/// scraping workhorse that pulls a title out of a page or a value out of a
+/// tag without a full parser. The error names which marker was missing, so a
+/// failed scrape says what changed on the page.
+pub fn between(text: String, start: String, end: String) -> Result<String, String> {
+    let from = match text.find(&start) {
+        Some(position) => position + start.len(),
+        None => return Err(format!("string_between: the start marker `{}` is not in the text", start)),
+    };
+    return match text[from..].find(&end) {
+        Some(position) => Ok(text[from..from + position].to_string()),
+        None => Err(format!("string_between: the end marker `{}` does not appear after `{}`", end, start)),
+    };
+}
+
+/// Everything before the first occurrence of the marker. Errors when the
+/// marker is absent, because an empty guess would hide the miss.
+pub fn before(text: String, marker: String) -> Result<String, String> {
+    return match text.find(&marker) {
+        Some(position) => Ok(text[..position].to_string()),
+        None => Err(format!("string_before: the marker `{}` is not in the text", marker)),
+    };
+}
+
+/// Everything after the first occurrence of the marker - the other half of
+/// `string_before`.
+pub fn after(text: String, marker: String) -> Result<String, String> {
+    return match text.find(&marker) {
+        Some(position) => Ok(text[position + marker.len()..].to_string()),
+        None => Err(format!("string_after: the marker `{}` is not in the text", marker)),
+    };
+}
+
+/// The text with the prefix added only when it is not already there, so a URL
+/// gets its scheme exactly once no matter how it arrived.
+pub fn ensure_prefix(text: String, prefix: String) -> String {
+    if text.starts_with(&prefix) {
+        return text;
+    }
+    return format!("{}{}", prefix, text);
+}
+
+/// The text with the suffix added only when it is not already there - how a
+/// directory path gets its trailing slash exactly once.
+pub fn ensure_suffix(text: String, suffix: String) -> String {
+    if text.ends_with(&suffix) {
+        return text;
+    }
+    return format!("{}{}", text, suffix);
+}
+
+/// True when the string is empty or holds only whitespace - the check a form
+/// field or a config line actually needs, where `string_is_empty` lets `   `
+/// slip through.
+pub fn is_blank(text: &String) -> bool {
+    return text.trim().is_empty();
+}
+
+/// The estimated reading time in whole minutes at 200 words per minute,
+/// rounded up. Empty text takes 0 minutes; any words at all take at least 1,
+/// so an article never claims to be instant.
+pub fn reading_time_minutes(text: &String) -> i64 {
+    let words = text.split_whitespace().count() as i64;
+    if words == 0 {
+        return 0;
+    }
+    return (words + 199) / 200;
+}
+
+#[cfg(test)]
+mod marker_and_affix_tests {
+    use super::*;
+
+    #[test]
+    fn the_text_between_two_markers_is_cut_out() {
+        assert_eq!(between("<title>Nail</title>".to_string(), "<title>".to_string(), "</title>".to_string()).expect("both markers"), "Nail");
+        assert_eq!(between("a[x]b[y]".to_string(), "[".to_string(), "]".to_string()).expect("both markers"), "x");
+        assert_eq!(between("café (ouvert)".to_string(), "(".to_string(), ")".to_string()).expect("both markers"), "ouvert");
+    }
+
+    #[test]
+    fn a_missing_marker_names_itself_in_the_error() {
+        assert!(between("no markers".to_string(), "<".to_string(), ">".to_string()).unwrap_err().contains("start marker `<`"));
+        assert!(between("<open only".to_string(), "<".to_string(), ">".to_string()).unwrap_err().contains("end marker `>`"));
+        // The end marker has to come after the start, not merely anywhere.
+        assert!(between(">backwards<".to_string(), "<".to_string(), ">".to_string()).unwrap_err().contains("end marker"));
+    }
+
+    #[test]
+    fn before_and_after_split_at_the_first_marker() {
+        assert_eq!(before("user@example.com".to_string(), "@".to_string()).expect("a marker"), "user");
+        assert_eq!(after("user@example.com".to_string(), "@".to_string()).expect("a marker"), "example.com");
+        assert_eq!(after("a=b=c".to_string(), "=".to_string()).expect("a marker"), "b=c");
+        assert!(before("plain".to_string(), "@".to_string()).unwrap_err().contains("`@`"));
+        assert!(after("plain".to_string(), "@".to_string()).unwrap_err().contains("`@`"));
+    }
+
+    #[test]
+    fn ensuring_an_affix_never_doubles_it() {
+        assert_eq!(ensure_prefix("example.com".to_string(), "https://".to_string()), "https://example.com");
+        assert_eq!(ensure_prefix("https://example.com".to_string(), "https://".to_string()), "https://example.com");
+        assert_eq!(ensure_suffix("/srv/app".to_string(), "/".to_string()), "/srv/app/");
+        assert_eq!(ensure_suffix("/srv/app/".to_string(), "/".to_string()), "/srv/app/");
+    }
+
+    #[test]
+    fn blankness_means_empty_or_only_whitespace() {
+        assert!(is_blank(&"".to_string()));
+        assert!(is_blank(&" \t\n".to_string()));
+        assert!(!is_blank(&" a ".to_string()));
+    }
+
+    #[test]
+    fn reading_time_rounds_up_and_starts_at_one_for_any_words() {
+        assert_eq!(reading_time_minutes(&"".to_string()), 0);
+        assert_eq!(reading_time_minutes(&"   ".to_string()), 0);
+        assert_eq!(reading_time_minutes(&"one word".to_string()), 1);
+        assert_eq!(reading_time_minutes(&vec!["word"; 200].join(" ")), 1);
+        assert_eq!(reading_time_minutes(&vec!["word"; 201].join(" ")), 2);
+        assert_eq!(reading_time_minutes(&vec!["word"; 400].join(" ")), 2);
+    }
+}
+
+/// Every run of the same repeated character collapsed to one - `aaabbb`
+/// becomes `ab`. Ruby calls this squeeze.
+pub fn squeeze(text: String) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut previous: Option<char> = None;
+    for character in text.chars() {
+        if previous != Some(character) {
+            out.push(character);
+        }
+        previous = Some(character);
+    }
+    return out;
+}
+
+/// The text with every letter's case flipped: uppercase becomes lowercase and
+/// lowercase becomes uppercase. Everything without a case is left alone.
+pub fn swap_case(text: String) -> String {
+    let mut out = String::with_capacity(text.len());
+    for character in text.chars() {
+        if character.is_uppercase() {
+            out.extend(character.to_lowercase());
+        } else if character.is_lowercase() {
+            out.extend(character.to_uppercase());
+        } else {
+            out.push(character);
+        }
+    }
+    return out;
+}
+
+/// True when the string has at least one letter and no letter is lowercase.
+/// Digits and punctuation do not count either way, so `ROOM 101` qualifies
+/// but `101` alone does not.
+pub fn is_uppercase(text: &String) -> bool {
+    let mut saw_cased_letter = false;
+    for character in text.chars() {
+        if character.is_lowercase() {
+            return false;
+        }
+        if character.is_uppercase() {
+            saw_cased_letter = true;
+        }
+    }
+    return saw_cased_letter;
+}
+
+/// True when the string has at least one letter and no letter is uppercase -
+/// the mirror of `string_is_uppercase`.
+pub fn is_lowercase(text: &String) -> bool {
+    let mut saw_cased_letter = false;
+    for character in text.chars() {
+        if character.is_uppercase() {
+            return false;
+        }
+        if character.is_lowercase() {
+            saw_cased_letter = true;
+        }
+    }
+    return saw_cased_letter;
+}
+
+/// Each ASCII letter rotated 13 places through the alphabet - the classic
+/// reversible scramble for spoilers and puzzles. Applying it twice gives the
+/// original back, and letters outside ASCII pass through untouched.
+pub fn rot13(text: String) -> String {
+    return text
+        .chars()
+        .map(|character| match character {
+            'a'..='z' => (((character as u8 - b'a' + 13) % 26) + b'a') as char,
+            'A'..='Z' => (((character as u8 - b'A' + 13) % 26) + b'A') as char,
+            _ => character,
+        })
+        .collect();
+}
+
+/// The first line of the text, without its line break. Empty text gives the
+/// empty string.
+pub fn first_line(text: String) -> String {
+    return text.lines().next().unwrap_or("").to_string();
+}
+
+/// The last line of the text, without its line break. A trailing newline does
+/// not count as an extra empty line, so `done\n` gives `done`.
+pub fn last_line(text: String) -> String {
+    return text.lines().last().unwrap_or("").to_string();
+}
+
+/// The ending that every one of the strings shares - the counterpart of
+/// `string_common_prefix`, which is how a set of file names is reduced to the
+/// extension they all carry. No strings, or nothing in common, gives the
+/// empty string.
+pub fn common_suffix(strings: Vec<String>) -> String {
+    let mut candidates = strings.iter();
+    let mut shared: Vec<char> = match candidates.next() {
+        Some(first) => first.chars().collect(),
+        None => return String::new(),
+    };
+    for candidate in candidates {
+        let characters: Vec<char> = candidate.chars().collect();
+        let mut matched = 0;
+        while matched < shared.len().min(characters.len()) && shared[shared.len() - 1 - matched] == characters[characters.len() - 1 - matched] {
+            matched += 1;
+        }
+        shared.drain(..shared.len() - matched);
+        if shared.is_empty() {
+            return String::new();
+        }
+    }
+    return shared.into_iter().collect();
+}
+
+/// The text centered in a field of the given width, padded on both sides with
+/// the pad string repeated as needed. When the padding does not divide evenly
+/// the extra goes on the right, as Python's `str.center` does. Text already
+/// wide enough, or an empty pad, comes back untouched.
+pub fn center(text: String, width: i64, pad: String) -> String {
+    let width = width.max(0) as usize;
+    let length = text.chars().count();
+    if length >= width || pad.is_empty() {
+        return text;
+    }
+    let pad_characters: Vec<char> = pad.chars().collect();
+    let missing = width - length;
+    let left = missing / 2;
+    let mut out = String::with_capacity(width);
+    for position in 0..left {
+        out.push(pad_characters[position % pad_characters.len()]);
+    }
+    out.push_str(&text);
+    for position in 0..missing - left {
+        out.push(pad_characters[position % pad_characters.len()]);
+    }
+    return out;
+}
+
+/// The text with every whitespace character removed, line breaks and tabs
+/// included - what a pasted IBAN or licence key needs before validation.
+pub fn delete_whitespace(text: String) -> String {
+    return text.chars().filter(|character| !character.is_whitespace()).collect();
+}
+
+/// Only the digit characters 0-9 of the text, in order - how a phone number
+/// written as `(555) 123-4567` becomes something dialable. Numerals from
+/// other scripts are dropped along with everything else.
+pub fn digits_only(text: String) -> String {
+    return text.chars().filter(|character| character.is_ascii_digit()).collect();
+}
+
+/// Only the letters of the text, in order, with digits, punctuation and
+/// whitespace dropped. Letters from any alphabet count, not just ASCII.
+pub fn letters_only(text: String) -> String {
+    return text.chars().filter(|character| character.is_alphabetic()).collect();
+}
+
+/// The uppercased first letter of each word - `Ada Lovelace` gives `AL`,
+/// which is what an avatar placeholder shows.
+pub fn initials(name: String) -> String {
+    let mut out = String::new();
+    for word in name.split_whitespace() {
+        if let Some(first) = word.chars().next() {
+            out.extend(first.to_uppercase());
+        }
+    }
+    return out;
+}
+
+/// How many positions two equal-length strings differ at - the error count
+/// between a sent and a received code. Unequal lengths are an error, because
+/// the distance is only defined position by position.
+pub fn hamming_distance(first: &String, second: &String) -> Result<i64, String> {
+    let first_characters: Vec<char> = first.chars().collect();
+    let second_characters: Vec<char> = second.chars().collect();
+    if first_characters.len() != second_characters.len() {
+        return Err(format!("string_hamming_distance: the strings have different lengths, {} and {} characters", first_characters.len(), second_characters.len()));
+    }
+    let mut distance = 0;
+    for (first_character, second_character) in first_characters.iter().zip(second_characters.iter()) {
+        if first_character != second_character {
+            distance += 1;
+        }
+    }
+    return Ok(distance);
+}
+
+#[cfg(test)]
+mod casing_shape_and_extraction_tests {
+    use super::*;
+
+    #[test]
+    fn squeezing_collapses_runs_of_the_same_character() {
+        assert_eq!(squeeze("aaabbbccd".to_string()), "abcd");
+        assert_eq!(squeeze("no repeats".to_string()), "no repeats");
+        assert_eq!(squeeze("👍👍👍".to_string()), "👍");
+        assert_eq!(squeeze("".to_string()), "");
+    }
+
+    #[test]
+    fn swapping_case_flips_every_letter() {
+        assert_eq!(swap_case("Hello World".to_string()), "hELLO wORLD");
+        assert_eq!(swap_case("Été".to_string()), "éTÉ");
+        assert_eq!(swap_case("123!".to_string()), "123!");
+    }
+
+    #[test]
+    fn a_string_is_uppercase_only_when_letters_are_present_and_all_capital() {
+        assert!(is_uppercase(&"WARNING".to_string()));
+        assert!(is_uppercase(&"ÉTÉ 2026".to_string()));
+        assert!(!is_uppercase(&"Warning".to_string()));
+        assert!(!is_uppercase(&"123".to_string()));
+        assert!(!is_uppercase(&"".to_string()));
+    }
+
+    #[test]
+    fn a_string_is_lowercase_only_when_letters_are_present_and_none_capital() {
+        assert!(is_lowercase(&"quiet".to_string()));
+        assert!(is_lowercase(&"café au lait".to_string()));
+        assert!(!is_lowercase(&"Quiet".to_string()));
+        assert!(!is_lowercase(&"42".to_string()));
+        assert!(!is_lowercase(&"".to_string()));
+    }
+
+    #[test]
+    fn rot13_applied_twice_gives_the_text_back() {
+        assert_eq!(rot13("Hello".to_string()), "Uryyb");
+        assert_eq!(rot13("Uryyb".to_string()), "Hello");
+        assert_eq!(rot13("attack at dawn!".to_string()), "nggnpx ng qnja!");
+        // Letters outside ASCII pass through rather than being mangled.
+        assert_eq!(rot13("café".to_string()), "pnsé");
+    }
+
+    #[test]
+    fn the_first_and_last_lines_come_without_their_breaks() {
+        assert_eq!(first_line("one\ntwo\nthree".to_string()), "one");
+        assert_eq!(last_line("one\ntwo\nthree".to_string()), "three");
+        assert_eq!(first_line("only".to_string()), "only");
+        assert_eq!(last_line("only\n".to_string()), "only");
+        assert_eq!(first_line("".to_string()), "");
+        assert_eq!(last_line("".to_string()), "");
+    }
+
+    #[test]
+    fn the_shared_ending_of_strings_is_found() {
+        assert_eq!(common_suffix(vec!["main.rs".to_string(), "lib.rs".to_string()]), ".rs");
+        assert_eq!(common_suffix(vec!["abc".to_string(), "xyz".to_string()]), "");
+        assert_eq!(common_suffix(vec!["only".to_string()]), "only");
+        assert_eq!(common_suffix(vec![]), "");
+    }
+
+    #[test]
+    fn centering_pads_both_sides_with_the_extra_on_the_right() {
+        assert_eq!(center("ab".to_string(), 6, " ".to_string()), "  ab  ");
+        assert_eq!(center("ab".to_string(), 5, "-".to_string()), "-ab--");
+        assert_eq!(center("héllo".to_string(), 9, "*".to_string()), "**héllo**");
+        assert_eq!(center("long enough".to_string(), 4, " ".to_string()), "long enough");
+        assert_eq!(center("ab".to_string(), 5, "".to_string()), "ab");
+    }
+
+    #[test]
+    fn whitespace_digits_and_letters_can_each_be_kept_or_dropped() {
+        assert_eq!(delete_whitespace(" 1 2\t3\n".to_string()), "123");
+        assert_eq!(digits_only("(555) 123-4567".to_string()), "5551234567");
+        // Only ASCII digits count, so numerals from other scripts are dropped.
+        assert_eq!(digits_only("٤2".to_string()), "2");
+        assert_eq!(letters_only("a1é2ç3!".to_string()), "aéç");
+    }
+
+    #[test]
+    fn initials_take_the_first_letter_of_each_word_uppercased() {
+        assert_eq!(initials("Ada Lovelace".to_string()), "AL");
+        assert_eq!(initials("élodie du pont".to_string()), "ÉDP");
+        assert_eq!(initials("single".to_string()), "S");
+        assert_eq!(initials("".to_string()), "");
+    }
+
+    #[test]
+    fn hamming_distance_counts_positions_that_differ() {
+        assert_eq!(hamming_distance(&"karolin".to_string(), &"kathrin".to_string()).expect("equal length"), 3);
+        assert_eq!(hamming_distance(&"same".to_string(), &"same".to_string()).expect("equal length"), 0);
+        assert_eq!(hamming_distance(&"héllo".to_string(), &"hello".to_string()).expect("equal length"), 1);
+        assert!(hamming_distance(&"ab".to_string(), &"abc".to_string()).unwrap_err().contains("different lengths"));
+    }
+}

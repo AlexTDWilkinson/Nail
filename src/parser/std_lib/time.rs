@@ -805,6 +805,353 @@ mod duration_tests {
     }
 }
 
+/// Which quarter of the year a moment falls in, from 1 to 4, in UTC.
+pub fn quarter(timestamp: i64) -> Result<i64, String> {
+    let moment = to_datetime("time_quarter", timestamp)?;
+    return Ok(((moment.month() - 1) / 3 + 1) as i64);
+}
+
+/// The ISO 8601 week number, from 1 to 53. ISO weeks start on Monday, and week
+/// 1 is the week holding the year's first Thursday - so the days around New
+/// Year can belong to the other year's numbering.
+pub fn week_of_year(timestamp: i64) -> Result<i64, String> {
+    return Ok(to_datetime("time_week_of_year", timestamp)?.iso_week().week() as i64);
+}
+
+/// Whether a moment falls on a Saturday or Sunday, in UTC.
+pub fn is_weekend(timestamp: i64) -> Result<bool, String> {
+    let day = to_datetime("time_is_weekend", timestamp)?.weekday();
+    return Ok(day == chrono::Weekday::Sat || day == chrono::Weekday::Sun);
+}
+
+/// Midnight UTC on the first of the month the moment falls in.
+pub fn start_of_month(timestamp: i64) -> Result<i64, String> {
+    let date = to_datetime("time_start_of_month", timestamp)?.date_naive();
+    let first = date.with_day(1).expect("the first is a day every month has");
+    return Ok(first.and_hms_opt(0, 0, 0).expect("midnight is a valid time").and_utc().timestamp());
+}
+
+/// The last second of the month the moment falls in - 23:59:59 UTC on its last
+/// day, the same convention as `time_end_of_day`. The other end of
+/// `time_start_of_month`, so a whole month is the range between them.
+pub fn end_of_month(timestamp: i64) -> Result<i64, String> {
+    let date = to_datetime("time_end_of_month", timestamp)?.date_naive();
+    let length = days_in_month(date.year() as i64, date.month() as i64).expect("a real date's month is between 1 and 12");
+    let last = date.with_day(length as u32).expect("no month is shorter than its own length");
+    return Ok(last.and_hms_opt(23, 59, 59).expect("the last second is a valid time").and_utc().timestamp());
+}
+
+/// Midnight UTC on the Monday of the week the moment falls in. Weeks start on
+/// Monday here, as they do in ISO 8601 and on every calendar outside a wall.
+pub fn start_of_week(timestamp: i64) -> Result<i64, String> {
+    let moment = to_datetime("time_start_of_week", timestamp)?;
+    let monday = moment.date_naive() - Duration::days(moment.weekday().num_days_from_monday() as i64);
+    return Ok(monday.and_hms_opt(0, 0, 0).expect("midnight is a valid time").and_utc().timestamp());
+}
+
+/// The last second of the week the moment falls in - 23:59:59 UTC on its
+/// Sunday. The other end of `time_start_of_week`.
+pub fn end_of_week(timestamp: i64) -> Result<i64, String> {
+    let moment = to_datetime("time_end_of_week", timestamp)?;
+    let sunday = moment.date_naive() + Duration::days(6 - moment.weekday().num_days_from_monday() as i64);
+    return Ok(sunday.and_hms_opt(23, 59, 59).expect("the last second is a valid time").and_utc().timestamp());
+}
+
+/// Midnight UTC on the first of January of the year the moment falls in.
+pub fn start_of_year(timestamp: i64) -> Result<i64, String> {
+    let year = to_datetime("time_start_of_year", timestamp)?.year();
+    let first = NaiveDate::from_ymd_opt(year, 1, 1).expect("every year has a first of January");
+    return Ok(first.and_hms_opt(0, 0, 0).expect("midnight is a valid time").and_utc().timestamp());
+}
+
+/// The last second of the year the moment falls in - 23:59:59 UTC on the 31st
+/// of December. The other end of `time_start_of_year`.
+pub fn end_of_year(timestamp: i64) -> Result<i64, String> {
+    let year = to_datetime("time_end_of_year", timestamp)?.year();
+    let last = NaiveDate::from_ymd_opt(year, 12, 31).expect("every year has a 31st of December");
+    return Ok(last.and_hms_opt(23, 59, 59).expect("the last second is a valid time").and_utc().timestamp());
+}
+
+/// The moment moved by a number of working days - days that are not Saturday
+/// or Sunday - keeping the time of day. Negative goes backwards. A weekend
+/// start does not count itself: Saturday plus one workday is Monday, and
+/// Saturday minus one is Friday.
+pub fn add_workdays(timestamp: i64, workdays: i64) -> Result<i64, String> {
+    let mut moment = to_datetime("time_add_workdays", timestamp)?;
+    let step = if workdays >= 0 { 1 } else { -1 };
+    let mut remaining = workdays.abs();
+    while remaining > 0 {
+        moment = moment.checked_add_signed(Duration::days(step)).ok_or_else(|| format!("time_add_workdays: {} workdays from {} is off the calendar", workdays, timestamp))?;
+        let day = moment.weekday();
+        if day != chrono::Weekday::Sat && day != chrono::Weekday::Sun {
+            remaining -= 1;
+        }
+    }
+    return Ok(moment.timestamp());
+}
+
+/// How many weekday dates lie after the start's date, up to and including the
+/// end's date. Monday to the same week's Friday is 4, Friday to the following
+/// Monday is 1, and two moments on the same date are 0 - the start's own date
+/// is never counted, so chaining ranges never counts a day twice. An end
+/// before the start is an error rather than a negative count.
+pub fn workdays_between(start: i64, end: i64) -> Result<i64, String> {
+    let start_date = to_datetime("time_workdays_between", start)?.date_naive();
+    let end_date = to_datetime("time_workdays_between", end)?.date_naive();
+    if end_date < start_date {
+        return Err(format!("time_workdays_between: the end ({}) is before the start ({})", end, start));
+    }
+    let days = (end_date - start_date).num_days();
+    // Any seven consecutive dates hold exactly five weekdays, so only the
+    // leftover days after the whole weeks need their weekday checked.
+    let mut count = (days / 7) * 5;
+    let start_weekday = start_date.weekday().number_from_monday() as i64;
+    for offset in 1..=(days % 7) {
+        let weekday_number = (start_weekday - 1 + offset) % 7 + 1;
+        if weekday_number <= 5 {
+            count += 1;
+        }
+    }
+    return Ok(count);
+}
+
+/// The whole days between the calendar dates of two moments, signed - negative
+/// when the end is earlier. The clock is ignored: 23:00 to 01:00 the next
+/// morning is one day, because the date changed once.
+pub fn days_between(start: i64, end: i64) -> Result<i64, String> {
+    let start_date = to_datetime("time_days_between", start)?.date_naive();
+    let end_date = to_datetime("time_days_between", end)?.date_naive();
+    return Ok((end_date - start_date).num_days());
+}
+
+/// The whole calendar months between two moments, signed. A month counts only
+/// once the same day of the month has been reached: the 15th of January to the
+/// 14th of March is one month, to the 15th is two. This is how a person counts
+/// a subscription, and the same rule Java's LocalDate uses.
+pub fn months_between(start: i64, end: i64) -> Result<i64, String> {
+    let start_date = to_datetime("time_months_between", start)?.date_naive();
+    let end_date = to_datetime("time_months_between", end)?.date_naive();
+    let mut months = (end_date.year() as i64 - start_date.year() as i64) * 12 + (end_date.month() as i64 - start_date.month() as i64);
+    if months > 0 && end_date.day() < start_date.day() {
+        months -= 1;
+    } else if months < 0 && end_date.day() > start_date.day() {
+        months += 1;
+    }
+    return Ok(months);
+}
+
+/// Whether two moments fall on the same calendar date, in UTC - the same date,
+/// not within twenty-four hours of each other.
+pub fn same_day(first: i64, second: i64) -> Result<bool, String> {
+    return Ok(to_datetime("time_same_day", first)?.date_naive() == to_datetime("time_same_day", second)?.date_naive());
+}
+
+/// Whether a moment falls on the first day of its month, in UTC - the day the
+/// monthly jobs run.
+pub fn is_first_of_month(timestamp: i64) -> Result<bool, String> {
+    return Ok(to_datetime("time_is_first_of_month", timestamp)?.day() == 1);
+}
+
+/// The age in whole years at a moment, counted the way a person counts it: it
+/// goes up on the birthday, not at New Year. A leap-day birthday turns over on
+/// the first of March in ordinary years. A moment before the birth is an error
+/// rather than a negative age.
+pub fn age_years(born: i64, at: i64) -> Result<i64, String> {
+    let born_date = to_datetime("time_age_years", born)?.date_naive();
+    let at_date = to_datetime("time_age_years", at)?.date_naive();
+    if at_date < born_date {
+        return Err(format!("time_age_years: the moment ({}) is before the birth ({})", at, born));
+    }
+    let mut age = at_date.year() as i64 - born_date.year() as i64;
+    if (at_date.month(), at_date.day()) < (born_date.month(), born_date.day()) {
+        age -= 1;
+    }
+    return Ok(age);
+}
+
+/// The next date strictly after the moment that falls on the given weekday -
+/// Monday is 1 through Sunday, 7 - keeping the time of day. Strictly after
+/// means a Monday asked for the next Monday gets the one a week out, which is
+/// what "next Monday" means on any day of the week.
+pub fn next_weekday(timestamp: i64, weekday: i64) -> Result<i64, String> {
+    if !(1..=7).contains(&weekday) {
+        return Err(format!("time_next_weekday: {} is not a weekday - Monday is 1 through Sunday, 7", weekday));
+    }
+    let moment = to_datetime("time_next_weekday", timestamp)?;
+    let today = moment.weekday().number_from_monday() as i64;
+    let mut days_ahead = (weekday - today).rem_euclid(7);
+    if days_ahead == 0 {
+        days_ahead = 7;
+    }
+    return Ok(add_days(timestamp, days_ahead));
+}
+
+#[cfg(test)]
+mod workweek_and_boundary_tests {
+    use super::*;
+
+    /// A timestamp for a moment, so the tests read as dates rather than numbers.
+    fn at(year: i64, month: i64, day: i64, hour: i64, minute: i64, second: i64) -> i64 {
+        return from_parts(year, month, day, hour, minute, second).expect("a real date");
+    }
+
+    /// 2024-01-15 12:30:45 UTC, a Monday in the third ISO week of 2024.
+    const MONDAY: i64 = 1_705_321_845;
+
+    #[test]
+    fn the_pinned_monday_is_the_date_its_comment_says() {
+        assert_eq!(MONDAY, at(2024, 1, 15, 12, 30, 45));
+        assert_eq!(weekday(MONDAY).expect("a real date"), "Monday");
+    }
+
+    #[test]
+    fn the_year_splits_into_four_quarters() {
+        assert_eq!(quarter(at(2024, 1, 1, 0, 0, 0)).unwrap(), 1);
+        assert_eq!(quarter(at(2024, 3, 31, 23, 59, 59)).unwrap(), 1);
+        assert_eq!(quarter(at(2024, 4, 1, 0, 0, 0)).unwrap(), 2);
+        assert_eq!(quarter(at(2024, 9, 30, 0, 0, 0)).unwrap(), 3);
+        assert_eq!(quarter(at(2024, 12, 31, 0, 0, 0)).unwrap(), 4);
+    }
+
+    #[test]
+    fn iso_weeks_belong_to_the_year_of_their_thursday() {
+        assert_eq!(week_of_year(MONDAY).unwrap(), 3);
+        // 2023-01-01 is a Sunday, still in the last week of 2022's numbering.
+        assert_eq!(week_of_year(at(2023, 1, 1, 12, 0, 0)).unwrap(), 52);
+        // 2024-12-30 is a Monday whose Thursday is already in 2025.
+        assert_eq!(week_of_year(at(2024, 12, 30, 0, 0, 0)).unwrap(), 1);
+    }
+
+    #[test]
+    fn the_weekend_is_saturday_and_sunday() {
+        assert!(!is_weekend(MONDAY).unwrap());
+        // 2024-01-13 and 14 are the Saturday and Sunday before it.
+        assert!(is_weekend(at(2024, 1, 13, 12, 0, 0)).unwrap());
+        assert!(is_weekend(at(2024, 1, 14, 12, 0, 0)).unwrap());
+        // 2024-01-19 is the Friday after it.
+        assert!(!is_weekend(at(2024, 1, 19, 12, 0, 0)).unwrap());
+    }
+
+    #[test]
+    fn a_month_runs_from_its_first_midnight_to_its_last_second() {
+        let mid_february = at(2024, 2, 15, 12, 30, 45);
+        assert_eq!(start_of_month(mid_february).unwrap(), at(2024, 2, 1, 0, 0, 0));
+        // 2024 is a leap year, so its February runs to the 29th.
+        assert_eq!(end_of_month(mid_february).unwrap(), at(2024, 2, 29, 23, 59, 59));
+        assert_eq!(end_of_month(at(2023, 2, 10, 0, 0, 0)).unwrap(), at(2023, 2, 28, 23, 59, 59));
+        let last_second = at(2024, 12, 31, 23, 59, 59);
+        assert_eq!(end_of_month(last_second).unwrap(), last_second, "the last second is already the end of its month");
+    }
+
+    #[test]
+    fn a_week_runs_from_monday_midnight_to_sunday_last_second() {
+        // 2024-01-17 is the Wednesday after MONDAY.
+        let wednesday = at(2024, 1, 17, 9, 15, 0);
+        assert_eq!(start_of_week(wednesday).unwrap(), at(2024, 1, 15, 0, 0, 0));
+        assert_eq!(end_of_week(wednesday).unwrap(), at(2024, 1, 21, 23, 59, 59));
+        // A Monday is already in its own week, and a Sunday ends the same week.
+        assert_eq!(start_of_week(MONDAY).unwrap(), at(2024, 1, 15, 0, 0, 0));
+        assert_eq!(start_of_week(at(2024, 1, 21, 12, 0, 0)).unwrap(), at(2024, 1, 15, 0, 0, 0));
+    }
+
+    #[test]
+    fn a_year_runs_from_january_first_to_december_thirty_first() {
+        assert_eq!(start_of_year(MONDAY).unwrap(), at(2024, 1, 1, 0, 0, 0));
+        assert_eq!(end_of_year(MONDAY).unwrap(), at(2024, 12, 31, 23, 59, 59));
+    }
+
+    #[test]
+    fn workdays_skip_the_weekend_in_both_directions() {
+        // Friday 2024-01-19 plus one workday is Monday the 22nd, same clock.
+        let friday = at(2024, 1, 19, 14, 30, 0);
+        let monday_after = at(2024, 1, 22, 14, 30, 0);
+        assert_eq!(add_workdays(friday, 1).unwrap(), monday_after);
+        assert_eq!(add_workdays(friday, 5).unwrap(), at(2024, 1, 26, 14, 30, 0));
+        assert_eq!(add_workdays(monday_after, -1).unwrap(), friday);
+        assert_eq!(add_workdays(friday, 0).unwrap(), friday);
+    }
+
+    #[test]
+    fn a_weekend_start_does_not_count_itself() {
+        // Saturday 2024-01-13: one workday on is Monday, one back is Friday.
+        let saturday = at(2024, 1, 13, 9, 0, 0);
+        assert_eq!(add_workdays(saturday, 1).unwrap(), at(2024, 1, 15, 9, 0, 0));
+        assert_eq!(add_workdays(saturday, -1).unwrap(), at(2024, 1, 12, 9, 0, 0));
+    }
+
+    #[test]
+    fn workdays_between_counts_weekday_dates_after_the_start() {
+        let monday = at(2024, 1, 15, 9, 0, 0);
+        assert_eq!(workdays_between(monday, at(2024, 1, 19, 17, 0, 0)).unwrap(), 4, "Monday to the same week's Friday");
+        assert_eq!(workdays_between(at(2024, 1, 19, 9, 0, 0), at(2024, 1, 22, 9, 0, 0)).unwrap(), 1, "Friday to Monday crosses only the weekend");
+        assert_eq!(workdays_between(monday, at(2024, 1, 22, 9, 0, 0)).unwrap(), 5, "one whole week on");
+        assert_eq!(workdays_between(monday, at(2024, 1, 29, 9, 0, 0)).unwrap(), 10, "two whole weeks on");
+        assert_eq!(workdays_between(monday, monday).unwrap(), 0, "the start's own date is never counted");
+        // Saturday the 13th to Sunday the 14th holds no weekdays at all.
+        assert_eq!(workdays_between(at(2024, 1, 13, 0, 0, 0), at(2024, 1, 14, 23, 0, 0)).unwrap(), 0);
+        assert!(workdays_between(monday, at(2024, 1, 12, 0, 0, 0)).unwrap_err().contains("before the start"));
+    }
+
+    #[test]
+    fn days_between_is_signed_and_ignores_the_clock() {
+        assert_eq!(days_between(at(2024, 1, 15, 23, 0, 0), at(2024, 1, 16, 1, 0, 0)).unwrap(), 1);
+        assert_eq!(days_between(at(2024, 1, 16, 1, 0, 0), at(2024, 1, 15, 23, 0, 0)).unwrap(), -1);
+        assert_eq!(days_between(at(2024, 1, 15, 0, 0, 0), at(2024, 1, 15, 23, 59, 59)).unwrap(), 0);
+        assert_eq!(days_between(at(2024, 1, 1, 0, 0, 0), at(2025, 1, 1, 0, 0, 0)).unwrap(), 366, "2024 is a leap year");
+    }
+
+    #[test]
+    fn months_count_only_once_the_day_of_the_month_arrives() {
+        assert_eq!(months_between(at(2024, 1, 15, 0, 0, 0), at(2024, 3, 15, 0, 0, 0)).unwrap(), 2);
+        assert_eq!(months_between(at(2024, 1, 15, 0, 0, 0), at(2024, 3, 14, 0, 0, 0)).unwrap(), 1);
+        assert_eq!(months_between(at(2024, 1, 31, 0, 0, 0), at(2024, 2, 29, 0, 0, 0)).unwrap(), 0, "the 31st never arrives in February");
+        assert_eq!(months_between(at(2024, 3, 15, 0, 0, 0), at(2024, 1, 16, 0, 0, 0)).unwrap(), -1);
+        assert_eq!(months_between(at(2023, 6, 1, 0, 0, 0), at(2024, 6, 1, 0, 0, 0)).unwrap(), 12);
+    }
+
+    #[test]
+    fn the_same_day_is_the_same_date_not_within_twenty_four_hours() {
+        assert!(same_day(at(2024, 1, 15, 0, 0, 0), at(2024, 1, 15, 23, 59, 59)).unwrap());
+        assert!(!same_day(at(2024, 1, 15, 23, 59, 59), at(2024, 1, 16, 0, 0, 0)).unwrap());
+    }
+
+    #[test]
+    fn the_first_of_the_month_is_recognised() {
+        assert!(is_first_of_month(at(2024, 2, 1, 18, 0, 0)).unwrap());
+        assert!(!is_first_of_month(at(2024, 2, 2, 0, 0, 0)).unwrap());
+    }
+
+    #[test]
+    fn age_goes_up_on_the_birthday_and_not_before() {
+        let born = at(1990, 6, 15, 8, 0, 0);
+        assert_eq!(age_years(born, at(2024, 6, 14, 23, 0, 0)).unwrap(), 33);
+        assert_eq!(age_years(born, at(2024, 6, 15, 0, 0, 0)).unwrap(), 34);
+        // A leap-day birthday turns over on the 1st of March in ordinary years.
+        let leapling = at(2000, 2, 29, 12, 0, 0);
+        assert_eq!(age_years(leapling, at(2023, 2, 28, 0, 0, 0)).unwrap(), 22);
+        assert_eq!(age_years(leapling, at(2023, 3, 1, 0, 0, 0)).unwrap(), 23);
+        assert!(age_years(born, at(1989, 1, 1, 0, 0, 0)).unwrap_err().contains("before the birth"));
+    }
+
+    #[test]
+    fn the_next_weekday_is_strictly_after_and_keeps_the_clock() {
+        // From Monday 2024-01-15 at 12:30:45.
+        assert_eq!(next_weekday(MONDAY, 5).unwrap(), at(2024, 1, 19, 12, 30, 45), "the coming Friday");
+        assert_eq!(next_weekday(MONDAY, 7).unwrap(), at(2024, 1, 21, 12, 30, 45), "the coming Sunday");
+        assert_eq!(next_weekday(MONDAY, 1).unwrap(), at(2024, 1, 22, 12, 30, 45), "a Monday's next Monday is a week out");
+        assert!(next_weekday(MONDAY, 0).unwrap_err().contains("not a weekday"));
+        assert!(next_weekday(MONDAY, 8).unwrap_err().contains("not a weekday"));
+    }
+
+    #[test]
+    fn a_timestamp_too_far_from_1970_is_refused_by_every_boundary() {
+        assert!(quarter(i64::MAX).unwrap_err().contains("too far from 1970"));
+        assert!(start_of_month(i64::MAX).unwrap_err().contains("too far from 1970"));
+        assert!(add_workdays(i64::MAX, 1).unwrap_err().contains("too far from 1970"));
+        assert!(workdays_between(0, i64::MAX).unwrap_err().contains("too far from 1970"));
+    }
+}
+
 #[cfg(feature = "timezones")]
 fn parse_zone(zone: &str, what: &str) -> Result<chrono_tz::Tz, String> {
     return zone.trim().parse::<chrono_tz::Tz>().map_err(|_| format!("{}: `{}` is not an IANA zone name - try the `America/Edmonton` form, or time_list_zones()", what, zone.trim()));

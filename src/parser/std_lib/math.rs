@@ -362,6 +362,218 @@ pub fn is_finite(value: f64) -> bool {
     return value.is_finite();
 }
 
+/// Rounds to a fixed number of decimal places, halves away from zero: 2.5
+/// becomes 3 and -2.5 becomes -3, the way people round on paper.
+pub fn round_to(value: f64, decimals: i64) -> Result<f64, String> {
+    if !(0..=12).contains(&decimals) {
+        return Err(format!("math_round_to: decimals must be between 0 and 12, got {}", decimals));
+    }
+    let factor = 10f64.powi(decimals as i32);
+    return Ok((value * factor).round() / factor);
+}
+
+/// How much a value grew or shrank, as a percentage of where it started:
+/// from 50 to 75 is 50, from 50 to 25 is -50.
+pub fn percent_change(old: f64, new: f64) -> Result<f64, String> {
+    if old == 0.0 {
+        return Err("math_percent_change: the old value is zero, and a change from zero has no percentage".to_string());
+    }
+    return Ok((new - old) / old * 100.0);
+}
+
+/// What percentage the part is of the whole: 30 of 120 is 25.
+pub fn percent_of(part: f64, whole: f64) -> Result<f64, String> {
+    if whole == 0.0 {
+        return Err("math_percent_of: the whole is zero, and a part of zero has no percentage".to_string());
+    }
+    return Ok(part / whole * 100.0);
+}
+
+/// The nth root: degree 2 is the square root, degree 3 the cube root, and so
+/// on. An odd root of a negative number is negative, as it should be - a
+/// fractional power cannot do that. An even root of a negative number does not
+/// exist, and is an error.
+pub fn nth_root(value: f64, degree: i64) -> Result<f64, String> {
+    if degree < 1 {
+        return Err(format!("math_nth_root: the degree must be at least 1, got {}", degree));
+    }
+    if value < 0.0 && degree % 2 == 0 {
+        return Err(format!("math_nth_root: a negative number has no even root - got degree {} of {}", degree, value));
+    }
+    let exponent = 1.0 / degree as f64;
+    if value < 0.0 {
+        return Ok(-((-value).powf(exponent)));
+    }
+    return Ok(value.powf(exponent));
+}
+
+/// How many ways to choose k things from n when order does not matter:
+/// 10 choose 3 is 120. Choosing more than there are gives 0 ways.
+pub fn combinations(n: i64, k: i64) -> Result<i64, String> {
+    if n < 0 || k < 0 {
+        return Err(format!("math_combinations: not defined for negative numbers, got n = {} and k = {}", n, k));
+    }
+    if k > n {
+        return Ok(0);
+    }
+    // Choosing k is choosing which n - k to leave out, so count the smaller.
+    let smaller = k.min(n - k);
+    // Stepwise, multiplying in one factor and dividing out one before the
+    // next: each intermediate value is itself a binomial coefficient, so the
+    // division is always exact and nothing overflows that did not have to.
+    let mut result: i128 = 1;
+    for step in 1..=smaller {
+        result = result
+            .checked_mul((n - smaller + step) as i128)
+            .ok_or_else(|| format!("math_combinations: {} choose {} is too large, the result overflows a 64-bit integer", n, k))?
+            / step as i128;
+    }
+    return i64::try_from(result).map_err(|_| format!("math_combinations: {} choose {} is too large, the result overflows a 64-bit integer", n, k));
+}
+
+/// How many ways to arrange k things drawn from n when order matters:
+/// 10 permute 3 is 720. Drawing more than there are gives 0 ways.
+pub fn permutations(n: i64, k: i64) -> Result<i64, String> {
+    if n < 0 || k < 0 {
+        return Err(format!("math_permutations: not defined for negative numbers, got n = {} and k = {}", n, k));
+    }
+    if k > n {
+        return Ok(0);
+    }
+    let mut result: i128 = 1;
+    for factor in (n - k + 1)..=n {
+        result = result
+            .checked_mul(factor as i128)
+            .ok_or_else(|| format!("math_permutations: {} permute {} is too large, the result overflows a 64-bit integer", n, k))?;
+    }
+    return i64::try_from(result).map_err(|_| format!("math_permutations: {} permute {} is too large, the result overflows a 64-bit integer", n, k));
+}
+
+/// Eases from 0 at the low edge to 1 at the high edge along a smooth S-curve,
+/// flat at both ends - the classic easing function for fading and animation.
+/// Outside the edges it holds at 0 or 1 rather than overshooting.
+pub fn smoothstep(edge_low: f64, edge_high: f64, value: f64) -> Result<f64, String> {
+    if edge_low == edge_high {
+        return Err(format!("math_smoothstep: the edges must differ, both are {}", edge_low));
+    }
+    let t = ((value - edge_low) / (edge_high - edge_low)).clamp(0.0, 1.0);
+    return Ok(t * t * (3.0 - 2.0 * t));
+}
+
+/// What a starting amount becomes after growing by a fixed rate for a number
+/// of periods: 1000 at 5% (0.05) for 10 periods is about 1628.89. A negative
+/// rate shrinks instead.
+pub fn compound_growth(principal: f64, rate_per_period: f64, periods: i64) -> Result<f64, String> {
+    if periods < 0 {
+        return Err(format!("math_compound_growth: the number of periods cannot be negative, got {}", periods));
+    }
+    return Ok(principal * (1.0 + rate_per_period).powf(periods as f64));
+}
+
+/// ln(1 + x), computed accurately for x very close to zero - where adding 1
+/// first would throw the small part away before the logarithm ever saw it.
+pub fn log1p(value: f64) -> Result<f64, String> {
+    if value <= -1.0 {
+        return Err(format!("math_log1p: input must be above -1, got {}", value));
+    }
+    return Ok(value.ln_1p());
+}
+
+/// e^x - 1, computed accurately for x very close to zero - where subtracting
+/// 1 from a number barely above 1 would cancel away all the precision.
+pub fn expm1(value: f64) -> f64 {
+    return value.exp_m1();
+}
+
+/// The first number wearing the sign of the second: copysign(3.0, -1.5)
+/// is -3.0.
+pub fn copysign(magnitude: f64, sign_source: f64) -> f64 {
+    return magnitude.copysign(sign_source);
+}
+
+/// The digits of a number added together, ignoring its sign: 1234 gives 10.
+pub fn sum_of_digits(value: i64) -> i64 {
+    let mut remaining = value.unsigned_abs();
+    let mut total: u64 = 0;
+    while remaining > 0 {
+        total += remaining % 10;
+        remaining /= 10;
+    }
+    return total as i64;
+}
+
+/// How many decimal digits a number has, ignoring its sign: 0 has one digit,
+/// -1234 has four.
+pub fn digit_count(value: i64) -> i64 {
+    let mut remaining = value.unsigned_abs();
+    let mut count: i64 = 1;
+    while remaining >= 10 {
+        count += 1;
+        remaining /= 10;
+    }
+    return count;
+}
+
+/// Whether the number is some integer multiplied by itself: 49 is, 50 is not,
+/// and no negative number is.
+pub fn is_perfect_square(value: i64) -> bool {
+    if value < 0 {
+        return false;
+    }
+    // The float square root can be off by one at the top of the i64 range, so
+    // check the neighbours as well.
+    let near = (value as f64).sqrt() as i64;
+    for root in near.saturating_sub(1)..=near.saturating_add(1) {
+        if let Some(squared) = root.checked_mul(root) {
+            if squared == value {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/// The Fibonacci number at a position, counting from fibonacci(0) = 0 and
+/// fibonacci(1) = 1. Position 92 is the last that fits in a 64-bit integer.
+pub fn fibonacci(position: i64) -> Result<i64, String> {
+    if position < 0 {
+        return Err(format!("math_fibonacci: not defined for negative positions, got {}", position));
+    }
+    if position == 0 {
+        return Ok(0);
+    }
+    let mut previous: i64 = 0;
+    let mut current: i64 = 1;
+    for _ in 1..position {
+        let next = previous
+            .checked_add(current)
+            .ok_or_else(|| format!("math_fibonacci: position {} is too large, Fibonacci numbers past position 92 overflow a 64-bit integer", position))?;
+        previous = current;
+        current = next;
+    }
+    return Ok(current);
+}
+
+/// The nth triangular number, 1 + 2 + ... + n: the count of dots in a
+/// triangle n rows tall. triangular(4) is 10.
+pub fn triangular(n: i64) -> Result<i64, String> {
+    if n < 0 {
+        return Err(format!("math_triangular: not defined for negative numbers, got {}", n));
+    }
+    let counted = n as i128 * (n as i128 + 1) / 2;
+    return i64::try_from(counted).map_err(|_| format!("math_triangular: {} is too large, the result overflows a 64-bit integer", n));
+}
+
+/// Folds a value into the range from low up to but not including high, the
+/// way an angle of 370 degrees is really 10: wrap(370.0, 0.0, 360.0) is 10.0,
+/// and wrap(-30.0, 0.0, 360.0) is 330.0.
+pub fn wrap(value: f64, low: f64, high: f64) -> Result<f64, String> {
+    if low >= high {
+        return Err(format!("math_wrap: the low edge must be below the high edge, got {} and {}", low, high));
+    }
+    return Ok(low + (value - low).rem_euclid(high - low));
+}
+
 #[cfg(test)]
 mod added_tests {
     use super::*;
@@ -469,5 +681,161 @@ mod sign_tests {
         // Not-a-number compares false against everything, so it is neither
         // negative nor positive; 0 is what every other language answers here.
         assert_eq!(sign(0.0f64 / 0.0f64), 0);
+    }
+}
+
+#[cfg(test)]
+mod pure_addition_tests {
+    use super::*;
+
+    fn close(left: f64, right: f64) -> bool {
+        return (left - right).abs() < 1e-9;
+    }
+
+    #[test]
+    fn rounding_to_places_goes_half_away_from_zero() {
+        assert!(close(round_to(2.34567, 2).expect("in range"), 2.35));
+        assert!(close(round_to(2.5, 0).expect("in range"), 3.0));
+        assert!(close(round_to(-2.5, 0).expect("in range"), -3.0));
+        assert!(close(round_to(1.23456, 3).expect("in range"), 1.235));
+        assert!(close(round_to(1.23456, 12).expect("in range"), 1.23456));
+        assert!(round_to(1.0, 13).unwrap_err().contains("between 0 and 12"));
+        assert!(round_to(1.0, -1).unwrap_err().contains("between 0 and 12"));
+    }
+
+    #[test]
+    fn percentages_come_out_in_hundreds_and_zero_bases_are_errors() {
+        assert!(close(percent_change(50.0, 75.0).expect("non-zero old"), 50.0));
+        assert!(close(percent_change(50.0, 25.0).expect("non-zero old"), -50.0));
+        assert!(percent_change(0.0, 10.0).unwrap_err().contains("zero"));
+        assert!(close(percent_of(30.0, 120.0).expect("non-zero whole"), 25.0));
+        assert!(percent_of(30.0, 0.0).unwrap_err().contains("zero"));
+    }
+
+    #[test]
+    fn nth_roots_agree_with_their_named_cousins_and_odd_roots_go_negative() {
+        assert!(close(nth_root(16.0, 2).expect("a valid degree"), 4.0));
+        assert!(close(nth_root(27.0, 3).expect("a valid degree"), 3.0));
+        assert!(close(nth_root(-27.0, 3).expect("odd degree of a negative"), -3.0));
+        assert!(close(nth_root(32.0, 5).expect("a valid degree"), 2.0));
+        assert!(nth_root(-16.0, 2).unwrap_err().contains("no even root"));
+        assert!(nth_root(16.0, 0).unwrap_err().contains("at least 1"));
+    }
+
+    #[test]
+    fn counting_choices_matches_the_textbook() {
+        assert_eq!(combinations(10, 3).expect("small"), 120);
+        assert_eq!(combinations(10, 7).expect("small"), 120, "choosing 7 is leaving out 3");
+        assert_eq!(combinations(52, 5).expect("a poker hand"), 2_598_960);
+        assert_eq!(combinations(5, 0).expect("choose nothing"), 1);
+        assert_eq!(combinations(3, 5).expect("more than there are"), 0);
+        assert_eq!(permutations(10, 3).expect("small"), 720);
+        assert_eq!(permutations(5, 5).expect("all of them"), 120);
+        assert_eq!(permutations(5, 0).expect("arrange nothing"), 1);
+        assert_eq!(permutations(3, 5).expect("more than there are"), 0);
+    }
+
+    #[test]
+    fn counting_choices_rejects_negatives_and_reports_overflow() {
+        assert!(combinations(-1, 2).unwrap_err().contains("negative"));
+        assert!(combinations(5, -2).unwrap_err().contains("negative"));
+        assert!(permutations(-1, 2).unwrap_err().contains("negative"));
+        // 67 choose 33 is the first row of Pascal's triangle whose middle
+        // does not fit in a 64-bit integer; the row before it does.
+        assert!(combinations(66, 33).is_ok());
+        assert!(combinations(67, 33).unwrap_err().contains("overflows"));
+        assert!(permutations(21, 21).unwrap_err().contains("overflows"), "21! is past the factorial limit");
+    }
+
+    #[test]
+    fn smoothstep_eases_between_its_edges_and_holds_outside_them() {
+        assert!(close(smoothstep(0.0, 1.0, 0.5).expect("edges differ"), 0.5));
+        assert!(close(smoothstep(0.0, 1.0, -5.0).expect("edges differ"), 0.0));
+        assert!(close(smoothstep(0.0, 1.0, 5.0).expect("edges differ"), 1.0));
+        assert!(close(smoothstep(0.0, 1.0, 0.25).expect("edges differ"), 0.15625));
+        // Flat at the ends: just inside an edge it has barely moved.
+        assert!(smoothstep(0.0, 1.0, 0.01).expect("edges differ") < 0.001);
+        assert!(smoothstep(2.0, 2.0, 2.0).unwrap_err().contains("must differ"));
+    }
+
+    #[test]
+    fn compound_growth_multiplies_out_period_by_period() {
+        assert!(close(compound_growth(1000.0, 0.05, 10).expect("periods in range"), 1628.894626777442));
+        assert!(close(compound_growth(1000.0, 0.05, 0).expect("no periods"), 1000.0));
+        assert!(close(compound_growth(1000.0, -0.5, 2).expect("shrinking"), 250.0));
+        assert!(compound_growth(1000.0, 0.05, -1).unwrap_err().contains("negative"));
+    }
+
+    #[test]
+    fn log1p_and_expm1_survive_where_the_naive_forms_lose_everything() {
+        let tiny = 1e-18;
+        assert!(close(log1p(tiny).expect("above -1") / tiny, 1.0), "ln(1+x) is x to first order");
+        assert!(close(expm1(tiny) / tiny, 1.0), "e^x - 1 is x to first order");
+        assert_eq!((1.0f64 + tiny).ln(), 0.0, "the naive form has already rounded 1 + x down to 1");
+        assert!(close(log1p(std::f64::consts::E - 1.0).expect("above -1"), 1.0));
+        assert!(log1p(-1.0).unwrap_err().contains("above -1"));
+    }
+
+    #[test]
+    fn copysign_moves_only_the_sign() {
+        assert_eq!(copysign(3.0, -1.5), -3.0);
+        assert_eq!(copysign(-3.0, 2.0), 3.0);
+        assert_eq!(copysign(3.0, 0.0), 3.0);
+    }
+
+    #[test]
+    fn digits_are_summed_and_counted_without_their_sign() {
+        assert_eq!(sum_of_digits(1234), 10);
+        assert_eq!(sum_of_digits(-1234), 10);
+        assert_eq!(sum_of_digits(0), 0);
+        assert_eq!(sum_of_digits(i64::MIN), 89, "the one number with no positive counterpart");
+        assert_eq!(digit_count(0), 1);
+        assert_eq!(digit_count(-1234), 4);
+        assert_eq!(digit_count(i64::MAX), 19);
+        assert_eq!(digit_count(i64::MIN), 19);
+    }
+
+    #[test]
+    fn perfect_squares_are_recognised_and_near_misses_are_not() {
+        assert!(is_perfect_square(0));
+        assert!(is_perfect_square(49));
+        assert!(!is_perfect_square(50));
+        assert!(!is_perfect_square(-49));
+        let big_root = 3_037_000_499i64; // the largest root whose square fits
+        assert!(is_perfect_square(big_root * big_root));
+        assert!(!is_perfect_square(big_root * big_root - 1));
+        assert!(!is_perfect_square(i64::MAX));
+    }
+
+    #[test]
+    fn fibonacci_counts_from_zero_and_stops_exactly_where_the_integer_does() {
+        assert_eq!(fibonacci(0).expect("in range"), 0);
+        assert_eq!(fibonacci(1).expect("in range"), 1);
+        assert_eq!(fibonacci(10).expect("in range"), 55);
+        assert_eq!(fibonacci(92).expect("the last that fits"), 7_540_113_804_746_346_429);
+        assert!(fibonacci(93).unwrap_err().contains("overflow"));
+        assert!(fibonacci(-1).unwrap_err().contains("negative"));
+    }
+
+    #[test]
+    fn triangular_numbers_stack_up_and_overflow_is_reported() {
+        assert_eq!(triangular(0).expect("in range"), 0);
+        assert_eq!(triangular(4).expect("in range"), 10);
+        assert_eq!(triangular(100).expect("in range"), 5050);
+        // 4294967295 is the largest n whose triangle still fits.
+        assert!(triangular(4_294_967_295).is_ok());
+        assert!(triangular(4_294_967_296).unwrap_err().contains("overflows"));
+        assert!(triangular(-1).unwrap_err().contains("negative"));
+    }
+
+    #[test]
+    fn wrapping_folds_angles_into_their_range() {
+        assert!(close(wrap(370.0, 0.0, 360.0).expect("a proper range"), 10.0));
+        assert!(close(wrap(-30.0, 0.0, 360.0).expect("a proper range"), 330.0));
+        assert!(close(wrap(360.0, 0.0, 360.0).expect("a proper range"), 0.0), "the high edge itself wraps to the low");
+        assert!(close(wrap(190.0, -180.0, 180.0).expect("a proper range"), -170.0));
+        assert!(close(wrap(90.0, 0.0, 360.0).expect("a proper range"), 90.0), "already inside stays put");
+        assert!(wrap(1.0, 5.0, 5.0).unwrap_err().contains("below the high edge"));
+        assert!(wrap(1.0, 6.0, 5.0).unwrap_err().contains("below the high edge"));
     }
 }

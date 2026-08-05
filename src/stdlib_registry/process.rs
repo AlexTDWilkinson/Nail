@@ -61,10 +61,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
 
     simple_fns! { m, Process:
         "process_run" [Tokio] => "std_lib::process::run", (command: s, arguments: [s]) -> (s!e),
-            "Runs an external command and returns its stdout; errors if the command fails.",
+            "Runs an external command and returns its stdout. Errors if the command fails.",
             "output:s = danger(process_run(`ls`, [`-la`]));";
         "process_which" [Tokio] => "std_lib::process::which", (name: s) -> (s!e),
-            "Returns where a command would be found on PATH, the way which answers it; errors if there is no such program. What to check before offering a feature that shells out.",
+            "Returns where a command would be found on PATH, the way which answers it. Errors if there is no such program. What to check before offering a feature that shells out.",
             "git:s = danger(process_which(`git`));";
         "process_wait_for_interrupt" [Tokio] => "std_lib::process::wait_for_interrupt", () -> (v!e),
             "Waits until the program is asked to stop - Ctrl-C, or the TERM signal a service manager sends - and returns when it is. Put it after starting everything, and shut down cleanly afterwards instead of being killed mid-request.",
@@ -90,7 +90,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         parameters: vec![nail_param!(command: s), nail_param!(arguments: [s])],
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("PROCESS_Handle".to_string()))),
         diverging: false,
-        description: "Starts a program and keeps it running - what process_run cannot do, because it collects everything at the end. Output streams out through process_next_line; process_wait collects the exit code.",
+        description: "Starts a program and keeps it running - what process_run cannot do, because it collects everything at the end. Output streams out through process_next_line. process_wait collects the exit code.",
         example: "ffmpeg:PROCESS_Handle = danger(process_spawn(`ffmpeg`, [`-i`, input_path, output_path]));",
     });
 
@@ -103,7 +103,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         parameters: vec![handle_parameter()],
         return_type: nail_type!((s!e)),
         diverging: false,
-        description: "The next line the process printed, stdout and stderr together in arrival order. Waits for one if none is ready; an error means the output is over. The shape of a tail loop is: ask for lines with safe(), stop on the error.",
+        description: "The next line the process printed, stdout and stderr together in arrival order. Waits for one if none is ready. An error means the output is over. The shape of a tail loop is: ask for lines with safe(), stop on the error.",
         example: "line:s = danger(process_next_line(ffmpeg));",
     });
 

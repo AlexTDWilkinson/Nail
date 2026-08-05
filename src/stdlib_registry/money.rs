@@ -24,7 +24,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns a percentage of an amount, rounded to the nearest cent. The rate is a percentage, so 5.0 is five percent.",
             "tax:i = money_percent_of(subtotal, 5.0);";
         "money_times" => "std_lib::money::times", (cents: i, count: i) -> (i!e),
-            "Returns an amount multiplied by a count, which is what a line item comes to; errors if the total is larger than can be counted.",
+            "Returns an amount multiplied by a count, which is what a line item comes to. Errors if the total is larger than can be counted.",
             "line_total:i = danger(money_times(unit_price, quantity));";
         "money_split" => "std_lib::money::split", (cents: i, ways: i) -> ([i]!e),
             "Splits an amount as evenly as it can be, handing the leftover cents out one each from the start so the shares add back up to the whole.",
@@ -32,5 +32,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "money_allocate" => "std_lib::money::allocate", (cents: i, weights: [i]) -> ([i]!e),
             "Divides an amount in proportion to the given weights, with every cent accounted for and the earliest weights taking any leftover.",
             "shares:a:i = danger(money_allocate(1000, [2, 1]));";
+        "money_loan_payment" => "std_lib::money::loan_payment", (principal_cents: i, annual_rate_percent: f, months: i) -> (i!e),
+            "The fixed monthly payment that clears a loan, in cents - the amortization formula every mortgage and car payment comes from. The rate is the yearly percentage as people quote it: 6.0 means six percent.",
+            "monthly:i = danger(money_loan_payment(20000000, 6.0, 360));";
     }
 }

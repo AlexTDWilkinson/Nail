@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Env:
         "env_get" => "std_lib::env::get", (key: s) -> (s!e),
-            "Returns the value of an environment variable; errors if it is not set.",
+            "Returns the value of an environment variable. Errors if it is not set.",
             "home:s = danger(env_get(`HOME`));";
         "env_set" => "std_lib::env::set", (key: s, value: s) -> (v!e),
             "Sets an environment variable for the current process.",
@@ -20,16 +20,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns the directory the program is running in, which every relative path is relative to.",
             "here:s = danger(env_current_dir());";
         "env_set_current_dir" => "std_lib::env::set_current_dir", (path: s) -> (v!e),
-            "Moves the program into another directory so relative paths resolve from there; errors if it cannot be entered.",
+            "Moves the program into another directory so relative paths resolve from there. Errors if it cannot be entered.",
             "danger(env_set_current_dir(`/srv/app`));";
         "env_home_dir" => "std_lib::env::home_dir", () -> (s!e),
-            "Returns the home directory of the user running the program; errors when HOME is not set.",
+            "Returns the home directory of the user running the program. Errors when HOME is not set.",
             "home:s = danger(env_home_dir());";
         "env_hostname" => "std_lib::env::hostname", () -> (s!e),
             "Returns the name of this machine, read from the kernel where possible.",
             "machine:s = danger(env_hostname());";
         "env_user" => "std_lib::env::user", () -> (s!e),
-            "Returns the name of the user running the program; errors when neither USER nor LOGNAME is set.",
+            "Returns the name of the user running the program. Errors when neither USER nor LOGNAME is set.",
             "who:s = danger(env_user());";
         "env_os" => "std_lib::env::os", () -> s,
             "Returns which operating system this build runs on: linux, macos, windows.",
@@ -50,7 +50,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Reads a .env file, sets every variable in it that is not already set, and returns what it read. Variables the process was started with always win.",
             "settings:h<s,s> = danger(env_load_dotenv(`.env`));";
         "env_config_dir" [Dirs] => "std_lib::env::config_dir", (app_name: s) -> (s!e),
-            "Where an app's configuration belongs on this system - ~/.config/<app> on Linux, the platform's own convention elsewhere. Not created automatically; fs_create_dir does that.",
+            "Where an app's configuration belongs on this system - ~/.config/<app> on Linux, the platform's own convention elsewhere. Not created automatically. fs_create_dir does that.",
             "settings_dir:s = danger(env_config_dir(`my_tool`));";
         "env_data_dir" [Dirs] => "std_lib::env::data_dir", (app_name: s) -> (s!e),
             "Where an app's own data belongs - state worth keeping that is not configuration.",

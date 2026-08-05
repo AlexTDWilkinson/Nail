@@ -20,7 +20,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Generates a version 7 UUID: random, but with the time it was made in the leading bits, so sorting the ids sorts them by age. The one to use for a database key.",
             "id:s = crypto_uuid_v7();";
         "crypto_encrypt" [AesGcm, Sha2, Rand, Base64] => "std_lib::crypto::encrypt", (text: s, secret: s) -> (s!e),
-            "Encrypts text with a secret so only somebody holding the same secret can read it back, using AES-256-GCM. The result is URL-safe base64 and is different every time, and text changed afterwards fails to decrypt rather than decrypting to something else. For data at rest - a session cookie, a stored token; passwords go through crypto_hash_password instead.",
+            "Encrypts text with a secret so only somebody holding the same secret can read it back, using AES-256-GCM. The result is URL-safe base64 and is different every time, and text changed afterwards fails to decrypt rather than decrypting to something else. For data at rest - a session cookie, a stored token. Passwords go through crypto_hash_password instead.",
             "sealed:s = danger(crypto_encrypt(token, danger(env_get(`SECRET_KEY`))));";
         "crypto_decrypt" [AesGcm, Sha2, Rand, Base64] => "std_lib::crypto::decrypt", (encrypted: s, secret: s) -> (s!e),
             "Reads back what crypto_encrypt wrote, with the same secret. The wrong secret, text that was tampered with, and text that was never encrypted are all errors.",
@@ -50,7 +50,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "The SHA-256 of a file's contents as hex, read in blocks so the file never has to fit in memory. The checksum a download is verified against.",
             "digest:s = danger(crypto_hash_file_sha256(`release.tar.gz`));";
         "crypto_crc32" [Crc32Fast] => "std_lib::crypto::crc32", (text: s) -> s,
-            "The CRC32 of text as 8 hex digits - the fast checksum zip and png use. A checksum catches accidents, not tampering; for tampering use a hash.",
+            "The CRC32 of text as 8 hex digits - the fast checksum zip and png use. A checksum catches accidents, not tampering. For tampering use a hash.",
             "checksum:s = crypto_crc32(payload);";
         "crypto_hash_sha1" [Sha1] => "std_lib::crypto::hash_sha1", (input: s) -> s,
             "The SHA-1 of text as hex. Broken for new designs, still what git objects, OAuth 1 and older webhook signatures speak.",

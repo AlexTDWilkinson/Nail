@@ -16,19 +16,19 @@ fn options_parameter() -> StdlibParameter {
 pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Args:
         "args_get" => "std_lib::args::get", (index: i) -> (s!e),
-            "Returns the positional command-line argument at the index; errors if out of range.",
+            "Returns the positional command-line argument at the index. Errors if out of range.",
             "first:s = danger(args_get(0));";
         "args_flag" => "std_lib::args::flag", (name: s) -> b,
             "Returns true if a flag like --verbose is present.",
             "verbose:b = args_flag(`verbose`);";
         "args_value" => "std_lib::args::value", (name: s) -> (s!e),
-            "Returns the value of a flag like --name=value; errors if the flag is missing.",
+            "Returns the value of a flag like --name=value. Errors if the flag is missing.",
             "output:s = danger(args_value(`output`));";
         "args_value_or" => "std_lib::args::value_or", (name: s, fallback: s) -> s,
             "Returns the value of a flag, or the fallback when it was not passed.",
             "output:s = args_value_or(`output`, `report.txt`);";
         "args_value_int" => "std_lib::args::value_int", (name: s) -> (i!e),
-            "Returns the value of a flag read as a whole number; a missing flag and a value that is not a number are different errors.",
+            "Returns the value of a flag read as a whole number. A missing flag and a value that is not a number are different errors.",
             "retries:i = danger(args_value_int(`retries`));";
         "args_value_float" => "std_lib::args::value_float", (name: s) -> (f!e),
             "Returns the value of a flag read as a fraction.",

@@ -8,7 +8,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Encodes text as hex, two lower-case characters per byte.",
             "encoded:s = hex_encode(`hello`);";
         "hex_decode" => "std_lib::hex::decode", (data: s) -> (s!e),
-            "Decodes hex back to text; errors on non-hex characters or an odd length.",
+            "Decodes hex back to text. Errors on non-hex characters or an odd length.",
             "plain:s = danger(hex_decode(`68656c6c6f`));";
     }
 }

@@ -28,7 +28,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         parameters: vec![nail_param!(xml_string: s)],
         return_type: nail_type!((T!e)),
         diverging: false,
-        description: "Reads XML into a value; the type on the left of the assignment says what to read it as. Struct fields match child elements of the same name.",
+        description: "Reads XML into a value. The type on the left of the assignment says what to read it as. Struct fields match child elements of the same name.",
         example: "invoice:Invoice = danger(xml_deserialize(text));",
     });
 }

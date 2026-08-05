@@ -59,7 +59,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns a progress bar of the given width filled to the given share from 0.0 to 1.0.",
             "bar:s = danger(term_progress_bar(0.42, 30));";
         "term_table" => "std_lib::term::table", (headers: [s], rows: [[s]]) -> (s!e),
-            "Returns a plain-text table with aligned columns; errors if a row has a different number of cells than there are headers.",
+            "Returns a plain-text table with aligned columns. Errors if a row has a different number of cells than there are headers.",
             "rendered:s = danger(term_table(headers, rows));";
     }
 

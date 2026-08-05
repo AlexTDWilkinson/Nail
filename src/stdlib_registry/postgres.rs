@@ -92,7 +92,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         parameters: vec![postgres_param(), nail_param!(sql: s), nail_param!(params: [s])],
         return_type: nail_type!((T!e)),
         diverging: false,
-        description: "Returns the one row a query returns; no rows or several rows are both errors, which makes this right for a lookup by key and wrong for a search.",
+        description: "Returns the one row a query returns. No rows or several rows are both errors, which makes this right for a lookup by key and wrong for a search.",
         example: "person:Person = danger(db_postgres_query_single(db, `SELECT id, name FROM people WHERE id = $1`, [id]));",
     });
 }

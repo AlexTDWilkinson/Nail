@@ -11,7 +11,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns a new array with the item appended to the end.",
             "more:a:i = array_push(numbers, 4);";
         "array_pop" => "std_lib::array::pop", (array: [T]) -> ([T]!e),
-            "Returns a new array with the last element removed; errors if the array is empty.",
+            "Returns a new array with the last element removed. Errors if the array is empty.",
             "shorter:a:i = danger(array_pop(numbers));";
         "array_contains" => "std_lib::array::contains", (array: (&[T]), item: T) -> b,
             "Returns true if the array contains the given item.",
@@ -62,7 +62,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns an array containing the value repeated count times.",
             "zeros:a:i = array_repeat(0, 5);";
         "array_chunk" => "std_lib::array::chunk", (array: (&[T]), size: i) -> ([[T]]!e),
-            "Splits the array into chunks of the given size; errors if size is not positive.",
+            "Splits the array into chunks of the given size. Errors if size is not positive.",
             "pairs:a:a:i = danger(array_chunk(numbers, 2));";
         "array_flatten" => "std_lib::array::flatten", (array: [[T]]) -> [T],
             "Flattens a nested array by one level.",
@@ -107,16 +107,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns how many times the item appears in the array.",
             "repeats:i = array_count_of(rolls, 6);";
         "array_insert" => "std_lib::array::insert_at", (array: [T], index: i, item: T) -> ([T]!e),
-            "Returns a new array with the item inserted at the index, moving the rest along; errors if the index is past the end.",
+            "Returns a new array with the item inserted at the index, moving the rest along. Errors if the index is past the end.",
             "queue:a:s = danger(array_insert(queue, 0, `urgent`));";
         "array_remove_at" => "std_lib::array::remove_at", (array: [T], index: i) -> ([T]!e),
-            "Returns a new array without the element at the index; errors if the index is out of bounds.",
+            "Returns a new array without the element at the index. Errors if the index is out of bounds.",
             "rest:a:s = danger(array_remove_at(names, 2));";
         "array_replace_at" => "std_lib::array::replace_at", (array: [T], index: i, item: T) -> ([T]!e),
-            "Returns a new array with the element at the index replaced; errors if the index is out of bounds.",
+            "Returns a new array with the element at the index replaced. Errors if the index is out of bounds.",
             "fixed:a:s = danger(array_replace_at(names, 0, `alice`));";
         "array_swap" => "std_lib::array::swap", (array: [T], first: i, second: i) -> ([T]!e),
-            "Returns a new array with the two elements exchanged; errors if either index is out of bounds.",
+            "Returns a new array with the two elements exchanged. Errors if either index is out of bounds.",
             "reordered:a:i = danger(array_swap(numbers, 0, 1));";
         "array_all_equal" => "std_lib::array::all_equal", (array: (&[T])) -> b,
             "Returns true if every element equals the first one, and true for an empty array.",
@@ -127,6 +127,54 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_sort_descending" => "std_lib::array::sort_descending", (array: [T]) -> [T],
             "Returns a new array sorted from largest to smallest.",
             "leaderboard:a:i = array_sort_descending(scores);";
+        "array_step_by" => "std_lib::array::step_by", (array: [T], step: i) -> ([T]!e),
+            "Returns every step-th element starting with the first. Errors if step is less than 1.",
+            "every_other:a:i = danger(array_step_by(numbers, 2));";
+        "array_interleave" => "std_lib::array::interleave", (first: [T], second: [T]) -> [T],
+            "Alternates elements from the two arrays. When one runs out, the rest of the other follows.",
+            "woven:a:s = array_interleave(questions, answers);";
+        "array_pad_end" => "std_lib::array::pad_end", (array: [T], length: i, value: T) -> [T],
+            "Appends the value until the array reaches the length. An array already that long comes back unchanged.",
+            "row:a:i = array_pad_end(numbers, 5, 0);";
+        "array_pad_start" => "std_lib::array::pad_start", (array: [T], length: i, value: T) -> [T],
+            "Prepends the value until the array reaches the length. An array already that long comes back unchanged.",
+            "row:a:i = array_pad_start(numbers, 5, 0);";
+        "array_is_sorted" => "std_lib::array::is_sorted", (array: (&[T])) -> b,
+            "Returns true if each element is less than or equal to the next, and true for an empty array.",
+            "ordered:b = array_is_sorted(scores);";
+        "array_compact_strings" => "std_lib::array::compact_strings", (array: [s]) -> [s],
+            "Removes empty strings from the array, keeping everything else in order.",
+            "present:a:s = array_compact_strings(lines);";
+        "array_middle" => "std_lib::array::middle", (array: (&[T])) -> (T!e),
+            "Returns the middle element (the lower of the two middles when the length is even). Errors if the array is empty.",
+            "median_name:s = danger(array_middle(names));";
+        "array_take_last" => "std_lib::array::take_last", (array: [T], count: i) -> [T],
+            "Returns a new array with the last count elements, in their original order (fewer if the array is shorter).",
+            "recent:a:s = array_take_last(entries, 3);";
+        "array_skip_last" => "std_lib::array::skip_last", (array: [T], count: i) -> [T],
+            "Returns a new array without the last count elements.",
+            "trimmed:a:s = array_skip_last(entries, 1);";
+        "array_starts_with" => "std_lib::array::starts_with", (array: (&[T]), prefix: [T]) -> b,
+            "Returns true if the array begins with the given prefix array, element for element.",
+            "greeting:b = array_starts_with(words, [`hello`]);";
+        "array_ends_with" => "std_lib::array::ends_with", (array: (&[T]), suffix: [T]) -> b,
+            "Returns true if the array ends with the given suffix array, element for element.",
+            "finished:b = array_ends_with(words, [`goodbye`]);";
+        "array_is_unique" => "std_lib::array::is_unique", (array: (&[T])) -> b,
+            "Returns true if no value appears more than once, and true for an empty array.",
+            "no_repeats:b = array_is_unique(ids);";
+        "array_count_runs" => "std_lib::array::count_runs", (array: (&[T])) -> i,
+            "Returns how many runs of consecutive equal elements the array has (0 for an empty array).",
+            "streaks:i = array_count_runs(results);";
+        "array_common_prefix_length" => "std_lib::array::common_prefix_length", (first: (&[T]), second: (&[T])) -> i,
+            "Returns how many elements the two arrays share at their start.",
+            "shared:i = array_common_prefix_length(old_path, new_path);";
+        "array_index_of_max" => "std_lib::array::index_of_max", (array: (&[T])) -> (i!e),
+            "Returns the index of the largest element (the first one when tied). Errors if the array is empty.",
+            "winner:i = danger(array_index_of_max(scores));";
+        "array_index_of_min" => "std_lib::array::index_of_min", (array: (&[T])) -> (i!e),
+            "Returns the index of the smallest element (the first one when tied). Errors if the array is empty.",
+            "cheapest:i = danger(array_index_of_min(prices));";
         "array_sort_by" => "std_lib::array::sort_by_keys", (array: [T], key: (fn(T) -> K)) -> [T],
             "Returns the array sorted by what the named key function returns for each element, smallest first. The key function must be a plain one - reading a field or doing arithmetic - not one that reads a file or makes a request.",
             "by_year:a:Book = array_sort_by(books, book_year);";
@@ -134,10 +182,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns the array sorted by the key function, largest first.",
             "newest_first:a:Book = array_sort_by_descending(books, book_year);";
         "array_min_by" => "std_lib::array::min_by_keys", (array: [T], key: (fn(T) -> K)) -> (T!e),
-            "Returns the element whose key is smallest; an empty array is an error.",
+            "Returns the element whose key is smallest. An empty array is an error.",
             "oldest:Book = danger(array_min_by(books, book_year));";
         "array_max_by" => "std_lib::array::max_by_keys", (array: [T], key: (fn(T) -> K)) -> (T!e),
-            "Returns the element whose key is largest; an empty array is an error.",
+            "Returns the element whose key is largest. An empty array is an error.",
             "newest:Book = danger(array_max_by(books, book_year));";
         "array_sum_by" => "std_lib::array::sum_of_keys", (array: [T], key: (fn(T) -> (K: i|f))) -> K,
             "Returns every element's key added up, which is the total of a field over the array. An empty array sums to zero.",

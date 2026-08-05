@@ -134,7 +134,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Escapes &, <, >, \" and ' so text a visitor supplied can be put in a page without becoming markup.",
             "safe_name:s = string_escape_html(player_name);";
         "string_unescape_html" => "std_lib::string::unescape_html", (text: s) -> s,
-            "Turns HTML entities such as &amp;lt; and &amp;#39; back into the characters they stood for.",
+            "Turns HTML entities such as &amp;lt. And &amp;#39. Back into the characters they stood for.",
             "plain:s = string_unescape_html(comment_html);";
         "string_to_camel_case" => "std_lib::string::to_camel_case", (input: s) -> s,
             "Converts to camelCase, the spelling JSON keys and JavaScript APIs use.",
@@ -182,16 +182,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Removes any of the given characters from the end only.",
             "sentence:s = string_trim_end_chars(`wait...`, `.`);";
         "string_split_once" => "std_lib::string::split_once", (input: s, separator: s) -> ([s]!e),
-            "Splits at the first separator only and returns the two halves, so a value containing the separator stays whole; errors if the separator is not there.",
+            "Splits at the first separator only and returns the two halves, so a value containing the separator stays whole. Errors if the separator is not there.",
             "pair:a:s = danger(string_split_once(`key=a=b`, `=`));";
         "string_split_last" => "std_lib::string::split_last", (input: s, separator: s) -> ([s]!e),
-            "Splits at the last separator and returns the two halves; errors if the separator is not there.",
+            "Splits at the last separator and returns the two halves. Errors if the separator is not there.",
             "pair:a:s = danger(string_split_last(`host:port`, `:`));";
         "string_char_code" => "std_lib::string::char_code", (input: s, index: i) -> (i!e),
-            "Returns the Unicode code point of the character at the index, so A is 65; errors if the index is out of bounds.",
+            "Returns the Unicode code point of the character at the index, so A is 65. Errors if the index is out of bounds.",
             "code:i = danger(string_char_code(`A`, 0));";
         "string_from_char_code" => "std_lib::string::from_char_code", (code: i) -> (s!e),
-            "Returns the one-character string for a Unicode code point; errors on a number that is not one.",
+            "Returns the one-character string for a Unicode code point. Errors on a number that is not one.",
             "letter:s = danger(string_from_char_code(65));";
         "string_char_at" => "std_lib::string::char_at", (input: s, index: i) -> (s!e),
             "Returns the single character at the index as a string, or an error if the index is out of bounds.",
@@ -223,5 +223,68 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_remove_accents" [UnicodeNormalization] => "std_lib::string::remove_accents", (input: s) -> s,
             "The text with its accents dropped: `café` becomes `cafe`. What slugs and diacritic-blind search ask for.",
             "plain:s = string_remove_accents(city_name);";
+        "string_between" => "std_lib::string::between", (input: s, start: s, end: s) -> (s!e),
+            "Returns the text between the first start marker and the next end marker after it. The error names which marker is missing.",
+            "title:s = danger(string_between(page, `<title>`, `</title>`));";
+        "string_before" => "std_lib::string::before", (input: s, marker: s) -> (s!e),
+            "Returns everything before the first occurrence of the marker. Errors if the marker is not there.",
+            "user:s = danger(string_before(`user@example.com`, `@`));";
+        "string_after" => "std_lib::string::after", (input: s, marker: s) -> (s!e),
+            "Returns everything after the first occurrence of the marker. Errors if the marker is not there.",
+            "domain:s = danger(string_after(`user@example.com`, `@`));";
+        "string_ensure_prefix" => "std_lib::string::ensure_prefix", (input: s, prefix: s) -> s,
+            "Adds the prefix only when the string does not already start with it.",
+            "url:s = string_ensure_prefix(address, `https://`);";
+        "string_ensure_suffix" => "std_lib::string::ensure_suffix", (input: s, suffix: s) -> s,
+            "Adds the suffix only when the string does not already end with it.",
+            "dir:s = string_ensure_suffix(path, `/`);";
+        "string_is_blank" => "std_lib::string::is_blank", (input: (&s)) -> b,
+            "Returns true if the string is empty or holds only whitespace - the check string_is_empty lets `   ` slip past.",
+            "skip:b = string_is_blank(line);";
+        "string_reading_time_minutes" => "std_lib::string::reading_time_minutes", (input: (&s)) -> i,
+            "Estimates reading time in whole minutes at 200 words per minute, rounded up - at least 1 for any words, 0 for none.",
+            "minutes:i = string_reading_time_minutes(article);";
+        "string_squeeze" => "std_lib::string::squeeze", (input: s) -> s,
+            "Collapses every run of the same repeated character to one, so `aaabbb` becomes `ab`.",
+            "tidy:s = string_squeeze(`whoooops`);";
+        "string_swap_case" => "std_lib::string::swap_case", (input: s) -> s,
+            "Flips the case of every letter: uppercase becomes lowercase and lowercase becomes uppercase.",
+            "flipped:s = string_swap_case(`Hello`);";
+        "string_is_uppercase" => "std_lib::string::is_uppercase", (input: (&s)) -> b,
+            "Returns true if the string has letters and none of them is lowercase.",
+            "shouting:b = string_is_uppercase(`WARNING`);";
+        "string_is_lowercase" => "std_lib::string::is_lowercase", (input: (&s)) -> b,
+            "Returns true if the string has letters and none of them is uppercase.",
+            "quiet:b = string_is_lowercase(`hushed`);";
+        "string_rot13" => "std_lib::string::rot13", (input: s) -> s,
+            "Rotates each ASCII letter 13 places through the alphabet - the classic reversible scramble. Applying it twice gives the text back.",
+            "hidden:s = string_rot13(spoiler);";
+        "string_first_line" => "std_lib::string::first_line", (input: s) -> s,
+            "Returns the first line of the text, without its line break.",
+            "heading:s = string_first_line(file_content);";
+        "string_last_line" => "std_lib::string::last_line", (input: s) -> s,
+            "Returns the last line of the text, without its line break. A trailing newline does not count as an extra line.",
+            "closing:s = string_last_line(log_output);";
+        "string_common_suffix" => "std_lib::string::common_suffix", (strings: [s]) -> s,
+            "Returns the ending that all the strings share, or the empty string if they share none - the counterpart of string_common_prefix.",
+            "extension:s = string_common_suffix(file_names);";
+        "string_center" => "std_lib::string::center", (input: s, width: i, pad: s) -> s,
+            "Centers the string in a field of the given width, padding both sides. When uneven, the extra goes on the right.",
+            "banner:s = string_center(`menu`, 20, `-`);";
+        "string_delete_whitespace" => "std_lib::string::delete_whitespace", (input: s) -> s,
+            "Removes every whitespace character, line breaks and tabs included.",
+            "compact:s = string_delete_whitespace(pasted_key);";
+        "string_digits_only" => "std_lib::string::digits_only", (input: s) -> s,
+            "Keeps only the digit characters 0-9, in order - what a phone number field needs before dialing.",
+            "phone:s = string_digits_only(`(555) 123-4567`);";
+        "string_letters_only" => "std_lib::string::letters_only", (input: s) -> s,
+            "Keeps only the letters, in order, dropping digits, punctuation and whitespace.",
+            "letters:s = string_letters_only(`a1b2c3`);";
+        "string_initials" => "std_lib::string::initials", (input: s) -> s,
+            "Returns the uppercased first letter of each word - `Ada Lovelace` gives `AL`.",
+            "avatar:s = string_initials(full_name);";
+        "string_hamming_distance" => "std_lib::string::hamming_distance", (first: (&s), second: (&s)) -> (i!e),
+            "Counts the positions where two equal-length strings differ. Errors when the lengths differ.",
+            "mistakes:i = danger(string_hamming_distance(sent_code, typed_code));";
     }
 }

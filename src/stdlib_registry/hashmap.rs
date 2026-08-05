@@ -44,10 +44,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Adds an amount to the running total under a key, starting from zero, and returns the new total. A negative amount subtracts.",
             "balance:i = hashmap_add_to(totals, account, -250);";
         "hashmap_from_arrays" [DashMap] => "std_lib::hashmap::from_arrays", (keys: [K], values: [V]) -> ((h K V)!e),
-            "Builds a hashmap by pairing keys with values by position; errors if the arrays are different lengths.",
+            "Builds a hashmap by pairing keys with values by position. Errors if the arrays are different lengths.",
             "settings:h<s,s> = danger(hashmap_from_arrays(names, values));";
         "hashmap_merge" [DashMap] => "std_lib::hashmap::merge", (first: (&(h K V)), second: (&(h K V))) -> (h K V),
-            "Returns a new hashmap with entries from both maps; the second map wins on duplicate keys.",
+            "Returns a new hashmap with entries from both maps. The second map wins on duplicate keys.",
             "combined:h<s,i> = hashmap_merge(defaults, overrides);";
+        "hashmap_get_or" [DashMap] => "std_lib::hashmap::get_or", (map: (&(h K V)), key: (&K), fallback: V) -> V,
+            "Returns the value for a key, or the fallback when the key is missing - never an error, and the map is not changed. The inserting cousin is hashmap_entry_or_insert.",
+            "score:i = hashmap_get_or(scores, `alice`, 0);";
+        "hashmap_key_of" [DashMap] => "std_lib::hashmap::key_of", (map: (&(h K V)), value: (&V)) -> (K!e),
+            "Returns a key holding the given value, or an error when none does - the lookup run backwards. With several such keys, which one comes back is undefined. Meant for values that appear once, the way an id does.",
+            "name:s = danger(hashmap_key_of(user_ids, 42));";
     }
 }
