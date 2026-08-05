@@ -52,7 +52,7 @@ f generate_hero(hero_code:s):s {
     hero_html:s = array_join([
         html`<section id="home" class="hero">
     <h1 class="hero-title">Nail</h1>
-    <p class="hero-tagline">A small language with a huge standard library: it transpiles to Rust and uses every core without being asked</p>
+    <p class="hero-tagline">A simple language with a huge standard library: it transpiles to Rust and uses every core without being asked</p>
     <p class="hero-description">
         No null. No mutation. No package manager. No unsafe. Errors you can't ignore, and iteration
         that runs in parallel whenever it's safe to.

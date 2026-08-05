@@ -13,3 +13,11 @@ f missing_example_name(err:e):s {
 f label_source_file(path:s, source:s):s {
     r array_join([`// ===== `, path, ` =====`, `\n`, source], ``);
 }
+
+// Milliseconds as a human label, honest below the clock's resolution.
+f elapsed_label(elapsed_ms:i):s {
+    if {
+        elapsed_ms < 1 -> { r `under 1 ms`; },
+        else -> { r array_join([string_from(elapsed_ms), ` ms`], ``); }
+    }
+}

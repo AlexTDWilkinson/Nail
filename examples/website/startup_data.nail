@@ -38,15 +38,20 @@ f read_fallback(err:e):s {
     r `(file unavailable)`;
 }
 
-// Same CPU-heavy work as the parallel example, on separate OS threads
+// Same CPU-heavy work as the parallel example, on separate OS threads.
+// Timed, so the run output can show how long the whole block took.
+parallel_started:i = time_now_millis();
 p
     fact_12:i = factorial(12);
     sum_to_million:i = array_sum(array_range_inclusive(1, 1000000));
     prime_count:i = count_primes_below(10000);
 /p
+parallel_elapsed_ms:i = time_now_millis() - parallel_started;
 
 // Same concurrent file reads as the concurrent example. This program's own
 // source is split across files by insert(), so every part is read here too.
+// Timed: the block takes as long as its slowest read, not their sum.
+concurrent_started:i = time_now_millis();
 c
     spec_text:s = danger(fs_read(`nail_language_spec.md`));
     readme_text:s = expect(fs_read(`README.md`));
@@ -60,6 +65,7 @@ c
     server_state_text:s = safe(fs_read(`examples/website/server_state.nail`), read_fallback);
     routes_text:s = safe(fs_read(`examples/website/routes.nail`), read_fallback);
 /c
+concurrent_elapsed_ms:i = time_now_millis() - concurrent_started;
 
 // The listing of this site's source: the entry file, then each inserted part
 // under a labeled header, in insert order.
