@@ -134,7 +134,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Escapes &, <, >, \" and ' so text a visitor supplied can be put in a page without becoming markup.",
             "safe_name:s = string_escape_html(player_name);";
         "string_unescape_html" => "std_lib::string::unescape_html", (text: s) -> s,
-            "Turns HTML entities such as &amp;lt. And &amp;#39. Back into the characters they stood for.",
+            "Turns HTML entities such as &amp;lt; and &amp;#39; back into the characters they stood for.",
             "plain:s = string_unescape_html(comment_html);";
         "string_to_camel_case" => "std_lib::string::to_camel_case", (input: s) -> s,
             "Converts to camelCase, the spelling JSON keys and JavaScript APIs use.",

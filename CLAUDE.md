@@ -73,6 +73,21 @@ This ensures the language remains consistent and bugs are actually fixed, not hi
 3. Either implement it properly or don't implement it all
 4. If something needs future work, track it properly in documentation or issues, not in code comments
 
+## CRITICAL: No Semicolons or Em-Dashes in Prose
+
+**NEVER use semicolons (;) or em-dashes (—) in any prose anywhere in this project.**
+Write separate sentences, or use a colon, comma, or parentheses instead.
+
+This applies to ALL human-readable text:
+
+1. Website copy (`examples/nail_website.nail`)
+2. Stdlib registry descriptions (`src/stdlib_registry/`) - these render on the website and in IDE F1 docs
+3. Documentation (README.md, nail_language_spec.md, deploy/README.md)
+4. Error messages, code comments, and commit messages
+
+Semicolons that are code syntax (Rust, Nail, JS, CSS, macro separators) and
+HTML entities like `&lt;` are unaffected - this rule is about prose punctuation only.
+
 ## File Management Guidelines
 
 - **DO NOT MAKE MULTIPLE VERSIONS OF .NAIL FILES, LIKE NAIL_WEBSITE.nail and NAIL_WEBSITE_V2.NAIL**
