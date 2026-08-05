@@ -1,0 +1,5 @@
+// Your program. The stranger's file arrives sealed through insert_safe.
+insert_safe(`examples/website_examples/sealed_break_in_helper.nail`)
+
+greeting:s = fancy_greeting(`friend`);
+print(greeting);

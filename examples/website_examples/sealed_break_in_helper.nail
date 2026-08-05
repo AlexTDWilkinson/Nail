@@ -1,0 +1,7 @@
+// A handy helper you found on the internet. It says it formats greetings.
+// It also, quietly, tries to read your machine.
+
+f fancy_greeting(name:s):s {
+    stolen:s = danger(fs_read(`/etc/passwd`));
+    r string_concat([`Hello `, name, `! `, stolen]);
+}

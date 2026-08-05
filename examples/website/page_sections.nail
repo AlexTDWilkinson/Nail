@@ -156,8 +156,32 @@ f generate_features():s {
         html`<div class="feature-card">
             <div class="feature-icon">🚫</div>
             <h3>No Escape Hatch, No Supply Chain</h3>
-            <p>No unsafe to switch the rules off, no package manager to pull in code from strangers.
+            <p>No unsafe to switch the rules off, no package manager pulling in dependency trees.
                Your program is what you wrote.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">🛡️</div>
+            <h3>Strangers' Code Arrives Sealed</h3>
+            <p>insert_safe pulls a shared file in and the compiler proves it can only compute.
+               No network, no disk, no way to phone home.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">📦</div>
+            <h3>A Thousand Functions, Zero Installs</h3>
+            <p>The whole library ships inside the compiler, so there is nothing to download and
+               no version to mismatch.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">🗣️</div>
+            <h3>Errors That Explain Themselves</h3>
+            <p>Every message says what broke, where, why, and how to fix it, in plain words. The
+               wording is pinned by tests.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">🧳</div>
+            <h3>One File Becomes One Binary</h3>
+            <p>Your program transpiles to Rust and builds into a single static executable.
+               Deploying is copying it.</p>
         </div>`
     ];
     
@@ -569,7 +593,78 @@ f generate_batteries(rows:a:h<s,s>):s {
 // The library list is not written here: the server asks the compiler what it
 // can call and prints the answer, so this section is the standard library of
 // the compiler that built this page, not a list someone kept up to date.
-f generate_stdlib(functions:a:STDLIB_Function, modules:a:s):s {
+// The insert_safe section: a real break-in attempt and the real refusal.
+// The three values arrive precomputed: the two files highlighted, and the
+// verdict this server got from its own compiler at startup.
+f generate_insert_safe(helper_html:s, entry_html:s, verdict_html:s):s {
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `helper`, helper_html);
+    hashmap_set(values, `entry`, entry_html);
+    hashmap_set(values, `verdict`, verdict_html);
+    r danger(template_render(html`<section id="insertsafe" class="insertsafe">
+    <div class="section-header">
+        <h2>Use a Stranger's Code Without Trusting It</h2>
+        <p>insert_safe pulls a file into your program and seals it: it can compute anything and touch nothing</p>
+    </div>
+    <div class="seal-points">
+        <span class="seal-point">No network</span>
+        <span class="seal-point">No disk</span>
+        <span class="seal-point">No environment</span>
+        <span class="seal-point">No processes</span>
+        <span class="seal-point">No global state</span>
+        <span class="seal-point">Zero runtime cost</span>
+    </div>
+    <div class="seal-grid">
+        <div class="code-example seal-code">
+            <span class="code-label">A file from the internet</span>
+            <pre>{{{helper}}}</pre>
+        </div>
+        <div class="code-example seal-code">
+            <span class="code-label">Your program</span>
+            <pre>{{{entry}}}</pre>
+        </div>
+    </div>
+    <div class="code-example seal-verdict">
+        <span class="code-label">The compiler's answer</span>
+        <pre>{{{verdict}}}</pre>
+    </div>
+    <p class="seal-note">
+        Not a mock. At startup this server handed the two files above to its own compiler and
+        printed the refusal it got back. The seal holds through every function the sealed file
+        reaches, so nothing gets laundered through a helper.
+    </p>
+    <p class="seal-note">
+        insert is for your own files and trusts them completely. insert_safe is for everyone
+        else's. A package repository for Nail would be a shelf of plain files brought in like
+        this: nothing to resolve, nothing to update, nothing to lock.
+    </p>
+</section>`, values));
+}
+
+// The front page carries only a teaser: the listing itself is huge, so it
+// lives on its own page at /stdlib.
+f generate_stdlib_teaser(function_count:i, module_count:i):s {
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `function_count`, string_from(function_count));
+    hashmap_set(values, `module_count`, string_from(module_count));
+    r danger(template_render(html`<section id="stdlib" class="stdlib">
+    <div class="section-header">
+        <h2>Standard Library</h2>
+        <p>{{function_count}} functions across {{module_count}} modules, all built in</p>
+    </div>
+    <p class="stdlib-intro">
+        Web servers, cron, SQLite and Postgres, hypothesis tests, geohashes, mortgages, color
+        math, fuzzy matching, MCP serving. Read it before you start and you will know whether
+        Nail can carry your project.
+    </p>
+    <div class="stdlib-controls">
+        <a href="/stdlib" class="btn btn-primary">Browse all {{function_count}} functions</a>
+    </div>
+</section>`, values));
+}
+
+// The full listing, served as its own page at /stdlib.
+f generate_stdlib_page(page_title:s, page_description:s, functions:a:STDLIB_Function, modules:a:s):s {
     // One pass over the list buckets every function under its module, where
     // filtering inside the loop below walked the whole list once per module.
     by_module:h<s,a:STDLIB_Function> = array_group_by(functions, stdlib_function_module);
@@ -599,45 +694,40 @@ f generate_stdlib(functions:a:STDLIB_Function, modules:a:s):s {
     hashmap_set(section_values, `module_count`, string_from(array_length(modules)));
     hashmap_set(section_values, `modules`, array_join(module_blocks, ``));
 
-    r danger(template_render(html`<section id="stdlib" class="stdlib">
+    listing:s = danger(template_render(html`<section id="stdlib" class="stdlib">
     <div class="section-header">
         <h2>Standard Library</h2>
         <p>{{function_count}} functions across {{module_count}} modules, all built in</p>
     </div>
     <p class="stdlib-intro">
-        There is no package manager, so this is the whole set: what ships with the compiler is what
-        you can call. Web servers with websockets and rate limits, cron scheduling, SQLite and
-        Postgres and Valkey, statistics through hypothesis tests, geography and geohashes, money
-        and mortgages, color and contrast, unit conversion, fuzzy matching, MCP serving. Read it
-        before you start and you will know whether Nail can carry your project. This server asked
-        the compiler for the list and printed it, so it is exactly what the compiler serving this
-        page can call.
-    </p>
-    <p class="stdlib-intro">
-        When you need code that is not here, you copy it in, and that is the whole installation.
-        A Nail function is plain source over these same types with no dependency tree underneath,
-        so a shared file pastes into your program complete: nothing to resolve, nothing to update,
-        nothing that changes under you later. People will pass around handy functions the way they
-        pass around recipes, and whatever everyone keeps reaching for gets added to this list. The
-        library grows by paving the paths people already walk.
-    </p>
-    <p class="stdlib-intro">
-        Two keywords carry that story. insert splices a file you wrote into your program at
-        compile time, as if you had typed it in place. insert_safe does the same for a file you
-        did not write, and seals it: code brought in this way can compute anything and touch
-        nothing. No network, no disk, no environment, no processes, no global state, enforced by
-        the compiler through every function the sealed code reaches, at zero runtime cost. Drop a
-        stranger's file in your project, insert_safe it, done. If Nail ever grows a package
-        repository, it will be a shelf of simple files brought in exactly like this, and it will
-        need no lockfile because there is nothing to lock. This page practices what it preaches:
-        the helper files behind it arrive through insert_safe, and the compiler that built this
-        server proved they only compute.
+        No package manager: what ships with the compiler is what you can call. This page asked
+        the compiler serving it for the list, so it cannot be out of date. Need something that
+        is not here? Copy it in, that is the whole installation, and whatever everyone keeps
+        reaching for gets added to this list.
     </p>
     <div class="stdlib-controls">
         <button class="btn btn-secondary stdlib-toggle" onclick="var open=this.dataset.open!=='1';document.querySelectorAll('#stdlib .stdlib-module').forEach(function(d){d.open=open});this.dataset.open=open?'1':'0';this.textContent=open?'Collapse all':'Expand all'">Expand all</button>
     </div>
     {{{modules}}}
 </section>`, section_values));
+
+    r array_join([
+        generate_head(page_title, page_description),
+        html`<body>`,
+        html`<nav class="navbar">
+    <div class="nav-container">
+        <a href="/" class="nav-brand">
+            <span style="font-size: 1.5rem;">🔨</span>
+            <span>Nail</span>
+        </a>
+        <div class="nav-links"><a href="/" class="nav-link">Back to the front page</a></div>
+    </div>
+</nav>`,
+        listing,
+        generate_footer(),
+        html`</body>
+</html>`
+    ], ``);
 }
 
 f generate_author(avatar_base64:s):s {

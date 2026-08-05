@@ -13,6 +13,14 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 headers = headers
             };
         },
+        request.path == `/stdlib` -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_stdlib`)),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
         request.path == `/run-example` -> {
             r run_example_response(request, state, headers);
         },

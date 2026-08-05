@@ -13,9 +13,10 @@ website_html:s = array_join([
     generate_problem_section(),
     generate_features(),
     generate_examples(concurrent_example_html, parallel_example_html, error_example_html, concurrent_rust_html, parallel_rust_html, error_rust_html),
+    generate_insert_safe(sealed_helper_html, sealed_entry_html, seal_verdict_html),
     generate_mcp(mcp_example_html),
     generate_batteries(battery_rows),
-    generate_stdlib(stdlib_function_list, stdlib_module_list),
+    generate_stdlib_teaser(array_length(stdlib_function_list), array_length(stdlib_module_list)),
     generate_get_started(),
     generate_ide(ide_shot_error, ide_shot_complete, ide_shot_docs, tagged_snippet_html),
     generate_performance(),
@@ -32,6 +33,16 @@ website_html:s = array_join([
 // here reaches handle_request that way rather than as a global.
 state:h<s,s> = hashmap_new();
 hashmap_set(state, `page_main`, website_html);
+
+// The standard library listing is its own page: it is massive, so the front
+// page carries a teaser and this carries the whole thing.
+stdlib_page_html:s = generate_stdlib_page(
+    `Nail Standard Library - every function that ships with the compiler`,
+    `The full Nail standard library, printed by the compiler that serves this page.`,
+    stdlib_function_list,
+    stdlib_module_list
+);
+hashmap_set(state, `page_stdlib`, stdlib_page_html);
 
 // Routes for running examples. The outputs are built from values this server
 // actually computed at startup by executing the same code the examples show.
