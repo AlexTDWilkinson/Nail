@@ -123,12 +123,32 @@ fn tone_player() -> &'static std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64,
                 return;
             };
             use rodio::Source;
+            // Sounds that pile up on top of each other add their volumes, and
+            // once the total passes what the device can carry it distorts and
+            // then drops out. A game that asks for a sound every few frames
+            // can get there quickly, so past this many at once the newest
+            // sound is skipped rather than allowed to spoil the rest.
+            const VOICES: usize = 6;
+            let mut playing_until: Vec<std::time::Instant> = Vec::new();
             for (hertz, seconds, volume, wait) in receiver {
+                let now = std::time::Instant::now();
+                playing_until.retain(|ends| *ends > now);
+                if playing_until.len() >= VOICES {
+                    continue;
+                }
+                playing_until.push(now + std::time::Duration::from_secs_f64(wait + seconds));
+                // A tone cut off square clicks, and at a few tens of
+                // milliseconds that click is most of what a person hears,
+                // which is why unshaped short sounds seem to vary in loudness
+                // and sometimes vanish. Easing in and fading out makes every
+                // sound land at the volume it asked for.
+                let mut shaped = rodio::source::SineWave::new(hertz as f32).take_duration(std::time::Duration::from_secs_f64(seconds));
+                shaped.set_filter_fadeout();
                 // The wait rides inside the sound itself, so a tune queued in
                 // one go keeps its timing without this thread standing still.
-                let tone = rodio::source::SineWave::new(hertz as f32)
-                    .take_duration(std::time::Duration::from_secs_f64(seconds))
+                let tone = shaped
                     .amplify(volume as f32)
+                    .fade_in(std::time::Duration::from_secs_f64((seconds * 0.2).min(0.01)))
                     .delay(std::time::Duration::from_secs_f64(wait));
                 let _ = handle.play_raw(tone);
             }

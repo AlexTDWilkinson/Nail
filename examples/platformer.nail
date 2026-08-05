@@ -294,16 +294,21 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
     }
 
     // Footsteps come from ground covered rather than from a clock, so they
-    // keep pace with the run and stop dead when the player does. One step
-    // every 42 pixels is half the leg swing, which is a foot landing.
-    walking:b = landing.grounded && math_abs(vel_x) > 0.05;
+    // keep pace with the run and stop dead when the player does. One step per
+    // full swing of the legs, which at a run is about four a second. Half
+    // that distance is what the legs actually do and it sounds like a drum
+    // roll, so only one foot of the pair is heard.
+    // Ground covered means the distance actually travelled, not the speed
+    // asked for, so running into a wall makes no footsteps at all.
+    ground_covered:f = math_abs(pos_x - state.player_x);
+    walking:b = landing.grounded && ground_covered > 0.4;
     walked:f = if {
-        walking -> { r state.step_phase + math_abs(vel_x * delta); },
+        walking -> { r state.step_phase + ground_covered; },
         else -> { r 0.0; }
     };
-    stepped:b = walked > 42.0;
+    stepped:b = walked > 84.0;
     step_phase:f = if {
-        stepped -> { r walked - 42.0; },
+        stepped -> { r walked - 84.0; },
         else -> { r walked; }
     };
     if {
