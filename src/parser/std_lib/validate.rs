@@ -118,19 +118,29 @@ pub fn port(number: i64) -> bool {
     return (1..=65535).contains(&number);
 }
 
-/// Whether the digits pass the Luhn check every card number is built to pass.
-/// Spaces and hyphens are ignored, because that is how people type them. This
-/// catches a mistyped digit before a payment is attempted; it says nothing
-/// about whether the card exists.
-pub fn credit_card(text: &String) -> bool {
-    let digits: Vec<u32> = text.chars().filter(|character| !character.is_whitespace() && *character != '-').map(|character| character.to_digit(10).unwrap_or(10)).collect();
-    if digits.len() < 12 || digits.len() > 19 || digits.iter().any(|digit| *digit > 9) {
-        return false;
+/// Collects the digits of a number typed with spaces or hyphens in it, the
+/// way people type card numbers. Anything else in the text means it is not a
+/// digit string at all, and the answer is None rather than a guess.
+fn typed_digits(text: &str) -> Option<Vec<u32>> {
+    let mut digits = Vec::new();
+    for character in text.chars() {
+        if character.is_whitespace() || character == '-' {
+            continue;
+        }
+        match character.to_digit(10) {
+            Some(digit) => digits.push(digit),
+            None => return None,
+        }
     }
+    return Some(digits);
+}
+
+/// The Luhn check itself: every second digit from the right is doubled, a
+/// doubled digit over nine has nine taken off it - the same as adding its two
+/// digits - and the total has to land on a multiple of ten.
+fn luhn_checksum_passes(digits: &[u32]) -> bool {
     let mut total = 0;
     for (position, digit) in digits.iter().rev().enumerate() {
-        // Every second digit from the right is doubled, and a doubled digit
-        // over nine has nine taken off it - the same as adding its two digits.
         let contribution = if position % 2 == 1 {
             let doubled = digit * 2;
             if doubled > 9 {
@@ -144,6 +154,197 @@ pub fn credit_card(text: &String) -> bool {
         total += contribution;
     }
     return total % 10 == 0;
+}
+
+/// Whether the digits pass the Luhn check every card number is built to pass.
+/// Spaces and hyphens are ignored, because that is how people type them. This
+/// catches a mistyped digit before a payment is attempted; it says nothing
+/// about whether the card exists.
+pub fn credit_card(text: &String) -> bool {
+    let digits = match typed_digits(text) {
+        Some(digits) => digits,
+        None => return false,
+    };
+    if digits.len() < 12 || digits.len() > 19 {
+        return false;
+    }
+    return luhn_checksum_passes(&digits);
+}
+
+/// The bare Luhn check over any digit string, with spaces and hyphens
+/// forgiven. Card numbers are 12 to 19 digits and validate_credit_card checks
+/// that too; this one takes IMEIs, Canadian social insurance numbers and every
+/// other identifier built on the same checksum, whatever their length.
+pub fn luhn(digits: &String) -> bool {
+    let collected = match typed_digits(digits) {
+        Some(collected) => collected,
+        None => return false,
+    };
+    if collected.is_empty() {
+        return false;
+    }
+    return luhn_checksum_passes(&collected);
+}
+
+/// Whether the text is an IBAN: the right length for its country and passing
+/// the mod-97 check the format is built on. Spaces are forgiven, since an
+/// IBAN is printed in groups of four. Only the common countries are known;
+/// a country not in the table is refused rather than half-checked.
+pub fn iban(text: &String) -> bool {
+    let compact: String = text.chars().filter(|character| !character.is_whitespace()).collect::<String>().to_uppercase();
+    if compact.len() < 4 || !compact.chars().all(|character| character.is_ascii_alphanumeric()) {
+        return false;
+    }
+    let country = &compact[..2];
+    if !country.chars().all(|character| character.is_ascii_alphabetic()) || !compact[2..4].chars().all(|character| character.is_ascii_digit()) {
+        return false;
+    }
+    // Each country fixes its own length, and a wrong length is the easiest
+    // mistake to catch. Canada has no IBAN at all, so it is not here.
+    const LENGTHS: [(&str, usize); 16] =
+        [("AT", 20), ("BE", 16), ("CH", 21), ("DE", 22), ("DK", 18), ("ES", 24), ("FI", 18), ("FR", 27), ("GB", 22), ("IE", 22), ("IT", 27), ("NL", 18), ("NO", 15), ("PL", 28), ("PT", 25), ("SE", 24)];
+    let expected = match LENGTHS.iter().find(|(code, _)| *code == country) {
+        Some((_, length)) => *length,
+        None => return false,
+    };
+    if compact.len() != expected {
+        return false;
+    }
+    // The country and check digits move to the end, letters read as 10 to 35,
+    // and the whole number has to leave remainder 1 when divided by 97.
+    let rearranged = std::format!("{}{}", &compact[4..], &compact[..4]);
+    let mut remainder: u64 = 0;
+    for character in rearranged.chars() {
+        let value = character.to_digit(36).expect("checked alphanumeric above") as u64;
+        remainder = if value < 10 { (remainder * 10 + value) % 97 } else { (remainder * 100 + value) % 97 };
+    }
+    return remainder == 1;
+}
+
+/// Whether the text is a MAC address: six pairs of hex digits separated by
+/// colons or dashes, the two spellings hardware actually prints.
+pub fn mac_address(text: &String) -> bool {
+    // One separator or the other, not a mixture.
+    let separator = if text.contains(':') { ':' } else { '-' };
+    if text.contains(':') && text.contains('-') {
+        return false;
+    }
+    let pairs: Vec<&str> = text.split(separator).collect();
+    if pairs.len() != 6 {
+        return false;
+    }
+    return pairs.iter().all(|pair| pair.len() == 2 && pair.chars().all(|character| character.is_ascii_hexdigit()));
+}
+
+/// Whether the text could be a phone number: 7 to 15 digits once the +,
+/// spaces, dashes, parentheses and dots people format numbers with are
+/// stripped. The E.164-flavoured sanity check a signup form wants - it says
+/// the field holds a number, not that anyone answers it.
+pub fn phone_loose(text: &String) -> bool {
+    let mut digits = 0;
+    for character in text.chars() {
+        if character.is_ascii_digit() {
+            digits += 1;
+        } else if !matches!(character, '+' | ' ' | '-' | '(' | ')' | '.') {
+            return false;
+        }
+    }
+    return (7..=15).contains(&digits);
+}
+
+/// Whether the text is an ISBN with a correct checksum, in either the old
+/// ten-digit or the current thirteen-digit shape. Hyphens and spaces are
+/// forgiven, since an ISBN is printed with its parts separated.
+pub fn isbn(text: &String) -> bool {
+    let compact: Vec<char> = text.chars().filter(|character| *character != '-' && !character.is_whitespace()).collect();
+    if compact.len() == 10 {
+        // Positions weigh 10 down to 1, an X in the last place stands for
+        // ten, and the total has to divide by eleven.
+        let mut total: u32 = 0;
+        for (position, character) in compact.iter().enumerate() {
+            let value = if position == 9 && (*character == 'X' || *character == 'x') {
+                10
+            } else {
+                match character.to_digit(10) {
+                    Some(digit) => digit,
+                    None => return false,
+                }
+            };
+            total += value * (10 - position as u32);
+        }
+        return total % 11 == 0;
+    }
+    if compact.len() == 13 {
+        // Positions alternate weights one and three, and the total has to
+        // divide by ten - the same EAN check as any barcode.
+        let mut total: u32 = 0;
+        for (position, character) in compact.iter().enumerate() {
+            let value = match character.to_digit(10) {
+                Some(digit) => digit,
+                None => return false,
+            };
+            total += value * if position % 2 == 0 { 1 } else { 3 };
+        }
+        return total % 10 == 0;
+    }
+    return false;
+}
+
+/// The loose shape of a UK postcode: one or two letters, a digit, possibly
+/// one more digit or letter, then a digit and two letters. The real rules
+/// about which letters go where are the Royal Mail's problem, not a form's.
+fn uk_postcode(code: &str) -> bool {
+    let compact: String = code.replace(' ', "").to_uppercase();
+    let characters: Vec<char> = compact.chars().collect();
+    if !(5..=7).contains(&characters.len()) {
+        return false;
+    }
+    let (outward, inward) = characters.split_at(characters.len() - 3);
+    if !inward[0].is_ascii_digit() || !inward[1].is_ascii_alphabetic() || !inward[2].is_ascii_alphabetic() {
+        return false;
+    }
+    if !outward[0].is_ascii_alphabetic() {
+        return false;
+    }
+    let mut position = 1;
+    if position < outward.len() && outward[position].is_ascii_alphabetic() {
+        position += 1;
+    }
+    if position >= outward.len() || !outward[position].is_ascii_digit() {
+        return false;
+    }
+    position += 1;
+    return outward.len() - position <= 1 && outward[position..].iter().all(|character| character.is_ascii_alphanumeric());
+}
+
+/// Whether the text is a postal code shaped the way the given country shapes
+/// them. Knows us, ca, gb, de, fr, nl and au; a country it does not know is
+/// an error rather than a false, because "no" and "no idea" are different
+/// answers and a form should not confuse them.
+pub fn postal_code(text: &String, country: &String) -> Result<bool, String> {
+    let code = text.trim();
+    let characters: Vec<char> = code.chars().collect();
+    let all_digits = |chars: &[char]| chars.iter().all(|character| character.is_ascii_digit());
+
+    let fits = match country.trim().to_lowercase().as_str() {
+        // 12345, with the optional four-digit ZIP+4 tail.
+        "us" => (characters.len() == 5 && all_digits(&characters)) || (characters.len() == 10 && all_digits(&characters[..5]) && characters[5] == '-' && all_digits(&characters[6..])),
+        // A1A 1A1, with the space optional because people leave it out.
+        "ca" => {
+            let compact: Vec<char> = characters.iter().filter(|character| **character != ' ').copied().collect();
+            compact.len() == 6 && compact.iter().enumerate().all(|(position, character)| if position % 2 == 0 { character.is_ascii_alphabetic() } else { character.is_ascii_digit() })
+        }
+        "gb" => uk_postcode(code),
+        "de" | "fr" => characters.len() == 5 && all_digits(&characters),
+        // 1234 AB, with the space optional.
+        "nl" => {
+            let compact: Vec<char> = characters.iter().filter(|character| **character != ' ').copied().collect();
+            compact.len() == 6 && all_digits(&compact[..4]) && compact[4..].iter().all(|character| character.is_ascii_alphabetic())
+        }
+        "au" => characters.len() == 4 && all_digits(&characters),
+        unknown => return Err(format!("validate_postal_code: no rules for country '{}' - it knows us, ca, gb, de, fr, nl and au", unknown)),
+    };
+    return Ok(fits);
 }
 
 /// Whether the text is a colour a stylesheet would accept: a hash and then
@@ -337,6 +538,117 @@ mod tests {
         assert!(json(&text("[1, 2, 3]")));
         assert!(!json(&text("{a: 1}")));
         assert!(!json(&text("not json")));
+    }
+
+    #[test]
+    fn the_bare_luhn_check_takes_any_digit_string() {
+        assert!(luhn(&text("4539578763621486")));
+        assert!(luhn(&text("4539 5787 6362-1486")));
+        // A valid IMEI - fifteen digits, outside any card's shape.
+        assert!(luhn(&text("490154203237518")));
+        // Short identifiers still checksum.
+        assert!(luhn(&text("79927398713")));
+        assert!(!luhn(&text("4539578763621487")));
+        assert!(!luhn(&text("490154203237519")));
+        assert!(!luhn(&text("4539a578763621486")));
+        assert!(!luhn(&text("")));
+        assert!(!luhn(&text(" - ")));
+    }
+
+    #[test]
+    fn an_iban_passes_the_mod_97_check_at_its_country_length() {
+        assert!(iban(&text("DE89370400440532013000")));
+        assert!(iban(&text("DE89 3704 0044 0532 0130 00")));
+        assert!(iban(&text("de89370400440532013000")));
+        assert!(iban(&text("GB29NWBK60161331926819")));
+        // One digit off fails the checksum.
+        assert!(!iban(&text("DE89370400440532013001")));
+        // The right checksum at the wrong length is still wrong.
+        assert!(!iban(&text("DE8937040044053201300")));
+        // Canada has no IBAN, and made-up countries have none either.
+        assert!(!iban(&text("CA89370400440532013000")));
+        assert!(!iban(&text("XX89370400440532013000")));
+        assert!(!iban(&text("DE8937040044053201300!")));
+        assert!(!iban(&text("")));
+    }
+
+    #[test]
+    fn a_mac_address_is_six_pairs_with_one_separator() {
+        assert!(mac_address(&text("00:1A:2B:3C:4D:5E")));
+        assert!(mac_address(&text("00-1a-2b-3c-4d-5e")));
+        assert!(!mac_address(&text("00:1A-2B:3C:4D:5E")));
+        assert!(!mac_address(&text("00:1A:2B:3C:4D")));
+        assert!(!mac_address(&text("00:1A:2B:3C:4D:5E:6F")));
+        assert!(!mac_address(&text("00:1A:2B:3C:4D:GG")));
+        assert!(!mac_address(&text("001A2B3C4D5E")));
+    }
+
+    #[test]
+    fn a_phone_number_is_seven_to_fifteen_digits_under_its_formatting() {
+        assert!(phone_loose(&text("+1 (403) 555-0123")));
+        assert!(phone_loose(&text("555-0123")));
+        assert!(phone_loose(&text("+441632960961")));
+        assert!(phone_loose(&text("1.403.555.0123")));
+        assert!(!phone_loose(&text("555-012")));
+        assert!(!phone_loose(&text("1234567890123456")));
+        assert!(!phone_loose(&text("555-CALL")));
+        assert!(!phone_loose(&text("")));
+    }
+
+    #[test]
+    fn an_isbn_checksums_in_both_its_shapes() {
+        assert!(isbn(&text("0306406152")));
+        assert!(isbn(&text("0-306-40615-2")));
+        assert!(isbn(&text("9780306406157")));
+        assert!(isbn(&text("978-0-306-40615-7")));
+        assert!(isbn(&text("978 0 306 40615 7")));
+        // An X in the last place of an ISBN-10 stands for ten.
+        assert!(isbn(&text("097522980X")));
+        assert!(isbn(&text("097522980x")));
+        assert!(!isbn(&text("0306406153")));
+        assert!(!isbn(&text("9780306406158")));
+        assert!(!isbn(&text("030640615")));
+        assert!(!isbn(&text("X306406152")));
+        assert!(!isbn(&text("")));
+    }
+
+    fn postal(code: &str, country: &str) -> bool {
+        return postal_code(&text(code), &text(country)).expect("a known country");
+    }
+
+    #[test]
+    fn each_country_recognises_its_own_postal_codes() {
+        assert!(postal("12345", "us"));
+        assert!(postal("12345-6789", "us"));
+        assert!(!postal("1234", "us"));
+        assert!(!postal("12345-678", "us"));
+        assert!(postal("T2N 1N4", "ca"));
+        assert!(postal("t2n 1n4", "ca"));
+        assert!(postal("T2N1N4", "ca"));
+        assert!(!postal("T2N-1N4", "ca"));
+        assert!(!postal("123 456", "ca"));
+        assert!(postal("SW1A 1AA", "gb"));
+        assert!(postal("sw1a 1aa", "gb"));
+        assert!(postal("M1 1AE", "gb"));
+        assert!(postal("EC1A1BB", "gb"));
+        assert!(!postal("12345", "gb"));
+        assert!(postal("10115", "de"));
+        assert!(postal("75008", "fr"));
+        assert!(!postal("1011", "de"));
+        assert!(postal("1234 AB", "nl"));
+        assert!(postal("1234ab", "nl"));
+        assert!(!postal("12345", "nl"));
+        assert!(postal("2000", "au"));
+        assert!(!postal("200", "au"));
+    }
+
+    #[test]
+    fn an_unknown_country_is_an_error_not_a_false() {
+        let complaint = postal_code(&text("12345"), &text("jp")).unwrap_err();
+        assert!(complaint.contains("no rules for country 'jp'"));
+        assert!(complaint.contains("us, ca, gb, de, fr, nl and au"));
+        // Country codes are read case-insensitively.
+        assert!(postal_code(&text("T2N 1N4"), &text("CA")).expect("a known country"));
     }
 }
 

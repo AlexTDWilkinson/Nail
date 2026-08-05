@@ -1,0 +1,46 @@
+// E2E: the coverage waves in one program. Colors, geography, json shaping,
+// roman numerals, checksums, path safety, hex arithmetic, csv text helpers,
+// probability, markdown, and charts all answer with pinned values.
+
+// Colors mix, and text picks its own contrast.
+print(danger(color_mix(`#000000`, `#ffffff`, 0.5)));
+print(danger(color_text_on(`#ffffff`)));
+
+// Geography knows its winds and its distances.
+print(danger(geo_compass_point(347.0)));
+print(danger(math_round_to(danger(geo_distance_km(0.0, 0.0, 0.0, 90.0)), 1)));
+
+// JSON merges deeply with sorted keys.
+print(danger(json_merge(`{"b":2}`, `{"a":1}`)));
+
+// Numbers for people: numerals and clocks.
+print(danger(format_roman(1994)));
+print(format_clock(3661));
+
+// Checksums accept the real thing.
+print(validate_isbn(`978-0-306-40615-7`));
+print(validate_iban(`DE89 3704 0044 0532 0130 00`));
+
+// Paths cannot climb out, and they know their depth.
+print(path_within(`files`, `files/../../x`));
+print(path_depth(`a/b/c.txt`));
+
+// Bytes and bits do arithmetic.
+print(danger(hex_xor(`ff00`, `0f0f`)));
+print(bits_parity(7));
+
+// CSV text answers without a struct in sight.
+print(string_join(danger(csv_headers(`name,city\nJane,Calgary`)), `|`));
+
+// Probability lands on the textbook numbers.
+print(danger(stats_normal_cdf(0.0, 0.0, 1.0)));
+print(danger(stats_sample_size_for_proportion(0.03, 0.95)));
+print(math_erf(0.0));
+print(danger(math_round_to(danger(stats_binomial_pmf(5, 10, 0.5)), 8)));
+
+// Markdown counts its words.
+print(markdown_word_count(`# Hi\n\ntwo words here`));
+
+// Drawings and charts are documents with the right shapes inside.
+print(string_contains(danger(draw_star(50.0, 50.0, 5, 40.0, 16.0, `gold`)), `polygon`));
+print(string_contains(danger(chart_pie([`a`, `b`], [1.0, 3.0])), `svg`));

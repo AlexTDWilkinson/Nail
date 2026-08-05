@@ -34,5 +34,14 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "format_list" => "std_lib::format::list", (items: [s], conjunction: s) -> s,
             "Joins items the way a sentence would, as `a, b and c`, using the given conjunction.",
             "sentence:s = format_list([`a`, `b`, `c`], `and`);";
+        "format_roman" => "std_lib::format::roman", (value: i) -> (s!e),
+            "A number from 1 to 3999 as a Roman numeral, so 1994 becomes MCMXCIV. Errors outside that range, which Roman numerals cannot write.",
+            "year:s = danger(format_roman(1994));";
+        "format_clock" => "std_lib::format::clock", (seconds: i) -> s,
+            "A duration in seconds as clock digits: m:ss under an hour, h:mm:ss from there, so 125 becomes 2:05. Negatives get a leading minus.",
+            "elapsed:s = format_clock(3661);";
+        "format_significant" => "std_lib::format::significant", (value: f, figures: i) -> (s!e),
+            "Rounds a number to the given significant figures for display, so 1234.5 at 2 becomes 1200. Errors unless figures is 1 to 12.",
+            "reading:s = danger(format_significant(1234.5, 2));";
     }
 }

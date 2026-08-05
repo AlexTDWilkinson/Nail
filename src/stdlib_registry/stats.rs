@@ -112,5 +112,29 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "stats_quartiles" => "std_lib::stats::quartiles", (values: (&[f])) -> ([f]!e),
             "Returns the 25th, 50th and 75th percentiles as a three-value array, the box of a boxplot in one call. Errors on an empty array.",
             "box:[f] = danger(stats_quartiles(latencies));";
+        "stats_normal_cdf" => "std_lib::stats::normal_cdf", (value: f, mean: f, stddev: f) -> (f!e),
+            "Returns the probability that a normal draw lands at or below the value. Errors unless the standard deviation is positive.",
+            "share:f = danger(stats_normal_cdf(1.96, 0.0, 1.0));";
+        "stats_normal_inverse" => "std_lib::stats::normal_inverse", (probability: f, mean: f, stddev: f) -> (f!e),
+            "Returns the value below which the given share of a normal distribution falls, the inverse of stats_normal_cdf. Errors unless the probability is strictly between 0 and 1 and the standard deviation is positive.",
+            "cutoff:f = danger(stats_normal_inverse(0.975, 0.0, 1.0));";
+        "stats_normal_pdf" => "std_lib::stats::normal_pdf", (value: f, mean: f, stddev: f) -> (f!e),
+            "Returns the height of the normal bell curve at the value, a density rather than a probability. Errors unless the standard deviation is positive.",
+            "height:f = danger(stats_normal_pdf(0.0, 0.0, 1.0));";
+        "stats_binomial_pmf" => "std_lib::stats::binomial_pmf", (successes: i, trials: i, probability: f) -> (f!e),
+            "Returns the probability of exactly that many successes in the trials, computed in log space so a thousand trials cannot overflow. Errors unless the successes run from 0 to the trials and the probability from 0.0 to 1.0.",
+            "chance:f = danger(stats_binomial_pmf(5, 10, 0.5));";
+        "stats_binomial_cdf" => "std_lib::stats::binomial_cdf", (successes: i, trials: i, probability: f) -> (f!e),
+            "Returns the probability of at most that many successes in the trials, the pmf summed in log space. Errors unless the successes run from 0 to the trials and the probability from 0.0 to 1.0.",
+            "chance:f = danger(stats_binomial_cdf(5, 10, 0.5));";
+        "stats_poisson_pmf" => "std_lib::stats::poisson_pmf", (events: i, rate: f) -> (f!e),
+            "Returns the probability of exactly that many events arriving at the given average rate, computed in log space so large counts cannot overflow. Errors unless the rate is positive and the count nonnegative.",
+            "chance:f = danger(stats_poisson_pmf(2, 3.0));";
+        "stats_poisson_cdf" => "std_lib::stats::poisson_cdf", (events: i, rate: f) -> (f!e),
+            "Returns the probability of at most that many events arriving at the given average rate, the pmf summed in log space. Errors unless the rate is positive and the count nonnegative.",
+            "chance:f = danger(stats_poisson_cdf(2, 3.0));";
+        "stats_sample_size_for_proportion" => "std_lib::stats::sample_size_for_proportion", (margin_of_error: f, confidence: f) -> (i!e),
+            "Returns how many people to survey so an estimated proportion lands within the margin of error at the given confidence, the classic poll planning number, rounded up. Errors unless both the margin and the confidence are strictly between 0 and 1.",
+            "respondents:i = danger(stats_sample_size_for_proportion(0.03, 0.95));";
     }
 }

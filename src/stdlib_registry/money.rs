@@ -33,7 +33,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Divides an amount in proportion to the given weights, with every cent accounted for and the earliest weights taking any leftover.",
             "shares:a:i = danger(money_allocate(1000, [2, 1]));";
         "money_loan_payment" => "std_lib::money::loan_payment", (principal_cents: i, annual_rate_percent: f, months: i) -> (i!e),
-            "The fixed monthly payment that clears a loan, in cents - the amortization formula every mortgage and car payment comes from. The rate is the yearly percentage as people quote it: 6.0 means six percent.",
+            "The fixed monthly payment that clears a loan, in cents, with the quoted rate compounded monthly (the United States convention, and what most loan calculators mean). Canadian mortgages compound twice a year, so use money_loan_payment_compounded with 2 for those. The rate is the yearly percentage as people quote it: 6.0 means six percent.",
             "monthly:i = danger(money_loan_payment(20000000, 6.0, 360));";
+        "money_loan_payment_compounded" => "std_lib::money::loan_payment_compounded", (principal_cents: i, annual_rate_percent: f, months: i, compounds_per_year: i) -> (i!e),
+            "The same fixed monthly payment when the quoted rate compounds some other number of times a year. Canada compounds mortgages twice a year by law, so compounds_per_year is 2 there. 12 matches money_loan_payment exactly, and 365 approximates a daily-compounding lender.",
+            "monthly:i = danger(money_loan_payment_compounded(20000000, 6.0, 360, 2));";
     }
 }

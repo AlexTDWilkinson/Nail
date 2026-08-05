@@ -40,5 +40,26 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "path_matches_glob" => "std_lib::path::matches_glob", (pattern: (&s), path: (&s)) -> b,
             "Whether a path matches a shell glob pattern, where * stays inside one segment, ** crosses segments, ? is one character and [abc] is one of those listed.",
             "is_test:b = path_matches_glob(`tests/**/*.nail`, path);";
+        "path_depth" => "std_lib::path::depth", (path: s) -> i,
+            "Returns how many segments the path has below its root or its start, counted after normalizing, so a/b/c.txt is 3 and / is 0.",
+            "levels:i = path_depth(`a/b/c.txt`);";
+        "path_segments" => "std_lib::path::segments", (path: s) -> [s],
+            "Returns the pieces of the path between separators, with the empties a doubled or trailing separator would make dropped.",
+            "parts:a:s = path_segments(`/srv/app/logs`);";
+        "path_is_hidden" => "std_lib::path::is_hidden", (path: s) -> b,
+            "Returns true when the file name starts with a dot, judged on the final component only.",
+            "hidden:b = path_is_hidden(`.env`);";
+        "path_within" => "std_lib::path::within", (base: s, candidate: s) -> b,
+            "Returns true when the candidate stays inside the base once both are normalized, so a .. that climbs out is caught. Pure string work, no filesystem access.",
+            "safe:b = path_within(`/srv/files`, requested);";
+        "path_with_stem" => "std_lib::path::with_stem", (path: s, stem: s) -> (s!e),
+            "Returns the path with a different file name but the same directory and extension. Errors on an empty stem or a path with no file name.",
+            "renamed:s = danger(path_with_stem(`logs/app.log`, `backup`));";
+        "path_sanitize_filename" => "std_lib::path::sanitize_filename", (name: s) -> s,
+            "Makes untrusted text safe as a single file name: separators, dot-dot, control characters, characters Windows refuses and leading dots become underscores, and empty input gives file.",
+            "stored:s = path_sanitize_filename(upload_name);";
+        "path_common_prefix" => "std_lib::path::common_prefix", (paths: [s]) -> s,
+            "Returns the longest directory prefix the paths share, whole segments only, and an empty string when nothing is shared.",
+            "shared:s = path_common_prefix(files);";
     }
 }

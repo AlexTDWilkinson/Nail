@@ -98,6 +98,7 @@ mod bits;
 mod cache;
 mod chart;
 mod code;
+mod color;
 mod compress;
 mod convert;
 mod crypto;
@@ -113,6 +114,7 @@ mod float;
 mod feed;
 mod format;
 mod fs;
+mod geo;
 mod hashmap;
 mod hex;
 mod i18n;
@@ -321,6 +323,8 @@ stdlib_modules! {
     Float => "std_lib::float", "float_",
     Format => "std_lib::format", "format_",
     Convert => "std_lib::convert", "convert_",
+    Color => "std_lib::color", "color_",
+    Geo => "std_lib::geo", "geo_",
     Array => "std_lib::array", "array_",
     Math => "std_lib::math", "math_",
     Linalg => "std_lib::linalg", "linalg_",
@@ -453,6 +457,7 @@ lazy_static! {
         base32::register(&mut m);
         binary::register(&mut m);
         cache::register(&mut m);
+        color::register(&mut m);
         compress::register(&mut m);
         convert::register(&mut m);
         crypto::register(&mut m);
@@ -468,6 +473,7 @@ lazy_static! {
         feed::register(&mut m);
         format::register(&mut m);
         fs::register(&mut m);
+        geo::register(&mut m);
         hashmap::register(&mut m);
         hex::register(&mut m);
         i18n::register(&mut m);
@@ -798,6 +804,17 @@ lazy_static! {
                 let mut fields = HashMap::new();
                 fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
                 fields.insert("path".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // GEO_Point struct
+        m.insert("GEO_Point", StdlibTypeInfo {
+            name: "GEO_Point".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("latitude".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("longitude".to_string(), NailDataTypeDescriptor::Float);
                 fields
             }
         });
@@ -1606,6 +1623,7 @@ mod stdlib_types_drift_tests {
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Websocket>("HTTP_Websocket");
         assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Handle>("PROCESS_Handle");
         assert_matches_registry::<crate::parser::std_lib::sched::SCHED_Job>("SCHED_Job");
+        assert_matches_registry::<crate::parser::std_lib::geo::GEO_Point>("GEO_Point");
         #[cfg(feature = "postgres")]
         {
             assert_matches_registry::<crate::parser::std_lib::postgres::DB_Postgres>("DB_Postgres");
@@ -1629,7 +1647,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Redis", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Redis", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

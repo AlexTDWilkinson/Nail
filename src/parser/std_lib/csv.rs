@@ -172,6 +172,102 @@ pub fn parse(text: String, options: CSV_Options) -> Result<Vec<DashMap<String, S
     Ok(rows)
 }
 
+/// A quote-aware reader over CSV text with the plain comma defaults, plus the
+/// header row it starts with. Shared by the text-level helpers that take no
+/// options, so they all read quoting the same way csv_parse does.
+fn open_text<'text>(text: &'text str, function: &str) -> Result<(csv::Reader<&'text [u8]>, csv::StringRecord), String> {
+    if text.trim().is_empty() {
+        return Err(format!("{}: the text is empty, so there is no header row", function));
+    }
+    let mut reader = csv::ReaderBuilder::new().flexible(true).from_reader(text.as_bytes());
+    let header_row = reader.headers().map_err(|e| format!("{}: could not read the header row: {}", function, e))?.clone();
+    return Ok((reader, header_row));
+}
+
+/// The position of a named column, or an error naming the missing column and
+/// listing the ones the text has.
+fn header_index(header_row: &csv::StringRecord, wanted: &str, function: &str) -> Result<usize, String> {
+    if let Some(index) = header_row.iter().position(|field| field == wanted) {
+        return Ok(index);
+    }
+    let known: Vec<String> = header_row.iter().map(|field| format!("'{}'", field)).collect();
+    return Err(format!("{}: there is no column named '{}', the columns are {}", function, wanted, known.join(", ")));
+}
+
+/// The first row's fields, which name the columns. Read by the same
+/// quote-aware reader as csv_parse, so a header holding a comma inside quotes
+/// stays one field.
+pub fn headers(text: String) -> Result<Vec<String>, String> {
+    let (_reader, header_row) = open_text(&text, "csv_headers")?;
+    return Ok(header_row.iter().map(|field| field.to_string()).collect());
+}
+
+/// How many data rows the text has, not counting the header row. A newline
+/// inside a quoted field does not add a row, which is exactly the count that
+/// counting the text's lines gets wrong.
+pub fn data_row_count(text: String) -> Result<i64, String> {
+    let (mut reader, _header_row) = open_text(&text, "csv_row_count")?;
+    let mut count: i64 = 0;
+    for result in reader.records() {
+        result.map_err(|e| format!("csv_row_count: could not read a row: {}", e))?;
+        count += 1;
+    }
+    return Ok(count);
+}
+
+/// One column's values as strings, found by header name. A row too short to
+/// reach the column contributes an empty string, matching how csv_parse treats
+/// ragged rows.
+pub fn column(text: String, header: String) -> Result<Vec<String>, String> {
+    let (mut reader, header_row) = open_text(&text, "csv_column")?;
+    let index = header_index(&header_row, &header, "csv_column")?;
+    let mut values = Vec::new();
+    for result in reader.records() {
+        let record = result.map_err(|e| format!("csv_column: could not read a row: {}", e))?;
+        values.push(record.get(index).unwrap_or("").to_string());
+    }
+    return Ok(values);
+}
+
+/// A single value by header name and zero-based data row index, so row 0 is
+/// the first row after the header.
+pub fn cell(text: String, header: String, row: i64) -> Result<String, String> {
+    let (mut reader, header_row) = open_text(&text, "csv_cell")?;
+    let index = header_index(&header_row, &header, "csv_cell")?;
+    let wanted = usize::try_from(row).map_err(|_| format!("csv_cell: the row cannot be negative, but it is {}", row))?;
+    let mut seen = 0usize;
+    for result in reader.records() {
+        let record = result.map_err(|e| format!("csv_cell: could not read a row: {}", e))?;
+        if seen == wanted {
+            return Ok(record.get(index).unwrap_or("").to_string());
+        }
+        seen += 1;
+    }
+    return Err(format!("csv_cell: there is no data row {}, the text has {} of them", wanted, seen));
+}
+
+/// A new CSV keeping only the named columns, in the order given. Read and
+/// written by the csv crate, so quoting is undone and redone properly rather
+/// than carried across by text surgery.
+pub fn select_columns(text: String, headers: Vec<String>) -> Result<String, String> {
+    if headers.is_empty() {
+        return Err("csv_select_columns: no column names were given, so there is nothing to keep".to_string());
+    }
+    let (mut reader, header_row) = open_text(&text, "csv_select_columns")?;
+    let indexes: Vec<usize> = headers.iter().map(|header| header_index(&header_row, header, "csv_select_columns")).collect::<Result<Vec<usize>, String>>()?;
+
+    let mut writer = csv::Writer::from_writer(Vec::new());
+    writer.write_record(&headers).map_err(|e| format!("csv_select_columns: could not write the header row: {}", e))?;
+    for result in reader.records() {
+        let record = result.map_err(|e| format!("csv_select_columns: could not read a row: {}", e))?;
+        let fields: Vec<&str> = indexes.iter().map(|index| record.get(*index).unwrap_or("")).collect();
+        writer.write_record(&fields).map_err(|e| format!("csv_select_columns: could not write a row: {}", e))?;
+    }
+
+    let bytes = writer.into_inner().map_err(|e| format!("csv_select_columns: could not finish writing: {}", e))?;
+    return String::from_utf8(bytes).map_err(|e| format!("csv_select_columns: the written text is not valid UTF-8: {}", e));
+}
+
 
 /// A cursor over a CSV file, so a file larger than memory can be walked in
 /// batches instead of being read into a string first.
@@ -421,5 +517,99 @@ mod writing_tests {
         let text = crate::parser::std_lib::fs::read_file(path.clone()).await.expect("the file we wrote");
         assert_eq!(text, "name,city\nAda,London\n");
         tokio::fs::remove_file(&path).await.expect("a removable file");
+    }
+}
+
+#[cfg(test)]
+mod text_helper_tests {
+    use super::*;
+
+    /// A document with every layer of quoting trouble: a quoted header, fields
+    /// holding commas, a doubled quote and a newline inside a field.
+    fn tricky_text() -> String {
+        return "name,\"city, region\",note\n\"Doe, Jane\",\"Calgary, AB\",\"said \"\"hi\"\"\"\nBob,\"London, UK\",\"one\ntwo\"\n".to_string();
+    }
+
+    #[test]
+    fn the_header_row_survives_quoted_commas() {
+        let found = headers(tricky_text()).expect("a header row");
+        assert_eq!(found, vec!["name".to_string(), "city, region".to_string(), "note".to_string()]);
+    }
+
+    #[test]
+    fn empty_text_has_no_header_row() {
+        assert!(headers(String::new()).unwrap_err().contains("empty"));
+        assert!(headers("  \n ".to_string()).unwrap_err().contains("empty"));
+        assert!(data_row_count(String::new()).unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn rows_are_counted_without_the_header() {
+        assert_eq!(data_row_count(tricky_text()).expect("countable rows"), 2);
+        assert_eq!(data_row_count("name,city\n".to_string()).expect("countable rows"), 0);
+    }
+
+    #[test]
+    fn a_newline_inside_quotes_does_not_add_a_row() {
+        assert_eq!(data_row_count("a,b\n\"one\ntwo\",x\n".to_string()).expect("countable rows"), 1);
+    }
+
+    #[test]
+    fn a_column_is_read_by_its_header() {
+        let cities = column(tricky_text(), "city, region".to_string()).expect("a named column");
+        assert_eq!(cities, vec!["Calgary, AB".to_string(), "London, UK".to_string()]);
+    }
+
+    #[test]
+    fn a_missing_column_error_lists_the_real_ones() {
+        let failure = column(tricky_text(), "country".to_string()).unwrap_err();
+        assert!(failure.contains("'country'"), "got: {}", failure);
+        assert!(failure.contains("'name'"), "got: {}", failure);
+        assert!(failure.contains("'city, region'"), "got: {}", failure);
+        assert!(failure.contains("'note'"), "got: {}", failure);
+    }
+
+    #[test]
+    fn a_cell_is_read_by_header_and_row() {
+        assert_eq!(cell(tricky_text(), "name".to_string(), 0).expect("a cell"), "Doe, Jane");
+        assert_eq!(cell(tricky_text(), "note".to_string(), 1).expect("a cell"), "one\ntwo");
+    }
+
+    #[test]
+    fn a_cell_outside_the_rows_says_how_many_there_are() {
+        let failure = cell(tricky_text(), "name".to_string(), 5).unwrap_err();
+        assert!(failure.contains("no data row 5"), "got: {}", failure);
+        assert!(failure.contains("2 of them"), "got: {}", failure);
+        assert!(cell(tricky_text(), "name".to_string(), -1).unwrap_err().contains("negative"));
+        assert!(cell(tricky_text(), "nope".to_string(), 0).unwrap_err().contains("'nope'"));
+    }
+
+    #[test]
+    fn selected_columns_come_back_in_the_order_named() {
+        let text = select_columns("name,city\n\"Doe, Jane\",Calgary\n".to_string(), vec!["city".to_string(), "name".to_string()]).expect("named columns");
+        assert_eq!(text, "city,name\nCalgary,\"Doe, Jane\"\n");
+    }
+
+    #[test]
+    fn a_selection_round_trips_through_the_reader() {
+        let text = select_columns(tricky_text(), vec!["note".to_string(), "name".to_string()]).expect("named columns");
+        let rows = parse(text, default_options()).expect("what was just written");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get("note").expect("the column").value().clone(), "said \"hi\"");
+        assert_eq!(rows[0].get("name").expect("the column").value().clone(), "Doe, Jane");
+        assert_eq!(rows[1].get("note").expect("the column").value().clone(), "one\ntwo");
+        assert_eq!(rows[1].get("name").expect("the column").value().clone(), "Bob");
+    }
+
+    #[test]
+    fn selecting_a_missing_column_is_an_error_naming_it() {
+        let failure = select_columns(tricky_text(), vec!["nope".to_string()]).unwrap_err();
+        assert!(failure.contains("'nope'"), "got: {}", failure);
+        assert!(failure.contains("'name'"), "got: {}", failure);
+    }
+
+    #[test]
+    fn selecting_no_columns_is_an_error() {
+        assert!(select_columns(tricky_text(), vec![]).unwrap_err().contains("no column names"));
     }
 }

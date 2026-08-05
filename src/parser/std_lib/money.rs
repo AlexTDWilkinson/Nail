@@ -287,34 +287,64 @@ mod tests {
     }
 }
 
-/// The fixed monthly payment that clears a loan - the amortization formula
-/// every mortgage and car payment comes from. The rate is the yearly
-/// percentage as people quote it: 6.0 means six percent.
-pub fn loan_payment(principal_cents: i64, annual_rate_percent: f64, months: i64) -> Result<i64, String> {
+fn check_loan(principal_cents: i64, annual_rate_percent: f64, months: i64, what: &str) -> Result<(), String> {
     if principal_cents < 0 {
-        return Err(format!("money_loan_payment: a loan of {} cents is not a loan", principal_cents));
+        return Err(format!("{}: a loan of {} cents is not a loan", what, principal_cents));
     }
     if months < 1 {
-        return Err(format!("money_loan_payment: {} months gives nothing to spread the loan over", months));
+        return Err(format!("{}: {} months gives nothing to spread the loan over", what, months));
     }
     if annual_rate_percent < 0.0 {
-        return Err(format!("money_loan_payment: a rate of {}% is negative - that is a gift, not a loan", annual_rate_percent));
+        return Err(format!("{}: a rate of {}% is negative, which is a gift and not a loan", what, annual_rate_percent));
     }
-    if annual_rate_percent == 0.0 {
-        return Ok(((principal_cents as f64) / (months as f64)).round() as i64);
+    return Ok(());
+}
+
+fn payment_from_monthly_rate(principal_cents: i64, monthly_rate: f64, months: i64) -> i64 {
+    if monthly_rate == 0.0 {
+        return ((principal_cents as f64) / (months as f64)).round() as i64;
     }
-    let monthly_rate = annual_rate_percent / 100.0 / 12.0;
     let growth = (1.0 + monthly_rate).powi(months as i32);
     let payment = principal_cents as f64 * monthly_rate * growth / (growth - 1.0);
-    return Ok(payment.round() as i64);
+    return payment.round() as i64;
+}
+
+/// The fixed monthly payment that clears a loan, with the quoted yearly rate
+/// compounded monthly. That is the United States convention, and the one most
+/// loan calculators mean. Canadian mortgages compound semi-annually by law,
+/// so for those use money_loan_payment_compounded with 2 compounds per year.
+/// The rate is the yearly percentage as people quote it: 6.0 means six percent.
+pub fn loan_payment(principal_cents: i64, annual_rate_percent: f64, months: i64) -> Result<i64, String> {
+    check_loan(principal_cents, annual_rate_percent, months, "money_loan_payment")?;
+    let monthly_rate = annual_rate_percent / 100.0 / 12.0;
+    return Ok(payment_from_monthly_rate(principal_cents, monthly_rate, months));
+}
+
+/// The same fixed monthly payment for a quoted rate that compounds some other
+/// number of times a year. Canada compounds mortgages twice a year, so
+/// compounds_per_year is 2 there. 12 gives the same answer as
+/// money_loan_payment, and 365 approximates daily-compounding lenders.
+pub fn loan_payment_compounded(principal_cents: i64, annual_rate_percent: f64, months: i64, compounds_per_year: i64) -> Result<i64, String> {
+    check_loan(principal_cents, annual_rate_percent, months, "money_loan_payment_compounded")?;
+    if !(1..=366).contains(&compounds_per_year) {
+        return Err(format!("money_loan_payment_compounded: {} compounds a year is not how any lender counts, use 1 to 366", compounds_per_year));
+    }
+    if annual_rate_percent == 0.0 {
+        return Ok(payment_from_monthly_rate(principal_cents, 0.0, months));
+    }
+    // The quoted rate compounds m times a year, so the true monthly rate is
+    // the one that grows to the same yearly factor in twelve steps.
+    let per_period = annual_rate_percent / 100.0 / compounds_per_year as f64;
+    let monthly_rate = (1.0 + per_period).powf(compounds_per_year as f64 / 12.0) - 1.0;
+    return Ok(payment_from_monthly_rate(principal_cents, monthly_rate, months));
 }
 
 #[cfg(test)]
 mod loan_tests {
-    use super::loan_payment;
+    use super::{loan_payment, loan_payment_compounded};
 
     #[test]
-    fn the_textbook_mortgage_comes_out_to_the_cent() {
+    fn the_textbook_us_mortgage_comes_out_to_the_cent() {
         // $200,000 at 6% over 30 years is the classic worked example: $1,199.10.
         assert_eq!(loan_payment(20_000_000, 6.0, 360).unwrap(), 119_910);
         // No interest is just division.
@@ -322,9 +352,24 @@ mod loan_tests {
     }
 
     #[test]
+    fn the_canadian_mortgage_compounds_semi_annually_and_pays_less() {
+        // Same $200,000 at 6% over 30 years, Canadian semi-annual compounding:
+        // published calculators land on $1,189.65.
+        let canadian = loan_payment_compounded(20_000_000, 6.0, 360, 2).unwrap();
+        assert_eq!(canadian, 118_965);
+        // Twelve compounds a year is exactly the US convention.
+        assert_eq!(loan_payment_compounded(20_000_000, 6.0, 360, 12).unwrap(), loan_payment(20_000_000, 6.0, 360).unwrap());
+        // More frequent compounding costs the borrower more.
+        assert!(loan_payment_compounded(20_000_000, 6.0, 360, 365).unwrap() > canadian);
+        assert_eq!(loan_payment_compounded(120_000, 0.0, 12, 2).unwrap(), 10_000);
+    }
+
+    #[test]
     fn nonsense_loans_are_refused() {
         assert!(loan_payment(-1, 5.0, 12).is_err());
         assert!(loan_payment(100, 5.0, 0).is_err());
         assert!(loan_payment(100, -5.0, 12).is_err());
+        assert!(loan_payment_compounded(100, 5.0, 12, 0).unwrap_err().contains("1 to 366"));
+        assert!(loan_payment_compounded(100, 5.0, 12, 1000).is_err());
     }
 }

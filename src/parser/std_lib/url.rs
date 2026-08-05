@@ -282,6 +282,82 @@ fn remove_dot_segments(path: &str) -> String {
     return built;
 }
 
+/// The host a URL points at, with any leading `www.` taken off - the name a
+/// program compares or displays. `https://www.example.com/a?b` is, for every
+/// practical purpose, a link to `example.com`.
+pub fn domain(text: String) -> Result<String, String> {
+    let parts = parse(text.clone()).map_err(|_| format!("url_domain: '{}' is not a URL", text))?;
+    if parts.host.is_empty() {
+        return Err(format!("url_domain: '{}' has no host to take a domain from", text));
+    }
+    return Ok(parts.host.strip_prefix("www.").unwrap_or(&parts.host).to_string());
+}
+
+/// The origin of a URL - scheme://host, with the port when the URL named one.
+/// This is the piece browsers compare for CORS and cookies, so two URLs with
+/// the same origin are "the same site" in the way that actually matters.
+pub fn origin(text: String) -> Result<String, String> {
+    let parts = parse(text.clone()).map_err(|_| format!("url_origin: '{}' is not a URL", text))?;
+    if parts.host.is_empty() {
+        return Err(format!("url_origin: '{}' has no host, so it has no origin", text));
+    }
+    let mut built = std::format!("{}://", parts.scheme);
+    // A host with colons in it is IPv6 and goes back in its brackets.
+    if parts.host.contains(':') {
+        built.push('[');
+        built.push_str(&parts.host);
+        built.push(']');
+    } else {
+        built.push_str(&parts.host);
+    }
+    if parts.port != 0 {
+        built.push_str(&std::format!(":{}", parts.port));
+    }
+    return Ok(built);
+}
+
+/// Whether the text is an absolute URL - one with a scheme and a host, so it
+/// can be fetched on its own. `/about` and `example.com/path` are not.
+pub fn is_absolute(text: String) -> bool {
+    return match parse(text) {
+        Ok(parts) => !parts.host.is_empty(),
+        Err(_) => false,
+    };
+}
+
+/// Whether a query field name is one of the tracking parameters analytics
+/// tools staple onto shared links.
+fn is_tracking_field(name: &str) -> bool {
+    let lowered = name.to_lowercase();
+    return lowered.starts_with("utm_") || matches!(lowered.as_str(), "fbclid" | "gclid" | "msclkid" | "mc_eid");
+}
+
+/// Removes the tracking parameters - utm_*, fbclid, gclid, msclkid, mc_eid -
+/// that analytics tools staple onto shared links, keeping every other query
+/// field in its original order. A URL with no query comes back unchanged.
+pub fn strip_tracking(text: String) -> Result<String, String> {
+    let mut parts = parse(text.clone()).map_err(|_| format!("url_strip_tracking: '{}' is not a URL", text))?;
+    if parts.query.is_empty() {
+        return Ok(text.trim().to_string());
+    }
+    let kept: Vec<&str> = parts.query.split('&').filter(|pair| !is_tracking_field(pair.split('=').next().unwrap_or(""))).collect();
+    parts.query = kept.join("&");
+    return Ok(format(&parts));
+}
+
+/// The path of a URL split into its slash-separated segments, each one
+/// percent-decoded. The root path `/` is an empty array, and a segment whose
+/// encoding is broken is kept as it was rather than guessed at.
+pub fn path_segments(text: String) -> Result<Vec<String>, String> {
+    let parts = parse(text.clone()).map_err(|_| format!("url_path_segments: '{}' is not a URL", text))?;
+    return Ok(parts
+        .path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| urlencoding::decode(segment).map(|decoded| decoded.to_string()).unwrap_or_else(|_| segment.to_string()))
+        .collect());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +456,56 @@ mod tests {
     fn a_trailing_slash_survives_resolution() {
         assert_eq!(joined("https://example.com/a/b/c", "../"), "https://example.com/a/");
         assert_eq!(joined("https://example.com/a/b/c", "./d/"), "https://example.com/a/b/d/");
+    }
+
+    #[test]
+    fn the_domain_is_the_host_without_its_www() {
+        assert_eq!(domain("https://www.example.com/a?b".to_string()).expect("a URL"), "example.com");
+        assert_eq!(domain("https://blog.example.com/post".to_string()).expect("a URL"), "blog.example.com");
+        assert_eq!(domain("HTTPS://WWW.Example.COM".to_string()).expect("a URL"), "example.com");
+        assert!(domain("mailto:alex@example.com".to_string()).unwrap_err().contains("no host"));
+        assert!(domain("example.com/path".to_string()).unwrap_err().contains("is not a URL"));
+    }
+
+    #[test]
+    fn the_origin_is_what_cors_compares() {
+        assert_eq!(origin("https://example.com/deep/path?q=1#top".to_string()).expect("a URL"), "https://example.com");
+        assert_eq!(origin("http://localhost:8080/health".to_string()).expect("a URL"), "http://localhost:8080");
+        assert_eq!(origin("http://[::1]:9000/".to_string()).expect("a URL"), "http://[::1]:9000");
+        assert!(origin("mailto:alex@example.com".to_string()).unwrap_err().contains("no origin"));
+        assert!(origin("/relative/path".to_string()).unwrap_err().contains("is not a URL"));
+    }
+
+    #[test]
+    fn absolute_means_a_scheme_and_a_host() {
+        assert!(is_absolute("https://example.com/path".to_string()));
+        assert!(is_absolute("http://localhost:8080".to_string()));
+        assert!(!is_absolute("/about".to_string()));
+        assert!(!is_absolute("example.com/path".to_string()));
+        assert!(!is_absolute("mailto:alex@example.com".to_string()));
+        assert!(!is_absolute("".to_string()));
+    }
+
+    #[test]
+    fn stripping_tracking_keeps_the_honest_parameters_in_order() {
+        let cleaned = strip_tracking("https://example.com/a?keep=1&utm_source=news&page=2&fbclid=abc123&sort=asc&utm_campaign=x".to_string()).expect("a URL");
+        assert_eq!(cleaned, "https://example.com/a?keep=1&page=2&sort=asc");
+        let all_trackers = strip_tracking("https://example.com/a?gclid=1&msclkid=2&mc_eid=3&UTM_Medium=4".to_string()).expect("a URL");
+        assert_eq!(all_trackers, "https://example.com/a");
+    }
+
+    #[test]
+    fn a_url_with_no_query_comes_back_unchanged() {
+        assert_eq!(strip_tracking("https://example.com/a/b#top".to_string()).expect("a URL"), "https://example.com/a/b#top");
+        assert!(strip_tracking("not a url".to_string()).unwrap_err().contains("is not a URL"));
+    }
+
+    #[test]
+    fn the_path_comes_apart_into_decoded_segments() {
+        assert_eq!(path_segments("https://example.com/blog/2026/post".to_string()).expect("a URL"), vec!["blog", "2026", "post"]);
+        assert_eq!(path_segments("https://example.com/a%20b/c%2Fd".to_string()).expect("a URL"), vec!["a b", "c/d"]);
+        assert!(path_segments("https://example.com/".to_string()).expect("a URL").is_empty());
+        assert!(path_segments("https://example.com".to_string()).expect("a URL").is_empty());
+        assert!(path_segments("no scheme here".to_string()).unwrap_err().contains("is not a URL"));
     }
 }

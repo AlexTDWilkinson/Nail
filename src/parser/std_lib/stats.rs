@@ -6,6 +6,8 @@
 //! an empty array, so every one returns a result rather than a number invented
 //! out of nothing.
 
+use super::math::erfc;
+
 /// Shared guard, so an empty array fails the same way everywhere.
 fn require_values(function: &str, values: &Vec<f64>) -> Result<(), String> {
     if values.is_empty() {
@@ -548,6 +550,237 @@ pub fn quartiles(values: &Vec<f64>) -> Result<Vec<f64>, String> {
     return Ok(vec![percentile(values, 0.25)?, percentile(values, 0.5)?, percentile(values, 0.75)?]);
 }
 
+/// The standard normal cdf, the probability of a draw at or below z.
+/// Routed through the complementary error function so both tails keep
+/// their relative accuracy instead of rounding to 0 or 1 early.
+fn standard_normal_cdf(z: f64) -> f64 {
+    return 0.5 * erfc(-z / std::f64::consts::SQRT_2);
+}
+
+/// The standard normal quantile: Acklam's rational starting guess, good to
+/// about nine digits on its own, then one Halley step against the cdf
+/// above so the pair round trips to machine precision. The caller
+/// guarantees the probability is strictly between 0 and 1.
+fn standard_normal_inverse(probability: f64) -> f64 {
+    const CENTER_NUM: [f64; 6] = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+    const CENTER_DEN: [f64; 5] = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+    const TAIL_NUM: [f64; 6] = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+    const TAIL_DEN: [f64; 4] = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+    const LOWER_EDGE: f64 = 0.02425;
+
+    let tail_estimate = |q: f64| {
+        return (((((TAIL_NUM[0] * q + TAIL_NUM[1]) * q + TAIL_NUM[2]) * q + TAIL_NUM[3]) * q + TAIL_NUM[4]) * q + TAIL_NUM[5])
+            / ((((TAIL_DEN[0] * q + TAIL_DEN[1]) * q + TAIL_DEN[2]) * q + TAIL_DEN[3]) * q + 1.0);
+    };
+
+    let mut z: f64;
+    if probability < LOWER_EDGE {
+        z = tail_estimate((-2.0 * probability.ln()).sqrt());
+    } else if probability <= 1.0 - LOWER_EDGE {
+        let q = probability - 0.5;
+        let r = q * q;
+        z = (((((CENTER_NUM[0] * r + CENTER_NUM[1]) * r + CENTER_NUM[2]) * r + CENTER_NUM[3]) * r + CENTER_NUM[4]) * r + CENTER_NUM[5]) * q
+            / (((((CENTER_DEN[0] * r + CENTER_DEN[1]) * r + CENTER_DEN[2]) * r + CENTER_DEN[3]) * r + CENTER_DEN[4]) * r + 1.0);
+    } else {
+        // ln_1p keeps 1 - p accurate right up against 1.
+        z = -tail_estimate((-2.0 * (-probability).ln_1p()).sqrt());
+    }
+
+    let density = (-0.5 * z * z).exp() / (2.0 * std::f64::consts::PI).sqrt();
+    if density > 0.0 {
+        let miss = standard_normal_cdf(z) - probability;
+        let step = miss / density;
+        let refined = z - step / (1.0 + z * step / 2.0);
+        if refined.is_finite() {
+            z = refined;
+        }
+    }
+    return z;
+}
+
+/// Shared guard for the normal distribution functions, so a flat or upside
+/// down bell fails the same way everywhere.
+fn require_positive_stddev(function: &str, stddev: f64) -> Result<(), String> {
+    if !(stddev > 0.0) {
+        return Err(format!("{}: the standard deviation is {} and must be positive", function, stddev));
+    }
+    return Ok(());
+}
+
+/// The probability that a draw from the given normal distribution lands at
+/// or below the value.
+pub fn normal_cdf(value: f64, mean: f64, stddev: f64) -> Result<f64, String> {
+    require_positive_stddev("stats_normal_cdf", stddev)?;
+    return Ok(standard_normal_cdf((value - mean) / stddev));
+}
+
+/// The value below which the given share of a normal distribution falls,
+/// the inverse of normal_cdf. The probability must be strictly between 0
+/// and 1, since no finite value has all of the distribution on one side.
+pub fn normal_inverse(probability: f64, mean: f64, stddev: f64) -> Result<f64, String> {
+    require_positive_stddev("stats_normal_inverse", stddev)?;
+    if !(probability > 0.0 && probability < 1.0) {
+        return Err(format!("stats_normal_inverse: {} is not a probability strictly between 0 and 1", probability));
+    }
+    return Ok(mean + stddev * standard_normal_inverse(probability));
+}
+
+/// The height of the normal bell curve at the value. A density rather than
+/// a probability, so it can top 1.0 when the curve is narrow.
+pub fn normal_pdf(value: f64, mean: f64, stddev: f64) -> Result<f64, String> {
+    require_positive_stddev("stats_normal_pdf", stddev)?;
+    let z = (value - mean) / stddev;
+    return Ok((-0.5 * z * z).exp() / (stddev * (2.0 * std::f64::consts::PI).sqrt()));
+}
+
+/// The natural log of the gamma function for positive arguments, via the
+/// Lanczos approximation, good to about ten digits. Only used for counts
+/// too large to sum logarithms over one at a time.
+fn ln_gamma(x: f64) -> f64 {
+    const COEFFICIENTS: [f64; 6] = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+    let mut series = 1.000000000190015;
+    for (index, coefficient) in COEFFICIENTS.iter().enumerate() {
+        series += coefficient / (x + 1.0 + index as f64);
+    }
+    let shifted = x + 5.5;
+    return -shifted + (x + 0.5) * shifted.ln() + (2.5066282746310005 * series / x).ln();
+}
+
+/// The natural log of n choose k, as a running sum of log ratios for
+/// everyday sizes and from the gamma function for counts too large to loop
+/// over. The caller guarantees 0 <= k <= n.
+fn ln_choose(n: i64, k: i64) -> f64 {
+    let smaller = k.min(n - k);
+    if smaller > 1_000_000 {
+        return ln_gamma(n as f64 + 1.0) - ln_gamma(k as f64 + 1.0) - ln_gamma((n - k) as f64 + 1.0);
+    }
+    let mut total = 0.0;
+    for step in 1..=smaller {
+        total += ((n - smaller + step) as f64 / step as f64).ln();
+    }
+    return total;
+}
+
+/// The natural log of a factorial, summed directly for everyday counts and
+/// from the gamma function beyond them. The caller guarantees the count is
+/// not negative.
+fn ln_factorial(count: i64) -> f64 {
+    if count > 1_000_000 {
+        return ln_gamma(count as f64 + 1.0);
+    }
+    let mut total = 0.0;
+    for step in 2..=count {
+        total += (step as f64).ln();
+    }
+    return total;
+}
+
+/// Shared guard for the binomial functions, so both check their bounds the
+/// same way.
+fn require_binomial(function: &str, successes: i64, trials: i64, probability: f64) -> Result<(), String> {
+    if trials < 0 {
+        return Err(format!("{}: the trial count is {} and cannot be negative", function, trials));
+    }
+    if successes < 0 || successes > trials {
+        return Err(format!("{}: {} successes cannot come out of {} trials, the count runs from 0 to the number of trials", function, successes, trials));
+    }
+    if !(0.0..=1.0).contains(&probability) {
+        return Err(format!("{}: {} is not a probability between 0.0 and 1.0", function, probability));
+    }
+    return Ok(());
+}
+
+/// The probability of exactly that many successes in that many independent
+/// tries, each succeeding with the given probability. Assembled in log
+/// space, so a thousand-trial case whose factorials would overflow any
+/// float comes out exact.
+pub fn binomial_pmf(successes: i64, trials: i64, probability: f64) -> Result<f64, String> {
+    require_binomial("stats_binomial_pmf", successes, trials, probability)?;
+    if probability == 0.0 {
+        return Ok(if successes == 0 { 1.0 } else { 0.0 });
+    }
+    if probability == 1.0 {
+        return Ok(if successes == trials { 1.0 } else { 0.0 });
+    }
+    let log_mass = ln_choose(trials, successes) + successes as f64 * probability.ln() + (trials - successes) as f64 * (-probability).ln_1p();
+    return Ok(log_mass.exp());
+}
+
+/// The probability of at most that many successes, the binomial pmf summed
+/// from zero upward. Each term follows from the last by one multiply in
+/// log space, so long runs stay cheap and never overflow.
+pub fn binomial_cdf(successes: i64, trials: i64, probability: f64) -> Result<f64, String> {
+    require_binomial("stats_binomial_cdf", successes, trials, probability)?;
+    if probability == 0.0 {
+        return Ok(1.0);
+    }
+    if probability == 1.0 {
+        return Ok(if successes == trials { 1.0 } else { 0.0 });
+    }
+    let log_odds = probability.ln() - (-probability).ln_1p();
+    let mut log_term = trials as f64 * (-probability).ln_1p();
+    let mut total = log_term.exp();
+    for hit in 1..=successes {
+        log_term += ((trials - hit + 1) as f64).ln() - (hit as f64).ln() + log_odds;
+        total += log_term.exp();
+    }
+    return Ok(total.min(1.0));
+}
+
+/// Shared guard for the Poisson functions, so both check their bounds the
+/// same way.
+fn require_poisson(function: &str, events: i64, rate: f64) -> Result<(), String> {
+    if !(rate > 0.0) {
+        return Err(format!("{}: the rate is {} and must be positive", function, rate));
+    }
+    if events < 0 {
+        return Err(format!("{}: the event count is {} and cannot be negative", function, events));
+    }
+    return Ok(());
+}
+
+/// The probability of exactly that many events when they arrive
+/// independently at the given average rate. Assembled in log space, so a
+/// large count cannot overflow the factorial on the way to a small answer.
+pub fn poisson_pmf(events: i64, rate: f64) -> Result<f64, String> {
+    require_poisson("stats_poisson_pmf", events, rate)?;
+    return Ok((events as f64 * rate.ln() - rate - ln_factorial(events)).exp());
+}
+
+/// The probability of at most that many events, the Poisson pmf summed
+/// from zero upward in log space.
+pub fn poisson_cdf(events: i64, rate: f64) -> Result<f64, String> {
+    require_poisson("stats_poisson_cdf", events, rate)?;
+    let mut log_term = -rate;
+    let mut total = log_term.exp();
+    for count in 1..=events {
+        log_term += rate.ln() - (count as f64).ln();
+        total += log_term.exp();
+    }
+    return Ok(total.min(1.0));
+}
+
+/// How many people a survey needs so an estimated proportion lands within
+/// the margin of error at the given confidence, assuming the worst case
+/// proportion of one half and rounding up. The classic poll planning
+/// number: a 3 percent margin at 95 percent confidence asks for 1068.
+pub fn sample_size_for_proportion(margin_of_error: f64, confidence: f64) -> Result<i64, String> {
+    if !(margin_of_error > 0.0 && margin_of_error < 1.0) {
+        return Err(format!("stats_sample_size_for_proportion: {} is not a margin of error strictly between 0 and 1", margin_of_error));
+    }
+    if !(confidence > 0.0 && confidence < 1.0) {
+        return Err(format!("stats_sample_size_for_proportion: {} is not a confidence level strictly between 0 and 1", confidence));
+    }
+    // The two-sided critical value, asked of the lower tail because
+    // (1 - confidence) / 2 stays exact where (1 + confidence) / 2 rounds.
+    let critical = -standard_normal_inverse((1.0 - confidence) / 2.0);
+    let required = (critical * critical * 0.25 / (margin_of_error * margin_of_error)).ceil();
+    if !(required <= i64::MAX as f64) {
+        return Err("stats_sample_size_for_proportion: the required sample size overflows a 64-bit integer".to_string());
+    }
+    return Ok(required as i64);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -943,5 +1176,143 @@ mod tests {
         assert!(histogram(&empty, 2).unwrap_err().contains("empty"));
         assert!(percentile_rank(&empty, 1.0).unwrap_err().contains("empty"));
         assert!(quartiles(&empty).unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn normal_cdf_matches_the_z_table() {
+        assert_eq!(normal_cdf(0.0, 0.0, 1.0).expect("a positive stddev"), 0.5, "the mean sits exactly at the median");
+        assert!((normal_cdf(1.96, 0.0, 1.0).expect("a positive stddev") - 0.9750021048517795).abs() < 1e-9);
+        assert!((normal_cdf(-1.96, 0.0, 1.0).expect("a positive stddev") - 0.0249978951482205).abs() < 1e-9);
+        assert!((normal_cdf(1.0, 0.0, 1.0).expect("a positive stddev") - 0.8413447460685429).abs() < 1e-9);
+        // Scaling and shifting: 115 under N(100, 15) is one stddev up.
+        assert!(close(normal_cdf(115.0, 100.0, 15.0).expect("a positive stddev"), normal_cdf(1.0, 0.0, 1.0).expect("a positive stddev")));
+    }
+
+    #[test]
+    fn normal_pdf_peaks_at_the_mean_and_scales_with_the_spread() {
+        assert!((normal_pdf(0.0, 0.0, 1.0).expect("a positive stddev") - 0.3989422804014327).abs() < 1e-12);
+        assert!((normal_pdf(1.0, 1.0, 2.0).expect("a positive stddev") - 0.19947114020071635).abs() < 1e-12);
+        assert!(normal_pdf(0.0, 0.0, 1.0).expect("a positive stddev") > normal_pdf(1.0, 0.0, 1.0).expect("a positive stddev"));
+    }
+
+    #[test]
+    fn normal_inverse_hits_the_critical_values_and_round_trips_the_cdf() {
+        assert!((normal_inverse(0.975, 0.0, 1.0).expect("in range") - 1.9599639845400545).abs() < 1e-8);
+        assert_eq!(normal_inverse(0.5, 0.0, 1.0).expect("in range"), 0.0);
+        assert!((normal_inverse(0.975, 100.0, 15.0).expect("in range") - 129.39945976810082).abs() < 1e-6);
+        for probability in [0.001, 0.025, 0.5, 0.975, 0.999] {
+            let cutoff = normal_inverse(probability, 0.0, 1.0).expect("in range");
+            let round_trip = normal_cdf(cutoff, 0.0, 1.0).expect("a positive stddev");
+            assert!((round_trip - probability).abs() < 1e-7, "failed at {}", probability);
+        }
+    }
+
+    #[test]
+    fn the_normal_functions_reject_a_flat_or_negative_spread() {
+        assert!(normal_cdf(1.0, 0.0, 0.0).unwrap_err().contains("must be positive"));
+        assert!(normal_pdf(1.0, 0.0, -1.0).unwrap_err().contains("must be positive"));
+        assert!(normal_inverse(0.5, 0.0, 0.0).unwrap_err().contains("must be positive"));
+    }
+
+    #[test]
+    fn normal_inverse_rejects_a_probability_at_or_beyond_the_ends() {
+        assert!(normal_inverse(0.0, 0.0, 1.0).unwrap_err().contains("strictly between"));
+        assert!(normal_inverse(1.0, 0.0, 1.0).unwrap_err().contains("strictly between"));
+        assert!(normal_inverse(-0.5, 0.0, 1.0).unwrap_err().contains("strictly between"));
+        assert!(normal_inverse(1.5, 0.0, 1.0).unwrap_err().contains("strictly between"));
+    }
+
+    #[test]
+    fn binomial_pmf_matches_the_coin_flip_table_to_the_last_digit() {
+        // 252 / 1024, a dyadic rational the log-space route must still nail.
+        assert!((binomial_pmf(5, 10, 0.5).expect("in range") - 0.24609375).abs() < 1e-12);
+        assert!((binomial_pmf(0, 10, 0.5).expect("in range") - 1.0 / 1024.0).abs() < 1e-15);
+        assert!((binomial_pmf(3, 5, 0.2).expect("in range") - 0.0512).abs() < 1e-12);
+        // Certain and impossible probabilities collapse to single outcomes.
+        assert!(close(binomial_pmf(0, 10, 0.0).expect("in range"), 1.0));
+        assert!(close(binomial_pmf(3, 10, 0.0).expect("in range"), 0.0));
+        assert!(close(binomial_pmf(10, 10, 1.0).expect("in range"), 1.0));
+        assert!(close(binomial_pmf(9, 10, 1.0).expect("in range"), 0.0));
+    }
+
+    #[test]
+    fn binomial_pmf_survives_a_thousand_trials_in_log_space() {
+        let central = binomial_pmf(500, 1000, 0.5).expect("in range");
+        assert!(central.is_finite() && central > 0.0);
+        // Stirling puts the central mass at sqrt(2 / (pi n)) to a few parts
+        // in ten thousand.
+        let stirling = (2.0 / (std::f64::consts::PI * 1000.0)).sqrt();
+        assert!((central - stirling).abs() / stirling < 1e-3);
+    }
+
+    #[test]
+    fn binomial_cdf_sums_the_masses_and_reaches_one() {
+        // 638 / 1024, another dyadic rational.
+        assert!((binomial_cdf(5, 10, 0.5).expect("in range") - 0.623046875).abs() < 1e-12);
+        assert!(close(binomial_cdf(10, 10, 0.3).expect("in range"), 1.0));
+        assert!(close(binomial_cdf(1000, 1000, 0.3).expect("in range"), 1.0));
+        assert!(close(binomial_cdf(0, 10, 0.0).expect("in range"), 1.0));
+        assert!(close(binomial_cdf(9, 10, 1.0).expect("in range"), 0.0));
+    }
+
+    #[test]
+    fn the_binomial_functions_reject_every_out_of_range_input() {
+        assert!(binomial_pmf(5, -1, 0.5).unwrap_err().contains("cannot be negative"));
+        assert!(binomial_pmf(-1, 10, 0.5).unwrap_err().contains("0 to the number of trials"));
+        assert!(binomial_pmf(11, 10, 0.5).unwrap_err().contains("0 to the number of trials"));
+        assert!(binomial_pmf(5, 10, 1.5).unwrap_err().contains("not a probability"));
+        assert!(binomial_pmf(5, 10, -0.1).unwrap_err().contains("not a probability"));
+        assert!(binomial_cdf(5, -1, 0.5).unwrap_err().contains("cannot be negative"));
+        assert!(binomial_cdf(11, 10, 0.5).unwrap_err().contains("0 to the number of trials"));
+        assert!(binomial_cdf(5, 10, 2.0).unwrap_err().contains("not a probability"));
+    }
+
+    #[test]
+    fn poisson_pmf_matches_the_closed_form() {
+        // Two events at rate 3 is 9/2 times e^-3.
+        assert!((poisson_pmf(2, 3.0).expect("in range") - 4.5 * (-3.0f64).exp()).abs() < 1e-12);
+        assert!((poisson_pmf(0, 3.0).expect("in range") - (-3.0f64).exp()).abs() < 1e-15);
+        // A large count at a small rate underflows gracefully instead of
+        // blowing up the factorial.
+        let far_tail = poisson_pmf(500, 2.0).expect("in range");
+        assert!(far_tail.is_finite() && far_tail >= 0.0);
+    }
+
+    #[test]
+    fn poisson_cdf_sums_the_masses_and_approaches_one() {
+        // At most two events at rate 3 is (1 + 3 + 9/2) times e^-3.
+        assert!((poisson_cdf(2, 3.0).expect("in range") - 8.5 * (-3.0f64).exp()).abs() < 1e-12);
+        assert!(close(poisson_cdf(100, 3.0).expect("in range"), 1.0));
+        assert!(poisson_cdf(0, 3.0).expect("in range") < poisson_cdf(1, 3.0).expect("in range"));
+    }
+
+    #[test]
+    fn the_poisson_functions_reject_bad_rates_and_negative_counts() {
+        assert!(poisson_pmf(2, 0.0).unwrap_err().contains("must be positive"));
+        assert!(poisson_pmf(2, -3.0).unwrap_err().contains("must be positive"));
+        assert!(poisson_pmf(-1, 3.0).unwrap_err().contains("cannot be negative"));
+        assert!(poisson_cdf(2, 0.0).unwrap_err().contains("must be positive"));
+        assert!(poisson_cdf(-1, 3.0).unwrap_err().contains("cannot be negative"));
+    }
+
+    #[test]
+    fn sample_size_gives_the_number_every_pollster_quotes() {
+        assert_eq!(sample_size_for_proportion(0.03, 0.95).expect("in range"), 1068);
+        assert_eq!(sample_size_for_proportion(0.05, 0.95).expect("in range"), 385);
+        assert_eq!(sample_size_for_proportion(0.01, 0.99).expect("in range"), 16588);
+        // A wider margin can never ask for more people.
+        let tight = sample_size_for_proportion(0.02, 0.95).expect("in range");
+        let loose = sample_size_for_proportion(0.04, 0.95).expect("in range");
+        assert!(loose < tight);
+    }
+
+    #[test]
+    fn sample_size_rejects_margins_and_confidences_outside_the_open_interval() {
+        assert!(sample_size_for_proportion(0.0, 0.95).unwrap_err().contains("margin of error"));
+        assert!(sample_size_for_proportion(1.0, 0.95).unwrap_err().contains("margin of error"));
+        assert!(sample_size_for_proportion(-0.03, 0.95).unwrap_err().contains("margin of error"));
+        assert!(sample_size_for_proportion(0.03, 0.0).unwrap_err().contains("confidence level"));
+        assert!(sample_size_for_proportion(0.03, 1.0).unwrap_err().contains("confidence level"));
+        assert!(sample_size_for_proportion(0.03, 1.5).unwrap_err().contains("confidence level"));
     }
 }

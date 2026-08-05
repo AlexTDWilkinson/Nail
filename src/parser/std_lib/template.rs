@@ -23,7 +23,8 @@
 //! A name the values do not hold is an error rather than an empty string. A
 //! missing value in a page is a bug every time, and it is much cheaper to find
 //! when the render says which name was missing than when someone notices the
-//! page has a blank in it.
+//! page has a blank in it. When a gap really is acceptable,
+//! `template_render_or` fills a missing name with a chosen fallback instead.
 
 use crate::parser::std_lib::string::push_escaped_html;
 use dashmap::DashMap;
@@ -197,27 +198,37 @@ fn read_nodes(template: &str, position: &mut usize, stop_at: Option<&str>) -> Re
     return Ok((nodes, None));
 }
 
-fn render_nodes(nodes: &[Node], values: &DashMap<String, String>, out: &mut String) -> Result<(), String> {
+/// One value into the output, escaped unless the tag asked for it raw.
+fn push_value(value: &str, escape: bool, out: &mut String) {
+    if escape {
+        for character in value.chars() {
+            push_escaped_html(character, out);
+        }
+    } else {
+        out.push_str(value);
+    }
+}
+
+/// Renders read nodes against the values. `fallback` is what a missing value
+/// becomes, and `None` makes a missing value the error described at the top of
+/// this file.
+fn render_nodes(nodes: &[Node], values: &DashMap<String, String>, fallback: Option<&str>, out: &mut String) -> Result<(), String> {
     for node in nodes {
         match node {
             Node::Literal(text) => out.push_str(text),
-            Node::Value { name, escape } => {
-                let found = values.get(name).ok_or_else(|| format!("the template uses `{}`, which the values do not have", name))?;
-                let value = found.value();
-                if *escape {
-                    for character in value.chars() {
-                        push_escaped_html(character, out);
-                    }
-                } else {
-                    out.push_str(value);
-                }
-            }
+            Node::Value { name, escape } => match values.get(name) {
+                Some(found) => push_value(found.value(), *escape, out),
+                None => match fallback {
+                    Some(text) => push_value(text, *escape, out),
+                    None => return Err(format!("the template uses `{}`, which the values do not have", name)),
+                },
+            },
             Node::Conditional { name, when_set, when_not_set } => {
                 // A name a conditional asks about may simply be absent - that is
                 // what "not set" means - so this one does not insist on it.
                 let taken = values.get(name).map(|found| is_set(found.value())).unwrap_or(false);
                 let branch = if taken { when_set } else { when_not_set };
-                render_nodes(branch, values, out)?;
+                render_nodes(branch, values, fallback, out)?;
             }
         }
     }
@@ -233,8 +244,32 @@ pub fn render(template: String, values: DashMap<String, String>) -> Result<Strin
         return Err(format!("template_render: a `{{{{{}}}}}` with nothing open before it", unexpected));
     }
     let mut out = String::with_capacity(template.len() + 64);
-    render_nodes(&nodes, &values, &mut out).map_err(|detail| format!("template_render: {}", detail))?;
+    render_nodes(&nodes, &values, None, &mut out).map_err(|detail| format!("template_render: {}", detail))?;
     return Ok(out);
+}
+
+/// Fills the values into the template like render, except that a name the
+/// values do not have becomes the fallback text instead of an error. For the
+/// page where a gap really is acceptable, such as a draft shown before every
+/// value exists. The fallback goes through the same escaping as a value. A
+/// template that cannot be read comes back unchanged, since nothing in it
+/// could be filled.
+pub fn render_or(template: String, values: DashMap<String, String>, fallback: String) -> String {
+    let mut position = 0;
+    let (nodes, ended_with) = match read_nodes(&template, &mut position, None) {
+        Ok(read) => read,
+        Err(_) => return template,
+    };
+    if ended_with.is_some() {
+        return template;
+    }
+    let mut out = String::with_capacity(template.len() + 64);
+    // With a fallback in hand a missing value cannot fail the render, so this
+    // error path exists only to keep the impossible case harmless.
+    if render_nodes(&nodes, &values, Some(&fallback), &mut out).is_err() {
+        return template;
+    }
+    return out;
 }
 
 /// Renders the same template once for each set of values and joins the results,
@@ -248,9 +283,23 @@ pub fn render_rows(template: String, rows: Vec<DashMap<String, String>>) -> Resu
     }
     let mut out = String::with_capacity(template.len() * rows.len().max(1));
     for (index, row) in rows.iter().enumerate() {
-        render_nodes(&nodes, row, &mut out).map_err(|detail| format!("template_render_rows: row {}: {}", index + 1, detail))?;
+        render_nodes(&nodes, row, None, &mut out).map_err(|detail| format!("template_render_rows: row {}: {}", index + 1, detail))?;
     }
     return Ok(out);
+}
+
+/// Whether the template mentions the named placeholder, in a value tag or as
+/// the name a conditional asks about. A template that cannot be read mentions
+/// nothing, so a broken one reports false.
+pub fn has(template: String, name: String) -> bool {
+    let mut position = 0;
+    let nodes = match read_nodes(&template, &mut position, None) {
+        Ok((nodes, _)) => nodes,
+        Err(_) => return false,
+    };
+    let mut found: Vec<String> = Vec::new();
+    collect_names(&nodes, &mut found);
+    return found.contains(&name);
 }
 
 /// The names a template asks for, so a program can check it holds them before
@@ -448,5 +497,52 @@ mod tests {
     #[test]
     fn listing_names_of_a_broken_template_is_an_error() {
         assert!(names_used("{{unclosed".to_string()).is_err());
+    }
+
+    #[test]
+    fn has_reports_the_names_a_template_mentions() {
+        assert!(has("Hello, {{name}}!".to_string(), "name".to_string()));
+        assert!(has("{{#if admin}}x{{/if}}".to_string(), "admin".to_string()));
+        assert!(has("{{#if admin}}{{admin_name}}{{/if}}".to_string(), "admin_name".to_string()));
+        assert!(has("<main>{{{body}}}</main>".to_string(), "body".to_string()));
+        assert!(!has("Hello, {{name}}!".to_string(), "other".to_string()));
+        assert!(!has("plain text".to_string(), "name".to_string()));
+    }
+
+    #[test]
+    fn a_broken_template_mentions_nothing() {
+        assert!(!has("{{unclosed".to_string(), "unclosed".to_string()));
+    }
+
+    #[test]
+    fn render_or_fills_a_missing_name_with_the_fallback() {
+        let out = render_or("Hello, {{name}}!".to_string(), values(&[]), "stranger".to_string());
+        assert_eq!(out, "Hello, stranger!");
+    }
+
+    #[test]
+    fn render_or_still_prefers_the_value_it_has() {
+        let out = render_or("Hello, {{name}}!".to_string(), values(&[("name", "Alex")]), "stranger".to_string());
+        assert_eq!(out, "Hello, Alex!");
+    }
+
+    #[test]
+    fn render_or_escapes_the_fallback_the_same_as_a_value() {
+        let escaped = render_or("<p>{{name}}</p>".to_string(), values(&[]), "<anon>".to_string());
+        assert_eq!(escaped, "<p>&lt;anon&gt;</p>");
+        let raw = render_or("<main>{{{body}}}</main>".to_string(), values(&[]), "<p>x</p>".to_string());
+        assert_eq!(raw, "<main><p>x</p></main>");
+    }
+
+    #[test]
+    fn render_or_leaves_conditionals_to_their_own_rules() {
+        let template = "{{#if admin}}yes{{else}}no{{/if}}".to_string();
+        assert_eq!(render_or(template, values(&[]), "FALLBACK".to_string()), "no");
+    }
+
+    #[test]
+    fn render_or_gives_a_broken_template_back_unchanged() {
+        assert_eq!(render_or("Hello, {{name".to_string(), values(&[]), "x".to_string()), "Hello, {{name");
+        assert_eq!(render_or("text{{/if}}".to_string(), values(&[]), "x".to_string()), "text{{/if}}");
     }
 }

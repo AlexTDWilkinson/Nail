@@ -193,5 +193,11 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "math_wrap" => "std_lib::math::wrap", (value: f, low: f, high: f) -> (f!e),
             "Folds a value into the range from low up to but not including high, the way an angle of 370 degrees is really 10. The low edge must be below the high.",
             "heading:f = danger(math_wrap(370.0, 0.0, 360.0));";
+        "math_erf" => "std_lib::math::erf", (value: f) -> f,
+            "Returns the error function, the share of a Gaussian bell within the given distance of its centre, running from -1 to 1. Odd, so erf(-x) is exactly -erf(x).",
+            "share:f = math_erf(1.0);";
+        "math_erfc" => "std_lib::math::erfc", (value: f) -> f,
+            "Returns the complementary error function 1 - erf, computed directly so the tiny tail values for large inputs keep their accuracy instead of cancelling to noise.",
+            "tail:f = math_erfc(3.0);";
     }
 }

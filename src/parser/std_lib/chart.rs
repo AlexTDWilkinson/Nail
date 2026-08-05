@@ -3,16 +3,17 @@
 //! The `draw_*` functions are enough to plot anything, and plotting anything
 //! comes to the same fifty lines every time: work out the range, leave room for
 //! the labels, scale each value into the plot area, remember that y grows
-//! downward. That is written here once for the three charts a program actually
-//! reaches for - a line over time, bars by category, and a scatter of pairs.
+//! downward. That is written here once for the charts a program actually
+//! reaches for - a line over time, bars by category, a scatter of pairs, a pie
+//! or donut of shares, and a histogram of a distribution.
 //!
 //! Each function returns a whole SVG document, so a chart is a value like any
 //! other string: written to a file with `fs_write`, or put straight in a page,
 //! since an inline `<svg>` needs no separate request and no image file.
 //!
-//! Anything more particular than these - a second axis, a legend, stacked bars -
-//! is built from `draw_*` directly. These are the common cases, not a
-//! replacement for drawing.
+//! Anything more particular than these - a second axis, stacked bars, a chart
+//! sized to a particular page - is built from `draw_*` directly. These are the
+//! common cases, not a replacement for drawing.
 
 use crate::parser::std_lib::draw;
 
@@ -27,6 +28,11 @@ const AXIS_COLOUR: &str = "#94a3b8";
 const GRID_COLOUR: &str = "#e2e8f0";
 const LABEL_COLOUR: &str = "#475569";
 const TITLE_COLOUR: &str = "#1e293b";
+
+/// The colours a multi-series chart cycles through, in the order they are
+/// dealt out. Eight distinct hues at matching weight, so the ninth slice
+/// reuses the first colour rather than running out.
+const SERIES_COLOURS: [&str; 8] = ["#2563eb", "#16a34a", "#dc2626", "#f59e0b", "#7c3aed", "#0d9488", "#db2777", "#64748b"];
 
 /// A value written for an axis label: whole numbers with no decimal point,
 /// anything else to a sensible number of places rather than seventeen.
@@ -289,6 +295,148 @@ pub fn sparkline(width: f64, height: f64, values: Vec<f64>, colour: String) -> R
     return draw::svg(width, height, String::new(), vec![draw::polyline(points, colour, 1.5)?]);
 }
 
+/// The one drawing behind both the pie and the donut: slices dealt colours
+/// from the fixed palette, a legend down the right with each share as a
+/// percentage, and for the donut a hole with the total written in it.
+fn round_chart(function_name: &str, labels: Vec<String>, values: Vec<f64>, with_hole: bool) -> Result<String, String> {
+    if labels.len() != values.len() {
+        return Err(format!("{}: there are {} labels and {} values, and each slice needs one of each", function_name, labels.len(), values.len()));
+    }
+    if values.is_empty() {
+        return Err(format!("{}: there were no slices to draw", function_name));
+    }
+    all_finite(&values, function_name)?;
+    if let Some(negative) = values.iter().find(|value| **value < 0.0) {
+        return Err(format!("{}: the value {} is negative, and a slice cannot be a negative share of the whole", function_name, tick_label(*negative)));
+    }
+    let total: f64 = values.iter().sum();
+    if total <= 0.0 {
+        return Err(format!("{}: the values add up to zero, so there are no shares to draw", function_name));
+    }
+
+    let width = 420.0;
+    let row_height = 22.0;
+    let legend_height = labels.len() as f64 * row_height;
+    let height = (legend_height + 48.0).max(260.0);
+    let center_x = 130.0;
+    let center_y = height / 2.0;
+    let radius = 100.0;
+    let legend_left = 270.0;
+    let first_row_baseline = center_y - legend_height / 2.0 + 14.0;
+
+    let mut shapes: Vec<String> = Vec::new();
+    let mut start_degrees = 0.0;
+    for (index, value) in values.iter().enumerate() {
+        let share = value / total;
+        let sweep = share * 360.0;
+        let colour = SERIES_COLOURS[index % SERIES_COLOURS.len()];
+        // A slice of nothing draws nothing, and the only slice of everything
+        // is the whole circle, which the arc arithmetic cannot express.
+        if sweep >= 359.999 {
+            shapes.push(draw::circle(center_x, center_y, radius, colour.to_string())?);
+        } else if sweep > 0.0 {
+            shapes.push(draw::wedge(center_x, center_y, radius, start_degrees, start_degrees + sweep, colour.to_string())?);
+        }
+        start_degrees += sweep;
+
+        let row_baseline = first_row_baseline + index as f64 * row_height;
+        shapes.push(draw::rect(legend_left, row_baseline - 10.0, 12.0, 12.0, colour.to_string(), 3.0)?);
+        let percentage = format!("{}%", tick_label(share * 100.0));
+        let entry = if labels[index].is_empty() { percentage } else { format!("{} {}", labels[index], percentage) };
+        shapes.push(draw::text(legend_left + 20.0, row_baseline, entry, 12.0, LABEL_COLOUR.to_string(), "start".to_string())?);
+    }
+
+    if with_hole {
+        // The hole is painted rather than cut, which works because the
+        // document's background is known to be white.
+        shapes.push(draw::circle(center_x, center_y, radius * 0.6, "#ffffff".to_string())?);
+        shapes.push(draw::text(center_x, center_y + 6.0, tick_label(total), 18.0, TITLE_COLOUR.to_string(), "middle".to_string())?);
+    }
+
+    return draw::svg(width, height, "#ffffff".to_string(), shapes);
+}
+
+/// A pie chart of shares of a whole, one slice per value, with a legend that
+/// names each slice and its percentage. Slices are dealt colours from a fixed
+/// palette in order, so the same data always gets the same colours.
+pub fn pie(labels: Vec<String>, values: Vec<f64>) -> Result<String, String> {
+    return round_chart("chart_pie", labels, values, false);
+}
+
+/// A pie with a hole, which reads the same way and leaves room for the one
+/// number a pie never shows: the total, written in the middle.
+pub fn donut(labels: Vec<String>, values: Vec<f64>) -> Result<String, String> {
+    return round_chart("chart_donut", labels, values, true);
+}
+
+/// A histogram of the values in equal width bins, drawn as touching bars with
+/// the bin edges written along the x axis. Where a bar chart shows values by
+/// category, this shows how one set of values is distributed.
+pub fn histogram(values: Vec<f64>, bins: i64) -> Result<String, String> {
+    if !(1..=100).contains(&bins) {
+        return Err(format!("chart_histogram: between 1 and 100 bins can be drawn, got {}", bins));
+    }
+    if values.is_empty() {
+        return Err("chart_histogram: there were no values to bin".to_string());
+    }
+    all_finite(&values, "chart_histogram")?;
+
+    let mut low = values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let mut high = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    if (high - low).abs() < f64::EPSILON {
+        // Every value the same: give the single bin a width to sit in.
+        low -= 0.5;
+        high += 0.5;
+    }
+
+    let bin_count = bins as usize;
+    let bin_width = (high - low) / bin_count as f64;
+    let mut counts = vec![0.0; bin_count];
+    for value in values.iter() {
+        // The top edge belongs to the last bin, so the largest value counts.
+        let index = (((value - low) / bin_width) as usize).min(bin_count - 1);
+        counts[index] += 1.0;
+    }
+    let highest_count = counts.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+    let width = 600.0;
+    let height = 300.0;
+    let plot_left = LEFT_MARGIN;
+    let plot_right = width - RIGHT_MARGIN;
+    let plot_bottom = height - BOTTOM_MARGIN;
+    let plot_top = TOP_MARGIN;
+
+    let mut shapes: Vec<String> = Vec::new();
+    value_axis(width, height, 0.0, highest_count, &mut shapes)?;
+
+    let slot = (plot_right - plot_left) / bin_count as f64;
+    for (index, count) in counts.iter().enumerate() {
+        if *count == 0.0 {
+            // An empty bin is an absence, not a sliver.
+            continue;
+        }
+        let top = draw::scale(*count, 0.0, highest_count, plot_bottom, plot_top)?;
+        // A hairline gap keeps neighbouring bars readable as separate bins.
+        let bar_width = (slot - 1.0).max(1.0);
+        shapes.push(draw::rect(plot_left + index as f64 * slot, top, bar_width, plot_bottom - top, SERIES_COLOURS[0].to_string(), 0.0)?);
+    }
+
+    // Every fifth edge or so is labelled, plus the last one, which is as many
+    // numbers as fit along the axis without touching.
+    let label_step = (bin_count + 4) / 5;
+    let mut edge = 0;
+    while edge <= bin_count {
+        let x = plot_left + edge as f64 * slot;
+        shapes.push(draw::text(x, plot_bottom + 18.0, tick_label(low + edge as f64 * bin_width), 11.0, LABEL_COLOUR.to_string(), "middle".to_string())?);
+        edge += label_step;
+    }
+    if (bin_count % label_step) != 0 {
+        shapes.push(draw::text(plot_right, plot_bottom + 18.0, tick_label(high), 11.0, LABEL_COLOUR.to_string(), "middle".to_string())?);
+    }
+
+    return draw::svg(width, height, "#ffffff".to_string(), shapes);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,5 +541,89 @@ mod tests {
         assert!(!chart.contains("<script>"), "got: {}", chart);
         assert!(chart.contains("&lt;script&gt;"));
         assert!(chart.contains("a &amp; b"));
+    }
+
+    #[test]
+    fn a_pie_has_a_slice_and_a_legend_entry_for_each_value() {
+        let chart = pie(labels(&["ads", "search", "direct"]), vec![1.0, 2.0, 1.0]).expect("a drawable chart");
+        assert!(chart.starts_with("<svg"), "got: {}", &chart[..40.min(chart.len())]);
+        assert!(chart.trim_end().ends_with("</svg>"));
+        assert_eq!(chart.matches("<path").count(), 3, "one wedge per value: {}", chart);
+        assert!(chart.contains("ads 25%"), "got: {}", chart);
+        assert!(chart.contains("search 50%"), "got: {}", chart);
+        // The palette is dealt out in order, so the first two slices get the
+        // first two colours.
+        assert!(chart.contains(SERIES_COLOURS[0]));
+        assert!(chart.contains(SERIES_COLOURS[1]));
+    }
+
+    #[test]
+    fn a_slice_that_is_the_whole_pie_is_drawn_as_a_circle() {
+        let chart = pie(labels(&["everything"]), vec![5.0]).expect("a drawable chart");
+        assert!(chart.contains("<circle"), "got: {}", chart);
+        assert_eq!(chart.matches("<path").count(), 0, "the whole circle needs no arc: {}", chart);
+        assert!(chart.contains("everything 100%"));
+    }
+
+    #[test]
+    fn a_slice_of_nothing_keeps_its_legend_entry_but_draws_no_wedge() {
+        let chart = pie(labels(&["a", "b", "c"]), vec![0.0, 3.0, 1.0]).expect("a drawable chart");
+        assert_eq!(chart.matches("<path").count(), 2, "got: {}", chart);
+        assert!(chart.contains("a 0%"), "got: {}", chart);
+    }
+
+    #[test]
+    fn a_pie_that_could_not_be_divided_is_an_error() {
+        assert!(pie(labels(&[]), vec![]).unwrap_err().contains("no slices"));
+        let mismatched = pie(labels(&["a", "b"]), vec![1.0]).unwrap_err();
+        assert!(mismatched.contains("each slice needs one of each"), "got: {}", mismatched);
+        let zero_sum = pie(labels(&["a", "b"]), vec![0.0, 0.0]).unwrap_err();
+        assert!(zero_sum.contains("add up to zero"), "got: {}", zero_sum);
+        let negative = pie(labels(&["a", "b"]), vec![3.0, -1.0]).unwrap_err();
+        assert!(negative.contains("negative"), "got: {}", negative);
+        assert!(pie(labels(&["a"]), vec![f64::NAN]).is_err());
+    }
+
+    #[test]
+    fn a_donut_is_a_pie_with_a_hole_and_the_total_in_the_middle() {
+        let chart = donut(labels(&["x", "y"]), vec![3.0, 7.0]).expect("a drawable chart");
+        assert_eq!(chart.matches("<path").count(), 2);
+        assert!(chart.contains("<circle cx=\"130\" cy=\"130\" r=\"60\" fill=\"#ffffff\"/>"), "the hole is painted over the middle: {}", chart);
+        assert!(chart.contains(">10<"), "the total is written in the hole: {}", chart);
+        assert!(donut(labels(&[]), vec![]).unwrap_err().contains("chart_donut"));
+    }
+
+    #[test]
+    fn a_histogram_bins_the_values_and_labels_the_edges() {
+        let chart = histogram(vec![1.0, 2.0, 3.0, 4.0], 2).expect("a drawable chart");
+        assert!(chart.starts_with("<svg"), "got: {}", &chart[..40.min(chart.len())]);
+        // Two bars plus the document background.
+        assert_eq!(chart.matches("<rect").count(), 3, "got: {}", chart);
+        assert!(chart.contains(">1<"), "the lowest edge is labelled: {}", chart);
+        assert!(chart.contains(">2.5<"), "the middle edge is labelled: {}", chart);
+        assert!(chart.contains(">4<"), "the highest edge is labelled: {}", chart);
+    }
+
+    #[test]
+    fn an_empty_bin_draws_no_bar() {
+        let chart = histogram(vec![1.0, 10.0], 3).expect("a drawable chart");
+        assert_eq!(chart.matches("<rect").count(), 3, "two occupied bins plus the background: {}", chart);
+    }
+
+    #[test]
+    fn values_that_are_all_the_same_still_bin() {
+        let chart = histogram(vec![5.0, 5.0, 5.0], 1).expect("a drawable chart");
+        assert_eq!(chart.matches("<rect").count(), 2, "one bar plus the background: {}", chart);
+        assert!(chart.contains(">4.5<"), "got: {}", chart);
+        assert!(chart.contains(">5.5<"), "got: {}", chart);
+    }
+
+    #[test]
+    fn a_histogram_that_could_not_be_binned_is_an_error() {
+        let too_few = histogram(vec![1.0, 2.0], 0).unwrap_err();
+        assert!(too_few.contains("between 1 and 100"), "got: {}", too_few);
+        assert!(histogram(vec![1.0, 2.0], 101).unwrap_err().contains("between 1 and 100"));
+        assert!(histogram(vec![], 10).unwrap_err().contains("no values to bin"));
+        assert!(histogram(vec![1.0, f64::NAN], 10).is_err());
     }
 }

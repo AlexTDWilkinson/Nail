@@ -143,10 +143,16 @@ pub fn strip_styles(text: String) -> String {
     return out;
 }
 
+/// The printed width of a piece of text, with escape sequences taking none.
+/// The measure every drawing in this module sizes itself by.
+fn visible_width(text: &str) -> usize {
+    return strip_styles(text.to_string()).chars().count();
+}
+
 /// How wide the text is once printed - the length a person sees, not the
 /// number of characters in the string. Escape sequences take no width.
 pub fn display_width(text: String) -> i64 {
-    return strip_styles(text).chars().count() as i64;
+    return visible_width(&text) as i64;
 }
 
 /// Whether standard output is a terminal rather than a file or a pipe. False
@@ -190,6 +196,115 @@ pub fn progress_bar(share: f64, width: i64) -> Result<String, String> {
     }
     bar.push(']');
     return Ok(bar);
+}
+
+/// The text inside a drawn box, sized to its widest line. Width is measured
+/// on what a person sees, so a coloured line does not stretch the frame.
+pub fn boxed(text: String) -> String {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let inner = lines.iter().map(|line| visible_width(line)).max().unwrap_or(0);
+
+    let rule = "─".repeat(inner + 2);
+    let mut out = String::new();
+    out.push('┌');
+    out.push_str(&rule);
+    out.push('┐');
+    for line in lines.iter() {
+        out.push_str("\n│ ");
+        out.push_str(line);
+        for _ in visible_width(line)..inner {
+            out.push(' ');
+        }
+        out.push_str(" │");
+    }
+    out.push('\n');
+    out.push('└');
+    out.push_str(&rule);
+    out.push('┘');
+    return out;
+}
+
+/// The text centered in a full ruled line of the given character, 80 columns
+/// wide. An empty text is a plain rule across all 80.
+pub fn banner(text: String, character: String) -> Result<String, String> {
+    if character.chars().count() != 1 {
+        return Err(format!("term_banner: the rule character must be exactly one character, but it is '{}'", character));
+    }
+    let columns = 80usize;
+    if text.is_empty() {
+        return Ok(character.repeat(columns));
+    }
+    let text_width = visible_width(&text);
+    // The text needs its two surrounding spaces and at least one rule
+    // character on each side, or the line is not a banner any more.
+    if text_width + 4 > columns {
+        return Err(format!("term_banner: the text is {} columns wide, which does not fit an 80 column banner", text_width));
+    }
+    let remaining = columns - text_width - 2;
+    let left = remaining / 2;
+    let right = remaining - left;
+    return Ok(format!("{} {} {}", character.repeat(left), text, character.repeat(right)));
+}
+
+/// Breaks text into lines no wider than the given number of printed columns,
+/// splitting between words. Line breaks already in the text are kept, and a
+/// single word wider than the limit is left whole rather than cut in half.
+fn wrap_visible(text: &str, width: usize) -> Vec<String> {
+    let mut wrapped: Vec<String> = Vec::new();
+    for existing_line in text.split('\n') {
+        let mut line = String::new();
+        let mut line_width = 0usize;
+        for word in existing_line.split_whitespace() {
+            let word_width = visible_width(word);
+            if line.is_empty() {
+                line.push_str(word);
+                line_width = word_width;
+            } else if line_width + 1 + word_width <= width {
+                line.push(' ');
+                line.push_str(word);
+                line_width += 1 + word_width;
+            } else {
+                wrapped.push(std::mem::take(&mut line));
+                line.push_str(word);
+                line_width = word_width;
+            }
+        }
+        wrapped.push(line);
+    }
+    return wrapped;
+}
+
+/// Two texts side by side, each wrapped to its half of the given total width,
+/// with two spaces between the columns. What a usage line with flags on the
+/// left and explanations on the right wants.
+pub fn two_columns(left: String, right: String, width: i64) -> Result<String, String> {
+    if !(20..=400).contains(&width) {
+        return Err(format!("term_two_columns: the width must be from 20 to 400 columns, but it is {}", width));
+    }
+    let gutter = 2usize;
+    let column_width = (width as usize - gutter) / 2;
+    let left_lines = wrap_visible(&left, column_width);
+    let right_lines = wrap_visible(&right, column_width);
+
+    let mut out_lines: Vec<String> = Vec::new();
+    for row in 0..left_lines.len().max(right_lines.len()) {
+        let left_line = left_lines.get(row).map(String::as_str).unwrap_or("");
+        let right_line = right_lines.get(row).map(String::as_str).unwrap_or("");
+        let mut line = String::from(left_line);
+        let left_width = visible_width(left_line);
+        if left_width < column_width + gutter {
+            for _ in left_width..column_width + gutter {
+                line.push(' ');
+            }
+        } else if !right_line.is_empty() {
+            // A word too wide to wrap has overrun its column, and the gutter
+            // still has to keep the two texts apart.
+            line.push_str("  ");
+        }
+        line.push_str(right_line);
+        out_lines.push(line.trim_end().to_string());
+    }
+    return Ok(out_lines.join("\n"));
 }
 
 /// A plain-text table with aligned columns. Every row must have as many cells
@@ -352,5 +467,92 @@ mod tests {
         assert!(link.contains("https://example.com"));
         // A terminal that does not do hyperlinks shows the text and nothing else.
         assert_eq!(strip_styles(link), "Nail");
+    }
+
+    #[test]
+    fn a_box_fits_its_text_exactly() {
+        assert_eq!(boxed("hi".to_string()), "┌────┐\n│ hi │\n└────┘");
+    }
+
+    #[test]
+    fn a_box_sizes_to_the_widest_line() {
+        let framed = boxed("one\nthree33".to_string());
+        assert_eq!(framed, "┌─────────┐\n│ one     │\n│ three33 │\n└─────────┘");
+    }
+
+    #[test]
+    fn a_box_measures_coloured_text_by_what_is_seen() {
+        let framed = boxed(paint("hi".to_string(), TERM_Color::Green));
+        assert_eq!(strip_styles(framed), "┌────┐\n│ hi │\n└────┘");
+    }
+
+    #[test]
+    fn a_banner_is_exactly_eighty_columns() {
+        let line = banner("Results".to_string(), "=".to_string()).expect("a single rule character");
+        assert_eq!(display_width(line.clone()), 80);
+        assert!(line.contains(" Results "), "got: {}", line);
+        assert!(line.starts_with('='), "got: {}", line);
+        assert!(line.ends_with('='), "got: {}", line);
+    }
+
+    #[test]
+    fn an_empty_banner_is_a_plain_rule() {
+        assert_eq!(banner(String::new(), "-".to_string()).expect("a single rule character"), "-".repeat(80));
+    }
+
+    #[test]
+    fn a_banner_measures_coloured_text_by_what_is_seen() {
+        let line = banner(paint("ok".to_string(), TERM_Color::Green), "=".to_string()).expect("a single rule character");
+        assert_eq!(display_width(line), 80);
+    }
+
+    #[test]
+    fn a_banner_rejects_a_bad_rule_character() {
+        assert!(banner("x".to_string(), "==".to_string()).unwrap_err().contains("exactly one character"));
+        assert!(banner("x".to_string(), String::new()).unwrap_err().contains("exactly one character"));
+    }
+
+    #[test]
+    fn a_banner_rejects_text_wider_than_the_rule() {
+        let failure = banner("x".repeat(77), "=".to_string()).unwrap_err();
+        assert!(failure.contains("does not fit"), "got: {}", failure);
+        // The widest text that still fits leaves one rule character each side.
+        let line = banner("x".repeat(76), "=".to_string()).expect("a text that just fits");
+        assert_eq!(display_width(line), 80);
+    }
+
+    #[test]
+    fn two_columns_sit_side_by_side() {
+        let out = two_columns("aa".to_string(), "bb".to_string(), 20).expect("a width in range");
+        assert_eq!(out, "aa         bb");
+    }
+
+    #[test]
+    fn two_columns_wrap_each_side_to_its_half() {
+        let left = "the quick brown fox jumps over the lazy dog";
+        let right = "sphinx of black quartz judge my vow";
+        let out = two_columns(left.to_string(), right.to_string(), 20).expect("a width in range");
+        let lines: Vec<&str> = out.split('\n').collect();
+        for line in lines.iter() {
+            assert!(display_width(line.to_string()) <= 20, "too wide: {:?}", line);
+        }
+        assert!(lines[0].starts_with("the quick"), "got: {}", lines[0]);
+        assert!(lines[0].ends_with("sphinx of"), "got: {}", lines[0]);
+    }
+
+    #[test]
+    fn a_shorter_left_column_still_lines_the_right_up() {
+        let out = two_columns("one".to_string(), "a b c d e f g h i j k l".to_string(), 20).expect("a width in range");
+        let lines: Vec<&str> = out.split('\n').collect();
+        assert!(lines.len() > 1);
+        // Past the end of the left text, the right column starts after a blank
+        // left column and its gutter.
+        assert!(lines[1].starts_with("           "), "got: {:?}", lines[1]);
+    }
+
+    #[test]
+    fn two_columns_reject_a_width_out_of_range() {
+        assert!(two_columns("a".to_string(), "b".to_string(), 19).unwrap_err().contains("20 to 400"));
+        assert!(two_columns("a".to_string(), "b".to_string(), 401).unwrap_err().contains("20 to 400"));
     }
 }

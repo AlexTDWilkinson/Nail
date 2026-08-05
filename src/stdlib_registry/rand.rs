@@ -34,5 +34,14 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "rand_seeded_shuffle" [Rand] => "std_lib::rand::seeded_shuffle", (seed: i, items: [T]) -> [T],
             "Returns the array in the same shuffled order every time for a given seed.",
             "deck:a:i = rand_seeded_shuffle(42, cards);";
+        "rand_normal" [Rand] => "std_lib::rand::normal", (mean: f, stddev: f) -> f,
+            "Returns a value from a normal distribution with the given mean and standard deviation.",
+            "noise:f = rand_normal(0.0, 1.0);";
+        "rand_seeded_normal" [Rand] => "std_lib::rand::seeded_normal", (seed: i, mean: f, stddev: f) -> f,
+            "Returns the same normally distributed value every time for a given seed, with the given mean and standard deviation.",
+            "sample:f = rand_seeded_normal(42, 0.0, 1.0);";
+        "rand_weighted_pick" [Rand] => "std_lib::rand::weighted_pick", (options: (&[T]), weights: (&[f])) -> (T!e),
+            "Returns one element of the array, chosen with probability proportional to its weight. A zero weight is never chosen. Errors if the arrays differ in length, a weight is negative, or no weight is positive.",
+            "prize:s = danger(rand_weighted_pick(prizes, odds));";
     }
 }

@@ -61,6 +61,15 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "term_table" => "std_lib::term::table", (headers: [s], rows: [[s]]) -> (s!e),
             "Returns a plain-text table with aligned columns. Errors if a row has a different number of cells than there are headers.",
             "rendered:s = danger(term_table(headers, rows));";
+        "term_box" => "std_lib::term::boxed", (text: s) -> s,
+            "Returns the text drawn inside a Unicode box sized to its widest line, measuring coloured text by what is seen.",
+            "framed:s = term_box(`All tests passed`);";
+        "term_banner" => "std_lib::term::banner", (text: s, character: s) -> (s!e),
+            "Returns the text centered in a full 80 column rule of the given character. Errors when the character is not exactly one character.",
+            "heading:s = danger(term_banner(`Results`, `=`));";
+        "term_two_columns" => "std_lib::term::two_columns", (left: s, right: s, width: i) -> (s!e),
+            "Returns the two texts side by side, each wrapped to half the given width with a two space gutter between them. Errors when the width is outside 20 to 400 columns.",
+            "usage:s = danger(term_two_columns(flags, explanations, 80));";
     }
 
     m.insert("term_paint", color_fn("std_lib::term::paint", "Returns the text in the given colour.", "warning:s = term_paint(`careful`, TERM_Color::Yellow);"));

@@ -119,6 +119,48 @@ pub fn to_hex(value: i64) -> String {
     return format!("{:x}", value as u64);
 }
 
+/// Shared guard for the two field functions: the offset names a real bit, the
+/// width is 1 to 63, and the whole field stays inside the 64 bits a whole
+/// number has.
+fn check_field(function: &str, offset: i64, width: i64) -> Result<(), String> {
+    check_index(function, offset)?;
+    if !(1..=63).contains(&width) {
+        return Err(format!("{}: a field {} wide is outside the 1 to 63 a field can be", function, width));
+    }
+    if offset + width > 64 {
+        return Err(format!("{}: a field {} wide at bit {} runs past bit 63", function, width, offset));
+    }
+    return Ok(());
+}
+
+/// Reads a bit field out of the number: `width` bits starting at `offset`,
+/// counting from bit 0 at the bottom. The register and protocol workhorse,
+/// so bits 4 to 7 of 0xab come back as 0xa.
+pub fn extract(value: i64, offset: i64, width: i64) -> Result<i64, String> {
+    check_field("bits_extract", offset, width)?;
+    let mask = (1u64 << width as u32) - 1;
+    return Ok(((value as u64) >> offset as u32 & mask) as i64);
+}
+
+/// Writes a bit field into the number: the `width` bits starting at `offset`
+/// are cleared and `field` is put there. Errors when the field does not fit
+/// its width, because losing bits silently is how protocol bugs are born.
+pub fn insert(value: i64, offset: i64, width: i64, field: i64) -> Result<i64, String> {
+    check_field("bits_insert", offset, width)?;
+    let mask = (1u64 << width as u32) - 1;
+    if field as u64 & !mask != 0 {
+        return Err(format!("bits_insert: {} does not fit in a field {} wide", field, width));
+    }
+    let cleared = value as u64 & !(mask << offset as u32);
+    return Ok((cleared | (field as u64) << offset as u32) as i64);
+}
+
+/// Whether the count of one-bits is even or odd: 0 for even, 1 for odd. The
+/// single check bit at the bottom of serial protocols and memory schemes.
+pub fn parity(value: i64) -> i64 {
+    return (value.count_ones() % 2) as i64;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,5 +245,47 @@ mod tests {
     fn hex_writes_the_same_pattern() {
         assert_eq!(to_hex(255), "ff");
         assert_eq!(to_hex(-1), "ffffffffffffffff");
+    }
+
+    #[test]
+    fn a_field_can_be_read_out_of_the_middle() {
+        assert_eq!(extract(0xab, 4, 4).expect("in range"), 0xa);
+        assert_eq!(extract(0xab, 0, 4).expect("in range"), 0xb);
+        assert_eq!(extract(0b1100, 2, 1).expect("in range"), 1);
+        assert_eq!(extract(-1, 0, 63).expect("in range"), i64::MAX);
+        assert_eq!(extract(-1, 63, 1).expect("in range"), 1);
+    }
+
+    #[test]
+    fn a_field_can_be_written_into_the_middle() {
+        assert_eq!(insert(0, 4, 4, 0xa).expect("fits"), 0xa0);
+        assert_eq!(insert(0xff, 4, 4, 0).expect("fits"), 0x0f);
+        assert_eq!(insert(0xab, 4, 4, 0xc).expect("fits"), 0xcb);
+        assert_eq!(extract(insert(0, 10, 6, 33).expect("fits"), 10, 6).expect("in range"), 33);
+    }
+
+    #[test]
+    fn a_field_that_does_not_fit_the_word_is_an_error() {
+        assert!(extract(0, 0, 0).unwrap_err().contains("1 to 63"));
+        assert!(extract(0, 0, 64).unwrap_err().contains("1 to 63"));
+        assert!(extract(0, 64, 1).unwrap_err().contains("outside the 0 to 63"));
+        assert!(extract(0, 8, 60).unwrap_err().contains("past bit 63"));
+        assert!(insert(0, 60, 8, 1).unwrap_err().contains("past bit 63"));
+    }
+
+    #[test]
+    fn a_field_too_big_for_its_width_is_an_error() {
+        assert!(insert(0, 0, 4, 16).unwrap_err().contains("does not fit"));
+        assert!(insert(0, 0, 4, -1).unwrap_err().contains("does not fit"));
+        assert_eq!(insert(0, 0, 4, 15).expect("fits"), 15);
+    }
+
+    #[test]
+    fn parity_says_whether_the_ones_count_is_odd() {
+        assert_eq!(parity(0), 0);
+        assert_eq!(parity(1), 1);
+        assert_eq!(parity(0b1011), 1);
+        assert_eq!(parity(0b1001), 0);
+        assert_eq!(parity(-1), 0);
     }
 }

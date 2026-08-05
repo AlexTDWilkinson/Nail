@@ -300,6 +300,139 @@ pub fn with_extension(path: String, extension: String) -> String {
     return buffer.to_string_lossy().to_string();
 }
 
+/// The segments of a normalized path. Both spellings of an empty answer,
+/// `/` for an absolute path and `.` for a relative one, give an empty list.
+fn normalized_segments(normalized: &str) -> Vec<String> {
+    if normalized == "." {
+        return Vec::new();
+    }
+    return normalized.split('/').filter(|segment| !segment.is_empty()).map(|segment| segment.to_string()).collect();
+}
+
+/// How many segments the path has below its root or its start: `a/b/c.txt` is
+/// 3, `/` is 0 and `.` is 0. Counted on the normalized path, so `a/b/..` is 1.
+pub fn depth(path: String) -> i64 {
+    return normalized_segments(&normalize(path)).len() as i64;
+}
+
+/// The pieces of the path between separators, with the empties a doubled or
+/// trailing separator would make dropped, so `/a//b/` gives `a` and `b`.
+pub fn segments(path: String) -> Vec<String> {
+    return path.split('/').filter(|segment| !segment.is_empty()).map(|segment| segment.to_string()).collect();
+}
+
+/// Whether the file name starts with a dot, the Unix spelling of hidden.
+/// Judged on the final component only, so `a/.git/config` asks about
+/// `config` and is not hidden.
+pub fn is_hidden(path: String) -> bool {
+    return Path::new(&path).file_name().and_then(|s| s.to_str()).map(|name| name.starts_with('.')).unwrap_or(false);
+}
+
+/// Whether the candidate stays inside the base once both are normalized, with
+/// `..` tricks accounted for. The check a file server runs before serving a
+/// requested path. Pure string work on the normalized forms, no filesystem
+/// access, so a symlink that leads out of the base is not caught here.
+pub fn within(base: String, candidate: String) -> bool {
+    let normalized_base = normalize(base);
+    let normalized_candidate = normalize(candidate);
+    // An absolute path and a relative one cannot vouch for each other.
+    if normalized_base.starts_with('/') != normalized_candidate.starts_with('/') {
+        return false;
+    }
+
+    let base_segments = normalized_segments(&normalized_base);
+    let candidate_segments = normalized_segments(&normalized_candidate);
+    if candidate_segments.len() < base_segments.len() {
+        return false;
+    }
+    if candidate_segments[..base_segments.len()] != base_segments[..] {
+        return false;
+    }
+    // On a normalized relative path every surviving `..` sits at the front,
+    // so one left after the shared prefix means the candidate climbed out.
+    return !candidate_segments[base_segments.len()..].iter().any(|segment| segment == "..");
+}
+
+/// The same path carrying a different file name, with the directory and the
+/// extension kept: `logs/app.log` with the stem `backup` gives
+/// `logs/backup.log`. Errors on an empty stem or a path with no file name.
+pub fn with_stem(path: String, stem: String) -> Result<String, String> {
+    if stem.is_empty() {
+        return Err("path_with_stem: the stem is empty".to_string());
+    }
+    let parsed = Path::new(&path);
+    if parsed.file_name().is_none() {
+        return Err(format!("path_with_stem: '{}' has no file name to swap", path));
+    }
+    let file_name = match parsed.extension().and_then(|s| s.to_str()) {
+        Some(extension) => format!("{}.{}", stem, extension),
+        None => stem,
+    };
+    let mut buffer = PathBuf::from(&path);
+    buffer.set_file_name(file_name);
+    return Ok(buffer.to_string_lossy().to_string());
+}
+
+/// Makes untrusted text safe to use as a single file name, the guard every
+/// upload handler needs. Path separators, `..`, control characters and the
+/// characters Windows refuses become underscores, leading dots become
+/// underscores too (so the result cannot hide itself or name a parent), and
+/// empty input gives `file`.
+pub fn sanitize_filename(name: String) -> String {
+    if name.is_empty() {
+        return "file".to_string();
+    }
+    let replaced: String = name
+        .chars()
+        .map(|character| match character {
+            '/' | '\\' => '_',
+            '<' | '>' | ':' | '"' | '|' | '?' | '*' => '_',
+            control if control.is_control() => '_',
+            keep => keep,
+        })
+        .collect();
+    let no_parent = replaced.replace("..", "__");
+    let mut characters: Vec<char> = no_parent.chars().collect();
+    for character in characters.iter_mut() {
+        if *character != '.' {
+            break;
+        }
+        *character = '_';
+    }
+    return characters.into_iter().collect();
+}
+
+/// The longest directory prefix every path shares, whole segments at a time,
+/// so `/apple/x` and `/app/y` share only the root and not `/app`. Paths are
+/// normalized first. An empty array, or paths with nothing shared, give an
+/// empty string, and absolute paths that share only the root give `/`.
+pub fn common_prefix(paths: Vec<String>) -> String {
+    if paths.is_empty() {
+        return String::new();
+    }
+    let normalized: Vec<String> = paths.into_iter().map(normalize).collect();
+    let from_the_root = normalized[0].starts_with('/');
+    // A mix of absolute and relative paths shares nothing.
+    if normalized.iter().any(|path| path.starts_with('/') != from_the_root) {
+        return String::new();
+    }
+
+    let split: Vec<Vec<String>> = normalized.iter().map(|path| normalized_segments(path)).collect();
+    let mut shared: Vec<String> = split[0].clone();
+    for one in &split[1..] {
+        let mut kept = 0;
+        while kept < shared.len() && kept < one.len() && shared[kept] == one[kept] {
+            kept += 1;
+        }
+        shared.truncate(kept);
+    }
+
+    if from_the_root {
+        return format!("/{}", shared.join("/"));
+    }
+    return shared.join("/");
+}
+
 #[cfg(test)]
 mod path_tests {
     use super::*;
@@ -356,5 +489,88 @@ mod path_tests {
         assert_eq!(with_extension("report.txt".to_string(), ".md".to_string()), "report.md");
         assert_eq!(with_extension("/tmp/report".to_string(), "json".to_string()), "/tmp/report.json");
         assert_eq!(with_extension("report.txt".to_string(), "".to_string()), "report");
+    }
+
+    #[test]
+    fn depth_counts_segments_below_the_start() {
+        assert_eq!(depth("a/b/c.txt".to_string()), 3);
+        assert_eq!(depth("/".to_string()), 0);
+        assert_eq!(depth(".".to_string()), 0);
+        assert_eq!(depth("/etc/hosts".to_string()), 2);
+        assert_eq!(depth("a/b/..".to_string()), 1);
+    }
+
+    #[test]
+    fn segments_are_the_pieces_between_separators() {
+        assert_eq!(segments("a/b/c.txt".to_string()), vec!["a", "b", "c.txt"]);
+        assert_eq!(segments("/a//b/".to_string()), vec!["a", "b"]);
+        assert!(segments("/".to_string()).is_empty());
+        assert!(segments("".to_string()).is_empty());
+    }
+
+    #[test]
+    fn hidden_asks_about_the_file_name_only() {
+        assert!(is_hidden(".env".to_string()));
+        assert!(is_hidden("a/.git".to_string()));
+        assert!(!is_hidden("a/.git/config".to_string()));
+        assert!(!is_hidden("notes.txt".to_string()));
+        assert!(!is_hidden("..".to_string()));
+    }
+
+    #[test]
+    fn within_keeps_a_candidate_inside_the_base() {
+        assert!(within("/srv/files".to_string(), "/srv/files/a/b.txt".to_string()));
+        assert!(within("/srv/files".to_string(), "/srv/files".to_string()));
+        assert!(within("base".to_string(), "base/sub/../file".to_string()));
+        assert!(within(".".to_string(), "a/b".to_string()));
+    }
+
+    #[test]
+    fn within_catches_the_dot_dot_escapes() {
+        assert!(!within("base".to_string(), "base/../../x".to_string()));
+        assert!(!within("/srv/files".to_string(), "/srv/files/../secrets".to_string()));
+        assert!(!within(".".to_string(), "../x".to_string()));
+        assert!(!within("/srv/files".to_string(), "relative/path".to_string()));
+        // A shared run of characters that is not a whole segment does not count.
+        assert!(!within("/srv/files".to_string(), "/srv/filesystem".to_string()));
+    }
+
+    #[test]
+    fn a_stem_swap_keeps_the_directory_and_extension() {
+        assert_eq!(with_stem("logs/app.log".to_string(), "backup".to_string()).expect("a file name"), "logs/backup.log");
+        assert_eq!(with_stem("app.log".to_string(), "backup".to_string()).expect("a file name"), "backup.log");
+        assert_eq!(with_stem("/tmp/README".to_string(), "NOTES".to_string()).expect("a file name"), "/tmp/NOTES");
+    }
+
+    #[test]
+    fn a_stem_swap_needs_a_stem_and_a_file_name() {
+        assert!(with_stem("logs/app.log".to_string(), "".to_string()).unwrap_err().contains("empty"));
+        assert!(with_stem("/".to_string(), "backup".to_string()).unwrap_err().contains("no file name"));
+        assert!(with_stem("..".to_string(), "backup".to_string()).unwrap_err().contains("no file name"));
+    }
+
+    #[test]
+    fn sanitizing_leaves_a_single_safe_file_name() {
+        let cleaned = sanitize_filename("../../etc/passwd".to_string());
+        assert!(!cleaned.contains('/'));
+        assert!(!cleaned.contains(".."));
+        assert_eq!(sanitize_filename("report<final>.pdf".to_string()), "report_final_.pdf");
+        assert_eq!(sanitize_filename(".env".to_string()), "_env");
+        assert_eq!(sanitize_filename("..".to_string()), "__");
+        assert_eq!(sanitize_filename("".to_string()), "file");
+        assert_eq!(sanitize_filename("tab\there".to_string()), "tab_here");
+        assert_eq!(sanitize_filename("plain name.txt".to_string()), "plain name.txt");
+    }
+
+    #[test]
+    fn the_common_prefix_is_whole_shared_segments() {
+        assert_eq!(common_prefix(vec!["/srv/app/logs/a.log".to_string(), "/srv/app/data/b.db".to_string()]), "/srv/app");
+        assert_eq!(common_prefix(vec!["a/b/c".to_string(), "a/b".to_string()]), "a/b");
+        // A shared run of characters that is not a whole segment does not count.
+        assert_eq!(common_prefix(vec!["/apple/x".to_string(), "/app/y".to_string()]), "/");
+        assert_eq!(common_prefix(vec!["a/x".to_string(), "b/y".to_string()]), "");
+        assert_eq!(common_prefix(vec![]), "");
+        assert_eq!(common_prefix(vec!["/a/b".to_string(), "relative".to_string()]), "");
+        assert_eq!(common_prefix(vec!["a/b/c".to_string()]), "a/b/c");
     }
 }

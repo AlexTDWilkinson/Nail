@@ -237,6 +237,208 @@ pub fn scale(value: f64, from_low: f64, from_high: f64, to_low: f64, to_high: f6
     return Ok(to_low + share * (to_high - to_low));
 }
 
+/// Where a point sits on a circle, with angles the way a clock reads them:
+/// 0 degrees at twelve o'clock, growing clockwise. Screen y grows downward,
+/// which is what makes clockwise come out clockwise.
+fn point_on_circle(center_x: f64, center_y: f64, radius: f64, degrees: f64) -> (f64, f64) {
+    let radians = (degrees - 90.0).to_radians();
+    return (center_x + radius * radians.cos(), center_y + radius * radians.sin());
+}
+
+/// Checks a span of degrees is drawable: not empty, and less than the whole
+/// circle, which `draw_circle` draws without the arc arithmetic.
+fn usable_sweep(function: &str, start_degrees: f64, end_degrees: f64) -> Result<f64, String> {
+    let sweep = end_degrees - start_degrees;
+    if sweep == 0.0 {
+        return Err(format!("{}: from {} to {} degrees spans nothing", function, number(start_degrees), number(end_degrees)));
+    }
+    if sweep.abs() >= 360.0 {
+        return Err(format!("{}: {} degrees is the whole circle, which draw_circle draws directly", function, number(sweep.abs())));
+    }
+    return Ok(sweep);
+}
+
+/// The two flags an SVG `A` command needs: whether to take the long way round,
+/// and which direction to sweep in. A positive sweep is clockwise.
+fn arc_flags(sweep: f64) -> (u8, u8) {
+    let large = if sweep.abs() > 180.0 { 1 } else { 0 };
+    let direction = if sweep >= 0.0 { 1 } else { 0 };
+    return (large, direction);
+}
+
+/// An arc stroke along part of a circle, between two angles read the way a
+/// clock reads them: 0 degrees at twelve o'clock, growing clockwise. A gauge
+/// is this arc twice - once faint for the track, once bright for the value.
+pub fn arc(center_x: f64, center_y: f64, radius: f64, start_degrees: f64, end_degrees: f64, color: String, stroke_width: f64) -> Result<String, String> {
+    if radius < 0.0 {
+        return Err(format!("draw_arc: an arc of radius {} cannot be drawn", number(radius)));
+    }
+    if stroke_width <= 0.0 {
+        return Err(format!("draw_arc: an arc {} units wide would not be visible", number(stroke_width)));
+    }
+    let sweep = usable_sweep("draw_arc", start_degrees, end_degrees)?;
+    let (start_x, start_y) = point_on_circle(center_x, center_y, radius, start_degrees);
+    let (end_x, end_y) = point_on_circle(center_x, center_y, radius, end_degrees);
+    let (large, direction) = arc_flags(sweep);
+    return Ok(format!(
+        "<path d=\"M {} {} A {} {} 0 {} {} {} {}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
+        number(start_x),
+        number(start_y),
+        number(radius),
+        number(radius),
+        large,
+        direction,
+        number(end_x),
+        number(end_y),
+        escape(&color),
+        number(stroke_width)
+    ));
+}
+
+/// A filled slice of a circle between two angles, in the same clockwise
+/// degrees as `draw_arc` - the shape a pie chart is made of.
+pub fn wedge(center_x: f64, center_y: f64, radius: f64, start_degrees: f64, end_degrees: f64, fill: String) -> Result<String, String> {
+    if radius < 0.0 {
+        return Err(format!("draw_wedge: a slice of radius {} cannot be drawn", number(radius)));
+    }
+    let sweep = usable_sweep("draw_wedge", start_degrees, end_degrees)?;
+    let (start_x, start_y) = point_on_circle(center_x, center_y, radius, start_degrees);
+    let (end_x, end_y) = point_on_circle(center_x, center_y, radius, end_degrees);
+    let (large, direction) = arc_flags(sweep);
+    return Ok(format!(
+        "<path d=\"M {} {} L {} {} A {} {} 0 {} {} {} {} Z\" fill=\"{}\"/>",
+        number(center_x),
+        number(center_y),
+        number(start_x),
+        number(start_y),
+        number(radius),
+        number(radius),
+        large,
+        direction,
+        number(end_x),
+        number(end_y),
+        escape(&fill)
+    ));
+}
+
+/// A star of 3 to 24 points, its corners alternating between the outer and
+/// inner radius, drawn point up.
+pub fn star(center_x: f64, center_y: f64, points: i64, outer_radius: f64, inner_radius: f64, fill: String) -> Result<String, String> {
+    if !(3..=24).contains(&points) {
+        return Err(format!("draw_star: a star has between 3 and 24 points, got {}", points));
+    }
+    if outer_radius < 0.0 || inner_radius < 0.0 {
+        return Err(format!("draw_star: a star of radii {} and {} cannot be drawn", number(outer_radius), number(inner_radius)));
+    }
+    let corner_count = points as usize * 2;
+    let step = 360.0 / corner_count as f64;
+    let mut corners: Vec<f64> = Vec::with_capacity(corner_count * 2);
+    for corner in 0..corner_count {
+        let radius = if corner % 2 == 0 { outer_radius } else { inner_radius };
+        let (x, y) = point_on_circle(center_x, center_y, radius, corner as f64 * step);
+        corners.push(x);
+        corners.push(y);
+    }
+    let attribute = points_attribute("draw_star", &corners)?;
+    return Ok(format!("<polygon points=\"{}\" fill=\"{}\"/>", attribute, escape(&fill)));
+}
+
+/// A regular polygon of 3 to 60 sides, every corner on one circle, drawn
+/// point up.
+pub fn regular_polygon(center_x: f64, center_y: f64, sides: i64, radius: f64, fill: String) -> Result<String, String> {
+    if !(3..=60).contains(&sides) {
+        return Err(format!("draw_regular_polygon: a polygon has between 3 and 60 sides, got {}", sides));
+    }
+    if radius < 0.0 {
+        return Err(format!("draw_regular_polygon: a polygon of radius {} cannot be drawn", number(radius)));
+    }
+    let corner_count = sides as usize;
+    let step = 360.0 / corner_count as f64;
+    let mut corners: Vec<f64> = Vec::with_capacity(corner_count * 2);
+    for corner in 0..corner_count {
+        let (x, y) = point_on_circle(center_x, center_y, radius, corner as f64 * step);
+        corners.push(x);
+        corners.push(y);
+    }
+    let attribute = points_attribute("draw_regular_polygon", &corners)?;
+    return Ok(format!("<polygon points=\"{}\" fill=\"{}\"/>", attribute, escape(&fill)));
+}
+
+/// A rectangle with rounded corners. The radius is clamped to half the
+/// shorter side, so a generous radius makes a capsule rather than a mess.
+pub fn rounded_rect(x: f64, y: f64, width: f64, height: f64, corner_radius: f64, fill: String) -> Result<String, String> {
+    if width < 0.0 || height < 0.0 {
+        return Err(format!("draw_rounded_rect: a rectangle {} by {} has a negative side", number(width), number(height)));
+    }
+    if corner_radius < 0.0 {
+        return Err(format!("draw_rounded_rect: a corner of radius {} cannot be drawn", number(corner_radius)));
+    }
+    let clamped = corner_radius.min(width / 2.0).min(height / 2.0);
+    return Ok(format!(
+        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{}\"/>",
+        number(x),
+        number(y),
+        number(width),
+        number(height),
+        number(clamped),
+        number(clamped),
+        escape(&fill)
+    ));
+}
+
+/// A line with a filled head at its far end. The head is sized from the
+/// stroke width, so a heavier arrow gets a proportionally bigger head.
+pub fn arrow(from_x: f64, from_y: f64, to_x: f64, to_y: f64, color: String, stroke_width: f64) -> Result<String, String> {
+    if stroke_width <= 0.0 {
+        return Err(format!("draw_arrow: an arrow {} units wide would not be visible", number(stroke_width)));
+    }
+    let length = ((to_x - from_x).powi(2) + (to_y - from_y).powi(2)).sqrt();
+    if length == 0.0 {
+        return Err("draw_arrow: an arrow from a point to itself points nowhere".to_string());
+    }
+    let head_length = (stroke_width * 4.0).min(length);
+    let head_half_width = stroke_width * 2.0;
+    let unit_x = (to_x - from_x) / length;
+    let unit_y = (to_y - from_y) / length;
+    // The line stops at the base of the head, so the head has a clean point.
+    let base_x = to_x - unit_x * head_length;
+    let base_y = to_y - unit_y * head_length;
+    let shaft = line(from_x, from_y, base_x, base_y, color.clone(), stroke_width)?;
+    let head = polygon(
+        vec![to_x, to_y, base_x - unit_y * head_half_width, base_y + unit_x * head_half_width, base_x + unit_y * head_half_width, base_y - unit_x * head_half_width],
+        color,
+    )?;
+    return Ok(format!("{}{}", shaft, head));
+}
+
+/// Evenly spaced guide lines in both directions across the given area, for
+/// laying a drawing out. Pass a light colour so the drawing stays on top.
+pub fn grid(width: f64, height: f64, spacing: f64, color: String) -> Result<String, String> {
+    if width <= 0.0 || height <= 0.0 {
+        return Err(format!("draw_grid: a grid {} by {} has no area to draw in", number(width), number(height)));
+    }
+    if spacing <= 0.0 {
+        return Err(format!("draw_grid: a grid needs a positive spacing, got {}", number(spacing)));
+    }
+    let line_count = (width / spacing).floor() + (height / spacing).floor() + 2.0;
+    if line_count > 10_000.0 {
+        return Err(format!("draw_grid: a spacing of {} across {} by {} would be {} lines, which is a texture rather than a grid", number(spacing), number(width), number(height), number(line_count)));
+    }
+
+    let mut out = String::new();
+    let mut x = 0.0;
+    while x <= width {
+        out.push_str(&line(x, 0.0, x, height, color.clone(), 1.0)?);
+        x += spacing;
+    }
+    let mut y = 0.0;
+    while y <= height {
+        out.push_str(&line(0.0, y, width, y, color.clone(), 1.0)?);
+        y += spacing;
+    }
+    return Ok(out);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,6 +539,139 @@ mod tests {
         assert_eq!(scale(10.0, 0.0, 10.0, 100.0, 0.0).expect("a real range"), 0.0);
         assert_eq!(scale(0.0, 0.0, 10.0, 100.0, 0.0).expect("a real range"), 100.0);
         assert!(scale(1.0, 5.0, 5.0, 0.0, 100.0).unwrap_err().contains("is empty"));
+    }
+
+    /// Pulls the vertices back out of a polygon's points attribute, so a test
+    /// can check the geometry rather than the exact text.
+    fn parsed_vertices(shape: &str) -> Vec<(f64, f64)> {
+        let start = shape.find("points=\"").expect("a points attribute") + "points=\"".len();
+        let end = shape[start..].find('"').expect("a closing quote") + start;
+        return shape[start..end]
+            .split(' ')
+            .map(|pair| {
+                let mut halves = pair.split(',');
+                let x: f64 = halves.next().expect("an x").parse().expect("a number");
+                let y: f64 = halves.next().expect("a y").parse().expect("a number");
+                return (x, y);
+            })
+            .collect();
+    }
+
+    #[test]
+    fn an_arc_is_a_stroked_path_with_an_arc_command() {
+        let drawn = arc(100.0, 100.0, 80.0, 0.0, 270.0, "steelblue".to_string(), 8.0).expect("a valid arc");
+        assert!(drawn.starts_with("<path"), "got: {}", drawn);
+        assert!(drawn.contains(" A 80 80 "), "got: {}", drawn);
+        assert!(drawn.contains("fill=\"none\""), "an arc is a stroke, not a fill: {}", drawn);
+        assert!(drawn.contains("stroke=\"steelblue\""));
+        assert!(drawn.contains("stroke-width=\"8\""));
+        // 0 degrees is twelve o'clock, so the arc starts straight above the centre.
+        assert!(drawn.contains("M 100 20"), "got: {}", drawn);
+    }
+
+    #[test]
+    fn an_arc_that_spans_nothing_or_everything_is_an_error() {
+        assert!(arc(0.0, 0.0, 10.0, 90.0, 90.0, "red".to_string(), 1.0).unwrap_err().contains("spans nothing"));
+        assert!(arc(0.0, 0.0, 10.0, 0.0, 360.0, "red".to_string(), 1.0).unwrap_err().contains("whole circle"));
+        assert!(arc(0.0, 0.0, -1.0, 0.0, 90.0, "red".to_string(), 1.0).unwrap_err().contains("cannot be drawn"));
+        assert!(arc(0.0, 0.0, 10.0, 0.0, 90.0, "red".to_string(), 0.0).unwrap_err().contains("would not be visible"));
+    }
+
+    #[test]
+    fn a_wedge_is_one_filled_path_through_an_arc() {
+        let drawn = wedge(100.0, 100.0, 80.0, 0.0, 120.0, "gold".to_string()).expect("a valid wedge");
+        assert_eq!(drawn.matches("<path").count(), 1, "got: {}", drawn);
+        assert!(drawn.contains(" A 80 80 "), "got: {}", drawn);
+        assert!(drawn.contains("fill=\"gold\""));
+        assert!(drawn.contains("M 100 100 L"), "a wedge starts at the centre: {}", drawn);
+        assert!(drawn.contains(" Z\""), "a wedge closes back to the centre: {}", drawn);
+    }
+
+    #[test]
+    fn a_wedge_wider_than_half_the_circle_takes_the_long_way_round() {
+        let drawn = wedge(0.0, 0.0, 10.0, 0.0, 270.0, "gold".to_string()).expect("a valid wedge");
+        assert!(drawn.contains(" A 10 10 0 1 1 "), "the large arc flag must be set: {}", drawn);
+        assert!(wedge(0.0, 0.0, 10.0, 45.0, 45.0, "gold".to_string()).unwrap_err().contains("spans nothing"));
+        assert!(wedge(0.0, 0.0, 10.0, 0.0, 400.0, "gold".to_string()).unwrap_err().contains("whole circle"));
+    }
+
+    #[test]
+    fn a_five_pointed_star_has_ten_vertices() {
+        let drawn = star(50.0, 50.0, 5, 40.0, 16.0, "gold".to_string()).expect("a valid star");
+        let vertices = parsed_vertices(&drawn);
+        assert_eq!(vertices.len(), 10, "got: {}", drawn);
+        assert!(drawn.contains("fill=\"gold\""));
+        // The corners alternate between the two radii, starting at the outer one.
+        for (index, (x, y)) in vertices.iter().enumerate() {
+            let distance = ((x - 50.0).powi(2) + (y - 50.0).powi(2)).sqrt();
+            let expected = if index % 2 == 0 { 40.0 } else { 16.0 };
+            assert!((distance - expected).abs() < 0.01, "vertex {} sits {} from the centre, wanted {}", index, distance, expected);
+        }
+    }
+
+    #[test]
+    fn a_two_pointed_star_is_an_error() {
+        assert!(star(0.0, 0.0, 2, 10.0, 4.0, "gold".to_string()).unwrap_err().contains("between 3 and 24"));
+        assert!(star(0.0, 0.0, 25, 10.0, 4.0, "gold".to_string()).unwrap_err().contains("between 3 and 24"));
+        assert!(star(0.0, 0.0, 5, -1.0, 4.0, "gold".to_string()).unwrap_err().contains("cannot be drawn"));
+    }
+
+    #[test]
+    fn a_regular_polygon_keeps_every_corner_on_its_circle() {
+        let drawn = regular_polygon(0.0, 0.0, 4, 10.0, "green".to_string()).expect("a valid polygon");
+        let vertices = parsed_vertices(&drawn);
+        assert_eq!(vertices.len(), 4);
+        for (x, y) in vertices {
+            let distance = (x.powi(2) + y.powi(2)).sqrt();
+            assert!((distance - 10.0).abs() < 0.01, "a corner sits {} from the centre, wanted 10", distance);
+        }
+        assert!(regular_polygon(0.0, 0.0, 2, 10.0, "green".to_string()).unwrap_err().contains("between 3 and 60"));
+        assert!(regular_polygon(0.0, 0.0, 61, 10.0, "green".to_string()).unwrap_err().contains("between 3 and 60"));
+    }
+
+    #[test]
+    fn a_rounded_rectangle_clamps_its_radius_to_the_shorter_side() {
+        let drawn = rounded_rect(0.0, 0.0, 20.0, 10.0, 3.0, "blue".to_string()).expect("a valid rectangle");
+        assert!(drawn.contains("rx=\"3\" ry=\"3\""), "got: {}", drawn);
+        let capsule = rounded_rect(0.0, 0.0, 20.0, 10.0, 50.0, "blue".to_string()).expect("a valid rectangle");
+        assert!(capsule.contains("rx=\"5\" ry=\"5\""), "the radius clamps to half the shorter side: {}", capsule);
+        assert!(rounded_rect(0.0, 0.0, -1.0, 10.0, 2.0, "blue".to_string()).unwrap_err().contains("negative side"));
+        assert!(rounded_rect(0.0, 0.0, 20.0, 10.0, -2.0, "blue".to_string()).unwrap_err().contains("cannot be drawn"));
+    }
+
+    #[test]
+    fn an_arrow_is_a_line_with_a_filled_head() {
+        let drawn = arrow(0.0, 0.0, 100.0, 0.0, "black".to_string(), 2.0).expect("a valid arrow");
+        assert!(drawn.contains("<line"), "got: {}", drawn);
+        assert!(drawn.contains("<polygon"), "got: {}", drawn);
+        assert!(drawn.contains("stroke=\"black\""));
+        assert!(drawn.contains("fill=\"black\""));
+        // The head's tip is the far end, and the shaft stops at the head's base.
+        assert!(drawn.contains("points=\"100,0"), "the tip sits at the far end: {}", drawn);
+        assert!(drawn.contains("x2=\"92\""), "the shaft stops at the base of the head: {}", drawn);
+    }
+
+    #[test]
+    fn an_arrow_going_nowhere_is_an_error() {
+        assert!(arrow(5.0, 5.0, 5.0, 5.0, "black".to_string(), 2.0).unwrap_err().contains("points nowhere"));
+        assert!(arrow(0.0, 0.0, 10.0, 0.0, "black".to_string(), 0.0).unwrap_err().contains("would not be visible"));
+    }
+
+    #[test]
+    fn a_grid_rules_lines_in_both_directions() {
+        let drawn = grid(100.0, 50.0, 25.0, "#e2e8f0".to_string()).expect("a valid grid");
+        // Vertical lines at 0, 25, 50, 75 and 100, horizontal at 0, 25 and 50.
+        assert_eq!(drawn.matches("<line").count(), 8, "got: {}", drawn);
+        assert!(drawn.contains("x1=\"75\" y1=\"0\" x2=\"75\" y2=\"50\""), "got: {}", drawn);
+        assert!(drawn.contains("x1=\"0\" y1=\"25\" x2=\"100\" y2=\"25\""), "got: {}", drawn);
+        assert!(drawn.contains("stroke=\"#e2e8f0\""));
+    }
+
+    #[test]
+    fn a_grid_that_could_not_be_drawn_is_an_error() {
+        assert!(grid(0.0, 50.0, 10.0, "grey".to_string()).unwrap_err().contains("no area"));
+        assert!(grid(100.0, 50.0, 0.0, "grey".to_string()).unwrap_err().contains("positive spacing"));
+        assert!(grid(10000.0, 10000.0, 0.1, "grey".to_string()).unwrap_err().contains("texture"));
     }
 
     /// The whole point of shapes being values: a chart is a map and a join,

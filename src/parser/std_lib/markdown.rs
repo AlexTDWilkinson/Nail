@@ -1,4 +1,4 @@
-use pulldown_cmark::{Parser, Options, html};
+use pulldown_cmark::{Event, Parser, Options, Tag, html};
 
 pub fn to_html(markdown: String) -> String {
     let parser = Parser::new(&markdown);
@@ -24,6 +24,110 @@ pub fn to_html_with_options(markdown: String, enable_tables: bool, enable_footno
     html::push_html(&mut html_output, parser);
     html_output
 }
+/// Closes the current line, without ever stacking blank lines up.
+fn end_line(text: &mut String) {
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+}
+
+/// The document as plain text, with all the formatting dropped: headings, bold
+/// and links keep their text, code blocks keep their code, list items keep
+/// their lines. This is the form to search, excerpt or count words in.
+pub fn to_text(markdown: String) -> String {
+    let mut text = String::new();
+    for event in Parser::new(&markdown) {
+        match event {
+            Event::Text(chunk) => text.push_str(&chunk),
+            Event::Code(code) => text.push_str(&code),
+            // A soft break is a wrapped line inside a paragraph, so the
+            // paragraph keeps flowing; a hard break was asked for.
+            Event::SoftBreak => text.push(' '),
+            Event::HardBreak => text.push('\n'),
+            Event::End(Tag::Paragraph) | Event::End(Tag::Heading(..)) | Event::End(Tag::Item) | Event::End(Tag::CodeBlock(_)) | Event::End(Tag::BlockQuote) => end_line(&mut text),
+            _ => {}
+        }
+    }
+    return text.trim_end().to_string();
+}
+
+/// Every link destination in the document, in the order the links appear.
+pub fn links(markdown: String) -> Vec<String> {
+    let mut destinations = Vec::new();
+    for event in Parser::new(&markdown) {
+        if let Event::Start(Tag::Link(_, destination, _)) = event {
+            destinations.push(destination.to_string());
+        }
+    }
+    return destinations;
+}
+
+/// Every heading in the document as its level and its text, in order. The
+/// shared walk behind `headings` and `toc`.
+fn heading_texts(markdown: &str) -> Vec<(usize, String)> {
+    let mut headings = Vec::new();
+    let mut current: Option<(usize, String)> = None;
+    for event in Parser::new(markdown) {
+        match event {
+            Event::Start(Tag::Heading(level, ..)) => current = Some((level as usize, String::new())),
+            Event::Text(chunk) => {
+                if let Some((_, text)) = current.as_mut() {
+                    text.push_str(&chunk);
+                }
+            }
+            Event::Code(code) => {
+                if let Some((_, text)) = current.as_mut() {
+                    text.push_str(&code);
+                }
+            }
+            Event::End(Tag::Heading(..)) => {
+                if let Some(heading) = current.take() {
+                    headings.push(heading);
+                }
+            }
+            _ => {}
+        }
+    }
+    return headings;
+}
+
+/// Every heading's text in the document, in order, whatever its level.
+pub fn headings(markdown: String) -> Vec<String> {
+    return heading_texts(&markdown).into_iter().map(|(_, text)| text).collect();
+}
+
+/// A heading's GitHub-style anchor: lowercased, spaces to hyphens, punctuation
+/// dropped.
+fn anchor(heading: &str) -> String {
+    let mut anchor = String::with_capacity(heading.len());
+    for character in heading.to_lowercase().chars() {
+        if character.is_alphanumeric() || character == '_' || character == '-' {
+            anchor.push(character);
+        } else if character == ' ' {
+            anchor.push('-');
+        }
+        // Everything else is punctuation, which the anchor drops.
+    }
+    return anchor;
+}
+
+/// A table of contents for the document: a markdown bullet list of its
+/// headings, indented two spaces per level below the top, each linking to the
+/// GitHub-style anchor the heading renders as. A document with no headings
+/// gives an empty string.
+pub fn toc(markdown: String) -> String {
+    let headings = heading_texts(&markdown);
+    let top = headings.iter().map(|(level, _)| *level).min().unwrap_or(1);
+    let lines: Vec<String> = headings.iter().map(|(level, text)| format!("{}- [{}](#{})", "  ".repeat(level - top), text, anchor(text))).collect();
+    return lines.join("\n");
+}
+
+/// How many words the document's plain text holds - the number a reading-time
+/// estimate wants, with the formatting not counted.
+pub fn word_count(markdown: String) -> i64 {
+    return to_text(markdown).split_whitespace().count() as i64;
+}
+
 /// The front matter of a document: the `key: value` lines between a pair of
 /// `---` fences at the very top, which is how every static site generator
 /// carries a post's title and date alongside its text.
@@ -139,5 +243,53 @@ mod front_matter_tests {
         let body = without_front_matter(POST.to_string());
         assert!(!body.contains("title:"), "got: {}", body);
         assert!(body.starts_with("# Heading"));
+    }
+}
+
+#[cfg(test)]
+mod reading_tests {
+    use super::*;
+
+    /// One document that exercises headings, emphasis, links, a list and code.
+    const DOC: &str = "# Guide\n\nSome *bold* text with a [link](https://example.com) inline.\n\n## Setup Steps\n\n- first item\n- second item with [docs](https://docs.rs)\n\n```\nlet x = 1;\n```\n\n### More `code` Details\n";
+
+    #[test]
+    fn plain_text_keeps_the_words_and_drops_the_formatting() {
+        assert_eq!(
+            to_text(DOC.to_string()),
+            "Guide\nSome bold text with a link inline.\nSetup Steps\nfirst item\nsecond item with docs\nlet x = 1;\nMore code Details"
+        );
+    }
+
+    #[test]
+    fn every_link_destination_comes_out_in_order() {
+        assert_eq!(links(DOC.to_string()), vec!["https://example.com".to_string(), "https://docs.rs".to_string()]);
+        assert!(links("no links here".to_string()).is_empty());
+    }
+
+    #[test]
+    fn every_heading_comes_out_in_order_at_any_level() {
+        assert_eq!(headings(DOC.to_string()), vec!["Guide".to_string(), "Setup Steps".to_string(), "More code Details".to_string()]);
+        assert!(headings("just a paragraph".to_string()).is_empty());
+    }
+
+    #[test]
+    fn the_toc_indents_below_the_top_level_and_links_to_anchors() {
+        assert_eq!(toc(DOC.to_string()), "- [Guide](#guide)\n  - [Setup Steps](#setup-steps)\n    - [More code Details](#more-code-details)");
+    }
+
+    /// A document whose shallowest heading is not an h1 still starts its list
+    /// flush left, and punctuation falls out of the anchor.
+    #[test]
+    fn the_top_level_is_whatever_the_document_starts_at() {
+        assert_eq!(toc("## What's New?\n\n### The 2.0 Release\n".to_string()), "- [What's New?](#whats-new)\n  - [The 2.0 Release](#the-20-release)");
+        assert_eq!(toc("no headings".to_string()), "");
+    }
+
+    #[test]
+    fn the_word_count_is_the_words_of_the_plain_text() {
+        assert_eq!(word_count(DOC.to_string()), 23);
+        assert_eq!(word_count("# One Two\n\nthree *four*.".to_string()), 4);
+        assert_eq!(word_count("".to_string()), 0);
     }
 }

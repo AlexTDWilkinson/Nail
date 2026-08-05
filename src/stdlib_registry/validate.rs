@@ -43,6 +43,24 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "validate_json" [SerdeJson] => "std_lib::validate::json", (text: (&s)) -> b,
             "Returns true if the text is a JSON document, answered by parsing it.",
             "readable:b = validate_json(request.body);";
+        "validate_luhn" => "std_lib::validate::luhn", (digits: (&s)) -> b,
+            "Returns true if the digits pass the bare Luhn checksum, whatever their length - IMEIs and other identifiers as well as card numbers. Spaces and hyphens are ignored.",
+            "typed_correctly:b = validate_luhn(device_imei);";
+        "validate_iban" => "std_lib::validate::iban", (text: (&s)) -> b,
+            "Returns true if the text is an IBAN: the right length for its country and passing the mod-97 check. Spaces are ignored. Knows the common European countries. Anywhere else is false.",
+            "payable:b = validate_iban(account_number);";
+        "validate_mac_address" => "std_lib::validate::mac_address", (text: (&s)) -> b,
+            "Returns true if the text is a MAC address: six pairs of hex digits separated by colons or dashes.",
+            "hardware:b = validate_mac_address(interface_id);";
+        "validate_phone_loose" => "std_lib::validate::phone_loose", (text: (&s)) -> b,
+            "Returns true if the text is 7 to 15 digits once the +, spaces, dashes, parentheses and dots people format numbers with are stripped - the sanity check a signup form wants.",
+            "callable:b = validate_phone_loose(submitted_number);";
+        "validate_isbn" => "std_lib::validate::isbn", (text: (&s)) -> b,
+            "Returns true if the text is an ISBN-10 or ISBN-13 with a correct checksum. Hyphens and spaces are ignored.",
+            "orderable:b = validate_isbn(book_number);";
+        "validate_postal_code" => "std_lib::validate::postal_code", (text: (&s), country: (&s)) -> (b!e),
+            "Returns whether the text is a postal code shaped the way the given country shapes them. Knows us, ca, gb, de, fr, nl and au. A country it does not know is an error rather than a false.",
+            "deliverable:b = danger(validate_postal_code(form_code, `ca`));";
         "validate_schema" [JsonSchema, SerdeJson] => "std_lib::validate::schema", (json: s, schema: s) -> ([s]!e),
             "Checks a JSON document against a JSON Schema - types, ranges, required fields, formats. The answer is the list of problems with the path where each sits. An empty list means the document passes. The error case is a schema or document that does not even parse.",
             "problems:a:s = danger(validate_schema(request.body, order_schema));";

@@ -19,6 +19,21 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "url_join" => "std_lib::url::join", (base: s, reference: s) -> (s!e),
             "Resolves a link against the page it was found on, the way a browser does: /about, ../two, ?page=2, #top and a whole URL all come out as the address to fetch. Errors if the base is not a URL.",
             "target:s = danger(url_join(page_url, link));";
+        "url_domain" => "std_lib::url::domain", (url: s) -> (s!e),
+            "The host a URL points at, with any leading www. taken off - so https://www.example.com/a?b comes back as example.com. Errors when the text is not a URL or has no host.",
+            "site:s = danger(url_domain(shared_link));";
+        "url_origin" => "std_lib::url::origin", (url: s) -> (s!e),
+            "The origin of a URL - scheme://host, with the port when the URL named one. The piece browsers compare for CORS and cookies. Errors when the text is not a URL or has no host.",
+            "origin:s = danger(url_origin(request_url));";
+        "url_is_absolute" => "std_lib::url::is_absolute", (url: s) -> b,
+            "Returns true if the text is an absolute URL - one with a scheme and a host, so it can be fetched on its own. /about and example.com/path are not.",
+            "fetchable:b = url_is_absolute(found_link);";
+        "url_strip_tracking" => "std_lib::url::strip_tracking", (url: s) -> (s!e),
+            "Removes the tracking parameters - utm_*, fbclid, gclid, msclkid, mc_eid - that analytics tools staple onto shared links, keeping every other query field in its original order. A URL with no query comes back unchanged.",
+            "clean_link:s = danger(url_strip_tracking(shared_link));";
+        "url_path_segments" [UrlEncoding] => "std_lib::url::path_segments", (url: s) -> ([s]!e),
+            "The path of a URL split into its slash-separated segments, each one percent-decoded. The root path / is an empty array.",
+            "segments:a:s = danger(url_path_segments(request_url));";
     }
 
     // The two functions that speak in pieces of a URL use the full struct form.

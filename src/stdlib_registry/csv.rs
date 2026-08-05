@@ -127,4 +127,22 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         description: "Closes a reader opened by csv_open and releases its file descriptor. A reader that is never closed holds its descriptor for the life of the process.",
         example: "danger(csv_close(reader));",
     });
+
+    simple_fns! { m, Csv:
+        "csv_headers" [Csv] => "std_lib::csv::headers", (text: s) -> ([s]!e),
+            "Returns the first row's fields, which name the columns. Quote aware, so a header holding a comma inside quotes stays one field. Errors when the text is empty.",
+            "columns:a:s = danger(csv_headers(text));";
+        "csv_row_count" [Csv] => "std_lib::csv::data_row_count", (text: s) -> (i!e),
+            "Returns how many data rows the text has, not counting the header row. A newline inside a quoted field does not add a row.",
+            "rows:i = danger(csv_row_count(text));";
+        "csv_column" [Csv] => "std_lib::csv::column", (text: s, header: s) -> ([s]!e),
+            "Returns one column's values as strings, found by header name. A missing header is an error naming it and listing the columns the text has.",
+            "cities:a:s = danger(csv_column(text, `city`));";
+        "csv_cell" [Csv] => "std_lib::csv::cell", (text: s, header: s, row: i) -> (s!e),
+            "Returns a single value by header name and zero based data row index, so row 0 is the first row after the header.",
+            "first_name:s = danger(csv_cell(text, `name`, 0));";
+        "csv_select_columns" [Csv] => "std_lib::csv::select_columns", (text: s, headers: [s]) -> (s!e),
+            "Returns a new CSV keeping only the named columns, in the order given, with quoting undone and redone properly. A missing header is an error naming it and listing the columns the text has.",
+            "trimmed:s = danger(csv_select_columns(text, [`name`, `city`]));";
+    }
 }

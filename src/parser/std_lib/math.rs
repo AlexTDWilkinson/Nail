@@ -574,6 +574,94 @@ pub fn wrap(value: f64, low: f64, high: f64) -> Result<f64, String> {
     return Ok(low + (value - low).rem_euclid(high - low));
 }
 
+/// Where erf and erfc switch from the Maclaurin series to the continued
+/// fraction. Below this the series converges in a couple of dozen terms,
+/// above it the fraction does.
+const ERF_SERIES_LIMIT: f64 = 1.25;
+
+/// The error function: the share of a Gaussian bell that lies within the
+/// given distance of its centre, scaled to run from -1 to 1. It is odd, so
+/// erf(-x) is exactly -erf(x).
+///
+/// Near zero it is summed from the Maclaurin series and further out it is
+/// 1 minus the directly computed complement below. Both routes carry far
+/// more digits than the classic Abramowitz and Stegun rational fit.
+pub fn erf(value: f64) -> f64 {
+    if value.abs() <= ERF_SERIES_LIMIT {
+        return erf_series(value);
+    }
+    let tail = erfc_continued_fraction(value.abs());
+    if value < 0.0 {
+        return tail - 1.0;
+    }
+    return 1.0 - tail;
+}
+
+/// The complementary error function 1 - erf. Computed directly rather than
+/// by subtracting from 1, so the tiny tail values for large inputs keep
+/// their relative accuracy instead of cancelling away to noise.
+pub fn erfc(value: f64) -> f64 {
+    if value > ERF_SERIES_LIMIT {
+        return erfc_continued_fraction(value);
+    }
+    if value < -ERF_SERIES_LIMIT {
+        return 2.0 - erfc_continued_fraction(-value);
+    }
+    return 1.0 - erf_series(value);
+}
+
+/// The Maclaurin series for erf, one term folded in at a time until the
+/// next would not move the total. Only called for small inputs, where the
+/// alternating terms shrink from the start.
+fn erf_series(x: f64) -> f64 {
+    let squared = x * x;
+    let mut term = x;
+    let mut total = x;
+    let mut n = 1.0;
+    while term.abs() > total.abs() * 1e-17 {
+        term *= -squared * (2.0 * n - 1.0) / (n * (2.0 * n + 1.0));
+        total += term;
+        n += 1.0;
+    }
+    return std::f64::consts::FRAC_2_SQRT_PI * total;
+}
+
+/// The continued fraction for the upper tail of the Gaussian, evaluated
+/// with the modified Lentz algorithm - the same fraction that computes the
+/// upper incomplete gamma function at one half. Only called for inputs
+/// beyond the series limit, where it converges quickly.
+fn erfc_continued_fraction(x: f64) -> f64 {
+    let squared = x * x;
+    if squared == f64::INFINITY {
+        // So far out that the tail has nothing left in it at all
+        return 0.0;
+    }
+    let floor_value = 1e-300;
+    let mut b = squared + 0.5;
+    let mut c = 1.0 / floor_value;
+    let mut d = 1.0 / b;
+    let mut h = d;
+    for i in 1..300 {
+        let a = -(i as f64) * (i as f64 - 0.5);
+        b += 2.0;
+        d = a * d + b;
+        if d.abs() < floor_value {
+            d = floor_value;
+        }
+        c = b + a / c;
+        if c.abs() < floor_value {
+            c = floor_value;
+        }
+        d = 1.0 / d;
+        let delta = d * c;
+        h *= delta;
+        if (delta - 1.0).abs() < 1e-15 {
+            break;
+        }
+    }
+    return (-squared).exp() * x * (std::f64::consts::FRAC_2_SQRT_PI / 2.0) * h;
+}
+
 #[cfg(test)]
 mod added_tests {
     use super::*;
@@ -837,5 +925,57 @@ mod pure_addition_tests {
         assert!(close(wrap(90.0, 0.0, 360.0).expect("a proper range"), 90.0), "already inside stays put");
         assert!(wrap(1.0, 5.0, 5.0).unwrap_err().contains("below the high edge"));
         assert!(wrap(1.0, 6.0, 5.0).unwrap_err().contains("below the high edge"));
+    }
+}
+
+#[cfg(test)]
+mod error_function_tests {
+    use super::*;
+
+    fn close(left: f64, right: f64) -> bool {
+        return (left - right).abs() < 1e-9;
+    }
+
+    #[test]
+    fn erf_matches_the_tables_at_the_textbook_points() {
+        assert_eq!(erf(0.0), 0.0, "the series at zero is exactly zero");
+        assert!((erf(1.0) - 0.8427007929497149).abs() < 1e-12);
+        assert!(close(erf(0.5), 0.5204998778130465));
+        assert!(close(erf(2.0), 0.9953222650189527));
+        assert!(close(erf(3.0), 0.9999779095030014));
+        assert_eq!(erf(f64::INFINITY), 1.0);
+        assert_eq!(erf(f64::NEG_INFINITY), -1.0);
+    }
+
+    #[test]
+    fn erf_is_odd_on_both_sides_of_the_series_limit() {
+        for x in [0.1, 0.7, 1.0, 1.25, 1.3, 2.0, 5.0, 10.0] {
+            assert_eq!(erf(-x), -erf(x), "failed at {}", x);
+        }
+    }
+
+    #[test]
+    fn erfc_complements_erf_across_the_whole_line() {
+        assert_eq!(erfc(0.0), 1.0);
+        assert!(close(erfc(1.0), 0.15729920705028513));
+        assert!((erfc(3.0) - 2.2090496998585445e-5).abs() < 1e-10);
+        for x in [-3.0, -1.0, -0.4, 0.3, 1.5, 4.0] {
+            assert!((erf(x) + erfc(x) - 1.0).abs() < 1e-12, "failed at {}", x);
+        }
+    }
+
+    #[test]
+    fn erfc_keeps_relative_accuracy_far_into_the_tail() {
+        // The asymptotic envelope brackets the true tail on both sides, so a
+        // value computed with real relative accuracy must land between them.
+        for x in [2.0f64, 5.0, 10.0, 15.0, 20.0] {
+            let envelope = (-x * x).exp() / (x * std::f64::consts::PI.sqrt());
+            let tail = erfc(x);
+            assert!(tail < envelope, "failed the upper bound at {}", x);
+            assert!(tail > envelope * (1.0 - 0.5 / (x * x)), "failed the lower bound at {}", x);
+        }
+        assert!(close(erfc(-4.0), 2.0 - erfc(4.0)));
+        assert_eq!(erfc(f64::INFINITY), 0.0);
+        assert_eq!(erfc(f64::NEG_INFINITY), 2.0);
     }
 }

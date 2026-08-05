@@ -55,5 +55,14 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "bits_to_hex" => "std_lib::bits::to_hex", (value: i) -> s,
             "Writes the bit pattern in hex, highest digit first, with no leading zeros.",
             "pattern:s = bits_to_hex(255);";
+        "bits_extract" => "std_lib::bits::extract", (value: i, offset: i, width: i) -> (i!e),
+            "Reads a bit field out of the number, width bits starting at the offset. Errors when the field does not fit inside the 64 bits.",
+            "version:i = danger(bits_extract(header, 4, 4));";
+        "bits_insert" => "std_lib::bits::insert", (value: i, offset: i, width: i, field: i) -> (i!e),
+            "Writes a bit field into the number, width bits starting at the offset. Errors when the field does not fit its width or runs past bit 63.",
+            "header:i = danger(bits_insert(header, 4, 4, 7));";
+        "bits_parity" => "std_lib::bits::parity", (value: i) -> i,
+            "Returns 1 when the count of one-bits is odd and 0 when it is even.",
+            "check:i = bits_parity(word);";
     }
 }

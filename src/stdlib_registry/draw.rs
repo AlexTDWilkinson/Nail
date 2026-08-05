@@ -41,6 +41,27 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "draw_scale" => "std_lib::draw::scale", (value: f, from_low: f, from_high: f, to_low: f, to_high: f) -> (f!e),
             "Moves a value from one range into another - the arithmetic every chart needs. To plot upward on a screen whose y grows downward, pass the height as to_low and 0.0 as to_high.",
             "y:f = danger(draw_scale(value, 0.0, 100.0, 300.0, 0.0));";
+        "draw_arc" => "std_lib::draw::arc", (center_x: f, center_y: f, radius: f, start_degrees: f, end_degrees: f, color: s, stroke_width: f) -> (s!e),
+            "An arc stroke along part of a circle, with 0 degrees at twelve o'clock and angles growing clockwise. A gauge is this arc twice - once faint for the track, once bright for the value.",
+            "gauge:s = danger(draw_arc(100.0, 100.0, 80.0, 0.0, 270.0, `#2563eb`, 8.0));";
+        "draw_wedge" => "std_lib::draw::wedge", (center_x: f, center_y: f, radius: f, start_degrees: f, end_degrees: f, fill: s) -> (s!e),
+            "A filled slice of a circle between two angles, in the same clockwise degrees as draw_arc - the shape a pie chart is made of.",
+            "slice:s = danger(draw_wedge(100.0, 100.0, 80.0, 0.0, 120.0, `gold`));";
+        "draw_star" => "std_lib::draw::star", (center_x: f, center_y: f, points: i, outer_radius: f, inner_radius: f, fill: s) -> (s!e),
+            "A star of 3 to 24 points, its corners alternating between the outer and inner radius, drawn point up.",
+            "badge:s = danger(draw_star(50.0, 50.0, 5, 40.0, 16.0, `gold`));";
+        "draw_regular_polygon" => "std_lib::draw::regular_polygon", (center_x: f, center_y: f, sides: i, radius: f, fill: s) -> (s!e),
+            "A regular polygon of 3 to 60 sides, every corner on one circle, drawn point up.",
+            "hex:s = danger(draw_regular_polygon(50.0, 50.0, 6, 40.0, `#16a34a`));";
+        "draw_rounded_rect" => "std_lib::draw::rounded_rect", (x: f, y: f, width: f, height: f, corner_radius: f, fill: s) -> (s!e),
+            "A rectangle with rounded corners, the radius clamped to half the shorter side so a generous radius makes a capsule rather than a mess.",
+            "card:s = danger(draw_rounded_rect(10.0, 10.0, 120.0, 60.0, 8.0, `#e2e8f0`));";
+        "draw_arrow" => "std_lib::draw::arrow", (from_x: f, from_y: f, to_x: f, to_y: f, color: s, stroke_width: f) -> (s!e),
+            "A line with a filled head at its far end, sized from the stroke width so a heavier arrow gets a bigger head.",
+            "pointer:s = danger(draw_arrow(20.0, 20.0, 120.0, 80.0, `black`, 2.0));";
+        "draw_grid" => "std_lib::draw::grid", (width: f, height: f, spacing: f, color: s) -> (s!e),
+            "Evenly spaced guide lines in both directions across the given area, for laying a drawing out. Pass a light colour so the drawing stays on top.",
+            "guides:s = danger(draw_grid(400.0, 300.0, 20.0, `#e2e8f0`));";
         "draw_qr_svg" [QrCode] => "std_lib::draw::qr_svg", (text: s) -> (s!e),
             "A QR code of the text as an SVG document, black on white. Put a URL in it and a phone camera opens the page - tickets, table menus, 2FA enrolment.",
             "badge:s = danger(draw_qr_svg(`https://nail-lang.org`));";

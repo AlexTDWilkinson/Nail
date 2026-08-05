@@ -83,6 +83,58 @@ pub fn sample<T: Clone>(items: &Vec<T>, count: i64) -> Result<Vec<T>, String> {
     return Ok(copy);
 }
 
+/// Shared Box-Muller draw, so the seeded and unseeded halves cannot drift
+/// apart. Two uniform draws become one normally distributed value.
+fn normal_from<R: Rng>(rng: &mut R, mean: f64, stddev: f64) -> f64 {
+    // Shifting the first draw into (0.0, 1.0] keeps the logarithm finite.
+    let first = 1.0 - rng.gen::<f64>();
+    let second = rng.gen::<f64>();
+    let standard = (-2.0 * first.ln()).sqrt() * (std::f64::consts::TAU * second).cos();
+    return mean + stddev * standard;
+}
+
+/// A value from a normal distribution with the given mean and standard
+/// deviation - the bell curve that measurement noise, heights and load-test
+/// jitter follow.
+pub fn normal(mean: f64, stddev: f64) -> f64 {
+    return normal_from(&mut rand::thread_rng(), mean, stddev);
+}
+
+/// One element of the array, chosen with probability proportional to its
+/// weight, so a weight of 2.0 is picked twice as often as a weight of 1.0 and
+/// a weight of zero is never picked. The arrays must be the same length, every
+/// weight nonnegative, and at least one weight positive.
+pub fn weighted_pick<T: Clone>(options: &Vec<T>, weights: &Vec<f64>) -> Result<T, String> {
+    if options.is_empty() {
+        return Err("rand_weighted_pick: the array is empty, so there is nothing to pick".to_string());
+    }
+    if options.len() != weights.len() {
+        return Err(format!("rand_weighted_pick: {} options against {} weights, and every option needs exactly one", options.len(), weights.len()));
+    }
+    for weight in weights {
+        if !weight.is_finite() || *weight < 0.0 {
+            return Err(format!("rand_weighted_pick: the weight {} is not a nonnegative number", weight));
+        }
+    }
+    let total: f64 = weights.iter().sum();
+    if total <= 0.0 {
+        return Err("rand_weighted_pick: every weight is zero, so nothing can be picked".to_string());
+    }
+
+    let target = rand::thread_rng().gen::<f64>() * total;
+    let mut cumulative = 0.0;
+    for (option, weight) in options.iter().zip(weights) {
+        cumulative += weight;
+        if target < cumulative {
+            return Ok(option.clone());
+        }
+    }
+    // Floating-point summation can leave the target a hair past the last
+    // positive weight; that weight's option is the right answer.
+    let last_positive = options.iter().zip(weights).rev().find(|(_, weight)| **weight > 0.0).expect("at least one weight is positive");
+    return Ok(last_positive.0.clone());
+}
+
 /// The same whole number every time for a given seed.
 pub fn seeded_int(seed: i64, min: i64, max: i64) -> Result<i64, String> {
     check_range("rand_seeded_int", min, max)?;
@@ -92,6 +144,12 @@ pub fn seeded_int(seed: i64, min: i64, max: i64) -> Result<i64, String> {
 /// The same fraction every time for a given seed, from 0.0 up to 1.0.
 pub fn seeded_float(seed: i64) -> f64 {
     return StdRng::seed_from_u64(seed as u64).gen::<f64>();
+}
+
+/// The same normally distributed value every time for a given seed, with the
+/// given mean and standard deviation.
+pub fn seeded_normal(seed: i64, mean: f64, stddev: f64) -> f64 {
+    return normal_from(&mut StdRng::seed_from_u64(seed as u64), mean, stddev);
 }
 
 /// The same reordering every time for a given seed.
@@ -186,5 +244,60 @@ mod tests {
     fn different_seeds_give_different_answers() {
         let items: Vec<i64> = (0..64).collect();
         assert_ne!(seeded_shuffle(1, items.clone()), seeded_shuffle(2, items));
+    }
+
+    /// A wide statistical net: with ten thousand draws the sample mean sits
+    /// within a few hundredths of the true mean, so a tolerance of 0.2 only
+    /// fails when the distribution itself is wrong.
+    #[test]
+    fn normal_draws_center_on_the_mean_with_the_right_spread() {
+        let draws: Vec<f64> = (0..10_000).map(|_| normal(5.0, 2.0)).collect();
+        let mean = draws.iter().sum::<f64>() / draws.len() as f64;
+        assert!((mean - 5.0).abs() < 0.2, "sample mean {} is too far from 5.0", mean);
+        let variance = draws.iter().map(|value| (value - mean).powi(2)).sum::<f64>() / draws.len() as f64;
+        let stddev = variance.sqrt();
+        assert!((stddev - 2.0).abs() < 0.2, "sample stddev {} is too far from 2.0", stddev);
+    }
+
+    #[test]
+    fn the_same_seed_gives_the_same_normal_value() {
+        assert_eq!(seeded_normal(42, 0.0, 1.0), seeded_normal(42, 0.0, 1.0));
+        assert_ne!(seeded_normal(1, 0.0, 1.0), seeded_normal(2, 0.0, 1.0));
+    }
+
+    /// The seeded draw is mean + stddev * z for a z fixed by the seed, so
+    /// shifting and scaling it is exact, not merely close.
+    #[test]
+    fn a_seeded_normal_scales_exactly_with_its_mean_and_stddev() {
+        let standard = seeded_normal(7, 0.0, 1.0);
+        assert_eq!(seeded_normal(7, 10.0, 2.0), 10.0 + 2.0 * standard);
+    }
+
+    #[test]
+    fn a_weighted_pick_never_lands_on_a_zero_weight() {
+        let options = vec!["common".to_string(), "impossible".to_string(), "rare".to_string()];
+        let weights = vec![10.0, 0.0, 1.0];
+        for _ in 0..500 {
+            let picked = weighted_pick(&options, &weights).expect("valid weights");
+            assert_ne!(picked, "impossible", "a zero weight was picked");
+        }
+    }
+
+    #[test]
+    fn a_single_positive_weight_is_always_picked() {
+        let options = vec!["a".to_string(), "b".to_string()];
+        for _ in 0..50 {
+            assert_eq!(weighted_pick(&options, &vec![0.0, 3.0]).expect("valid weights"), "b");
+        }
+    }
+
+    #[test]
+    fn weighted_pick_rejects_bad_weights() {
+        let options = vec!["a".to_string(), "b".to_string()];
+        assert!(weighted_pick(&options, &vec![1.0]).unwrap_err().contains("2 options against 1 weights"));
+        assert!(weighted_pick(&options, &vec![1.0, -0.5]).unwrap_err().contains("not a nonnegative number"));
+        assert!(weighted_pick(&options, &vec![0.0, 0.0]).unwrap_err().contains("every weight is zero"));
+        let empty: Vec<String> = vec![];
+        assert!(weighted_pick(&empty, &vec![]).unwrap_err().contains("empty"));
     }
 }

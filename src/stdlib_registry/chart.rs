@@ -19,5 +19,14 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "chart_sparkline" => "std_lib::chart::sparkline", (width: f, height: f, values: [f], colour: s) -> (s!e),
             "Returns a small SVG line with no axis, labels or background, for putting a shape beside a number in a table or a line of prose.",
             "svg:s = danger(chart_sparkline(80.0, 20.0, last_week, `#2563eb`));";
+        "chart_pie" => "std_lib::chart::pie", (labels: [s], values: [f]) -> (s!e),
+            "Returns an SVG pie chart of shares of a whole, one slice per value with a legend of names and percentages, colours dealt from a fixed palette in order.",
+            "svg:s = danger(chart_pie(regions, sales));";
+        "chart_donut" => "std_lib::chart::donut", (labels: [s], values: [f]) -> (s!e),
+            "Returns an SVG donut chart - a pie with a hole - with the total written in the middle.",
+            "svg:s = danger(chart_donut(sources, visits));";
+        "chart_histogram" => "std_lib::chart::histogram", (values: [f], bins: i) -> (s!e),
+            "Returns an SVG histogram of the values in 1 to 100 equal width bins, drawn as touching bars with the bin edges written along the x axis.",
+            "svg:s = danger(chart_histogram(response_times, 10));";
     }
 }
