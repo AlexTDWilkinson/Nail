@@ -245,17 +245,20 @@ f update(state:Platformer, input:GAME_Input):Platformer {
     }
 }
 
-// Four depths behind the action: a still sky with a crescent moon and
-// stars, a far ridge at fifteen percent of camera speed, the plum skyline
-// at forty, and near columns at seventy. Each layer moving a little faster
-// than the one behind it is what makes the world feel deep.
+// A lofi mountain city at night, five depths deep: a still sky with a
+// gold crescent and stars, triangle mountains barely creeping at eight
+// percent of camera speed, a hillside of far buildings at fifteen, the
+// plum skyline with lit windows at forty, and near towers at seventy.
+// Every layer outruns the one behind it, which is what makes it deep.
 f backdrop_shapes(camera_x:f):a:GAME_Shape {
+    mountain_slide:f = camera_x * 0.08;
     far_slide:f = camera_x * 0.15;
     slide:f = camera_x * 0.4;
     near_slide:f = camera_x * 0.7;
     sky:a:GAME_Shape = [
-        game_circle(652.0, 92.0, 26.0, `#3d3a52`),
-        game_circle(662.0, 84.0, 20.0, `#101018`),
+        game_circle(650.0, 94.0, 40.0, `#1c1826`),
+        game_circle(650.0, 94.0, 30.0, `#d9b45f`),
+        game_circle(662.0, 85.0, 24.0, `#101018`),
         game_rect(90.0, 60.0, 2.0, 2.0, `#4a4458`),
         game_rect(210.0, 130.0, 2.0, 2.0, `#4a4458`),
         game_rect(330.0, 45.0, 3.0, 3.0, `#5c5470`),
@@ -265,38 +268,77 @@ f backdrop_shapes(camera_x:f):a:GAME_Shape {
         game_rect(150.0, 210.0, 2.0, 2.0, `#3f3a52`),
         game_rect(620.0, 230.0, 3.0, 3.0, `#5c5470`)
     ];
+    mountains:a:GAME_Shape = [
+        game_triangle(-80.0 - mountain_slide, 600.0, 180.0 - mountain_slide, 250.0, 440.0 - mountain_slide, 600.0, `#151020`),
+        game_triangle(120.0 - mountain_slide, 600.0, 205.0 - mountain_slide, 290.0, 260.0 - mountain_slide, 336.0, `#1f1a2e`),
+        game_triangle(300.0 - mountain_slide, 600.0, 540.0 - mountain_slide, 210.0, 780.0 - mountain_slide, 600.0, `#181324`),
+        game_triangle(500.0 - mountain_slide, 600.0, 570.0 - mountain_slide, 258.0, 615.0 - mountain_slide, 305.0, `#241e35`),
+        game_triangle(660.0 - mountain_slide, 600.0, 880.0 - mountain_slide, 280.0, 1100.0 - mountain_slide, 600.0, `#151020`),
+        game_triangle(1000.0 - mountain_slide, 600.0, 1180.0 - mountain_slide, 240.0, 1360.0 - mountain_slide, 600.0, `#181324`),
+        game_triangle(1130.0 - mountain_slide, 600.0, 1198.0 - mountain_slide, 276.0, 1240.0 - mountain_slide, 320.0, `#241e35`)
+    ];
+    // A hillside of little far buildings climbing the slopes, the city
+    // half of city on mountains.
     ridge:a:GAME_Shape = [
-        game_rect(0.0 - far_slide, 430.0, 260.0, 170.0, `#161221`),
-        game_rect(240.0 - far_slide, 470.0, 300.0, 130.0, `#141020`),
-        game_rect(520.0 - far_slide, 440.0, 240.0, 160.0, `#161221`),
-        game_rect(740.0 - far_slide, 480.0, 280.0, 120.0, `#141020`),
-        game_rect(1000.0 - far_slide, 450.0, 260.0, 150.0, `#161221`)
+        game_rect(60.0 - far_slide, 430.0, 46.0, 170.0, `#1d1729`),
+        game_rect(120.0 - far_slide, 390.0, 34.0, 210.0, `#221b31`),
+        game_rect(168.0 - far_slide, 440.0, 40.0, 160.0, `#1d1729`),
+        game_rect(330.0 - far_slide, 470.0, 44.0, 130.0, `#221b31`),
+        game_rect(390.0 - far_slide, 420.0, 30.0, 180.0, `#1d1729`),
+        game_rect(560.0 - far_slide, 380.0, 38.0, 220.0, `#221b31`),
+        game_rect(610.0 - far_slide, 430.0, 46.0, 170.0, `#1d1729`),
+        game_rect(800.0 - far_slide, 410.0, 34.0, 190.0, `#221b31`),
+        game_rect(850.0 - far_slide, 460.0, 44.0, 140.0, `#1d1729`),
+        game_rect(1010.0 - far_slide, 400.0, 38.0, 200.0, `#221b31`),
+        game_rect(1060.0 - far_slide, 450.0, 40.0, 150.0, `#1d1729`)
     ];
     haze:a:GAME_Shape = [game_rect(0.0, 505.0, 800.0, 95.0, `#171320`)];
     mid:a:GAME_Shape = [
-        game_rect(40.0 - slide, 340.0, 120.0, 260.0, `#241d2e`),
-        game_rect(230.0 - slide, 290.0, 90.0, 310.0, `#2c2438`),
-        game_rect(360.0 - slide, 380.0, 140.0, 220.0, `#241d2e`),
-        game_rect(585.0 - slide, 260.0, 26.0, 340.0, `#6d5a7e`),
-        game_rect(640.0 - slide, 320.0, 110.0, 280.0, `#3a2f4b`),
-        game_rect(830.0 - slide, 360.0, 130.0, 240.0, `#241d2e`),
-        game_rect(1010.0 - slide, 280.0, 90.0, 320.0, `#2c2438`),
-        game_rect(1170.0 - slide, 240.0, 26.0, 360.0, `#6d5a7e`),
-        game_rect(1230.0 - slide, 330.0, 150.0, 270.0, `#3a2f4b`),
-        game_rect(1450.0 - slide, 300.0, 100.0, 300.0, `#241d2e`),
-        game_rect(1600.0 - slide, 360.0, 120.0, 240.0, `#2c2438`)
+        game_rect(40.0 - slide, 340.0, 120.0, 260.0, `#251e30`),
+        game_rect(230.0 - slide, 290.0, 90.0, 310.0, `#2b2339`),
+        game_rect(360.0 - slide, 380.0, 140.0, 220.0, `#251e30`),
+        game_rect(585.0 - slide, 260.0, 26.0, 340.0, `#2b2339`),
+        game_rect(640.0 - slide, 320.0, 110.0, 280.0, `#2b2339`),
+        game_rect(830.0 - slide, 360.0, 130.0, 240.0, `#251e30`),
+        game_rect(1010.0 - slide, 280.0, 90.0, 320.0, `#2b2339`),
+        game_rect(1170.0 - slide, 240.0, 26.0, 360.0, `#2b2339`),
+        game_rect(1230.0 - slide, 330.0, 150.0, 270.0, `#2b2339`),
+        game_rect(1450.0 - slide, 300.0, 100.0, 300.0, `#251e30`),
+        game_rect(1600.0 - slide, 360.0, 120.0, 240.0, `#2b2339`)
+    ];
+    // Little lit windows, the cutesy part: a few homes still awake.
+    windows:a:GAME_Shape = [
+        game_rect(255.0 - slide, 320.0, 6.0, 8.0, `#8a6d3f`),
+        game_rect(275.0 - slide, 356.0, 6.0, 8.0, `#b08d4a`),
+        game_rect(70.0 - slide, 380.0, 6.0, 8.0, `#8a6d3f`),
+        game_rect(102.0 - slide, 420.0, 6.0, 8.0, `#8a6d3f`),
+        game_rect(672.0 - slide, 350.0, 6.0, 8.0, `#b08d4a`),
+        game_rect(700.0 - slide, 396.0, 6.0, 8.0, `#8a6d3f`),
+        game_rect(1040.0 - slide, 320.0, 6.0, 8.0, `#8a6d3f`),
+        game_rect(1066.0 - slide, 372.0, 6.0, 8.0, `#b08d4a`),
+        game_rect(1268.0 - slide, 366.0, 6.0, 8.0, `#8a6d3f`),
+        game_rect(1486.0 - slide, 340.0, 6.0, 8.0, `#8a6d3f`),
+        game_rect(1636.0 - slide, 396.0, 6.0, 8.0, `#b08d4a`)
     ];
     near:a:GAME_Shape = [
-        game_rect(120.0 - near_slide, 200.0, 18.0, 400.0, `#493c5c`),
-        game_rect(430.0 - near_slide, 260.0, 30.0, 340.0, `#3f3450`),
-        game_rect(760.0 - near_slide, 170.0, 18.0, 430.0, `#493c5c`),
-        game_rect(1080.0 - near_slide, 240.0, 26.0, 360.0, `#3f3450`),
-        game_rect(1420.0 - near_slide, 190.0, 18.0, 410.0, `#493c5c`),
-        game_rect(1760.0 - near_slide, 270.0, 34.0, 330.0, `#3f3450`),
-        game_rect(2100.0 - near_slide, 210.0, 18.0, 390.0, `#493c5c`),
-        game_rect(2400.0 - near_slide, 250.0, 26.0, 350.0, `#3f3450`)
+        game_rect(120.0 - near_slide, 200.0, 18.0, 400.0, `#3b3150`),
+        game_rect(430.0 - near_slide, 300.0, 90.0, 300.0, `#332a42`),
+        game_rect(454.0 - near_slide, 336.0, 8.0, 10.0, `#9a7b45`),
+        game_rect(486.0 - near_slide, 390.0, 8.0, 10.0, `#8a6d3f`),
+        game_rect(760.0 - near_slide, 170.0, 18.0, 430.0, `#3b3150`),
+        game_rect(1080.0 - near_slide, 280.0, 110.0, 320.0, `#332a42`),
+        game_rect(1108.0 - near_slide, 316.0, 8.0, 10.0, `#8a6d3f`),
+        game_rect(1150.0 - near_slide, 370.0, 8.0, 10.0, `#9a7b45`),
+        game_rect(1420.0 - near_slide, 190.0, 18.0, 410.0, `#3b3150`),
+        game_rect(1760.0 - near_slide, 320.0, 130.0, 280.0, `#332a42`),
+        game_rect(1794.0 - near_slide, 356.0, 8.0, 10.0, `#8a6d3f`),
+        game_rect(2100.0 - near_slide, 210.0, 18.0, 390.0, `#3b3150`),
+        game_rect(2400.0 - near_slide, 290.0, 100.0, 310.0, `#332a42`),
+        game_rect(2428.0 - near_slide, 328.0, 8.0, 10.0, `#9a7b45`)
     ];
-    r array_concat(array_concat(sky, ridge), array_concat(array_concat(haze, mid), near));
+    behind:a:GAME_Shape = array_concat(array_concat(sky, mountains), array_concat(ridge, haze));
+    city:a:GAME_Shape = array_concat(array_concat(mid, windows), near);
+    r array_concat(behind, city);
 }
 
 f no_shapes():a:GAME_Shape {
