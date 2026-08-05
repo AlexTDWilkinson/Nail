@@ -1,0 +1,79 @@
+// Builds everything the request handler serves: the assembled page, the
+// run-example outputs computed at startup, and the state hashmap that
+// carries them into the handler. Also keeps the server warm with a
+// self-ping.
+
+// Assemble the complete HTML
+website_html:s = array_join([
+    generate_head(site_title, site_description),
+    html`<body hx-boost="true">`,
+    generate_navbar(nav_html),
+    generate_hero(hero_snippet_html),
+    generate_philosophy(),
+    generate_problem_section(),
+    generate_features(),
+    generate_examples(concurrent_example_html, parallel_example_html, error_example_html, concurrent_rust_html, parallel_rust_html, error_rust_html),
+    generate_mcp(mcp_example_html),
+    generate_batteries(battery_rows),
+    generate_stdlib(stdlib_function_list, stdlib_module_list),
+    generate_get_started(),
+    generate_ide(ide_shot_error, ide_shot_complete, ide_shot_docs, tagged_snippet_html),
+    generate_performance(),
+    generate_versioning(),
+    generate_author(author_avatar),
+    generate_footer(),
+    generate_menu_script(),
+    html`</body>
+</html>`
+], ``);
+
+// Everything the request handler serves travels through the config hashmap:
+// a Nail function can only see its parameters, so page content computed up
+// here reaches handle_request that way rather than as a global.
+state:h<s,s> = hashmap_new();
+hashmap_set(state, `page_main`, website_html);
+
+// Routes for running examples. The outputs are built from values this server
+// actually computed at startup by executing the same code the examples show.
+run_note:s = `\\n\\n(Real output: computed by this server, itself a Nail program, by running the code above.)`;
+
+concurrent_output:s = array_join([
+    `{"output": "Language spec chars: `, string_from(string_length(spec_text)),
+    `\\nREADME chars: `, string_from(string_length(readme_text)),
+    `\\nWebsite source chars: `, string_from(string_length(website_text)),
+    `\\nAll three files loaded concurrently!`, run_note, `"}`
+], ``);
+
+hashmap_set(state, `example_concurrent`, concurrent_output);
+
+parallel_output:s = array_join([
+    `{"output": "12! = `, string_from(fact_12),
+    `\\nSum of 1 to 1,000,000 = `, string_from(sum_to_million),
+    `\\nPrimes below 10,000 = `, string_from(prime_count),
+    run_note, `"}`
+], ``);
+
+hashmap_set(state, `example_parallel`, parallel_output);
+
+error_output:s = array_join([
+    `{"output": "10 / 2 = `, string_from(div_ok),
+    `\\nError occurred: Cannot divide by zero!\\nResult with error handling: `, string_from(div_fallback),
+    run_note, `"}`
+], ``);
+
+hashmap_set(state, `example_error`, error_output);
+
+// Keep the server warm by pinging itself every 14.5 minutes (870 seconds)
+spawn {
+    // Wait 30 seconds for server to fully start
+    time_sleep(30.0);
+    
+    loop {
+        // Send actual HTTP GET request to keep the website alive
+        ping_response:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://nail-idtq.onrender.com`, hashmap_new(), ``));
+        print(`[Self-ping] Successfully pinged server to keep it warm, status: `, ping_response.status);
+        
+        // Wait 14.5 minutes (870 seconds) before next ping
+        time_sleep(870.0);
+    }
+}

@@ -1,0 +1,54 @@
+// The request handler and its routes.
+
+// Every request lands here. Routing is ordinary Nail code rather than a table
+// the server owns, so a path and what it serves stay side by side.
+f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
+    headers:h<s,s> = hashmap_new();
+    if {
+        request.path == `/` -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_main`)),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
+        request.path == `/run-example` -> {
+            r run_example_response(request, state, headers);
+        },
+        else -> {
+            r HTTP_Response {
+                status = 404,
+                body = html`<pre>404 - not found</pre>`,
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        }
+    }
+}
+
+// The example outputs were computed at startup and carried in through config,
+// since a Nail function cannot reach values declared outside it.
+f run_example_response(request:HTTP_Request, state:h<s,s>, headers:h<s,s>):HTTP_Response {
+    // A request without ?name must answer 404, not panic the handler.
+    requested:s = safe(hashmap_get(request.query, `name`), missing_example_name);
+    config_key:s = array_join([`example_`, requested], ``);
+    if {
+        hashmap_contains_key(state, config_key) -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, config_key)),
+                content_type = `application/json`,
+                headers = headers
+            };
+        },
+        else -> {
+            r HTTP_Response {
+                status = 404,
+                body = `{"output": "No such example."}`,
+                content_type = `application/json`,
+                headers = headers
+            };
+        }
+    }
+}

@@ -6,11 +6,14 @@ edition = "2021"
 [dependencies]
 nail = { path = ".." }
 axum = { version = "0.7", features = ["ws"] }
+chrono = "0.4"
 dashmap = { version = "6.1.0", features = ["serde"] }
 futures = "0.3"
 rayon = "1.10.0"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "multipart"] }
 serde = { version = "1.0", features = ["derive"] }
+sha1 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tower-http = { version = "0.5", features = ["fs"] }
 urlencoding = "2.1"
+uuid = { version = "1.0", features = ["v4", "v7"] }

@@ -1,0 +1,15 @@
+// Sealed with insert_safe: the compiler proves this file only computes.
+// A file like this could be downloaded from the internet and inserted unread,
+// nothing in it can touch the machine it runs on.
+//
+// Small string shapers: fallback text and source file labeling.
+
+f missing_example_name(err:e):s {
+    r ``;
+}
+
+// Labels one source file for display: a header line naming the file, then
+// the file itself.
+f label_source_file(path:s, source:s):s {
+    r array_join([`// ===== `, path, ` =====`, `\n`, source], ``);
+}

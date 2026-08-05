@@ -1,0 +1,168 @@
+// Site configuration, the files this server reads at startup, and the demo
+// values it computes at startup by really running the code the page displays.
+
+// Website configuration
+site_title:s = `Nail - A small language with a huge standard library`;
+site_description:s = `Few constructs, a thousand built-in functions. No null, no mutation, no package manager, no unsafe. Errors you cannot ignore, and iteration that uses every core without being asked.`;
+
+// Navigation structure
+struct NavItem {
+    name:s,
+    path:s
+}
+
+nav_items:a:NavItem = [
+    NavItem { name = `Philosophy`, path = `#philosophy` },
+    NavItem { name = `Features`, path = `#features` },
+    NavItem { name = `Examples`, path = `#examples` },
+    NavItem { name = `MCP`, path = `#mcp` },
+    NavItem { name = `Library`, path = `#stdlib` },
+    NavItem { name = `Get Started`, path = `#start` },
+    NavItem { name = `IDE`, path = `#ide` },
+    NavItem { name = `Performance`, path = `#performance` },
+    NavItem { name = `Roadmap`, path = `#versioning` },
+    NavItem { name = `Documentation`, path = `https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md` }
+];
+
+// Read example files that showcase Nail's philosophy
+error_example:s = danger(fs_read(`examples/website_examples/simple_error.nail`));
+concurrent_example:s = danger(fs_read(`examples/website_examples/simple_concurrent.nail`));
+parallel_example:s = danger(fs_read(`examples/website_examples/simple_parallel.nail`));  
+immutable_example:s = danger(fs_read(`examples/website_examples/immutable_safety.nail`));
+basics_example:s = danger(fs_read(`examples/website_examples/binding_values.nail`));
+mcp_example:s = danger(fs_read(`examples/mcp_dice_server.nail`));
+
+// Read test files for more complex examples
+greet_test:s = danger(fs_read(`tests/test_website_greet_example.nail`));
+collections_test:s = danger(fs_read(`tests/test_website_collections_example.nail`));
+factorial_test:s = danger(fs_read(`tests/test_website_factorial_example.nail`));
+
+// The /run-example routes serve REAL output: this server executes the same
+// code as the displayed examples at startup and builds responses from the results.
+f read_fallback(err:e):s {
+    print(`read failed:`, err);
+    r `(file unavailable)`;
+}
+
+// Same CPU-heavy work as the parallel example, on separate OS threads
+p
+    fact_12:i = factorial(12);
+    sum_to_million:i = array_sum(array_range_inclusive(1, 1000000));
+    prime_count:i = count_primes_below(10000);
+/p
+
+// Same concurrent file reads as the concurrent example. This program's own
+// source is split across files by insert(), so every part is read here too.
+c
+    spec_text:s = danger(fs_read(`nail_language_spec.md`));
+    readme_text:s = expect(fs_read(`README.md`));
+    website_entry_text:s = safe(fs_read(`examples/nail_website.nail`), read_fallback);
+    demo_math_text:s = safe(fs_read(`examples/website/safe/demo_math.nail`), read_fallback);
+    stdlib_listing_text:s = safe(fs_read(`examples/website/safe/stdlib_listing.nail`), read_fallback);
+    text_helpers_text:s = safe(fs_read(`examples/website/safe/text_helpers.nail`), read_fallback);
+    startup_data_text:s = safe(fs_read(`examples/website/startup_data.nail`), read_fallback);
+    styles_text:s = safe(fs_read(`examples/website/styles.nail`), read_fallback);
+    page_sections_text:s = safe(fs_read(`examples/website/page_sections.nail`), read_fallback);
+    server_state_text:s = safe(fs_read(`examples/website/server_state.nail`), read_fallback);
+    routes_text:s = safe(fs_read(`examples/website/routes.nail`), read_fallback);
+/c
+
+// The listing of this site's source: the entry file, then each inserted part
+// under a labeled header, in insert order.
+website_text:s = array_join([
+    label_source_file(`examples/nail_website.nail`, website_entry_text),
+    label_source_file(`examples/website/safe/demo_math.nail`, demo_math_text),
+    label_source_file(`examples/website/safe/stdlib_listing.nail`, stdlib_listing_text),
+    label_source_file(`examples/website/safe/text_helpers.nail`, text_helpers_text),
+    label_source_file(`examples/website/startup_data.nail`, startup_data_text),
+    label_source_file(`examples/website/styles.nail`, styles_text),
+    label_source_file(`examples/website/page_sections.nail`, page_sections_text),
+    label_source_file(`examples/website/server_state.nail`, server_state_text),
+    label_source_file(`examples/website/routes.nail`, routes_text)
+], `\n`);
+
+// Same error-handling paths as the error example
+div_ok:i = danger(divide(10, 2));
+div_fallback:i = safe(divide(10, 0), zero_fallback);
+
+// Syntax-highlight the examples with Nail's own lexer (no JS highlighter —
+// the server lexes each example and emits colored HTML spans)
+// The author photo travels as base64 in the page itself: this server serves
+// routes of text, so there is no binary asset to host or path to get wrong.
+author_avatar:s = danger(fs_read(`examples/website_assets/author_avatar.b64`));
+
+// Real frames of the IDE, captured from a terminal and converted to HTML, so
+// the colors below are the ones the editor actually drew.
+ide_shot_error:s = danger(fs_read(`examples/website_screenshots/ide_error.html`));
+ide_shot_complete:s = danger(fs_read(`examples/website_screenshots/ide_complete.html`));
+ide_shot_docs:s = danger(fs_read(`examples/website_screenshots/ide_docs.html`));
+
+hero_snippet:s = `// Nothing here is mutable, so nothing here can race.
+// map and filter are language operations, so they run on every core.
+evens:a:i = filter num in array_range(1, 1000000) { y num % 2 == 0; };
+squares:a:i = map num in evens { y num * num; };
+total:i = array_sum(squares);`;
+hero_snippet_html:s = code_highlight_html(hero_snippet);
+
+// Highlighted by the same lexer as everything else on this page, so the colors
+// below are the ones the tags actually produce.
+tagged_snippet:s = `page_styles:s = css\`.hero { color: #86efac; }\`;
+banner:s = html\`<section class="hero"><h1>Nail</h1></section>\`;
+lookup:s = sql\`SELECT name FROM users WHERE active = 1;\`;
+settings:s = yaml\`service: nail   # what runs here\`;
+manifest:s = toml\`[package]\`;
+behaviour:s = js\`const total = items.map(double);\`;
+release:s = md\`## Out **today**\`;
+plain:s = \`no tag, no change\`;`;
+tagged_snippet_html:s = code_highlight_html(tagged_snippet);
+
+// The standard library, asked of the compiler itself rather than listed by
+// hand - and sorted here, in Nail, so the page owes its order to nobody.
+stdlib_function_list:a:STDLIB_Function = array_sort_by(stdlib_functions(), stdlib_order_key);
+stdlib_module_list:a:s = array_sort(stdlib_modules());
+
+concurrent_example_html:s = code_highlight_html(concurrent_example);
+mcp_example_html:s = code_highlight_html(mcp_example);
+
+// The batteries, demonstrated by firing them: every answer below is computed
+// right here at startup by running the expression its row shows.
+us_payment:s = money_format(danger(money_loan_payment(20000000, 6.0, 360)), `$`);
+ca_payment:s = money_format(danger(money_loan_payment_compounded(20000000, 6.0, 360, 2)), `$`);
+ab_p_value:s = string_from(danger(math_round_to(danger(stats_ab_test(200, 1000, 250, 1000)), 4)));
+city_distance:s = string_from(danger(math_round_to(danger(geo_distance_km(53.5461, -113.4937, 51.0447, -114.0719)), 1)));
+city_geohash:s = danger(geo_geohash(53.5461, -113.4937, 7));
+fuel_mpg:s = string_from(danger(math_round_to(danger(convert_fuel_economy(8.0, `l100km`, `mpg`)), 1)));
+fuzzy_city:s = danger(string_best_match(`edmontn`, [`Calgary`, `Edmonton`, `Toronto`, `Vancouver`]));
+stable_id:s = danger(crypto_uuid_v5(`6ba7b810-9dad-11d1-80b4-00c04fd430c8`, `nail-lang.org`));
+cron_in_words:s = danger(time_cron_describe(`0 3 * * *`));
+year_in_roman:s = danger(format_roman(2026));
+readable_text:s = danger(color_text_on(`#2563eb`));
+count_in_words:s = format_number_words(array_length(stdlib_function_list));
+
+battery_rows:a:h<s,s> = [
+    battery_row(`money_loan_payment(20000000, 6.0, 360)`, us_payment),
+    battery_row(`money_loan_payment_compounded(20000000, 6.0, 360, 2)`, ca_payment),
+    battery_row(`stats_ab_test(200, 1000, 250, 1000)`, ab_p_value),
+    battery_row(`geo_distance_km(53.5461, -113.4937, 51.0447, -114.0719)`, city_distance),
+    battery_row(`geo_geohash(53.5461, -113.4937, 7)`, city_geohash),
+    battery_row(`convert_fuel_economy(8.0, "l100km", "mpg")`, fuel_mpg),
+    battery_row(`string_best_match("edmontn", cities)`, fuzzy_city),
+    battery_row(`crypto_uuid_v5(dns_namespace, "nail-lang.org")`, stable_id),
+    battery_row(`time_cron_describe("0 3 * * *")`, cron_in_words),
+    battery_row(`format_roman(2026)`, year_in_roman),
+    battery_row(`color_text_on("#2563eb")`, readable_text),
+    battery_row(`format_number_words(array_length(stdlib_functions()))`, count_in_words)
+];
+parallel_example_html:s = code_highlight_html(parallel_example);
+error_example_html:s = code_highlight_html(error_example);
+
+// Transpile each example to Rust with the real Nail compiler, live at startup
+concurrent_rust_html:s = code_escape_html(danger(code_transpile_to_rust(concurrent_example)));
+parallel_rust_html:s = code_escape_html(danger(code_transpile_to_rust(parallel_example)));
+error_rust_html:s = code_escape_html(danger(code_transpile_to_rust(error_example)));
+
+// Create navigation HTML
+nav_links:a:s = map item in nav_items {
+    y array_join([html`<a href="`, item.path, `" class="nav-link" hx-boost="true">`, item.name, html`</a>`], ``);
+};
+nav_html:s = array_join(nav_links, ``);

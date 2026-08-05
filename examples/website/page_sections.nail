@@ -1,0 +1,736 @@
+// The HTML builders: one function per section of the page, plus the head,
+// the navbar, the footer and the menu script.
+
+// Generate HTML sections
+f generate_head(site_title:s, site_description:s):s {
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `title`, site_title);
+    hashmap_set(values, `description`, site_description);
+    hashmap_set(values, `stylesheet`, generate_css());
+
+    // The title and description are escaped by the template. The stylesheet is
+    // put in raw, with three braces: escaping it would turn every `>` in a
+    // selector into markup and break the page.
+    r danger(template_render(html`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{description}}">
+    <title>{{title}}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>{{{stylesheet}}}</style>
+</head>`, values));
+}
+
+f generate_navbar(nav_html:s):s {
+    navbar_html:s = array_join([
+        html`<nav class="navbar">
+    <div class="nav-container">
+        <a href="#home" class="nav-brand">
+            <span style="font-size: 1.5rem;">🔨</span>
+            <span>Nail</span>
+        </a>
+        <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav-links">
+            <svg class="nav-icon-open" aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <path d="M3 6h14M3 10h14M3 14h14"></path>
+            </svg>
+            <svg class="nav-icon-close" aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" style="display: none;">
+                <path d="M5 5l10 10M15 5L5 15"></path>
+            </svg>
+        </button>
+        <div class="nav-links" id="nav-links">`,
+        nav_html,
+        html`</div>
+    </div>
+</nav>`
+    ], ``);
+    r navbar_html;
+}
+
+f generate_hero(hero_code:s):s {
+    hero_html:s = array_join([
+        html`<section id="home" class="hero">
+    <h1 class="hero-title">Nail</h1>
+    <p class="hero-tagline">A small language with a huge standard library: it transpiles to Rust and uses every core without being asked</p>
+    <p class="hero-description">
+        No null. No mutation. No package manager. No unsafe. Errors you can't ignore, and iteration
+        that runs in parallel whenever it's safe to.
+    </p>
+    <p class="hero-description">
+        Rust does the heavy lifting underneath: one command turns your file into a real program, so
+        you get Rust's speed and memory safety whether or not you know Rust.
+    </p>
+    <div class="hero-actions">
+        <a href="#start" class="btn btn-primary">Get Started</a>
+        <a href="#examples" class="btn btn-secondary">See Examples</a>
+    </div>
+    <div class="code-example" style="max-width: 680px; margin: 3rem auto 1rem; text-align: left;">
+        <span class="code-label">Nail</span><pre>`,
+        hero_code,
+        html`</pre>
+    </div>
+    <p style="color: var(--text-secondary);">
+        This page is a Nail program: server, syntax highlighting and compiler output, all of it.
+        <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/nail_website.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
+    </p>
+</section>`
+    ], ``);
+    r hero_html;
+}
+
+f generate_philosophy():s {
+    r html`<section id="philosophy" class="philosophy">
+    <div class="section-header">
+        <h2>Our Philosophy</h2>
+        <p>Simplicity is not about doing less. It's about doing only what matters.</p>
+    </div>
+    <div class="philosophy-content">
+        <p>
+            Every new abstraction is another way to do the same thing, and another thing to understand
+            when it breaks. Nail removes instead of adding: one good way to solve a problem, not ten.
+        </p>
+
+        <div class="philosophy-quote">
+            "The best code is not the code that handles every edge case with clever abstractions.
+            It's the code that doesn't have edge cases to begin with."
+        </div>
+    </div>
+</section>`;
+}
+
+f generate_problem_section():s {
+    r html`<section class="problems" style="padding: 4rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+    <div style="max-width: 1200px; margin: 0 auto; color: white;">
+        <h2 style="font-size: 2.5rem; margin-bottom: 2.5rem; text-align: center;">Three bugs Nail cannot express</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem;">
+            <div style="text-align: center;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">NULL</div>
+                <p>The billion dollar mistake. There is no null to return, so nothing can be missing.</p>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">LOOPS</div>
+                <p>Off-by-one, iterator invalidation, infinite loops. There are no counters to get wrong.</p>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">RACES</div>
+                <p>Data races and deadlocks. Nothing is mutable, so threads have nothing to fight over.</p>
+            </div>
+        </div>
+    </div>
+</section>`;
+}
+
+f generate_features():s {
+    features_data:a:s = [
+        html`<div class="feature-card">
+            <div class="feature-icon">🔒</div>
+            <h3>Nothing Changes Behind Your Back</h3>
+            <p>Once a name has a value it keeps it. Nothing elsewhere can overwrite it, so there is
+               never a hunt for what did.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">👻</div>
+            <h3>Nothing Is Ever Empty</h3>
+            <p>No null, no undefined, no declared-but-unset. Every name has a real value from the
+               moment it exists.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">🔄</div>
+            <h3>Say What You Want, Not How to Loop</h3>
+            <p>map to change every item, filter to keep some, reduce to fold them into one. No
+               counters, so no off-by-one.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>Many Things at Once, Safely</h3>
+            <p>A c block waits on files and networks together. A p block spreads CPU work over every
+               core. You never touch a thread.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">🔀</div>
+            <h3>Errors Can't Be Ignored</h3>
+            <p>Anything that can fail returns something you must handle: safe() for a fallback,
+               danger() to accept the crash.</p>
+        </div>`,
+        html`<div class="feature-card">
+            <div class="feature-icon">🚫</div>
+            <h3>No Escape Hatch, No Supply Chain</h3>
+            <p>No unsafe to switch the rules off, no package manager to pull in code from strangers.
+               Your program is what you wrote.</p>
+        </div>`
+    ];
+    
+    features_html:s = array_join(features_data, ``);
+    
+    section_html:s = array_join([
+        html`<section id="features" class="features">
+    <div class="section-header">
+        <h2>Key Features</h2>
+        <p>Every feature here exists to make a whole family of bugs impossible to write</p>
+    </div>
+    <div class="features-grid">`,
+        features_html,
+        `
+    </div>
+</section>`
+    ], ``);
+    r section_html;
+}
+
+f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, concurrent_rust:s, parallel_rust:s, error_rust:s):s {
+    examples_html:s = array_join([
+        html`<section id="examples" class="examples">
+    <div class="section-header">
+        <h2>Code Examples</h2>
+        <p>Nothing here is a mockup. ▶ Run serves output this server really computed, the
+           highlighting is Nail's own lexer, and every Rust panel is what the transpiler emitted.</p>
+    </div>
+    
+    <div style="display: grid; gap: 2rem;">
+        <div>
+            <h3 style="margin-bottom: 1rem;">Concurrent I/O Operations (c.../c)</h3>
+            <div class="code-example" style="position: relative;">
+                <span class="code-label">Nail</span>
+                <button onclick="fetch('/run-example?name=concurrent').then(r=>r.json()).then(d=>{let el=document.getElementById('concurrent-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
+                <pre>`,
+        concurrent_example,
+        html`</pre>
+            </div>
+            <details class="rust-details">
+                <summary>🦀 View the generated Rust (tokio::join! under the hood)</summary>
+                <div class="code-example"><span class="code-label">Generated Rust</span><pre>`,
+        concurrent_rust,
+        html`</pre></div>
+            </details>
+            <pre id="concurrent-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
+            <p style="color: var(--text-secondary); margin-top: 1rem;">
+                Everything inside c.../c starts at once and the block ends when all of it finishes.
+                The compiler emits tokio::join!. That's a hand-built Promise.all in JavaScript, or
+                goroutines plus a WaitGroup in Go. Past /c the values are ordinary and immutable,
+                with no await left to forget.
+            </p>
+        </div>
+        
+        <div>
+            <h3 style="margin-bottom: 1rem;">Parallel CPU Work (p.../p)</h3>
+            <div class="code-example" style="position: relative;">
+                <span class="code-label">Nail</span>
+                <button onclick="fetch('/run-example?name=parallel').then(r=>r.json()).then(d=>{let el=document.getElementById('parallel-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
+                <pre>`,
+        parallel_example,
+        html`</pre>
+            </div>
+            <details class="rust-details">
+                <summary>🦀 View the generated Rust (thread spawn + join barrier)</summary>
+                <div class="code-example"><span class="code-label">Generated Rust</span><pre>`,
+        parallel_rust,
+        html`</pre></div>
+            </details>
+            <pre id="parallel-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
+            <p style="color: var(--text-secondary); margin-top: 1rem;">
+                Each statement in p.../p gets its own OS thread, joined at /p, so every value below
+                the block is ready. No locks, because there is nothing mutable to lock. Rule of
+                thumb: c blocks to wait on the outside world, p blocks to burn CPU.
+            </p>
+        </div>
+        
+        <div>
+            <h3 style="margin-bottom: 1rem;">Error Handling Done Right</h3>
+            <div class="code-example" style="position: relative;">
+                <span class="code-label">Nail</span>
+                <button onclick="fetch('/run-example?name=error').then(r=>r.json()).then(d=>{let el=document.getElementById('error-output');el.style.display='block';el.textContent=d.output})" style="position: absolute; bottom: 1rem; right: 1rem; background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;">▶ Run</button>
+                <pre>`,
+        error_example,
+        html`</pre>
+            </div>
+            <details class="rust-details">
+                <summary>🦀 View the generated Rust (Result types, no exceptions)</summary>
+                <div class="code-example"><span class="code-label">Generated Rust</span><pre>`,
+        error_rust,
+        html`</pre></div>
+            </details>
+            <pre id="error-output" style="display: none; background: #1a1a1a; color: #10b981; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; font-family: monospace;"></pre>
+            <p style="color: var(--text-secondary); margin-top: 1rem;">
+                divide returns i!e, an integer or an error, and Nail will not compile code that
+                ignores the error half. Handle it with safe() and a fallback, or accept the crash
+                with danger(). Every error path is written down, and the compiler checks that it is.
+            </p>
+        </div>
+    </div>
+</section>`
+    ], ``);
+    r examples_html;
+}
+
+f generate_get_started():s {
+    r html`<section id="start" class="philosophy">
+    <div class="section-header">
+        <h2>Get Started</h2>
+        <p>A Rust toolchain and one clone. Rust does the building. The editor comes with the language.</p>
+    </div>
+    <div class="philosophy-content">
+        <div class="code-example"><span class="code-label">Shell</span><pre>git clone https://github.com/AlexTDWilkinson/Nail.git
+cd Nail
+
+# Opens the file in Nail's own IDE
+cargo run -- examples/hello_world.nail</pre></div>
+        <p>
+            There is no editor to choose. Nail ships one, and it runs the real compiler over your file
+            as you type, so an error is underlined where it actually is instead of being guessed at by
+            a plugin. <strong>F7</strong> compiles what you are looking at into a release binary,
+            <strong>F1</strong> documents the function under the cursor, Ctrl+S saves, Ctrl+F finds,
+            F6 changes the theme.
+        </p>
+        <p>
+            That standardisation is the feature. Nothing to install, no language server to keep in
+            sync, no formatter to argue about, no plugin that quietly disagrees with the compiler.
+            The same compiler, as <strong>nailc</strong>, is what your build scripts call.
+        </p>
+        <p style="font-size: 0.95rem;">
+            One command turns your file into a program you can run: Nail writes the Rust, picks the
+            libraries it needs, and hands it to Rust to build. Nothing to configure. Rust is doing the
+            work underneath, so your program is as fast as Rust and runs anywhere Rust runs, and you
+            can read the Rust it wrote whenever you want to. Linux is the supported platform for the
+            editor itself.
+        </p>
+        <p style="font-size: 0.95rem;">
+            The <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md" target="_blank" style="color: var(--primary); text-decoration: underline;">language specification</a>
+            is the full reference, and this site's own
+            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/nail_website.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">source</a>
+            is the largest Nail program there is to read.
+        </p>
+    </div>
+</section>`;
+}
+
+f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
+    ide_html:s = array_join([
+        html`<section id="ide" class="ide">
+    <div class="section-header">
+        <h2>The Editor Is Part of the Language</h2>
+        <p>Real frames captured from a terminal. The compiler underneath them is the same one that
+           builds your program.</p>
+    </div>
+    <div class="philosophy-content" style="max-width: 1100px;">
+        <h3>Errors appear where they are, while you type</h3>
+        <div class="ide-shot"><pre>`,
+        shot_error,
+        html`</pre></div>
+        <p class="ide-caption">
+            The editor runs the real lexer, parser and type checker over the buffer as you edit, and
+            marks the problem inline on the line that caused it. There is only one implementation of
+            the language, and this is it.
+        </p>
+
+        <h3>Completions come from the standard library, with signatures</h3>
+        <div class="ide-shot"><pre>`,
+        shot_complete,
+        html`</pre></div>
+        <p class="ide-caption">
+            Every function in Nail ships with the language, so the editor can offer all of them with
+            full types. There is no index to build and nothing to keep in sync.
+        </p>
+
+        <h3>Embedded languages stay readable</h3>
+        <div class="code-example"><span class="code-label">Nail</span><pre>`,
+        tagged_code,
+        html`</pre></div>
+        <p class="ide-caption">
+            A web program is mostly long strings of other languages. Tag one with the language it
+            holds - <code>html\`&lt;p&gt;hi&lt;/p&gt;\`</code>, or <code>css</code>, <code>sql</code>,
+            <code>yaml</code> - and the editor and this page both colour it as what it is: element
+            names apart from attributes, keywords apart from values, comments dimmed. A tag whose
+            string runs over many lines keeps its place across the breaks, so an open
+            <code>&lt;div</code>, a CSS block or a <code>/* ... */</code> still reads correctly on
+            the line after it.
+        </p>
+        <p class="ide-caption">
+            The tag means nothing to the compiler: same type, same escapes, same Rust out the other
+            end. It is a note to whoever is reading. These are the tags the two highlighters know:
+        </p>
+        <div class="lang-tags">
+            <div class="lang-row"><span class="lang-name">Markup</span><span class="lang-list"><code>html</code> <code>htm</code> <code>xhtml</code> <code>svg</code> <code>xml</code> <code>rss</code> <code>atom</code></span></div>
+            <div class="lang-row"><span class="lang-name">Stylesheets</span><span class="lang-list"><code>css</code> <code>scss</code> <code>sass</code> <code>less</code></span></div>
+            <div class="lang-row"><span class="lang-name">JavaScript</span><span class="lang-list"><code>js</code> <code>javascript</code> <code>mjs</code> <code>cjs</code> <code>jsx</code> <code>ts</code> <code>typescript</code> <code>tsx</code> <code>json</code> <code>jsonc</code></span></div>
+            <div class="lang-row"><span class="lang-name">SQL</span><span class="lang-list"><code>sql</code> <code>postgres</code> <code>postgresql</code> <code>mysql</code> <code>sqlite</code></span></div>
+            <div class="lang-row"><span class="lang-name">Shell</span><span class="lang-list"><code>sh</code> <code>bash</code> <code>zsh</code> <code>shell</code> <code>dockerfile</code></span></div>
+            <div class="lang-row"><span class="lang-name">Languages</span><span class="lang-list"><code>py</code> <code>rb</code> <code>rs</code> <code>go</code> <code>java</code> <code>cs</code> <code>c</code> <code>cpp</code> <code>php</code> <code>swift</code> <code>kt</code> <code>lua</code> <code>graphql</code></span></div>
+            <div class="lang-row"><span class="lang-name">Configuration</span><span class="lang-list"><code>yaml</code> <code>yml</code> <code>toml</code> <code>ini</code> <code>cfg</code> <code>conf</code> <code>properties</code></span></div>
+            <div class="lang-row"><span class="lang-name">Prose</span><span class="lang-list"><code>md</code> <code>markdown</code></span></div>
+        </div>
+        <p class="ide-caption">
+            The compiler keeps no list of languages, so a tag from outside this table still lexes and
+            still compiles - its string simply keeps one plain colour rather than being run through
+            the wrong tokenizer. Nothing here is a plugin: one scanner covers everything built out of
+            words, strings and comments, and each language is a row in its table.
+        </p>
+
+        <h3>F1 documents whatever is under the cursor</h3>
+        <div class="ide-shot"><pre>`,
+        shot_docs,
+        html`</pre></div>
+        <p class="ide-caption">
+            Documentation lives in the same registry the compiler type checks against, so it cannot
+            drift out of date.
+        </p>
+    </div>
+</section>`
+    ], ``);
+    r ide_html;
+}
+
+f generate_performance():s {
+    r html`<section id="performance" class="performance">
+    <div class="section-header">
+        <h2>Performance, Honestly</h2>
+        <p>The optimizations that actually matter are the ones you never have to write</p>
+    </div>
+    <div class="philosophy-content">
+        <p>
+            Most code is sequential because parallelism is painful: threads, locks, queues, races.
+            You write the obvious version. The compiler writes the fast one.
+        </p>
+        <div style="background: var(--bg-primary); border-radius: 0.75rem; padding: 1.5rem 2rem; margin: 2rem 0;">
+            <p style="margin-bottom: 0.75rem;"><strong>Uses every core, automatically:</strong></p>
+            <ul style="margin: 0 0 1rem 1.5rem;">
+                <li><strong>map</strong> and <strong>filter</strong>: spread across all cores</li>
+                <li><strong>find</strong>, <strong>all</strong>, <strong>any</strong>: every core searches, everyone stops at the answer</li>
+                <li><strong>sum</strong>, <strong>min</strong>, <strong>max</strong>: split across cores once the array is big enough to be worth it</li>
+                <li><strong>p blocks</strong>: one real thread per statement, for CPU work</li>
+                <li><strong>c blocks</strong>: three file reads take as long as the slowest one, instead of all three added together</li>
+                <li><strong>reduce</strong>: only when the compiler can prove it is safe, below</li>
+            </ul>
+            <p style="margin: 0.75rem 0 0 0;"><strong>Never:</strong> <strong>each</strong>, which exists to
+                run side effects that happen in the order you wrote them, and <strong>scan</strong>,
+                where every value depends on the ones before it.</p>
+        </div>
+
+        <h3 style="margin-top: 2.5rem;">Why naming the operation is what makes it fast</h3>
+        <p>
+            A loop is opaque: the compiler can't tell whether order matters, so it stays sequential.
+            <strong>sum</strong> says order doesn't matter. Clearer code and faster code are the same edit.
+        </p>
+        <p>
+            <strong>reduce</strong> is the interesting case, because you write the step yourself, and
+            splitting a fold regroups it: <em>(a+b)+c</em> becomes <em>a+(b+c)</em>. Fine for addition,
+            wrong for subtraction. So Nail reads the step. Add or multiply whole numbers into the total,
+            or keep the larger or smaller value, and regrouping provably cannot change the answer: it runs
+            on every core, with the per-element work (<em>acc + num * num</em>) split too. Subtraction,
+            division and floats stay in order. There is no flag to promise your step is safe. A wrong
+            promise is a number quietly wrong, and differently wrong each run.
+        </p>
+        <p>
+            Threads aren't free, so parallelism switches on above a measured size:
+        </p>
+        <div style="overflow-x: auto; margin: 1.5rem 0;">
+            <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
+                <tr style="border-bottom: 2px solid var(--border);">
+                    <th style="text-align: left; padding: 0.75rem 1rem;">Elements</th>
+                    <th style="text-align: right; padding: 0.75rem 1rem;">min / max</th>
+                    <th style="text-align: right; padding: 0.75rem 1rem;">sum</th>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 0.75rem 1rem;">200,000</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem;">0.42x (slower)</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem;">slower</td>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 0.75rem 1rem;">1,000,000</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">1.23x</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem;">0.63x (slower)</td>
+                </tr>
+                <tr>
+                    <td style="padding: 0.75rem 1rem;">4,000,000</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">2.64x</td>
+                    <td style="text-align: right; padding: 0.75rem 1rem; color: var(--success); font-weight: 700;">1.98x</td>
+                </tr>
+            </table>
+        </div>
+        <p style="font-size: 0.95rem; color: var(--text-secondary);">
+            24-core machine, i64 elements: the cheapest case, so the hardest to win. Costlier comparisons
+            cross over sooner: minimum of a million strings is 2.69x at a fifth of that size. On one core
+            Nail skips the parallel path entirely.
+        </p>
+        <p style="font-size: 0.95rem; color: var(--text-secondary);">
+            Microbenchmarks of single operations, not whole programs. Most software waits on I/O and gains
+            nothing here. The floor is the promise: with nothing to parallelize, Nail emits the sequential
+            Rust you'd have written anyway.
+        </p>
+        <div style="overflow-x: auto; margin: 2rem 0;">
+            <table style="width: 100%; border-collapse: collapse; background: var(--bg-primary); border-radius: 0.5rem;">
+                <tr style="border-bottom: 2px solid var(--border);">
+                    <th style="text-align: left; padding: 1rem;">Workload</th>
+                    <th style="text-align: right; padding: 1rem;">Hand-written sequential Rust</th>
+                    <th style="text-align: right; padding: 1rem;">Nail</th>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 1rem;">Primes below 50,000 by trial division (CPU-heavy filter)</td>
+                    <td style="text-align: right; padding: 1rem;">132 ms</td>
+                    <td style="text-align: right; padding: 1rem; color: var(--success); font-weight: 700;">12 ms (11x faster)</td>
+                </tr>
+                <tr>
+                    <td style="padding: 1rem;">Doubling 1,000,000 integers (trivial per-element work)</td>
+                    <td style="text-align: right; padding: 1rem;">&lt;1 ms</td>
+                    <td style="text-align: right; padding: 1rem;">1 ms (same)</td>
+                </tr>
+            </table>
+        </div>
+        <p style="font-size: 0.95rem; color: var(--text-secondary);">
+            24-core Linux machine, both --release. Unless you parallelize by hand, your code runs on one
+            core. Nail uses the other 23 for free where the work justifies it.
+        </p>
+    </div>
+</section>`;
+}
+
+f generate_versioning():s {
+    r html`<section id="versioning" class="philosophy">
+    <div class="section-header">
+        <h2>Planned: Programs That Don't Rot</h2>
+        <p>Not built yet. This is what we're building next, and why</p>
+    </div>
+    <div class="philosophy-content">
+        <p>
+            You open an old project and it won't run any more. Nobody touched the code. The language
+            moved on, or something it depended on vanished. The fix: every Nail file records the
+            compiler it was written for. You never type it. The IDE stamps it on save.
+        </p>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Nail</span><pre>nail 0.1</pre></div>
+        <p>
+            Open or save, and Nail reads that stamp, fetches that version if you don't have it, and edits
+            and builds the file with it: not the newest one, the one the file asked for. What arrives is
+            that version of Nail itself, editor included, since the errors you see while typing must come
+            from the compiler that builds the program. The Rust toolchain underneath is shared, so
+            switching is usually a small download. The stamp is plain text inside the file because source
+            gets zipped, emailed, pasted and committed, and a version kept anywhere else is lost on the way.
+        </p>
+        <p>
+            Upgrading is the same gesture in reverse: pick a different Nail, save, and the file reopens on
+            it. If the newer release dislikes something you wrote, set it back and save. Nothing drags you
+            forward, and nothing rots if you stay.
+        </p>
+        <p style="font-size: 0.95rem; color: var(--text-secondary);">
+            Status: a plan, not a feature. There is one version of Nail today, so there is nothing to pin
+            yet. The version line is reserved in the specification. It lands in three steps: tagged
+            releases, then a warning when a file's version doesn't match the compiler you're running, then
+            the automatic fetch-and-run above.
+        </p>
+    </div>
+</section>`;
+}
+
+f generate_mcp(mcp_source:s):s {
+    r array_join([
+        html`<section id="mcp" class="examples">
+    <div class="section-header">
+        <h2>Your Binary Is an MCP Server</h2>
+        <p>The Model Context Protocol is how AI assistants call outside tools. In Nail it is a tool list and one function.</p>
+    </div>
+    <div class="code-example" style="position: relative;">
+        <span class="code-label">Nail</span>
+        <pre>`,
+        mcp_source,
+        html`</pre>
+    </div>
+    <p style="color: var(--text-secondary); margin-top: 1rem;">
+        Declare the tools, write handle_tool, call mcp_serve. One command compiles this file into a
+        single static binary that plugs into Claude Code or Claude Desktop, with no runtime to
+        install and no dependencies to resolve. Stdout carries the protocol, the log functions
+        write to stderr so they stay out of its way, and an error you return becomes a tool error
+        the model can read and act on. The usual setup for this is a Node or Python project with a
+        package manager between you and running it. Here it is a file.
+    </p>
+</section>`
+    ], ``);
+}
+
+f generate_batteries(rows:a:h<s,s>):s {
+    entries:s = danger(template_render_rows(html`<div class="stdlib-fn battery-row"><code class="stdlib-sig">{{expression}}</code><code class="battery-answer">{{answer}}</code></div>`, rows));
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `entries`, entries);
+    r danger(template_render(html`<section id="batteries" class="stdlib">
+    <style>.battery-row { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; align-items: baseline; padding: 0.5rem 0; } .battery-answer { color: var(--success); font-weight: 600; }</style>
+    <div class="section-header">
+        <h2>Batteries, Fired</h2>
+        <p>Every answer on the right was computed by this server at startup, by running the expression on its left</p>
+    </div>
+    <p class="stdlib-intro">
+        A mortgage in the American convention and then the Canadian one (they really differ, and
+        the difference is law), the p-value of an A/B test, the road not taken between Edmonton
+        and Calgary, fuel economy across its inverse scales, a typo finding its city, a name
+        turned into a stable id, cron in English. No package for any of it. This is the
+        standard library talking.
+    </p>
+    {{{entries}}}
+</section>`, values));
+}
+
+// The library list is not written here: the server asks the compiler what it
+// can call and prints the answer, so this section is the standard library of
+// the compiler that built this page, not a list someone kept up to date.
+f generate_stdlib(functions:a:STDLIB_Function, modules:a:s):s {
+    // One pass over the list buckets every function under its module, where
+    // filtering inside the loop below walked the whole list once per module.
+    by_module:h<s,a:STDLIB_Function> = array_group_by(functions, stdlib_function_module);
+
+    module_blocks:a:s = map module_name in modules {
+        module_functions:a:STDLIB_Function = safe(hashmap_get(by_module, module_name), no_functions);
+
+        rows:a:h<s,s> = map function in module_functions {
+            row:h<s,s> = hashmap_new();
+            hashmap_set(row, `signature`, function.signature);
+            hashmap_set(row, `description`, function.description);
+            y row;
+        };
+        // The template escapes both values on the way in, so nothing here has to
+        // remember to call code_escape_html.
+        entries:s = danger(template_render_rows(html`<div class="stdlib-fn"><code class="stdlib-sig">{{signature}}</code><p class="stdlib-desc">{{description}}</p></div>`, rows));
+
+        block_values:h<s,s> = hashmap_new();
+        hashmap_set(block_values, `module`, module_name);
+        hashmap_set(block_values, `count`, string_from(array_length(module_functions)));
+        hashmap_set(block_values, `entries`, entries);
+        y danger(template_render(html`<details class="stdlib-module"><summary><code class="stdlib-module-name">{{module}}</code> <span class="stdlib-count">{{count}} functions</span></summary>{{{entries}}}</details>`, block_values));
+    };
+
+    section_values:h<s,s> = hashmap_new();
+    hashmap_set(section_values, `function_count`, string_from(array_length(functions)));
+    hashmap_set(section_values, `module_count`, string_from(array_length(modules)));
+    hashmap_set(section_values, `modules`, array_join(module_blocks, ``));
+
+    r danger(template_render(html`<section id="stdlib" class="stdlib">
+    <div class="section-header">
+        <h2>Standard Library</h2>
+        <p>{{function_count}} functions across {{module_count}} modules, all built in</p>
+    </div>
+    <p class="stdlib-intro">
+        There is no package manager, so this is the whole set: what ships with the compiler is what
+        you can call. Web servers with websockets and rate limits, cron scheduling, SQLite and
+        Postgres and Valkey, statistics through hypothesis tests, geography and geohashes, money
+        and mortgages, color and contrast, unit conversion, fuzzy matching, MCP serving. Read it
+        before you start and you will know whether Nail can carry your project. This server asked
+        the compiler for the list and printed it, so it is exactly what the compiler serving this
+        page can call.
+    </p>
+    <p class="stdlib-intro">
+        When you need code that is not here, you copy it in, and that is the whole installation.
+        A Nail function is plain source over these same types with no dependency tree underneath,
+        so a shared file pastes into your program complete: nothing to resolve, nothing to update,
+        nothing that changes under you later. People will pass around handy functions the way they
+        pass around recipes, and whatever everyone keeps reaching for gets added to this list. The
+        library grows by paving the paths people already walk.
+    </p>
+    <p class="stdlib-intro">
+        Two keywords carry that story. insert splices a file you wrote into your program at
+        compile time, as if you had typed it in place. insert_safe does the same for a file you
+        did not write, and seals it: code brought in this way can compute anything and touch
+        nothing. No network, no disk, no environment, no processes, no global state, enforced by
+        the compiler through every function the sealed code reaches, at zero runtime cost. Drop a
+        stranger's file in your project, insert_safe it, done. If Nail ever grows a package
+        repository, it will be a shelf of simple files brought in exactly like this, and it will
+        need no lockfile because there is nothing to lock. This page practices what it preaches:
+        the helper files behind it arrive through insert_safe, and the compiler that built this
+        server proved they only compute.
+    </p>
+    <div class="stdlib-controls">
+        <button class="btn btn-secondary stdlib-toggle" onclick="var open=this.dataset.open!=='1';document.querySelectorAll('#stdlib .stdlib-module').forEach(function(d){d.open=open});this.dataset.open=open?'1':'0';this.textContent=open?'Collapse all':'Expand all'">Expand all</button>
+    </div>
+    {{{modules}}}
+</section>`, section_values));
+}
+
+f generate_author(avatar_base64:s):s {
+    author_html:s = array_join([
+        html`<section id="author" class="author">
+    <div class="section-header">
+        <h2>Made By</h2>
+    </div>
+    <div class="author-card">
+        <img class="author-photo" src="data:image/jpeg;base64,`,
+        avatar_base64,
+        `" alt="Alex Wilkinson">
+        <p class="author-name">Alex Wilkinson</p>
+        <p>
+            Most bugs I have shipped were simple problems buried under features I did not need: a
+            null, a variable something else changed, an off-by-one, two threads on the same value.
+            Nail drops those features instead of giving me better tools for surviving them.
+        </p>
+        <p>
+            This page is a Nail program. One command turned it into the server you are reading it from. I also made
+            <a href="https://sul.alex-wilkinson.ca" target="_blank">Simple Universal Language</a>,
+            a spoken and written language built to still reach people who cannot see or hear it.
+        </p>
+    </div>
+</section>`
+    ], ``);
+    r author_html;
+}
+
+f generate_footer():s {
+    r html`<footer style="background: var(--text-primary); color: white; padding: 3rem 2rem; margin-top: 4rem;">
+    <div style="max-width: 1200px; margin: 0 auto; text-align: center;">
+        <p style="font-size: 1.1rem; margin-bottom: 1rem;">
+            Made with Nail 🔨. This page is a Nail program.
+        </p>
+        <div style="display: flex; gap: 2rem; justify-content: center; margin-top: 1.5rem;">
+            <a href="https://github.com/AlexTDWilkinson/Nail" target="_blank" style="color: white; text-decoration: none;">
+                GitHub
+            </a>
+            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md" target="_blank" style="color: white; text-decoration: none;">
+                Documentation
+            </a>
+        </div>
+    </div>
+</footer>`;
+}
+
+// The hamburger. Every listener is on `document` rather than on the button:
+// the page is boosted by htmx, which replaces the body on navigation, and a
+// listener bound to the nav itself would go with it.
+f generate_menu_script():s {
+    r html`<script>
+(function () {
+    var BREAKPOINT = 900;
+
+    function setOpen(open) {
+        var links = document.getElementById('nav-links');
+        var button = document.querySelector('.nav-toggle');
+        if (!links || !button) { return; }
+        links.classList.toggle('open', open);
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
+        var openIcon = button.querySelector('.nav-icon-open');
+        var closeIcon = button.querySelector('.nav-icon-close');
+        if (openIcon && closeIcon) {
+            openIcon.style.display = open ? 'none' : '';
+            closeIcon.style.display = open ? '' : 'none';
+        }
+    }
+
+    document.addEventListener('click', function (event) {
+        var target = event.target;
+        if (!target || !target.closest) { return; }
+        var links = document.getElementById('nav-links');
+        if (target.closest('.nav-toggle')) {
+            setOpen(!(links && links.classList.contains('open')));
+            return;
+        }
+        // Every link is an anchor on this one page, so the panel has to close
+        // itself: the URL changes but nothing reloads.
+        if (target.closest('.nav-link')) {
+            setOpen(false);
+        }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { setOpen(false); }
+    });
+
+    // Widening past the breakpoint hides the panel in CSS, but the button
+    // would still claim it is open.
+    window.addEventListener('resize', function () {
+        if (window.innerWidth > BREAKPOINT) { setOpen(false); }
+    });
+})();
+</script>`;
+}

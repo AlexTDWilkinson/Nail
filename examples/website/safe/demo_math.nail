@@ -1,0 +1,38 @@
+// Sealed with insert_safe: the compiler proves this file only computes.
+// A file like this could be downloaded from the internet and inserted unread,
+// nothing in it can touch the machine it runs on.
+//
+// Arithmetic behind the live parallel and concurrent demos on the front page.
+
+f factorial(num:i):i {
+    if {
+        num <= 1 -> { r 1; },
+        else -> { r num * factorial(num - 1); }
+    }
+}
+
+f is_prime(num:i):b {
+    if {
+        num < 2 -> { r false; },
+        else -> {
+            has_divisor:b = any div in array_range(2, num) { y num % div == 0; };
+            r !has_divisor;
+        }
+    }
+}
+
+f count_primes_below(limit:i):i {
+    primes:a:i = filter num in array_range(2, limit) { y is_prime(num); };
+    r array_length(primes);
+}
+
+f divide(numerator:i, denominator:i):i!e {
+    if {
+        denominator == 0 -> { r e(`Cannot divide by zero!`); },
+        else -> { r numerator / denominator; }
+    }
+}
+
+f zero_fallback(err:e):i {
+    r 0;
+}

@@ -1,0 +1,601 @@
+// The stylesheet for the whole page, one CSS block per area of the site.
+
+// CSS styles - broken into sections for clarity
+f generate_css():s {
+    base_styles:s = css`
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary: #2563eb;
+        --primary-dark: #1d4ed8;
+        --text-primary: #1f2937;
+        --text-secondary: #6b7280;
+        --bg-primary: #ffffff;
+        --bg-secondary: #f9fafb;
+        --border: #e5e7eb;
+        --success: #10b981;
+        --warning: #f59e0b;
+        --error: #ef4444;
+    }
+    
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.6;
+        color: var(--text-primary);
+        background-color: var(--bg-secondary);
+    }`;
+    
+    navbar_styles:s = css`
+    .navbar {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        background: var(--bg-primary);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        z-index: 100;
+        padding: 1rem 0;
+    }
+    
+    .nav-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .nav-brand {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .nav-links {
+        display: flex;
+        gap: 2.5rem;
+    }
+
+    .nav-link {
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.2s;
+    }
+
+    .nav-link:hover {
+        color: var(--primary);
+    }
+
+    .nav-toggle {
+        display: none;
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 0.4rem 0.55rem;
+        color: var(--text-primary);
+        cursor: pointer;
+        line-height: 0;
+    }
+
+    .nav-toggle svg {
+        width: 1.5rem;
+        height: 1.5rem;
+    }
+
+    /* Nine links do not fit beside the wordmark on a phone, so below this
+       width they move into a panel the hamburger opens. */
+    @media (max-width: 900px) {
+        .nav-toggle {
+            display: inline-block;
+        }
+
+        .nav-links {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            flex-direction: column;
+            gap: 0;
+            background: var(--bg-primary);
+            border-top: 1px solid var(--border);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.08);
+            padding: 0.5rem 2rem 1rem;
+            max-height: calc(100vh - 4.5rem);
+            overflow-y: auto;
+        }
+
+        .nav-links.open {
+            display: flex;
+        }
+
+        .nav-link {
+            padding: 0.85rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .nav-link:last-child {
+            border-bottom: none;
+        }
+    }`;
+    
+    hero_styles:s = css`
+    .hero {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 6rem 2rem 4rem;
+        text-align: center;
+    }
+    
+    .hero-title {
+        font-size: 4rem;
+        font-weight: 800;
+        margin-bottom: 1rem;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: fadeIn 0.6s ease-out;
+    }
+    
+    .hero-tagline {
+        font-size: 1.5rem;
+        color: var(--text-secondary);
+        margin-bottom: 2rem;
+        animation: fadeIn 0.8s ease-out;
+    }
+    
+    .hero-description {
+        font-size: 1.1rem;
+        color: var(--text-secondary);
+        max-width: 800px;
+        margin: 0 auto 2rem;
+        line-height: 1.8;
+        animation: fadeIn 1s ease-out;
+    }
+    
+    .hero-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        animation: fadeIn 1.2s ease-out;
+    }`;
+    
+    button_styles:s = css`
+    .btn {
+        padding: 0.75rem 2rem;
+        border-radius: 0.5rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s;
+        display: inline-block;
+        border: 2px solid transparent;
+    }
+    
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: var(--primary-dark);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+    }
+    
+    .btn-secondary {
+        background: white;
+        color: var(--primary);
+        border-color: var(--primary);
+    }
+    
+    .btn-secondary:hover {
+        background: var(--bg-secondary);
+        transform: translateY(-2px);
+    }`;
+    
+    section_styles:s = css`
+    section {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 4rem 2rem;
+    }
+    
+    .section-header {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+    
+    .section-header h2 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+    }
+    
+    .section-header p {
+        font-size: 1.2rem;
+        color: var(--text-secondary);
+    }`;
+    
+    feature_styles:s = css`
+    .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 2rem;
+        margin-top: 3rem;
+    }
+    
+    .feature-card {
+        background: var(--bg-primary);
+        padding: 2rem;
+        border-radius: 1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        transition: all 0.3s;
+    }
+    
+    .feature-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    
+    .feature-icon {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .feature-card h3 {
+        font-size: 1.3rem;
+        margin-bottom: 0.5rem;
+        color: var(--text-primary);
+    }
+    
+    .feature-card p {
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }`;
+    
+    code_styles:s = css`
+    .code-example {
+        background: #1e293b;
+        color: #e2e8f0;
+        padding: 2rem;
+        border-radius: 0.75rem;
+        overflow-x: auto;
+        margin: 2rem 0;
+        position: relative;
+    }
+    
+    .code-example pre {
+        margin: 0;
+        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+    
+    .code-label {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        background: rgba(255,255,255,0.1);
+        color: #94a3b8;
+        padding: 0.25rem 0.75rem;
+        border-radius: 0.25rem;
+        font-size: 0.85rem;
+    }
+
+    /* Token colors emitted by code_highlight_html (Nail's own lexer) */
+    .tok-kw { color: #c084fc; }
+    .tok-cb { color: #f472b6; font-weight: 600; }
+    .tok-fn { color: #60a5fa; }
+    .tok-ty { color: #2dd4bf; }
+    .tok-str { color: #86efac; }
+    /* A tagged string keeps the plain string colour for its tag, backticks and
+       untokenized text; the language shows only in the pieces below. */
+    /* Pieces of the language inside a tagged string: an element name in html,
+       a selector in css, a keyword in js - one set of colours for all of them */
+    .tok-md-punct { color: #94a3b8; }
+    .tok-md-el { color: #f472b6; }
+    .tok-md-attr { color: #7dd3fc; }
+    .tok-md-fn { color: #60a5fa; }
+    .tok-md-kw { color: #c084fc; }
+    .tok-md-op { color: #cbd5e1; }
+    .tok-md-val { color: #fdba74; }
+    .tok-md-num { color: #fbbf24; }
+    .tok-md-com { color: #64748b; font-style: italic; }
+    .tok-num { color: #fbbf24; }
+    .tok-com { color: #64748b; font-style: italic; }
+    .tok-op { color: #cbd5e1; }
+    .tok-err { color: #ef4444; text-decoration: underline wavy; }
+
+    .rust-details summary {
+        cursor: pointer;
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.6rem 1.25rem;
+        background: linear-gradient(135deg, #b7410e 0%, #8f3009 100%);
+        color: white;
+        font-weight: 600;
+        border-radius: 0.5rem;
+        border: 2px solid transparent;
+        transition: all 0.2s;
+        user-select: none;
+        list-style: none;
+    }
+
+    .rust-details summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .rust-details summary::before {
+        content: '▸ ';
+    }
+
+    .rust-details[open] summary::before {
+        content: '▾ ';
+    }
+
+    .rust-details summary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(183, 65, 14, 0.25);
+    }
+
+    .rust-details .code-example {
+        margin-top: 0.5rem;
+        max-height: 420px;
+        overflow-y: auto;
+    }`;
+    
+    stdlib_styles:s = css`
+    .stdlib-intro {
+        max-width: 800px;
+        margin: 0 auto 2.5rem;
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 1.05rem;
+        line-height: 1.8;
+    }
+
+    .stdlib-controls {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    .stdlib-toggle {
+        cursor: pointer;
+        font-size: 1rem;
+        font-family: inherit;
+    }
+
+    .stdlib-module {
+        background: var(--bg-primary);
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        margin-bottom: 1rem;
+        padding: 1rem 1.5rem;
+    }
+
+    .stdlib-module summary {
+        cursor: pointer;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        list-style: none;
+        user-select: none;
+    }
+
+    .stdlib-module summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .stdlib-module summary::before {
+        content: '▸ ';
+        color: var(--primary);
+    }
+
+    .stdlib-module[open] summary::before {
+        content: '▾ ';
+    }
+
+    .stdlib-count {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+
+    .stdlib-module-name {
+        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .stdlib-fn {
+        border-top: 1px solid var(--border);
+        padding: 0.85rem 0;
+    }
+
+    .stdlib-sig {
+        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--primary-dark);
+        word-break: break-word;
+    }
+
+    .stdlib-desc {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        margin-top: 0.25rem;
+    }`;
+
+    author_styles:s = css`
+    .author-card {
+        max-width: 900px;
+        margin: 0 auto;
+        background: var(--bg-primary);
+        border-radius: 1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        padding: 2.5rem;
+        font-size: 1.05rem;
+        line-height: 1.8;
+        color: var(--text-secondary);
+    }
+
+    .author-photo {
+        float: right;
+        width: 11rem;
+        height: 11rem;
+        border-radius: 50%;
+        object-fit: cover;
+        margin: 0 0 1.5rem 2rem;
+        shape-outside: circle(50%);
+        background: var(--bg-secondary);
+    }
+
+    .author-name {
+        display: block;
+        font-size: 1.6rem;
+        font-weight: 700;
+        line-height: 1.35;
+        color: var(--primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .author-card p + p {
+        margin-top: 1rem;
+    }
+
+    .author-card a {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
+    @media (max-width: 600px) {
+        .author-photo {
+            float: none;
+            display: block;
+            margin: 0 auto 1.5rem;
+        }
+    }`;
+
+    ide_styles:s = css`
+    .ide-shot {
+        background: #11111b;
+        border-radius: 0.75rem;
+        padding: 1rem 1.25rem;
+        margin: 0.75rem 0 0.5rem;
+        overflow-x: auto;
+        border: 1px solid #313244;
+    }
+
+    .ide-shot pre {
+        margin: 0;
+        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 0.68rem;
+        line-height: 1.25;
+        color: #cdd6f4;
+        white-space: pre;
+    }
+
+    .ide-caption {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+    }
+
+    .lang-tags {
+        margin: 0 0 2rem;
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        overflow: hidden;
+        background: var(--bg-primary);
+    }
+
+    .lang-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 1rem;
+        align-items: center;
+        padding: 0.75rem 1.25rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .lang-row:last-child {
+        border-bottom: none;
+    }
+
+    .lang-name {
+        flex: 0 0 8.5rem;
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .lang-list {
+        flex: 1 1 16rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    .lang-list code {
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        color: var(--text-primary);
+        font-family: 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 0.78rem;
+    }`;
+
+    philosophy_styles:s = css`
+    .philosophy-content {
+        max-width: 800px;
+        margin: 0 auto;
+        font-size: 1.1rem;
+        line-height: 1.8;
+        color: var(--text-secondary);
+    }
+    
+    .philosophy-quote {
+        background: var(--bg-primary);
+        border-left: 4px solid var(--primary);
+        padding: 1.5rem 2rem;
+        margin: 2rem 0;
+        font-style: italic;
+        font-size: 1.2rem;
+        color: var(--text-primary);
+    }`;
+    
+    animation_styles:s = css`
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }`;
+    
+    r array_join([
+        base_styles,
+        navbar_styles,
+        hero_styles,
+        button_styles,
+        section_styles,
+        feature_styles,
+        code_styles,
+        ide_styles,
+        stdlib_styles,
+        author_styles,
+        philosophy_styles,
+        animation_styles
+    ], ``);
+}
