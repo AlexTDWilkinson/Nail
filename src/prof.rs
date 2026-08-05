@@ -211,8 +211,30 @@ mod real {
         if hidden > 0 {
             out.push_str(&format!("({} more not shown)\n", hidden));
         }
-        out.push_str(&format!("program wall time {}. Times are cumulative, a caller includes its callees.\n", format_duration(snapshot.wall_nanos)));
+        out.push_str(&format!(
+            "program wall time {}, it could run {} times a second. Times are cumulative, a caller includes its callees.\n",
+            format_duration(snapshot.wall_nanos),
+            format_runs_per_second(snapshot.wall_nanos)
+        ));
         out
+    }
+
+    /// The whole program's speed as one number a person can judge: how many
+    /// times per second this entire run could repeat. Over 60 reads as
+    /// instant, single digits read as sluggish, under 1 is a long job.
+    fn format_runs_per_second(wall_nanos: u64) -> String {
+        let per_second = 1_000_000_000.0 / wall_nanos.max(1) as f64;
+        if per_second >= 1_000_000.0 {
+            format!("{:.1} million", per_second / 1_000_000.0)
+        } else if per_second >= 1_000.0 {
+            format!("{:.1} thousand", per_second / 1_000.0)
+        } else if per_second >= 100.0 {
+            format!("{:.0}", per_second)
+        } else if per_second >= 1.0 {
+            format!("{:.1}", per_second)
+        } else {
+            format!("{:.2}", per_second)
+        }
     }
 
     #[cfg(test)]
@@ -248,6 +270,15 @@ mod real {
             assert!(handle_pos < parse_pos, "sheet is sorted by total time descending");
             assert!(!sheet.contains("never_called"), "uncalled functions stay off the sheet");
             assert!(sheet.contains("51.0%"), "percent is share of wall time");
+            assert!(sheet.contains("it could run 0.50 times a second"), "the footer carries whole program runs per second");
+        }
+
+        #[test]
+        fn test_runs_per_second_reads_like_a_verdict() {
+            assert_eq!(format_runs_per_second(16_100_000), "62.1");
+            assert_eq!(format_runs_per_second(100_000_000), "10.0");
+            assert_eq!(format_runs_per_second(9_660_000_000), "0.10");
+            assert_eq!(format_runs_per_second(80_000), "12.5 thousand");
         }
 
         #[test]

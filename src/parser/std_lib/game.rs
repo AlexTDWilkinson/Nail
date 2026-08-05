@@ -584,12 +584,12 @@ fn present(app: &mut App, pixmap: &tiny_skia::Pixmap) -> Result<(), String> {
 pub type ViewFuture = Pin<Box<dyn Future<Output = GAME_Frame> + Send>>;
 pub type UpdateFuture<S> = Pin<Box<dyn Future<Output = S> + Send>>;
 
-/// The whole-program answer to "is it fast enough": how many frames really
-/// showed per second, and how many could have if the loop never paced.
-/// Printed once when the game closes, only when a human's terminal is
-/// attached, so captured output never sees it.
+/// The whole-game answer to "is it fast enough": how many frames really
+/// showed per second, and how many it could draw flat out. Printed once
+/// when the game closes, only when a human's terminal is attached, so
+/// captured output never sees it.
 #[cfg(not(target_arch = "wasm32"))]
-fn report_frame_rate(frames: u64, work: Duration, started: Instant) {
+fn report_frame_rate(frames: u64, work: Duration, started: Instant, target_fps: i64) {
     use std::io::IsTerminal;
     if frames == 0 || !std::io::stderr().is_terminal() {
         return;
@@ -598,7 +598,8 @@ fn report_frame_rate(frames: u64, work: Duration, started: Instant) {
     let actual = frames as f64 / wall;
     let average_work = work.as_secs_f64() / frames as f64;
     let possible = 1.0 / average_work.max(f64::MIN_POSITIVE);
-    eprintln!("game frame rate: {:.0} fps actual, {:.0} fps possible unpaced, {:.2}ms of work per frame", actual, possible, average_work * 1000.0);
+    let pacing = if target_fps > 0 { format!(", the rest waiting out the {} fps target", target_fps) } else { String::new() };
+    eprintln!("game frame rate: {:.0} fps shown, {:.0} fps possible, {:.2}ms of real work per frame{}", actual, possible, average_work * 1000.0, pacing);
 }
 
 /// Opens the window and runs the game until its view reports `quit` or the
@@ -636,7 +637,7 @@ where
             return Err(error);
         }
         if app.close_requested {
-            report_frame_rate(frames, work, started);
+            report_frame_rate(frames, work, started, config.target_fps);
             return Ok(state);
         }
         if app.window.is_none() {
@@ -671,7 +672,7 @@ where
         frames += 1;
         work += used;
         if frame.quit {
-            report_frame_rate(frames, work, started);
+            report_frame_rate(frames, work, started, config.target_fps);
             return Ok(state);
         }
 
