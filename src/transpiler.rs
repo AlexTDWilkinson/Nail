@@ -485,6 +485,14 @@ impl Transpiler {
             manifest.push_str(&line);
             manifest.push('\n');
         }
+        manifest.push('\n');
+        // Thin LTO plus one codegen unit lets LLVM inline across the stdlib
+        // boundary and vectorize user loops it otherwise cannot see through.
+        // The price is a slower release build, which is the right trade for a
+        // binary that ships.
+        manifest.push_str("[profile.release]\n");
+        manifest.push_str("lto = \"thin\"\n");
+        manifest.push_str("codegen-units = 1\n");
         manifest
     }
     

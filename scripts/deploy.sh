@@ -83,7 +83,9 @@ if [[ "${SKIP_TRANSPILE:-0}" != "1" ]]; then
 fi
 
 echo "== building server =="
-(cd nail_website_server && cargo build --release)
+# x86-64-v3 (AVX2, BMI, FMA) matches the droplet's CPU and lets LLVM use
+# wider vector registers than the portable baseline allows.
+(cd nail_website_server && RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release)
 
 cp "nail_website_server/target/release/$BIN" "$STAGE/$BIN"
 strip "$STAGE/$BIN" 2>/dev/null || true

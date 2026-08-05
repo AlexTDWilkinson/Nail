@@ -16,3 +16,7 @@ serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tower-http = { version = "0.5", features = ["fs"] }
 urlencoding = "2.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

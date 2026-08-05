@@ -22,8 +22,8 @@ if cargo run --bin nailc examples/nail_website.nail --transpile && [ -s examples
 
     echo "Building Nail website server..."
     
-    # Build the server
-    cd nail_website_server && cargo build --release
+    # Build the server for this machine's CPU: local runs never ship the binary
+    cd nail_website_server && RUSTFLAGS="-C target-cpu=native" cargo build --release
     
     if [ $? -eq 0 ]; then
         echo ""
