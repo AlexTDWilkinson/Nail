@@ -549,6 +549,34 @@ f control_pads(state:Platformer):a:GAME_Shape {
     ];
 }
 
+// Physics runs on its own fixed step, so a frame usually lands part way
+// between two of them. This says what part way looks like: the things that
+// move slide between where they were and where they are, and everything
+// else is taken from the newer state as it stands. Drawing the newer state
+// alone would judder on a screen that refreshes faster than physics runs.
+f mix(before:f, after:f, part:f):f {
+    r before + ((after - before) * part);
+}
+
+f blend(previous:Platformer, current:Platformer, part:f):Platformer {
+    r Platformer {
+        player_x = mix(previous.player_x, current.player_x, part),
+        player_y = mix(previous.player_y, current.player_y, part),
+        vel_x = current.vel_x,
+        vel_y = current.vel_y,
+        coyote_ms = current.coyote_ms,
+        camera_x = mix(previous.camera_x, current.camera_x, part),
+        coins = current.coins,
+        jump_held = current.jump_held,
+        step_phase = current.step_phase,
+        pressing_left = current.pressing_left,
+        pressing_right = current.pressing_right,
+        pressing_jump = current.pressing_jump,
+        won = current.won,
+        done = current.done
+    };
+}
+
 f view(state:Platformer):GAME_Frame {
     cam:f = state.camera_x;
 
@@ -591,7 +619,7 @@ f view(state:Platformer):GAME_Frame {
     };
 }
 
-config:GAME_Config = GAME_Config { title = `Nail platformer`, width = 800, height = 600, target_fps = 60, pixel_size = 2, physics_hz = 60 };
+config:GAME_Config = GAME_Config { title = `Nail platformer`, width = 800, height = 600, target_fps = 120, pixel_size = 2, physics_hz = 60 };
 
 final_state:Platformer = danger(game_run(config, new_game()));
 closing_taken:a:Coin = filter coin in final_state.coins {

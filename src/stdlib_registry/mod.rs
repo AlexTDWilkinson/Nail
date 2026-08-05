@@ -1557,6 +1557,11 @@ pub struct HandlerCallback {
     pub function_name: &'static str,
     pub parameter_types: Vec<NailDataTypeDescriptor>,
     pub return_type: NailDataTypeDescriptor,
+    /// Whether a program may leave this one out. An optional callback still
+    /// has to match its signature when it is defined, but a program that
+    /// never names it gets a stand-in that returns the argument named by
+    /// `stand_in_argument`, counting from zero.
+    pub optional_stand_in: Option<usize>,
 }
 
 lazy_static! {
@@ -1577,6 +1582,7 @@ lazy_static! {
                 NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
             ],
             return_type: NailDataTypeDescriptor::Struct("HTTP_Response".to_string()),
+            optional_stand_in: None,
         }]);
         m.insert("http_server_realtime", vec![
             HandlerCallback {
@@ -1586,6 +1592,7 @@ lazy_static! {
                     NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
                 ],
                 return_type: NailDataTypeDescriptor::Struct("HTTP_Response".to_string()),
+                optional_stand_in: None,
             },
             // Called once per websocket text frame; the returned text goes back
             // to that one client, and the empty string means no reply.
@@ -1596,6 +1603,7 @@ lazy_static! {
                     NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
                 ],
                 return_type: NailDataTypeDescriptor::String,
+                optional_stand_in: None,
             },
         ]);
         m.insert("tui_run", vec![
@@ -1603,11 +1611,13 @@ lazy_static! {
                 function_name: "view",
                 parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![])],
                 return_type: NailDataTypeDescriptor::Struct("TUI_Screen".to_string()),
+                optional_stand_in: None,
             },
             HandlerCallback {
                 function_name: "update",
                 parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]), NailDataTypeDescriptor::Struct("TUI_Event".to_string())],
                 return_type: NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
+                optional_stand_in: None,
             },
         ]);
         // game_run mirrors tui_run exactly: same callback names, same type
@@ -1617,11 +1627,27 @@ lazy_static! {
                 function_name: "view",
                 parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![])],
                 return_type: NailDataTypeDescriptor::Struct("GAME_Frame".to_string()),
+                optional_stand_in: None,
             },
             HandlerCallback {
                 function_name: "update",
                 parameter_types: vec![NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]), NailDataTypeDescriptor::Struct("GAME_Input".to_string())],
                 return_type: NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
+                optional_stand_in: None,
+            },
+            // Only wanted by a game whose physics runs at its own rate: given
+            // the two most recent states and how far the frame sits between
+            // them, it returns the state to draw. Left out, the newer state
+            // is drawn as it stands, which is the second argument.
+            HandlerCallback {
+                function_name: "blend",
+                parameter_types: vec![
+                    NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
+                    NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
+                    NailDataTypeDescriptor::Float,
+                ],
+                return_type: NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]),
+                optional_stand_in: Some(1),
             },
         ]);
         // Both schedulers dispatch to the same handle_job, so one function
@@ -1630,21 +1656,25 @@ lazy_static! {
             function_name: "handle_job",
             parameter_types: vec![NailDataTypeDescriptor::String],
             return_type: NailDataTypeDescriptor::Void,
+            optional_stand_in: None,
         }]);
         m.insert("sched_every", vec![HandlerCallback {
             function_name: "handle_job",
             parameter_types: vec![NailDataTypeDescriptor::String],
             return_type: NailDataTypeDescriptor::Void,
+            optional_stand_in: None,
         }]);
         m.insert("net_tcp_serve", vec![HandlerCallback {
             function_name: "handle_line",
             parameter_types: vec![NailDataTypeDescriptor::String],
             return_type: NailDataTypeDescriptor::String,
+            optional_stand_in: None,
         }]);
         m.insert("net_udp_serve", vec![HandlerCallback {
             function_name: "handle_packet",
             parameter_types: vec![NailDataTypeDescriptor::String],
             return_type: NailDataTypeDescriptor::String,
+            optional_stand_in: None,
         }]);
         // The Ok text is the tool's answer and the error is a tool error the
         // model reads, so the callback itself returns a result.
@@ -1652,6 +1682,7 @@ lazy_static! {
             function_name: "handle_tool",
             parameter_types: vec![NailDataTypeDescriptor::String, NailDataTypeDescriptor::String],
             return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
+            optional_stand_in: None,
         }]);
         m
     };

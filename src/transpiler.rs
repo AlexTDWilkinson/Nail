@@ -2946,7 +2946,18 @@ impl Transpiler {
                     if !args.is_empty() || position > 0 {
                         write!(output, ", ")?;
                     }
-                    write!(output, "move |{}| Box::pin({}({}))", argument_list, callback.function_name, argument_list)?;
+                    // An optional callback the program left out is filled by a
+                    // stand-in that hands back one of its own arguments, which
+                    // the registry names.
+                    match callback.optional_stand_in {
+                        Some(kept) if !self.function_return_types.contains_key(callback.function_name) => {
+                            let dropped: Vec<String> = parameters.iter().enumerate().filter(|(index, _)| *index != kept).map(|(_, parameter)| parameter.clone()).collect();
+                            write!(output, "move |{}| Box::pin(async move {{ let _ = ({},); callback_argument_{} }})", argument_list, dropped.join(", "), kept)?;
+                        }
+                        _ => {
+                            write!(output, "move |{}| Box::pin({}({}))", argument_list, callback.function_name, argument_list)?;
+                        }
+                    }
                 }
 
                 write!(output, ")")?;

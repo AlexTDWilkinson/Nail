@@ -1937,6 +1937,9 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
                         );
                     }
                 }
+                // An optional callback the program never defines is not a
+                // mistake: the stdlib call has its own stand-in for it.
+                _ if callback.optional_stand_in.is_some() => {}
                 _ => {
                     add_error_with_help(
                         state,

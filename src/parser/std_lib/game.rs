@@ -505,11 +505,12 @@ use web_backend as backend;
 /// behind the backend chosen at compile time: where the picture goes, where
 /// input comes from, what clock time is read from, and how the gap between
 /// frames is waited out.
-pub async fn run<S, V, U>(config: GAME_Config, initial: S, view: V, update: U) -> Result<S, String>
+pub async fn run<S, V, U, B>(config: GAME_Config, initial: S, view: V, update: U, blend: B) -> Result<S, String>
 where
     S: Clone + Send + 'static,
     V: Fn(S) -> ViewFuture + Send + Sync + 'static,
     U: Fn(S, GAME_Input) -> UpdateFuture<S> + Send + Sync + 'static,
+    B: Fn(S, S, f64) -> UpdateFuture<S> + Send + Sync + 'static,
 {
     let width = u32::try_from(config.width).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a width a {} can have", config.width, backend::SURFACE_NOUN))?;
     let height = u32::try_from(config.height).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a height a {} can have", config.height, backend::SURFACE_NOUN))?;
@@ -543,6 +544,11 @@ where
     // lost, and never counted twice when several steps run at once.
     let mut waiting_pressed: Vec<String> = Vec::new();
     let mut waiting_scroll = 0.0_f64;
+    // The step before the current one. A frame usually lands part way between
+    // two steps, and drawing the newer one as it stands judders when the
+    // screen refreshes faster than the physics runs, so the game is offered
+    // both and says what part way looks like for its own data.
+    let mut previous_state = state.clone();
     // Enough steps to catch up after a hitch, few enough that a long stall
     // does not send the game racing to make up minutes of missed time.
     const CATCH_UP_STEPS: u32 = 5;
@@ -571,6 +577,7 @@ where
             banked_ms += elapsed_ms;
             let mut steps = 0;
             while banked_ms >= step_ms && steps < CATCH_UP_STEPS {
+                previous_state = state.clone();
                 let input = GAME_Input {
                     keys_down: polled.keys_down.clone(),
                     keys_pressed: std::mem::take(&mut waiting_pressed),
@@ -604,7 +611,11 @@ where
             };
             state = update(state, input).await;
         }
-        let frame = view(state.clone()).await;
+        // What to draw: the current state as it stands when physics runs once
+        // a frame, or the part way point between the last two steps when it
+        // runs at its own rate.
+        let drawn = if step_ms > 0.0 { blend(previous_state.clone(), state.clone(), (banked_ms / step_ms).clamp(0.0, 1.0)).await } else { state.clone() };
+        let frame = view(drawn).await;
         if let Some(full) = overlay.as_mut() {
             full.fill(tiny_skia::Color::TRANSPARENT);
         }
