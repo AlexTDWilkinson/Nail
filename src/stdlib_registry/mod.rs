@@ -117,6 +117,7 @@ mod finance;
 mod format;
 mod fs;
 mod game;
+mod game3d;
 mod geo;
 mod hashmap;
 mod hex;
@@ -271,6 +272,7 @@ crate_dependencies! {
     Softbuffer => { cargo: "softbuffer = \"0.4\"", name: "softbuffer", import: "use softbuffer;", feature: "game" },
     TinySkia => { cargo: "tiny-skia = \"0.11\"", name: "tiny-skia", import: "use tiny_skia;", feature: "game" },
     Fontdue => { cargo: "fontdue = \"0.9\"", name: "fontdue", import: "use fontdue;", feature: "game" },
+    Gltf => { cargo: "gltf = { version = \"1\", default-features = false, features = [\"import\", \"utils\"] }", name: "gltf", import: "use gltf;", feature: "game" },
 }
 
 /// Defines the StdlibModule enum, its runtime module path, the namespace
@@ -375,6 +377,7 @@ stdlib_modules! {
     Chart => "std_lib::chart", "chart_",
     Audio => "std_lib::audio", "audio_",
     Game => "std_lib::game", "game_",
+    Game3d => "std_lib::game3d", "game3d_",
     Code => "std_lib::code", "code_",
     Crypto => "std_lib::crypto", "crypto_",
     Email => "std_lib::email", "email_",
@@ -490,6 +493,7 @@ lazy_static! {
         format::register(&mut m);
         fs::register(&mut m);
         game::register(&mut m);
+        game3d::register(&mut m);
         geo::register(&mut m);
         hashmap::register(&mut m);
         hex::register(&mut m);
@@ -757,7 +761,7 @@ pub fn is_sandbox_safe(name: &str) -> bool {
 
 pub fn is_stdlib_fn_async(name: &str) -> bool {
     // Per-function overrides of the module default
-    if name == "time_sleep" || name == "tui_run" || name == "game_run" || name == "crypto_hash_file_sha256" || name == "crypto_hash_file_blake3" || name == "csv_write" || name == "sys_cpu_usage_percent" || name == "sys_process_cpu_percent" {
+    if name == "time_sleep" || name == "tui_run" || name == "game_run" || name == "game3d_mesh_load" || name == "crypto_hash_file_sha256" || name == "crypto_hash_file_blake3" || name == "csv_write" || name == "sys_cpu_usage_percent" || name == "sys_process_cpu_percent" {
         return true;
     }
     if SYNC_STDLIB_FUNCTIONS.contains(&name) {
@@ -767,6 +771,54 @@ pub fn is_stdlib_fn_async(name: &str) -> bool {
         get_stdlib_function(name).map(|f| &f.module),
         Some(StdlibModule::Fs | StdlibModule::Http | StdlibModule::IO | StdlibModule::Sqlite | StdlibModule::DataFusion | StdlibModule::Process | StdlibModule::Archive | StdlibModule::Net | StdlibModule::Email | StdlibModule::Postgres | StdlibModule::Image | StdlibModule::Pdf | StdlibModule::Xlsx | StdlibModule::Sched | StdlibModule::Valkey | StdlibModule::Mcp)
     )
+}
+
+/// Whether a stdlib function can exist in a browser. This mirrors the
+/// cfg(not(target_arch = "wasm32")) gates in std_lib/mod.rs: a module the
+/// wasm build does not contain cannot be called from a wasm program, and
+/// `nailc --target=wasm` refuses such programs up front with a list of the
+/// offending calls instead of a rustc error from deep inside a build.
+pub fn is_stdlib_fn_wasm_safe(name: &str) -> bool {
+    // Per-function exceptions inside otherwise portable modules: these few
+    // touch the disk from modules that are pure computation everywhere else.
+    if matches!(name, "csv_write" | "game_sprite_load") {
+        return false;
+    }
+    return !matches!(
+        get_stdlib_function(name).map(|f| &f.module),
+        Some(
+            StdlibModule::Archive
+                | StdlibModule::Audio
+                | StdlibModule::Cache
+                | StdlibModule::Code
+                | StdlibModule::Compress
+                | StdlibModule::Crypto
+                | StdlibModule::DataFusion
+                | StdlibModule::Email
+                | StdlibModule::Env
+                | StdlibModule::Fs
+                | StdlibModule::Html
+                | StdlibModule::Http
+                | StdlibModule::IO
+                | StdlibModule::Image
+                | StdlibModule::Jwt
+                | StdlibModule::Log
+                | StdlibModule::Mcp
+                | StdlibModule::Net
+                | StdlibModule::Path
+                | StdlibModule::Pdf
+                | StdlibModule::Postgres
+                | StdlibModule::Process
+                | StdlibModule::Sched
+                | StdlibModule::Sqlite
+                | StdlibModule::Sys
+                | StdlibModule::Term
+                | StdlibModule::Time
+                | StdlibModule::Tui
+                | StdlibModule::Valkey
+                | StdlibModule::Xlsx
+        )
+    );
 }
 
 /// Information about a stdlib struct/type
@@ -1259,6 +1311,8 @@ lazy_static! {
                 fields.insert("height".to_string(), NailDataTypeDescriptor::Float);
                 fields.insert("end_x".to_string(), NailDataTypeDescriptor::Float);
                 fields.insert("end_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("third_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("third_y".to_string(), NailDataTypeDescriptor::Float);
                 fields.insert("radius".to_string(), NailDataTypeDescriptor::Float);
                 fields.insert("thickness".to_string(), NailDataTypeDescriptor::Float);
                 fields.insert("color".to_string(), NailDataTypeDescriptor::String);
@@ -1290,7 +1344,25 @@ lazy_static! {
                 fields.insert("mouse_y".to_string(), NailDataTypeDescriptor::Float);
                 fields.insert("mouse_down".to_string(), NailDataTypeDescriptor::Boolean);
                 fields.insert("mouse_right".to_string(), NailDataTypeDescriptor::Boolean);
+                fields.insert("scroll".to_string(), NailDataTypeDescriptor::Float);
                 fields.insert("delta_ms".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        m.insert("GAME3D_Camera", StdlibTypeInfo {
+            name: "GAME3D_Camera".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("position_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("position_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("position_z".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("target_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("target_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("target_z".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("field_of_view".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("viewport_width".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("viewport_height".to_string(), NailDataTypeDescriptor::Float);
                 fields
             }
         });
@@ -1933,6 +2005,7 @@ mod stdlib_types_drift_tests {
             assert_matches_registry::<crate::parser::std_lib::game::GAME_Shape>("GAME_Shape");
             assert_matches_registry::<crate::parser::std_lib::game::GAME_Frame>("GAME_Frame");
             assert_matches_registry::<crate::parser::std_lib::game::GAME_Input>("GAME_Input");
+            assert_matches_registry::<crate::parser::std_lib::game3d::GAME3D_Camera>("GAME3D_Camera");
         }
         #[cfg(feature = "valkey")]
         assert_matches_registry::<crate::parser::std_lib::valkey::DB_Valkey>("DB_Valkey");
@@ -1965,7 +2038,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input", "GAME3D_Camera"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

@@ -31,9 +31,9 @@ Generated files to watch for and delete:
 
 This is non-negotiable to maintain language stability and prevent regressions.
 
-A clean run currently reports 161/161 lexer/parser, 161/161 type checker and
-145/145 transpiler, with zero failures. `cargo test --lib` reports 1136 passing,
-and `./test_e2e.sh` reports 357 programs passing.
+A clean run currently reports 162/162 lexer/parser, 162/162 type checker and
+146/146 transpiler, with zero failures. `cargo test --lib` reports 1143 passing
+(1153 with `--features game`), and `./test_e2e.sh` reports 357 programs passing.
 Treat any number below that as a
 regression to investigate, not a new baseline.
 

@@ -45,16 +45,16 @@ f update(state:Paddle, input:GAME_Input):Paddle {
 start:Paddle = Paddle { paddle_y = 250.0, score = 3, done = false };
 
 // A held key moves by time, not by frames, so speed survives any frame rate.
-held:GAME_Input = GAME_Input { keys_down = [`Up`], keys_pressed = [], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, delta_ms = 16.0 };
+held:GAME_Input = GAME_Input { keys_down = [`Up`], keys_pressed = [], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, scroll = 0.0, delta_ms = 16.0 };
 moved:Paddle = update(start, held);
 test_assert_equal_float(moved.paddle_y, 242.0, 0.0001, `sixteen milliseconds of Up moves eight pixels`);
 test_assert_equal_bool(moved.done, false, `moving does not end the game`);
 
-quit_press:GAME_Input = GAME_Input { keys_down = [], keys_pressed = [`Esc`], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, delta_ms = 16.0 };
+quit_press:GAME_Input = GAME_Input { keys_down = [], keys_pressed = [`Esc`], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, scroll = 0.0, delta_ms = 16.0 };
 over:Paddle = update(moved, quit_press);
 test_assert_equal_bool(over.done, true, `Esc ends the game`);
 
-idle:GAME_Input = GAME_Input { keys_down = [], keys_pressed = [], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, delta_ms = 16.0 };
+idle:GAME_Input = GAME_Input { keys_down = [], keys_pressed = [], mouse_x = 0.0, mouse_y = 0.0, mouse_down = false, mouse_right = false, scroll = 0.0, delta_ms = 16.0 };
 same:Paddle = update(start, idle);
 test_assert_equal_float(same.paddle_y, 250.0, 0.0001, `no input changes nothing`);
 

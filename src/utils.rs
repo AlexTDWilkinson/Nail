@@ -34,6 +34,7 @@ use std::thread;
 
 use crate::colorizer::{colorize_code, ColorScheme};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
 use ratatui::text::Span;
@@ -58,8 +59,27 @@ pub enum BuildStatus {
     Parsing,
     Transpiling,
     Compiling,
-    Complete,
+    Complete(String),
     Failed(String),
+}
+
+/// One function's stats from a running instrumented program.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfiledFunction {
+    pub name: String,
+    pub calls: u64,
+    pub total_nanos: u64,
+    pub max_nanos: u64,
+}
+
+/// A parsed .nail_profile.json dump, written every second by a running
+/// instrumented program. The source hash tells the IDE whether the timings
+/// still describe the code on screen.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfileData {
+    pub source_hash: String,
+    pub wall_nanos: u64,
+    pub functions: Vec<ProfiledFunction>,
 }
 
 pub fn lock<T>(arc_mutex: &Arc<Mutex<T>>) -> MutexGuard<T> {
@@ -138,6 +158,11 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
     // An unchanged file costs zero colorize work per frame; only the visible
     // window is cloned out of the cache for cursor/selection overlays.
     let mut colorize_cache: Option<(u64, ColorScheme, Vec<Line<'static>>)> = None;
+
+    // Buffer fingerprint and function declaration lines for timing
+    // annotations, keyed by content hash. Rebuilt only when the buffer
+    // changes, so an unedited frame costs one hash comparison.
+    let mut profile_line_cache: Option<(u64, String, HashMap<String, usize>)> = None;
 
     loop {
         match rx.try_recv() {
@@ -585,9 +610,19 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             // Always display build status overlay
             display_build_status(f, &editor);
 
-            // Check and draw errors FIRST
-            if !editor.code_errors.is_empty() {
-                display_errors(f, &editor.code_errors, &editor, content_area);
+            // End-of-line annotations: function timings from the last run,
+            // then errors, and an error always wins its line
+            if editor.profile_data.is_some() {
+                let cache_outdated = profile_line_cache.as_ref().map_or(true, |(cached_hash, _, _)| *cached_hash != content_hash);
+                if cache_outdated {
+                    let current_tab = editor.get_current_tab();
+                    let source = current_tab.content.join("\n");
+                    profile_line_cache = Some((content_hash, nail::prof::source_fingerprint(&source), function_declaration_lines(&current_tab.content)));
+                }
+            }
+            let annotations = build_line_annotations(&editor, profile_line_cache.as_ref());
+            if !annotations.is_empty() {
+                display_line_annotations(f, &editor, content_area, &annotations);
             }
             
             // Draw completion popup LAST so it appears on top
@@ -724,7 +759,7 @@ fn display_build_status(f: &mut Frame, editor: &Editor) {
         BuildStatus::Parsing => "Starting",
         BuildStatus::Transpiling => "Transpiling",
         BuildStatus::Compiling => "Compiling",
-        BuildStatus::Complete => "Saved!",
+        BuildStatus::Complete(message) => message,
         BuildStatus::Failed(err) => err,
     };
 
@@ -750,7 +785,54 @@ fn display_build_status(f: &mut Frame, editor: &Editor) {
     f.render_widget(paragraph, status_area);
 }
 
-fn display_errors(f: &mut Frame, errors: &[CodeError], editor: &Editor, content_area: Rect) {
+/// What an end-of-line overlay annotation means, which decides its color.
+/// Errors keep the error color, timings render dim like a comment, and stale
+/// timings dim further because they describe an older build. Red always
+/// means error in this IDE, so timings never use it.
+enum LineAnnotationKind {
+    Error,
+    Timing,
+    TimingStale,
+}
+
+/// One overlay rendered after the end of a line's code. Each line carries at
+/// most one, and an error always wins the line over a timing annotation.
+struct LineAnnotation {
+    text: String,
+    kind: LineAnnotationKind,
+}
+
+/// Assembles every end-of-line annotation keyed by 1-based line number, with
+/// 0 meaning a status notice that renders on the bottom row. Timing entries
+/// go in first so any error on the same line overwrites them.
+fn build_line_annotations(editor: &Editor, profile_cache: Option<&(u64, String, HashMap<String, usize>)>) -> BTreeMap<usize, LineAnnotation> {
+    let mut annotations: BTreeMap<usize, LineAnnotation> = BTreeMap::new();
+
+    if let (Some(profile), Some((_, fingerprint, decl_lines))) = (&editor.profile_data, profile_cache) {
+        let stale = *fingerprint != profile.source_hash;
+        for function in &profile.functions {
+            if function.calls == 0 {
+                continue;
+            }
+            let Some(line_idx) = decl_lines.get(&function.name) else { continue };
+            let kind = if stale { LineAnnotationKind::TimingStale } else { LineAnnotationKind::Timing };
+            annotations.insert(line_idx + 1, LineAnnotation { text: format_timing_annotation(function, profile.wall_nanos, stale), kind });
+        }
+    }
+
+    // Errors sharing a line are joined so they never overdraw each other
+    let mut messages_by_line: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
+    for error in &editor.code_errors {
+        messages_by_line.entry(error.code_span.start_line).or_default().push(error.message.as_str());
+    }
+    for (start_line, messages) in messages_by_line {
+        annotations.insert(start_line, LineAnnotation { text: format!("◀ {}", messages.join(" | ")), kind: LineAnnotationKind::Error });
+    }
+
+    annotations
+}
+
+fn display_line_annotations(f: &mut Frame, editor: &Editor, content_area: Rect, annotations: &BTreeMap<usize, LineAnnotation>) {
     let current_tab = editor.get_current_tab();
     let scroll = current_tab.scroll_position as usize;
     // Content rows sit inside the block border: row n renders at content_area.y + 1 + n
@@ -760,47 +842,92 @@ fn display_errors(f: &mut Frame, errors: &[CodeError], editor: &Editor, content_
     }
     let right_edge = content_area.x + content_area.width - 1;
 
-    // Each error renders at the end of its own line; errors sharing a line
-    // are joined so they never overdraw each other
-    let mut messages_by_line: std::collections::BTreeMap<usize, Vec<&str>> = std::collections::BTreeMap::new();
-    for error in errors {
-        messages_by_line.entry(error.code_span.start_line).or_default().push(error.message.as_str());
-    }
-
-    for (start_line, messages) in messages_by_line {
+    for (start_line, annotation) in annotations {
         // Messages without a code span (status notices like "Loaded: ...") go to the
         // bottom row of the content area instead of masquerading as a line-1 error
-        let (row_y, msg_x) = if start_line == 0 {
+        let (row_y, msg_x) = if *start_line == 0 {
             (content_area.y + visible_rows as u16, content_area.x + 1)
         } else {
-            let error_line_0based = start_line - 1;
-            if error_line_0based < scroll || error_line_0based >= scroll + visible_rows {
-                continue; // Error line is scrolled out of view
+            let line_0based = start_line - 1;
+            if line_0based < scroll || line_0based >= scroll + visible_rows {
+                continue; // Annotated line is scrolled out of view
             }
             // Place the message after the end of the line's code so it never covers it
-            let line_len = current_tab.content.get(error_line_0based).map(|l| l.chars().count()).unwrap_or(0) as u16;
-            (content_area.y + 1 + (error_line_0based - scroll) as u16, content_area.x + 1 + line_len + 2)
+            let line_len = current_tab.content.get(line_0based).map(|l| l.chars().count()).unwrap_or(0) as u16;
+            (content_area.y + 1 + (line_0based - scroll) as u16, content_area.x + 1 + line_len + 2)
         };
 
         if msg_x >= right_edge {
             continue;
         }
         let avail = (right_edge - msg_x) as usize;
-        let mut text = format!("◀ {}", messages.join(" | "));
+        let mut text = annotation.text.clone();
         if text.chars().count() > avail {
             text = text.chars().take(avail.saturating_sub(1)).collect();
             text.push('…');
         }
 
-        let error_area = Rect::new(msg_x, row_y, text.chars().count() as u16, 1).intersection(f.area());
-        if error_area.width == 0 || error_area.height == 0 {
+        let overlay_area = Rect::new(msg_x, row_y, text.chars().count() as u16, 1).intersection(f.area());
+        if overlay_area.width == 0 || overlay_area.height == 0 {
             continue;
         }
 
-        let paragraph = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(editor.theme.error).bg(editor.theme.background))));
-        f.render_widget(Clear, error_area);
-        f.render_widget(paragraph, error_area);
+        let style = match annotation.kind {
+            LineAnnotationKind::Error => Style::default().fg(editor.theme.error).bg(editor.theme.background),
+            LineAnnotationKind::Timing => Style::default().fg(editor.theme.comment).bg(editor.theme.background),
+            LineAnnotationKind::TimingStale => Style::default().fg(editor.theme.comment).bg(editor.theme.background).add_modifier(Modifier::DIM),
+        };
+        let paragraph = Paragraph::new(Line::from(Span::styled(text, style)));
+        f.render_widget(Clear, overlay_area);
+        f.render_widget(paragraph, overlay_area);
     }
+}
+
+/// Full stats for one function, rendered at the end of its declaration line.
+/// A stale suffix replaces the max when the dump predates the buffer's code.
+fn format_timing_annotation(function: &ProfiledFunction, wall_nanos: u64, stale: bool) -> String {
+    let percent = if wall_nanos > 0 { function.total_nanos as f64 / wall_nanos as f64 * 100.0 } else { 0.0 };
+    let avg_nanos = function.total_nanos / function.calls.max(1);
+    let tail = if stale { "stale".to_string() } else { format!("{} max", format_nanos(function.max_nanos)) };
+    format!("◀ {} total ({:.1}%)  {} avg × {}  {}", format_nanos(function.total_nanos), percent, format_nanos(avg_nanos), function.calls, tail)
+}
+
+/// Adaptive duration formatting, same units and precision as the timing
+/// sheet a profiled program prints at exit.
+fn format_nanos(nanos: u64) -> String {
+    if nanos < 1_000 {
+        format!("{}ns", nanos)
+    } else if nanos < 1_000_000 {
+        format!("{:.1}µs", nanos as f64 / 1_000.0)
+    } else if nanos < 1_000_000_000 {
+        format!("{:.1}ms", nanos as f64 / 1_000_000.0)
+    } else {
+        format!("{:.2}s", nanos as f64 / 1_000_000_000.0)
+    }
+}
+
+fn format_millis(elapsed: Duration) -> String {
+    format!("{:.1}ms", elapsed.as_secs_f64() * 1000.0)
+}
+
+/// Maps each function name to the 0-based line of its `f name(...)`
+/// declaration. A plain text scan so annotations survive parse errors, and
+/// function names are globally unique in Nail so one line per name is right.
+fn function_declaration_lines(content: &[String]) -> HashMap<String, usize> {
+    let mut decl_lines = HashMap::new();
+    for (idx, line) in content.iter().enumerate() {
+        let Some(rest) = line.trim_start().strip_prefix("f ") else { continue };
+        let rest = rest.trim_start();
+        let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        if name.is_empty() {
+            continue;
+        }
+        let after_name: String = rest.chars().skip(name.chars().count()).collect();
+        if after_name.trim_start().starts_with('(') {
+            decl_lines.entry(name).or_insert(idx);
+        }
+    }
+    decl_lines
 }
 
 fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect) {
@@ -1383,7 +1510,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                 };
                                 match editor.save_file() {
                                     Ok(_) => {
-                                        editor.build_status = BuildStatus::Complete;
+                                        editor.build_status = BuildStatus::Complete("Saved!".to_string());
                                         log::info!("File saved successfully");
                                     }
                                     Err(e) => {
@@ -1453,7 +1580,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                             KeyCode::F(6) => editor.toggle_theme(),
                             KeyCode::F(7) => {
                                 match editor.build_status {
-                                    BuildStatus::Idle | BuildStatus::Failed(_) | BuildStatus::Complete => {
+                                    BuildStatus::Idle | BuildStatus::Failed(_) | BuildStatus::Complete(_) => {
                                         let _ = tx_build.send(EditorMessage::BuildStart);
                                     }
                                     _ => {
@@ -1911,9 +2038,15 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             let mut editor = editor_arc.lock().unwrap();
             editor.build_status = BuildStatus::Parsing;
             let current_tab = editor.get_current_tab();
-            let tokens = lexer::lexer(&current_tab.content.join("\n"));
+            let content = current_tab.content.join("\n");
             drop(editor);
 
+            let stages_started = std::time::Instant::now();
+            let lex_started = std::time::Instant::now();
+            let tokens = lexer::lexer(&content);
+            let lex_elapsed = lex_started.elapsed();
+
+            let parse_started = std::time::Instant::now();
             let mut ast = match parse(tokens) {
                 Ok(ast) => {
                     log::info!("AST (parsed): {:#?}", ast);
@@ -1926,7 +2059,9 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                     continue;
                 }
             };
+            let parse_elapsed = parse_started.elapsed();
 
+            let check_started = std::time::Instant::now();
             let ast = match checker(&mut ast) {
                 Ok(_) => {
                     log::info!("AST (type checked): {:#?}", ast);
@@ -1940,12 +2075,17 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                     continue;
                 }
             };
+            let check_elapsed = check_started.elapsed();
 
-            // Step 2: Transpile to Rust
+            // Step 2: Transpile to Rust, instrumented so the running program
+            // dumps per-function timings the IDE can render live
             let mut editor = editor_arc.lock().unwrap();
             editor.build_status = BuildStatus::Transpiling;
             drop(editor); // Release the lock
             let mut transpiler = Transpiler::new();
+            transpiler.profile = true;
+            transpiler.profile_source_hash = Some(nail::prof::source_fingerprint(&content));
+            let transpile_started = std::time::Instant::now();
             let rust_code = match transpiler.transpile(&ast) {
                 Ok(code) => {
                     log::info!("Transpiled Rust pre-format code:\n{}", code);
@@ -1958,6 +2098,17 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                     continue;
                 }
             };
+            let transpile_elapsed = transpile_started.elapsed();
+
+            let compiler_timings = format!(
+                "compiler timings: lex {}, parse {}, check {}, transpile {}, total {}",
+                format_millis(lex_elapsed),
+                format_millis(parse_elapsed),
+                format_millis(check_elapsed),
+                format_millis(transpile_elapsed),
+                format_millis(stages_started.elapsed())
+            );
+            log::info!("{}", compiler_timings);
 
             // Step 3: Write Rust code into the persistent transpilation project.
             // The directory is kept between builds so cargo can reuse target/
@@ -2035,7 +2186,7 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                             editor.build_status = BuildStatus::Failed(format!("Failed to copy binary: {}", e));
                         } else {
                             let mut editor = editor_arc.lock().unwrap();
-                            editor.build_status = BuildStatus::Complete;
+                            editor.build_status = BuildStatus::Complete(format!("Saved! {}", compiler_timings));
                         }
                     } else {
                         log::error!("Compiler stderr: {}", String::from_utf8_lossy(&output.stderr));
@@ -2058,6 +2209,68 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
         }
 
         thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// A profiled program writes .nail_profile.json via tmp and rename, so a
+/// read never sees a partial file. Parse failure still returns None instead
+/// of panicking because the file is outside the IDE's control.
+fn parse_profile_dump(text: &str) -> Option<ProfileData> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let source_hash = value.get("source_hash")?.as_str()?.to_string();
+    let wall_nanos = value.get("wall_nanos")?.as_u64()?;
+    let functions = value
+        .get("functions")?
+        .as_array()?
+        .iter()
+        .filter_map(|entry| {
+            Some(ProfiledFunction {
+                name: entry.get("name")?.as_str()?.to_string(),
+                calls: entry.get("calls")?.as_u64()?,
+                total_nanos: entry.get("total_nanos")?.as_u64()?,
+                max_nanos: entry.get("max_nanos")?.as_u64()?,
+            })
+        })
+        .collect();
+    Some(ProfileData { source_hash, wall_nanos, functions })
+}
+
+/// Polls .nail_profile.json about once a second. A stat of the mtime is the
+/// only steady cost, the file is re-read and re-parsed on change only. A
+/// missing or unreadable file just means no annotations.
+pub fn profile_watcher_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>) {
+    const PROFILE_DUMP_PATH: &str = ".nail_profile.json";
+    let mut last_mtime: Option<std::time::SystemTime> = None;
+    loop {
+        match rx.try_recv() {
+            Ok(EditorMessage::Shutdown) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                log::info!("Shutting down profile watcher thread");
+                break;
+            }
+            _ => {}
+        }
+
+        match fs::metadata(PROFILE_DUMP_PATH).and_then(|meta| meta.modified()) {
+            Ok(mtime) => {
+                if last_mtime != Some(mtime) {
+                    last_mtime = Some(mtime);
+                    if let Some(data) = fs::read_to_string(PROFILE_DUMP_PATH).ok().and_then(|text| parse_profile_dump(&text)) {
+                        let mut editor = lock(&editor_arc);
+                        editor.profile_data = Some(data);
+                    }
+                }
+            }
+            Err(_) => {
+                // Dump deleted or unreadable, drop annotations rather than
+                // keep showing timings that no longer exist on disk
+                if last_mtime.take().is_some() {
+                    let mut editor = lock(&editor_arc);
+                    editor.profile_data = None;
+                }
+            }
+        }
+
+        thread::sleep(Duration::from_millis(1000));
     }
 }
 

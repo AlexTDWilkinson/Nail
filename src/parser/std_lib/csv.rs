@@ -445,6 +445,7 @@ fn join_row(fields: &[String], delimiter: char, quote: char) -> String {
 /// Writes rows straight to a file as CSV. The same escaping as csv_serialize,
 /// and the file is put in place by a rename, so a reader never catches it half
 /// written.
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn write(path: String, headers: Vec<String>, rows: Vec<DashMap<String, String>>, options: CSV_Options) -> Result<(), String> {
     let text = serialize(headers, rows, options)?;
     return crate::parser::std_lib::fs::write_atomic(path, text).await;

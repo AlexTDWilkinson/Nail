@@ -8,6 +8,18 @@ use nail::checker::checker;
 use nail::transpiler::Transpiler;
 use std::path::Path;
 
+/// Compiler stage timings on stderr, only when a human is watching. Piped and
+/// scripted runs (tests, deploys, the website's run buttons) never see them.
+fn print_stage_timings(stages: &[(&str, std::time::Duration)]) {
+    use std::io::IsTerminal;
+    if stages.is_empty() || !std::io::stderr().is_terminal() {
+        return;
+    }
+    let total: std::time::Duration = stages.iter().map(|(_, took)| *took).sum();
+    let parts: Vec<String> = stages.iter().map(|(stage, took)| format!("{} {:.1}ms", stage, took.as_secs_f64() * 1000.0)).collect();
+    eprintln!("compiler timings: {}, total {:.1}ms", parts.join(", "), total.as_secs_f64() * 1000.0);
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     
@@ -27,6 +39,12 @@ fn main() {
         eprintln!("                 (no input file; used by the bundle build to warm the dep cache)");
         eprintln!("  -o <path>      Write transpiled Rust to <path> instead of next to the source");
         eprintln!("  --stdout       Write transpiled Rust to stdout, don't touch the filesystem");
+        eprintln!("  --no-profile   Emit no runtime profiling (profiling is on by default: every");
+        eprintln!("                 user function is timed, a sheet prints at exit when stderr is");
+        eprintln!("                 a terminal, and .nail/profile.json is refreshed every second)");
+        eprintln!("  --target=wasm  Build for the browser: emits a wasm-bindgen start function");
+        eprintln!("                 instead of a main, and refuses programs that call stdlib");
+        eprintln!("                 functions needing an operating system (files, servers, etc.)");
         process::exit(1);
     }
 
@@ -43,9 +61,11 @@ fn main() {
     let mut mode = args.get(2).map(|s| s.as_str()).unwrap_or("--transpile");
     let skip_check = args.iter().any(|arg| arg == "--skip-check");
     let to_stdout = args.iter().any(|arg| arg == "--stdout");
+    let no_profile = args.iter().any(|arg| arg == "--no-profile");
+    let wasm_target = args.iter().any(|arg| arg == "--target=wasm");
     let output_path = args.iter().position(|arg| arg == "-o").and_then(|i| args.get(i + 1)).cloned();
-    // "-o" or "--stdout" in the mode position means the default mode with an output override
-    if mode == "-o" || mode == "--stdout" {
+    // Flags in the mode position mean the default mode with that flag applied
+    if mode == "-o" || mode == "--stdout" || mode == "--no-profile" || mode == "--target=wasm" {
         mode = "--transpile";
     }
     
@@ -67,11 +87,15 @@ fn main() {
     };
     
     
+    let mut stage_timings: Vec<(&str, std::time::Duration)> = Vec::new();
+
     // Run lexer
     if !quiet {
         println!("=== Lexing {} ===", filename);
     }
+    let stage_start = std::time::Instant::now();
     let tokens = lexer_with_context(&input, Some(Path::new(filename)));
+    stage_timings.push(("lex", stage_start.elapsed()));
 
     let lexer_errors = nail::lexer::collect_lexer_errors(&tokens);
     if !lexer_errors.is_empty() {
@@ -86,13 +110,15 @@ fn main() {
         for token in &tokens {
             println!("{:#?}", token);
         }
+        print_stage_timings(&stage_timings);
         return;
     }
-    
+
     // Run parser
     if !quiet {
         println!("\n=== Parsing ===");
     }
+    let stage_start = std::time::Instant::now();
     let ast = match parse(tokens) {
         Ok(ast) => {
             if !quiet {
@@ -105,10 +131,12 @@ fn main() {
             process::exit(1);
         }
     };
-    
+    stage_timings.push(("parse", stage_start.elapsed()));
+
     if mode == "--parse-only" {
         println!("\nAST:");
         println!("{:#?}", ast);
+        print_stage_timings(&stage_timings);
         return;
     }
     
@@ -123,12 +151,14 @@ fn main() {
         if !quiet {
             println!("\n=== Type Checking ===");
         }
+        let stage_start = std::time::Instant::now();
         let mut checked_ast = ast;
         match checker(&mut checked_ast) {
             Ok(_) => {
                 if !quiet {
                     println!("Type check successful!");
                 }
+                stage_timings.push(("check", stage_start.elapsed()));
                 checked_ast
             }
             Err(errors) => {
@@ -148,14 +178,24 @@ fn main() {
     if mode == "--check-only" {
         println!("\nType-checked AST:");
         println!("{:#?}", checked_ast);
+        print_stage_timings(&stage_timings);
         return;
     }
-    
+
     // Run transpiler
     if !quiet {
         println!("\n=== Transpiling to Rust ===");
     }
+    let stage_start = std::time::Instant::now();
     let mut transpiler = Transpiler::new();
+    transpiler.profile = !no_profile;
+    transpiler.profile_source_hash = Some(nail::prof::source_fingerprint(&input));
+    // Profiling writes files and reads clocks, neither of which a browser
+    // program can do, so the wasm build is always unprofiled.
+    transpiler.wasm_target = wasm_target;
+    if wasm_target {
+        transpiler.profile = false;
+    }
     let rust_code = match transpiler.transpile(&checked_ast) {
         Ok(code) => code,
         Err(e) => {
@@ -163,7 +203,21 @@ fn main() {
             process::exit(1);
         }
     };
-    
+    stage_timings.push(("transpile", stage_start.elapsed()));
+    print_stage_timings(&stage_timings);
+
+    if wasm_target {
+        let blockers = transpiler.wasm_unsupported_functions();
+        if !blockers.is_empty() {
+            eprintln!("This program cannot run in a browser. These calls need an operating system underneath:");
+            for name in &blockers {
+                eprintln!("  {}", name);
+            }
+            eprintln!("A browser has no files, processes, terminals or servers. Remove these calls or build natively.");
+            process::exit(1);
+        }
+    }
+
     if mode == "--deps-only" {
         // Output dependencies in a machine-readable format
         let dependencies = transpiler.get_required_dependencies();
@@ -179,7 +233,11 @@ fn main() {
             .find_map(|arg| arg.strip_prefix("--package-name="))
             .map(|name| name.to_string())
             .unwrap_or_else(|| Path::new(filename).file_stem().and_then(|stem| stem.to_str()).unwrap_or("nail_program").replace('-', "_"));
-        print!("{}", transpiler.generate_cargo_toml(&package_name, &nail_path));
+        if wasm_target {
+            print!("{}", transpiler.generate_cargo_toml_wasm(&package_name, &nail_path));
+        } else {
+            print!("{}", transpiler.generate_cargo_toml(&package_name, &nail_path));
+        }
         return;
     }
     

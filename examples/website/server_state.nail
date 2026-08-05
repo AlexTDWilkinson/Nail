@@ -13,15 +13,18 @@ website_html:s = array_join([
     generate_refusals(refused_error_html, refused_error_verdict, refused_field_html, refused_field_verdict, refused_nothing_html, refused_nothing_verdict),
     generate_features(),
     generate_examples(concurrent_example_html, parallel_example_html, error_example_html, concurrent_rust_html, parallel_rust_html, error_rust_html),
+    generate_games_section(),
     generate_import_section(jailbreak_html, sandbox_demo_html, sandbox_verdict_html),
     generate_mcp(mcp_example_html),
     generate_stdlib_teaser(array_length(stdlib_function_list), array_length(stdlib_module_list), battery_rows),
     generate_get_started(),
     generate_ide(ide_shot_error, ide_shot_complete, ide_shot_docs, tagged_snippet_html),
     generate_performance(),
+    generate_profiling(ide_shot_profiling),
     generate_versioning(),
     generate_author(author_avatar),
     generate_footer(),
+    generate_playground_script(),
     generate_menu_script(),
     html`</body>
 </html>`
@@ -42,6 +45,21 @@ stdlib_page_html:s = generate_stdlib_page(
     stdlib_module_list
 );
 hashmap_set(state, `page_stdlib`, stdlib_page_html);
+
+// The browser games: one minimal embed page per demo, framed by the games
+// section on the home page. The wasm they load is on the /wasm static mount.
+hashmap_set(state, `page_platformer_embed`, generate_game_embed_page(
+    `A platformer, written in Nail`,
+    `/wasm/platformer/pkg/platformer_wasm.js`
+));
+hashmap_set(state, `page_pong_embed`, generate_game_embed_page(
+    `Pong, written in Nail`,
+    `/wasm/pong/pkg/pong_wasm.js`
+));
+hashmap_set(state, `page_viewer_embed`, generate_game_embed_page(
+    `A 3D model viewer, written in Nail`,
+    `/wasm/viewer/pkg/viewer_wasm.js`
+));
 
 // Routes for running examples. The outputs are built from values this server
 // actually computed at startup by executing the same code the examples show.

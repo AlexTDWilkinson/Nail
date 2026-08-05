@@ -534,7 +534,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
                 // Check if this is a function call used as a statement
                 if let ASTNode::FunctionCall { name, args, code_span, scope } = statement {
                     let return_type = visit_function_call(name, args, state, *scope, code_span);
-                    // Functions that return non-void values must have their results used
+                    // Non-void functions must have their results used
                     if return_type != NailDataTypeDescriptor::Void && 
                        return_type != NailDataTypeDescriptor::Never && 
                        return_type != NailDataTypeDescriptor::FailedToResolve {
@@ -609,7 +609,7 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
                 // Check if this is a function call used as a statement
                 if let ASTNode::FunctionCall { name, args, code_span, scope } = statement {
                     let return_type = visit_function_call(name, args, state, *scope, code_span);
-                    // Functions that return non-void values must have their results used
+                    // Non-void functions must have their results used
                     if return_type != NailDataTypeDescriptor::Void && 
                        return_type != NailDataTypeDescriptor::Never && 
                        return_type != NailDataTypeDescriptor::FailedToResolve {

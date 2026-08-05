@@ -2263,6 +2263,17 @@ value itself with `r value;`, and only the error case is written out with `e(...
 - Mandatory use of Nail's IDE on Linux.
 - Opinionated code formatting enforced on save.
 
+## Built-in Profiling
+
+Every build is profiled by default. There is nothing to enable and nothing to configure.
+
+- The compiler gives every user function a drop guard that records wall time on entry and exit. Recording a call costs two clock reads and three relaxed atomic updates, roughly 30 nanoseconds.
+- When a program exits and stderr is a terminal, it prints a timing sheet: calls, total, average, max, and percent of wall time per function, sorted by total. Piped output and captured test output never see the sheet.
+- While a program runs it rewrites `.nail_profile.json` in its working directory once a second, atomically. The IDE watches that file and annotates each function declaration with its live timings. When the source on screen no longer matches the build the program came from, the annotations show as stale.
+- Times are cumulative wall time. A caller includes its callees, and an async function includes time spent awaiting.
+- `nailc --no-profile` builds without any instrumentation, for deploys that want zero overhead. The Nail website deliberately ships profiled: its live timings section is the server reading its own dump. Browser builds are never instrumented.
+- The compiler itself reports per-stage timings (lex, parse, check, transpile) on stderr when run at a terminal.
+
 The EBNF specification in this repo provides a more formal and comprehensive overview of the Nail programming language.
 
 #  Nail Language Grammar in EBNF

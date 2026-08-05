@@ -38,8 +38,10 @@ import_dangerous(`website/server_state.nail`)
 import_dangerous(`website/routes.nail`)
 
 // Serve the website
+// The browser demos on /games are static files: Nail programs compiled to
+// WebAssembly by scripts/build_wasm_demos.sh into wasm_demos/.
 config:HTTP_Config = HTTP_Config {
-    static_mounts = [],
+    static_mounts = [HTTP_Static { prefix = `/wasm`, directory = `wasm_demos` }],
     max_body_bytes = 0,
     timeout_seconds = 0,
     state = state,

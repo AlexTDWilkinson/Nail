@@ -1,3 +1,9 @@
+// Modules marked not-wasm32 are the ones whose whole reason to exist is the
+// operating system underneath - files, sockets, terminals, processes, other
+// programs. A browser has none of that, so the wasm build simply does not
+// contain them, and `nailc --target wasm` refuses programs that call them
+// before this gate is ever reached.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod archive;
 pub mod args;
 pub mod array;
@@ -8,14 +14,19 @@ pub mod base58;
 pub mod base64;
 pub mod binary;
 pub mod bits;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod cache;
 pub mod chart;
+// Pure text transforms over the compiler's own stages, safe in a browser.
+// The website playground compiles this module to wasm for its highlighting.
 pub mod code;
 pub mod color;
 pub mod compress;
 pub mod convert;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod crypto;
 pub mod csv;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod database;
 #[cfg(feature = "datafusion")]
 pub mod datafusion;
@@ -23,15 +34,19 @@ pub mod diff;
 pub mod draw;
 #[cfg(feature = "email")]
 pub mod email;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod env;
 pub mod error;
 pub mod float;
 pub mod format;
 pub mod feed;
 pub mod finance;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod fs;
 #[cfg(feature = "game")]
 pub mod game;
+#[cfg(feature = "game")]
+pub mod game3d;
 pub mod geo;
 pub mod hashmap;
 pub mod hex;
@@ -41,21 +56,27 @@ pub mod ini;
 pub mod html;
 #[cfg(feature = "image")]
 pub mod image;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod http;
 pub mod int;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod io;
 pub mod json;
 pub mod jwt;
 pub mod linalg;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod log;
 pub mod markdown;
 pub mod math;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod mcp;
 pub mod mime;
 pub mod ml;
 pub mod money;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod net;
 pub mod panic;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod path;
 #[cfg(feature = "pdf")]
 pub mod pdf;
@@ -64,12 +85,14 @@ pub mod xlsx;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod print;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod process;
 pub mod rand;
 #[cfg(feature = "valkey")]
 pub mod valkey;
 pub mod regex;
 pub mod semver;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod sched;
 pub mod stats;
 pub mod stdlib;
@@ -77,10 +100,13 @@ pub mod string;
 #[cfg(feature = "sys")]
 pub mod sys;
 pub mod template;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod term;
 pub mod test;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod time;
 pub mod toml;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod tui;
 pub mod url;
 pub mod validate;
@@ -89,12 +115,17 @@ pub mod yaml;
 
 // Re-export HTTP functions so they're available from the transpiler
 pub use array::*;
+#[cfg(not(target_arch = "wasm32"))]
 pub use fs::*;
+#[cfg(not(target_arch = "wasm32"))]
 pub use http::*;
 pub use json::*;
 pub use markdown::*;
 // Don't re-export math::* to avoid conflicts with array::max
 pub use args::{ARGS_Option, ARGS_Parsed};
+#[cfg(not(target_arch = "wasm32"))]
 pub use log::LOG_Level;
+#[cfg(not(target_arch = "wasm32"))]
 pub use term::TERM_Color;
+#[cfg(not(target_arch = "wasm32"))]
 pub use time::TIME_Format;

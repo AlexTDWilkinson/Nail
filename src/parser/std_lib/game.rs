@@ -18,18 +18,29 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::num::NonZeroU32;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::{Mutex, OnceLock};
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::num::NonZeroU32;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::application::ApplicationHandler;
+#[cfg(not(target_arch = "wasm32"))]
 use winit::dpi::PhysicalSize;
+#[cfg(not(target_arch = "wasm32"))]
 use winit::event::{ElementState, MouseButton, WindowEvent};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::keyboard::{Key, NamedKey};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::platform::pump_events::EventLoopExtPumpEvents;
+#[cfg(not(target_arch = "wasm32"))]
 use winit::window::{Window, WindowId};
 
 /// How the window starts out. A `target_fps` of 0 means unpaced - the loop
@@ -54,6 +65,8 @@ pub struct GAME_Shape {
     pub height: f64,
     pub end_x: f64,
     pub end_y: f64,
+    pub third_x: f64,
+    pub third_y: f64,
     pub radius: f64,
     pub thickness: f64,
     pub color: String,
@@ -84,6 +97,7 @@ pub struct GAME_Input {
     pub mouse_y: f64,
     pub mouse_down: bool,
     pub mouse_right: bool,
+    pub scroll: f64,
     pub delta_ms: f64,
 }
 
@@ -96,6 +110,8 @@ fn blank(kind: &str) -> GAME_Shape {
         height: 0.0,
         end_x: 0.0,
         end_y: 0.0,
+        third_x: 0.0,
+        third_y: 0.0,
         radius: 0.0,
         thickness: 0.0,
         color: String::new(),
@@ -150,6 +166,20 @@ pub fn line(x: f64, y: f64, x2: f64, y2: f64, thickness: f64, color: String) -> 
     return shape;
 }
 
+/// A filled triangle. The 3D module emits these, and they are just as
+/// usable straight from a program.
+pub fn triangle(x1: f64, y1: f64, x2: f64, y2: f64, x3: f64, y3: f64, color: String) -> GAME_Shape {
+    let mut shape = blank("triangle");
+    shape.x_coordinate = x1;
+    shape.y_coordinate = y1;
+    shape.end_x = x2;
+    shape.end_y = y2;
+    shape.third_x = x3;
+    shape.third_y = y3;
+    shape.color = color;
+    return shape;
+}
+
 /// Text whose top left corner is at x, y, `size` pixels tall.
 pub fn text(content: String, x: f64, y: f64, size: f64, color: String) -> GAME_Shape {
     let mut shape = blank("text");
@@ -191,12 +221,20 @@ static NEXT_SPRITE: AtomicI64 = AtomicI64::new(1);
 
 /// Reads a PNG from disk and returns the number that names it from now on.
 /// Load sprites once before `game_run`, not inside update or view.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn sprite_load(path: String) -> Result<i64, String> {
     let bytes = std::fs::read(&path).map_err(|e| format!("game_sprite_load: could not read {}: {}", path, e))?;
     let pixmap = tiny_skia::Pixmap::decode_png(&bytes).map_err(|e| format!("game_sprite_load: {} is not a PNG this understands: {}", path, e))?;
     let handle = NEXT_SPRITE.fetch_add(1, Ordering::Relaxed);
     sprites().lock().map_err(|_| "game_sprite_load: the sprite store is poisoned".to_string())?.insert(handle, pixmap);
     return Ok(handle);
+}
+
+/// A browser has no disk to read a PNG from, so in the wasm build this can
+/// only explain itself. Sprites on the web will come from fetch later.
+#[cfg(target_arch = "wasm32")]
+pub fn sprite_load(path: String) -> Result<i64, String> {
+    return Err(format!("game_sprite_load: the browser build cannot read {} from disk - draw with shapes for now", path));
 }
 
 /// The font every `game_text` shape is drawn in, parsed once from the bytes
@@ -258,6 +296,7 @@ fn parse_color(name: &str) -> Result<tiny_skia::Color, String> {
 /// digits are themselves in lowercase, everything else is a word: `Up`,
 /// `Down`, `Left`, `Right`, `Space`, `Enter`, `Esc`, `Shift`, `Ctrl`, `Alt`,
 /// `Tab`, `Backspace`. Keys outside that set have no name and are not heard.
+#[cfg(not(target_arch = "wasm32"))]
 fn key_name(key: &Key) -> String {
     return match key {
         Key::Character(character) => character.to_string().to_lowercase(),
@@ -283,6 +322,7 @@ fn key_name(key: &Key) -> String {
 /// The window and everything the player has done to it. winit drives this
 /// between frames through `pump_app_events`, the game loop reads and resets
 /// it after.
+#[cfg(not(target_arch = "wasm32"))]
 struct App {
     title: String,
     width: u32,
@@ -295,10 +335,12 @@ struct App {
     mouse_y: f64,
     mouse_down: bool,
     mouse_right: bool,
+    scroll: f64,
     close_requested: bool,
     startup_error: Option<String>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl App {
     fn new(title: String, width: u32, height: u32) -> App {
         return App {
@@ -313,6 +355,7 @@ impl App {
             mouse_y: 0.0,
             mouse_down: false,
             mouse_right: false,
+            scroll: 0.0,
             close_requested: false,
             startup_error: None,
         };
@@ -329,6 +372,7 @@ impl App {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() && self.startup_error.is_none() {
@@ -366,6 +410,14 @@ impl ApplicationHandler for App {
                 MouseButton::Right => self.mouse_right = state == ElementState::Pressed,
                 _ => {}
             },
+            WindowEvent::MouseWheel { delta, .. } => {
+                // Lines and pixels arrive on different mice: fold both onto
+                // roughly line-sized units so a game reads one number.
+                self.scroll += match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, vertical) => vertical as f64,
+                    winit::event::MouseScrollDelta::PixelDelta(position) => position.y / 40.0,
+                };
+            }
             // Losing focus releases every key, otherwise a key held across an
             // alt-tab stays down forever because its release went elsewhere.
             WindowEvent::Focused(false) => self.keys_down.clear(),
@@ -414,6 +466,18 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, frame: &GAME_Frame) -> Result<(), S
                 paint.anti_alias = true;
                 let stroke = tiny_skia::Stroke { width: shape.thickness as f32, ..tiny_skia::Stroke::default() };
                 pixmap.stroke_path(&path, &paint, &stroke, identity, None);
+            }
+            "triangle" => {
+                let mut builder = tiny_skia::PathBuilder::new();
+                builder.move_to(shape.x_coordinate as f32, shape.y_coordinate as f32);
+                builder.line_to(shape.end_x as f32, shape.end_y as f32);
+                builder.line_to(shape.third_x as f32, shape.third_y as f32);
+                builder.close();
+                let Some(path) = builder.finish() else { continue };
+                let mut paint = tiny_skia::Paint::default();
+                paint.set_color(parse_color(&shape.color)?);
+                paint.anti_alias = true;
+                pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, identity, None);
             }
             "text" => {
                 draw_text(pixmap, shape)?;
@@ -490,6 +554,7 @@ fn draw_text(pixmap: &mut tiny_skia::Pixmap, shape: &GAME_Shape) -> Result<(), S
 /// Copies the finished pixmap into the window, stretching nearest-neighbour
 /// if the window's real pixel size differs from the game's (a high-DPI screen
 /// does this).
+#[cfg(not(target_arch = "wasm32"))]
 fn present(app: &mut App, pixmap: &tiny_skia::Pixmap) -> Result<(), String> {
     let window = app.window.as_ref().ok_or_else(|| "game_run: the window disappeared".to_string())?;
     let real = window.inner_size();
@@ -526,6 +591,7 @@ pub type UpdateFuture<S> = Pin<Box<dyn Future<Output = S> + Send>>;
 /// wait out the rest of the frame, repeat. Waiting is async sleep, so the
 /// runtime this shares a thread with keeps serving anything else the program
 /// spawned.
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn run<S, V, U>(config: GAME_Config, initial: S, view: V, update: U) -> Result<S, String>
 where
     S: Clone + Send + 'static,
@@ -572,6 +638,7 @@ where
             mouse_y: app.mouse_y,
             mouse_down: app.mouse_down,
             mouse_right: app.mouse_right,
+            scroll: std::mem::take(&mut app.scroll),
             delta_ms,
         };
 
@@ -595,6 +662,249 @@ where
         }
     }
 }
+
+/// The browser build of `game_run`. The game itself cannot tell the
+/// difference: same shapes, same callbacks, same input names. What changes is
+/// underneath - the picture goes to a canvas element instead of a window, the
+/// keyboard comes from DOM events, and the browser paces the loop with
+/// requestAnimationFrame, so `target_fps` is ignored on the web and
+/// `delta_ms` is how a game stays speed-correct.
+///
+/// The canvas is the element with id `nail-game` if the page has one, and a
+/// new canvas appended to the body if it does not.
+#[cfg(target_arch = "wasm32")]
+mod web_backend {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use wasm_bindgen::closure::Closure;
+    use wasm_bindgen::{Clamped, JsCast};
+
+    #[derive(Default)]
+    struct WebInput {
+        keys_down: HashSet<String>,
+        keys_pressed: Vec<String>,
+        mouse_x: f64,
+        mouse_y: f64,
+        mouse_down: bool,
+        mouse_right: bool,
+        scroll: f64,
+    }
+
+    /// The DOM's names for keys, folded onto the same names the native build
+    /// uses so a game is portable without knowing it.
+    fn web_key_name(key: &str) -> String {
+        return match key {
+            "ArrowUp" => "Up".to_string(),
+            "ArrowDown" => "Down".to_string(),
+            "ArrowLeft" => "Left".to_string(),
+            "ArrowRight" => "Right".to_string(),
+            " " => "Space".to_string(),
+            "Enter" => "Enter".to_string(),
+            "Escape" => "Esc".to_string(),
+            "Shift" => "Shift".to_string(),
+            "Control" => "Ctrl".to_string(),
+            "Alt" => "Alt".to_string(),
+            "Tab" => "Tab".to_string(),
+            "Backspace" => "Backspace".to_string(),
+            other => {
+                if other.chars().count() == 1 {
+                    return other.to_lowercase();
+                }
+                return String::new();
+            }
+        };
+    }
+
+    /// One requestAnimationFrame, awaitable. Resolves to the browser's
+    /// timestamp for the frame, which is what delta time is computed from.
+    async fn next_frame(window: &web_sys::Window) -> Result<f64, String> {
+        let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+            let _ = window.request_animation_frame(&resolve);
+        });
+        let stamp = wasm_bindgen_futures::JsFuture::from(promise).await.map_err(|_| "game_run: the browser stopped animating".to_string())?;
+        return Ok(stamp.as_f64().unwrap_or(0.0));
+    }
+
+    pub async fn run<S, V, U>(config: GAME_Config, initial: S, view: V, update: U) -> Result<S, String>
+    where
+        S: Clone + Send + 'static,
+        V: Fn(S) -> ViewFuture + Send + Sync + 'static,
+        U: Fn(S, GAME_Input) -> UpdateFuture<S> + Send + Sync + 'static,
+    {
+        let width = u32::try_from(config.width).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a width a canvas can have", config.width))?;
+        let height = u32::try_from(config.height).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a height a canvas can have", config.height))?;
+
+        let window = web_sys::window().ok_or_else(|| "game_run: there is no browser window to draw in".to_string())?;
+        let document = window.document().ok_or_else(|| "game_run: the page has no document".to_string())?;
+        let canvas: web_sys::HtmlCanvasElement = match document.get_element_by_id("nail-game") {
+            Some(element) => element.dyn_into().map_err(|_| "game_run: the element with id nail-game is not a canvas".to_string())?,
+            None => {
+                let element = document.create_element("canvas").map_err(|_| "game_run: could not make a canvas".to_string())?;
+                element.set_id("nail-game");
+                document.body().ok_or_else(|| "game_run: the page has no body to put a canvas in".to_string())?.append_child(&element).map_err(|_| "game_run: could not add the canvas to the page".to_string())?;
+                element.dyn_into().map_err(|_| "game_run: could not make a canvas".to_string())?
+            }
+        };
+        canvas.set_width(width);
+        canvas.set_height(height);
+        let context: web_sys::CanvasRenderingContext2d = canvas
+            .get_context("2d")
+            .ok()
+            .flatten()
+            .ok_or_else(|| "game_run: the canvas would not give a 2d context".to_string())?
+            .dyn_into()
+            .map_err(|_| "game_run: the canvas would not give a 2d context".to_string())?;
+
+        let input = Rc::new(RefCell::new(WebInput::default()));
+
+        let keydown = {
+            let input = input.clone();
+            Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |event: web_sys::KeyboardEvent| {
+                let name = web_key_name(&event.key());
+                if name.is_empty() {
+                    return;
+                }
+                // Arrows and space scroll the page otherwise, which makes a
+                // game unplayable inside any page tall enough to scroll.
+                if matches!(name.as_str(), "Up" | "Down" | "Left" | "Right" | "Space" | "Tab" | "Backspace") {
+                    event.prevent_default();
+                }
+                let mut state = input.borrow_mut();
+                if !event.repeat() && state.keys_down.insert(name.clone()) {
+                    state.keys_pressed.push(name);
+                }
+            })
+        };
+        let keyup = {
+            let input = input.clone();
+            Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |event: web_sys::KeyboardEvent| {
+                let name = web_key_name(&event.key());
+                if !name.is_empty() {
+                    input.borrow_mut().keys_down.remove(&name);
+                }
+            })
+        };
+        let mousemove = {
+            let input = input.clone();
+            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
+                let mut state = input.borrow_mut();
+                state.mouse_x = event.offset_x() as f64;
+                state.mouse_y = event.offset_y() as f64;
+            })
+        };
+        let mousedown = {
+            let input = input.clone();
+            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
+                let mut state = input.borrow_mut();
+                match event.button() {
+                    0 => state.mouse_down = true,
+                    2 => state.mouse_right = true,
+                    _ => {}
+                }
+            })
+        };
+        let mouseup = {
+            let input = input.clone();
+            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
+                let mut state = input.borrow_mut();
+                match event.button() {
+                    0 => state.mouse_down = false,
+                    2 => state.mouse_right = false,
+                    _ => {}
+                }
+            })
+        };
+        let wheel = {
+            let input = input.clone();
+            Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |event: web_sys::WheelEvent| {
+                event.prevent_default();
+                input.borrow_mut().scroll += event.delta_y() / -100.0;
+            })
+        };
+        let listen = |target: &web_sys::EventTarget, name: &str, callback: &wasm_bindgen::JsValue| {
+            let _ = target.add_event_listener_with_callback(name, callback.dyn_ref().unwrap());
+        };
+        listen(&window, "keydown", keydown.as_ref());
+        listen(&window, "keyup", keyup.as_ref());
+        listen(canvas.as_ref(), "mousemove", mousemove.as_ref());
+        listen(canvas.as_ref(), "mousedown", mousedown.as_ref());
+        listen(canvas.as_ref(), "mouseup", mouseup.as_ref());
+        listen(canvas.as_ref(), "wheel", wheel.as_ref());
+
+        let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or_else(|| "game_run: could not make the frame".to_string())?;
+        let mut straight = vec![0u8; width as usize * height as usize * 4];
+        let mut state = initial;
+        let mut last_stamp = next_frame(&window).await?;
+        let mut delta_ms = 0.0;
+
+        let finished = loop {
+            let frame_input = {
+                let mut pending = input.borrow_mut();
+                let mut keys_down: Vec<String> = pending.keys_down.iter().cloned().collect();
+                keys_down.sort();
+                GAME_Input {
+                    keys_down,
+                    keys_pressed: std::mem::take(&mut pending.keys_pressed),
+                    mouse_x: pending.mouse_x,
+                    mouse_y: pending.mouse_y,
+                    mouse_down: pending.mouse_down,
+                    mouse_right: pending.mouse_right,
+                    scroll: std::mem::take(&mut pending.scroll),
+                    delta_ms,
+                }
+            };
+
+            state = update(state, frame_input).await;
+            let frame = view(state.clone()).await;
+            if let Err(error) = rasterize(&mut pixmap, &frame) {
+                break Err(error);
+            }
+
+            // The canvas wants straight alpha, the pixmap holds premultiplied.
+            for (index, pixel) in pixmap.pixels().iter().enumerate() {
+                let color = pixel.demultiply();
+                straight[index * 4] = color.red();
+                straight[index * 4 + 1] = color.green();
+                straight[index * 4 + 2] = color.blue();
+                straight[index * 4 + 3] = color.alpha();
+            }
+            let image = match web_sys::ImageData::new_with_u8_clamped_array_and_sh(Clamped(&straight), width, height) {
+                Ok(image) => image,
+                Err(_) => break Err("game_run: could not build the frame image".to_string()),
+            };
+            if context.put_image_data(&image, 0.0, 0.0).is_err() {
+                break Err("game_run: could not put the frame on the canvas".to_string());
+            }
+
+            if frame.quit {
+                break Ok(state.clone());
+            }
+
+            let stamp = match next_frame(&window).await {
+                Ok(stamp) => stamp,
+                Err(error) => break Err(error),
+            };
+            delta_ms = stamp - last_stamp;
+            last_stamp = stamp;
+        };
+
+        let unlisten = |target: &web_sys::EventTarget, name: &str, callback: &wasm_bindgen::JsValue| {
+            let _ = target.remove_event_listener_with_callback(name, callback.dyn_ref().unwrap());
+        };
+        unlisten(&window, "keydown", keydown.as_ref());
+        unlisten(&window, "keyup", keyup.as_ref());
+        unlisten(canvas.as_ref(), "mousemove", mousemove.as_ref());
+        unlisten(canvas.as_ref(), "mousedown", mousedown.as_ref());
+        unlisten(canvas.as_ref(), "mouseup", mouseup.as_ref());
+        unlisten(canvas.as_ref(), "wheel", wheel.as_ref());
+
+        return finished;
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub use web_backend::run;
 
 #[cfg(test)]
 mod tests {

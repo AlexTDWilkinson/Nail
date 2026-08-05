@@ -25,49 +25,36 @@ path = "src/lib.rs"
 [dependencies]
 csv = "1.3"
 dashmap = { version = "6.1.0", features = ["serde"] }
-env_logger = "0.11.5"
 lazy_static = "1.5.0"
 log = "0.4.22"
-ratatui = { version = "0.28.1", features = ["all-widgets", "crossterm"] }
 rayon = "1.10.0"
 regex = "1.10.6"
-axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.5", features = ["fs"] }
-tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rand = "0.8"
 futures = "0.3"
 pulldown-cmark = "0.9"
-# rustls instead of native-tls: bundle builds must not need system openssl
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "multipart"] }
 sha2 = "0.10"
 hmac = "0.12"
 aes-gcm = "0.10"
 md5 = "0.7"
-uuid = { version = "1.0", features = ["v4", "v7"] }
+uuid = { version = "1.0", features = ["v4", "v7", "js"] }
 argon2 = "0.5"
 toml = "0.8"
 serde_yaml = "0.9"
 quick-xml = { version = "0.36", features = ["serialize"] }
 feed-rs = "2"
-notify = "6"
 urlencoding = "2.1"
 flate2 = "1.0"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tar = "0.4"
 base64 = "0.21"
-rusqlite = { version = "0.31", features = ["bundled"] }
-serde_rusqlite = "0.35"
-arboard = "3.2"
-crossterm = "0.28"
 chrono = "0.4"
 crc32fast = "1.4"
 sha1 = "0.10"
 blake3 = "1.5"
 unicode-segmentation = "1.11"
 unicode-normalization = "0.1"
-dirs = "5"
 diffy = "0.4"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 encoding_rs = "0.8"
@@ -89,10 +76,42 @@ sysinfo = { version = "0.31", optional = true }
 ammonia = { version = "4", optional = true }
 tokio-tungstenite = { version = "0.23", features = ["rustls-tls-webpki-roots"], optional = true }
 redis = { version = "0.27", features = ["tokio-comp"], optional = true }
-winit = { version = "0.30", optional = true }
-softbuffer = { version = "0.4", optional = true }
 tiny-skia = { version = "0.11", optional = true }
 fontdue = { version = "0.9", optional = true }
+gltf = { version = "1", default-features = false, features = ["import", "utils"], optional = true }
+
+# The whole windowing, terminal, server and disk world - none of it exists in
+# a browser, so none of it is compiled for one.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11.5"
+ratatui = { version = "0.28.1", features = ["all-widgets", "crossterm"] }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["fs"] }
+tokio = { version = "1", features = ["full"] }
+# rustls instead of native-tls: bundle builds must not need system openssl
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "multipart"] }
+notify = "6"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde_rusqlite = "0.35"
+arboard = "3.2"
+crossterm = "0.28"
+dirs = "5"
+winit = { version = "0.30", optional = true }
+softbuffer = { version = "0.4", optional = true }
+
+# The browser build. tokio shrinks to the executor-free subset wasm supports,
+# getrandom's js feature is what lets the rand module work at all, and web-sys
+# is how a game reaches the canvas and how print reaches the console.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1", features = ["sync", "macros", "rt"] }
+getrandom = { version = "0.2", features = ["js"] }
+# The wasm-bindgen CLI that post-processes browser builds must match the
+# version cargo resolves for this crate, to the patch. Check Cargo.lock and
+# `cargo install wasm-bindgen-cli --version <that>` when they drift.
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "CanvasRenderingContext2d", "ImageData", "KeyboardEvent", "MouseEvent", "WheelEvent", "EventTarget", "console", "Performance", "Response"] }
 
 [features]
 default = []
@@ -110,5 +129,4 @@ postgres = ["dep:tokio-postgres"]
 image = ["dep:image"]
 pdf = ["dep:printpdf", "dep:pdf-extract"]
 xlsx = ["dep:calamine", "dep:rust_xlsxwriter"]
-game = ["dep:winit", "dep:softbuffer", "dep:tiny-skia", "dep:fontdue"]
-
+game = ["dep:winit", "dep:softbuffer", "dep:tiny-skia", "dep:fontdue", "dep:gltf"]

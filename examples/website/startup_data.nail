@@ -14,6 +14,7 @@ struct NavItem {
 nav_items:a:NavItem = [
     NavItem { name = `Examples`, path = `#examples` },
     NavItem { name = `Library`, path = `/stdlib` },
+    NavItem { name = `Games`, path = `#games` },
     NavItem { name = `Get started`, path = `#start` },
     NavItem { name = `Documentation`, path = `https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md` }
 ];
@@ -98,6 +99,7 @@ author_avatar:s = danger(fs_read(`examples/website_assets/author_avatar.b64`));
 ide_shot_error:s = danger(fs_read(`examples/website_screenshots/ide_error.html`));
 ide_shot_complete:s = danger(fs_read(`examples/website_screenshots/ide_complete.html`));
 ide_shot_docs:s = danger(fs_read(`examples/website_screenshots/ide_docs.html`));
+ide_shot_profiling:s = danger(fs_read(`examples/website_screenshots/ide_profiling.html`));
 
 hero_snippet:s = `// Nothing here is mutable, so nothing here can race.
 // map and filter are language operations, so they run on every core.

@@ -21,6 +21,14 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 headers = headers
             };
         },
+        request.path == `/games/platformer-embed` -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_platformer_embed`)),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
         request.path == `/games/pong-embed` -> {
             r HTTP_Response {
                 status = 200,

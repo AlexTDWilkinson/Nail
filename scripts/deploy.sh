@@ -34,6 +34,7 @@ DATA_PATHS=(
 	tests
 	nail_language_spec.md
 	README.md
+	wasm_demos
 )
 
 # Reads a key out of .env without sourcing it, so odd characters in a value
@@ -74,6 +75,9 @@ trap 'rm -rf "$STAGE"' EXIT
 if [[ "${SKIP_TRANSPILE:-0}" != "1" ]]; then
 	echo "== transpiling nail_website.nail =="
 	mkdir -p nail_website_server/src
+	# Deliberately built WITH profiling: the live timings section on the page
+	# is this server reading its own profiler dump. Other production deploys
+	# would pass --no-profile here.
 	cargo run --quiet --bin nailc examples/nail_website.nail --transpile
 	[[ -s examples/nail_website.rs ]] || { echo "transpile produced nothing" >&2; exit 1; }
 	mv examples/nail_website.rs nail_website_server/src/main.rs
@@ -81,6 +85,16 @@ if [[ "${SKIP_TRANSPILE:-0}" != "1" ]]; then
 		--cargo-toml "--nail-path=.." --package-name=nail_website_server \
 		> nail_website_server/Cargo.toml
 fi
+
+echo "== building browser demos =="
+# The /games pages serve Nail programs compiled to WebAssembly. Built here so
+# the rsync below ships fresh artifacts with everything else.
+./scripts/build_wasm_demos.sh
+
+echo "== building playground =="
+# The editable example panes on the homepage check themselves against the
+# real compiler, compiled to WebAssembly.
+./scripts/build_playground_wasm.sh
 
 echo "== building server =="
 # x86-64-v3 (AVX2, BMI, FMA) matches the droplet's CPU and lets LLVM use

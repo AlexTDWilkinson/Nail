@@ -43,7 +43,9 @@ use std::thread;
 use std::time::Instant;
 
 use crate::utils::lock;
+use crate::utils::profile_watcher_thread_logic;
 use crate::utils::BuildStatus;
+use crate::utils::ProfileData;
 
 use crate::common::CodeSpan;
 use ratatui::crossterm::{
@@ -311,6 +313,9 @@ struct Editor {
     show_minimap: bool,
     // Bracket matching state
     matching_bracket_pos: Option<(usize, usize)>,
+    // Latest per-function timings from a running instrumented program,
+    // updated by the profile watcher thread and read by the draw thread
+    profile_data: Option<ProfileData>,
 }
 
 #[derive(Clone, Debug)]
@@ -427,6 +432,7 @@ impl Editor {
             show_minimap: false, // Disabled by default as it takes screen space
             // Bracket matching state
             matching_bracket_pos: None,
+            profile_data: None,
         }
     }
 
@@ -3056,6 +3062,8 @@ fn main() -> Result<(), io::Error> {
     let (tx_draw, rx_draw) = channel::<EditorMessage>();
     let (tx_build, rx_build) = channel::<EditorMessage>();
     let (tx_lex, rx_lex) = channel::<EditorMessage>();
+    // The sender stays bound so the watcher's channel lives until main exits
+    let (_tx_profile, rx_profile) = channel::<EditorMessage>();
 
     // Set up terminal
     enable_raw_mode()?;
@@ -3116,6 +3124,13 @@ fn main() -> Result<(), io::Error> {
     let terminal_for_resize = terminal.clone();
     thread::spawn(move || {
         resize_thread_logic(terminal_for_resize, rx_resize);
+    });
+
+    // Launch the profile watcher thread, which keeps timing annotations
+    // fresh while an instrumented program is running
+    let editor_for_profile = Arc::clone(&shared_editor);
+    thread::spawn(move || {
+        profile_watcher_thread_logic(editor_for_profile, rx_profile);
     });
 
     // Main draw thread (this runs on the main thread)

@@ -1,5 +1,7 @@
 // c.../c starts every statement at the same time and waits for all of them.
-// The compiler turns this block into Rust's tokio::join! — real async I/O.
+// The compiler turns this block into Rust's tokio::join!, async I/O on one
+// thread. Concurrency overlaps waiting: three reads cost one wait. It cannot
+// speed up computation, that is what p.../p and its extra cores are for.
 
 // If a read fails, safe() hands the error here instead of crashing.
 // There is deliberately no safe(expr, `default`) shortcut: a bare default
@@ -11,18 +13,18 @@ f read_fallback(err:e):s {
     r `(file unavailable)`;
 }
 
-// Three real file reads happen concurrently — one per way of handling failure:
+// Three real file reads happen concurrently, one per way of handling failure:
 c
     // danger(): crash on failure. For when the program is pointless without the value.
     spec:s = danger(fs_read(`nail_language_spec.md`));
-    // expect(): also crashes, but tells the reader "I checked — this can't fail".
+    // expect(): also crashes, but tells the reader "I checked, this can't fail".
     readme:s = expect(fs_read(`README.md`));
     // safe(): pass the error to a fallback function and carry on.
     website_source:s = safe(fs_read(`examples/nail_website.nail`), read_fallback);
 /c
 
 // Past /c, every value is guaranteed loaded. Those three are the only ways to
-// use a value that might fail — there is no ignoring the error and hoping.
+// use a value that might fail: there is no ignoring the error and hoping.
 print(`Language spec chars:`, string_length(spec));
 print(`README chars:`, string_length(readme));
 print(`Website source chars:`, string_length(website_source));

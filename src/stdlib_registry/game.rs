@@ -78,6 +78,19 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         example: "net:GAME_Shape = game_line(400.0, 0.0, 400.0, 600.0, 2.0, `gray`);",
     });
 
+    m.insert("game_triangle", StdlibFunction {
+        rust_path: "std_lib::game::triangle".to_string(),
+        crate_deps: vec![CrateDependency::TinySkia],
+        struct_derives: vec![],
+        custom_type_imports: vec![("GAME_Shape", "nail::std_lib::game")],
+        module: StdlibModule::Game,
+        parameters: vec![nail_param!(x1: f), nail_param!(y1: f), nail_param!(x2: f), nail_param!(y2: f), nail_param!(x3: f), nail_param!(y3: f), nail_param!(color: s)],
+        return_type: NailDataTypeDescriptor::Struct("GAME_Shape".to_string()),
+        diverging: false,
+        description: "A filled triangle through three corners. The 3D module emits these, and they are just as usable straight from a program.",
+        example: "sail:GAME_Shape = game_triangle(100.0, 200.0, 150.0, 100.0, 200.0, 200.0, `white`);",
+    });
+
     m.insert("game_text", StdlibFunction {
         rust_path: "std_lib::game::text".to_string(),
         crate_deps: vec![CrateDependency::TinySkia, CrateDependency::Fontdue],

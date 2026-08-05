@@ -934,12 +934,21 @@ f generate_games_section():s {
     <div class="section-header">
         <h2>Games, compiled to your browser</h2>
         <p>
-            Both frames below are Nail programs, built with <code>nailc --target=wasm</code>.
+            Every frame below is a Nail program, built with <code>nailc --target=wasm</code>.
             The same source files open native windows on a desktop. Click a game to give
             it your keyboard.
         </p>
     </div>
     <div style="display: flex; flex-direction: column; gap: 2.5rem; align-items: center;">
+        <div style="width: 100%; max-width: 940px;">
+            <h3 style="margin: 0 0 0.5rem 0;">Platformer</h3>
+            <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
+                Click it, then arrows or A and D move, Space jumps, R restarts. A scrolling
+                level, pits, coins and a flag, all pure functions over one struct.
+                <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/platformer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
+            </p>
+            <iframe src="/games/platformer-embed" title="Platformer written in Nail" style="width: 100%; aspect-ratio: 800 / 600; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
+        </div>
         <div style="width: 100%; max-width: 940px;">
             <h3 style="margin: 0 0 0.5rem 0;">3D model viewer</h3>
             <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">

@@ -66,6 +66,20 @@ macro_rules! print_macro {
     };
 }
 
+/// Where a line of output actually goes. On a real machine that is stdout,
+/// in a browser it is the developer console, because a wasm program has no
+/// stdout at all - println there prints nowhere.
+fn emit_line(output: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::console::log_1(&output.into());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        println!("{}", output);
+    }
+}
+
 /// Print with newline (aliased as "print" for convenience)
 pub fn print<T>(value: T)
 where
@@ -79,7 +93,7 @@ where
     } else {
         formatted.replace("\\n", "\n")
     };
-    println!("{}", output);
+    emit_line(&output);
 }
 
 /// Print without newline

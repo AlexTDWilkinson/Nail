@@ -2,8 +2,10 @@
 // does not have it.
 //
 // The short tokens, once: f declares a function, r returns, y yields one
-// element to a collection operation, p opens a parallel block. The type
-// letters: i integer, s string, b boolean, a array, e error, v void.
+// element to a collection operation, p opens a parallel block (real threads),
+// c opens a concurrent block (overlapped waiting, one thread). The type
+// letters: i integer, f float, s string, b boolean, a array, h hashmap,
+// e error, v void.
 
 struct Point {
     x_pos:i,
@@ -30,19 +32,80 @@ f return_zero_if_error(err:e):i {
     r 0;
 }
 
+f announce(message:s):v {
+    print(message);
+}
+
+// Everything is immutable, and every declaration carries its type
 coordinate_total:i = add_coordinates(Point { x_pos = 3, y_pos = 4 });
-half:i = safe(half_of(coordinate_total), return_zero_if_error);
+ratio:f = 2.5;
+markup:s = html`<b>a tagged string tells highlighters its language</b>`;
+is_ready:b = true && !false;
 heading:Direction = Direction::North;
 
+// The three ways out of an error type: handle it, crash on it, or insist
+half:i = safe(half_of(coordinate_total), return_zero_if_error);
+crash_if_odd:i = danger(half_of(2));
+promised_even:i = expect(half_of(4));
+
+// if is an expression too
+heading_name:s = if {
+    heading == Direction::North -> { r `north`; },
+    else -> { r `south`; }
+};
+
+// Arrays and hashmaps are the collections
+numbers:a:i = [1, 2, 3, 4, 5];
+ages:h<s,i> = hashmap_new();
+hashmap_set(ages, `grug`, 30);
+grug_age:i = danger(hashmap_get(ages, `grug`));
+
 // map, filter and reduce are the loops, and they run on every core
-squares:a:i = map num in array_range_inclusive(1, 10) { y num * num; };
+squares:a:i = map num in numbers { y num * num; };
 evens:a:i = filter num in squares { y num % 2 == 0; };
 total:i = reduce acc num in evens from 0 { y acc + num; };
 
-// p runs statements on real threads at once
+// scan keeps every step, find, all and any answer questions, each is for
+// side effects, and any of them can also take an index iterator
+running:a:i = scan acc num in numbers from 0 { y acc + num; };
+first_even:i = danger(find num idx in numbers { y num % 2 == 0; });
+all_positive:b = all num in numbers { y num > 0; };
+any_negative:b = any num in numbers { y num < 0; };
+each num in numbers { print(num); }
+
+// for walks a collection, when filters as it walks
+for num in numbers when num > 3 {
+    print(num);
+}
+
+// while must declare its bound, loop counts up until break
+while true max 3 {
+    announce(`bounded`);
+}
+loop count {
+    if {
+        count < 2 -> { continue; },
+        else -> { break; }
+    }
+}
+
+// spawn runs a block in the background
+spawn {
+    announce(`from the background`);
+}
+
+// p runs statements on real threads at once, c overlaps their waiting
 p
     left:i = array_sum(array_range_inclusive(1, 1000));
     right:i = array_sum(array_range_inclusive(1, 2000));
 /p
+c
+    doubled:i = half * 2;
+    tripled:i = half * 3;
+/c
 
-print(total + left + right + half);
+// import splices in another file, sandboxed so it can only compute, and
+// import_dangerous splices one in with the sandbox off. Each needs a second
+// file, so they are the one pair not shown running on this screen.
+
+print(total + left + right + grug_age + first_even + doubled + tripled);

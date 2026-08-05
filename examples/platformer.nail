@@ -1,0 +1,333 @@
+// A scrolling platformer in flat colours, in a real window.
+//
+// Run left and right, jump the gaps, take the coins, reach the flag at the
+// far right of a level four screens wide. The whole game is pure functions
+// over one state struct: `view` turns state into a frame of rectangles and
+// `update` folds the keyboard into the next state. `game_run` does the rest.
+// Arrows or A and D move, Space or Up jumps, R restarts, Esc quits.
+//
+// All motion is multiplied by input.delta_ms, so the game plays at the same
+// speed whatever frame rate the machine manages.
+
+// One coin. Taken coins stay in the array so the counter knows the total.
+struct Coin {
+    coin_x:f,
+    coin_y:f,
+    taken:b
+}
+
+// One solid rectangle the player can stand on or bump into.
+struct Platform {
+    plat_x:f,
+    plat_y:f,
+    plat_w:f,
+    plat_h:f,
+    tint:s
+}
+
+// What a vertical collision pass decided: where the player ended up,
+// what happened to the fall speed, and whether feet found ground.
+struct Landing {
+    land_y:f,
+    land_vel:f,
+    grounded:b
+}
+
+struct Platformer {
+    player_x:f,
+    player_y:f,
+    vel_x:f,
+    vel_y:f,
+    coyote_ms:f,
+    camera_x:f,
+    coins:a:Coin,
+    won:b,
+    done:b
+}
+
+// The level, 3200 pixels wide against an 800 pixel window. Ground segments
+// in cream with three pits between them, floating platforms in rose and
+// cream stepping up toward the coins.
+f level_platforms():a:Platform {
+    r [
+        Platform { plat_x = 0.0, plat_y = 560.0, plat_w = 900.0, plat_h = 40.0, tint = `#e8ded1` },
+        Platform { plat_x = 1020.0, plat_y = 560.0, plat_w = 780.0, plat_h = 40.0, tint = `#e8ded1` },
+        Platform { plat_x = 1960.0, plat_y = 560.0, plat_w = 640.0, plat_h = 40.0, tint = `#e8ded1` },
+        Platform { plat_x = 2760.0, plat_y = 560.0, plat_w = 440.0, plat_h = 40.0, tint = `#e8ded1` },
+        Platform { plat_x = 330.0, plat_y = 445.0, plat_w = 140.0, plat_h = 18.0, tint = `#d98c9e` },
+        Platform { plat_x = 540.0, plat_y = 345.0, plat_w = 120.0, plat_h = 18.0, tint = `#e8ded1` },
+        Platform { plat_x = 915.0, plat_y = 470.0, plat_w = 95.0, plat_h = 18.0, tint = `#d98c9e` },
+        Platform { plat_x = 1150.0, plat_y = 445.0, plat_w = 130.0, plat_h = 18.0, tint = `#e8ded1` },
+        Platform { plat_x = 1350.0, plat_y = 335.0, plat_w = 120.0, plat_h = 18.0, tint = `#d98c9e` },
+        Platform { plat_x = 1560.0, plat_y = 430.0, plat_w = 110.0, plat_h = 18.0, tint = `#e8ded1` },
+        Platform { plat_x = 1830.0, plat_y = 465.0, plat_w = 100.0, plat_h = 18.0, tint = `#d98c9e` },
+        Platform { plat_x = 2050.0, plat_y = 445.0, plat_w = 130.0, plat_h = 18.0, tint = `#e8ded1` },
+        Platform { plat_x = 2250.0, plat_y = 340.0, plat_w = 120.0, plat_h = 18.0, tint = `#d98c9e` },
+        Platform { plat_x = 2440.0, plat_y = 240.0, plat_w = 110.0, plat_h = 18.0, tint = `#e8ded1` },
+        Platform { plat_x = 2625.0, plat_y = 460.0, plat_w = 110.0, plat_h = 18.0, tint = `#d98c9e` },
+        Platform { plat_x = 2900.0, plat_y = 440.0, plat_w = 130.0, plat_h = 18.0, tint = `#d98c9e` }
+    ];
+}
+
+// Twelve coins, one hovering over most perches and a bold one down by the
+// first pit. Positions are centres, coins draw as circles.
+f level_coins():a:Coin {
+    r [
+        Coin { coin_x = 400.0, coin_y = 410.0, taken = false },
+        Coin { coin_x = 600.0, coin_y = 310.0, taken = false },
+        Coin { coin_x = 770.0, coin_y = 525.0, taken = false },
+        Coin { coin_x = 962.0, coin_y = 435.0, taken = false },
+        Coin { coin_x = 1215.0, coin_y = 410.0, taken = false },
+        Coin { coin_x = 1410.0, coin_y = 300.0, taken = false },
+        Coin { coin_x = 1615.0, coin_y = 395.0, taken = false },
+        Coin { coin_x = 1880.0, coin_y = 430.0, taken = false },
+        Coin { coin_x = 2115.0, coin_y = 410.0, taken = false },
+        Coin { coin_x = 2310.0, coin_y = 305.0, taken = false },
+        Coin { coin_x = 2495.0, coin_y = 205.0, taken = false },
+        Coin { coin_x = 2965.0, coin_y = 405.0, taken = false }
+    ];
+}
+
+// The player back at the start with untouched velocity. Coins are passed in
+// so falling into a pit costs the run, not the collection.
+f respawn(coins:a:Coin):Platformer {
+    r Platformer {
+        player_x = 60.0, player_y = 524.0, vel_x = 0.0, vel_y = 0.0,
+        coyote_ms = 0.0, camera_x = 0.0, coins = coins, won = false, done = false
+    };
+}
+
+f new_game():Platformer {
+    r respawn(level_coins());
+}
+
+// The player is a 28 by 36 rectangle. True when it overlaps a platform.
+f hits_platform(pos_x:f, pos_y:f, plat:Platform):b {
+    r pos_x < (plat.plat_x + plat.plat_w) && (pos_x + 28.0) > plat.plat_x && pos_y < (plat.plat_y + plat.plat_h) && (pos_y + 36.0) > plat.plat_y;
+}
+
+// Horizontal resolution for one platform: a hit pushes the player back out
+// on the side it came from, a miss changes nothing.
+f push_out_x(pos_x:f, pos_y:f, old_x:f, plat:Platform):f {
+    if {
+        hits_platform(pos_x, pos_y, plat) -> {
+            if {
+                old_x < plat.plat_x -> { r plat.plat_x - 28.0; },
+                else -> { r plat.plat_x + plat.plat_w; }
+            }
+        },
+        else -> { r pos_x; }
+    }
+}
+
+f collide_x(try_x:f, pos_y:f, old_x:f, platforms:a:Platform):f {
+    result:f = try_x;
+    for plat in platforms {
+        result = push_out_x(result, pos_y, old_x, plat);
+    }
+    r result;
+}
+
+// Vertical resolution for one platform. Feet that were above the top last
+// frame land on it, anything else is a head bump against the underside.
+f push_out_y(landing:Landing, pos_x:f, old_y:f, plat:Platform):Landing {
+    if {
+        hits_platform(pos_x, landing.land_y, plat) -> {
+            if {
+                (old_y + 36.0) <= (plat.plat_y + 0.01) -> {
+                    r Landing { land_y = plat.plat_y - 36.0, land_vel = 0.0, grounded = true };
+                },
+                else -> {
+                    r Landing { land_y = plat.plat_y + plat.plat_h, land_vel = 0.0, grounded = false };
+                }
+            }
+        },
+        else -> { r landing; }
+    }
+}
+
+f collide_y(try_y:f, pos_x:f, old_y:f, fall_vel:f, platforms:a:Platform):Landing {
+    result:Landing = Landing { land_y = try_y, land_vel = fall_vel, grounded = false };
+    for plat in platforms {
+        result = push_out_y(result, pos_x, old_y, plat);
+    }
+    r result;
+}
+
+// Held keys accelerate toward a top speed of 0.38 pixels per millisecond,
+// letting go bleeds speed away, so starts and stops both have weight.
+f step_vel_x(vel:f, left_held:b, right_held:b, delta:f):f {
+    if {
+        left_held && (right_held == false) -> { r math_max(vel - (0.0028 * delta), -0.38); },
+        right_held && (left_held == false) -> { r math_min(vel + (0.0028 * delta), 0.38); },
+        vel > 0.0 -> { r math_max(vel - (0.0035 * delta), 0.0); },
+        else -> { r math_min(vel + (0.0035 * delta), 0.0); }
+    }
+}
+
+// A coin within arm's reach of the player flips to taken and stays taken.
+f collect_coin(coin:Coin, pos_x:f, pos_y:f):Coin {
+    touching:b = coin.coin_x > (pos_x - 10.0) && coin.coin_x < (pos_x + 38.0) && coin.coin_y > (pos_y - 10.0) && coin.coin_y < (pos_y + 46.0);
+    if {
+        coin.taken || touching -> { r Coin { coin_x = coin.coin_x, coin_y = coin.coin_y, taken = true }; },
+        else -> { r coin; }
+    }
+}
+
+// One physics step: read the keys, move and collide on each axis in turn,
+// then settle the pits, the coins, the flag and the camera.
+f step_world(state:Platformer, input:GAME_Input):Platformer {
+    // A stalled frame is capped so the player never tunnels through a floor.
+    delta:f = math_min(input.delta_ms, 32.0);
+    platforms:a:Platform = level_platforms();
+
+    left_held:b = array_contains(input.keys_down, `Left`) || array_contains(input.keys_down, `a`);
+    right_held:b = array_contains(input.keys_down, `Right`) || array_contains(input.keys_down, `d`);
+    jump_pressed:b = array_contains(input.keys_pressed, `Space`) || array_contains(input.keys_pressed, `Up`) || array_contains(input.keys_pressed, `w`);
+
+    // Sideways first, clamped to the ends of the level.
+    vel_x:f = step_vel_x(state.vel_x, left_held, right_held, delta);
+    slid_x:f = collide_x(state.player_x + (vel_x * delta), state.player_y, state.player_x, platforms);
+    pos_x:f = math_clamp(slid_x, 0.0, 3172.0);
+
+    // A jump is allowed while feet are on ground or for the 90 millisecond
+    // coyote window just after walking off an edge. Jumping spends the
+    // window at once, which is exactly the no double jump rule.
+    may_jump:b = state.coyote_ms < 90.0;
+    jumped:b = jump_pressed && may_jump;
+    launch_vel:f = if {
+        jumped -> { r -0.78; },
+        else -> { r state.vel_y; }
+    };
+    fall_vel:f = math_min(launch_vel + (0.0022 * delta), 0.95);
+    landing:Landing = collide_y(state.player_y + (fall_vel * delta), pos_x, state.player_y, fall_vel, platforms);
+
+    coyote_ms:f = if {
+        landing.grounded -> { r 0.0; },
+        jumped -> { r 90.0; },
+        else -> { r state.coyote_ms + delta; }
+    };
+
+    // The pits are the floor of the world. Falling out costs the run but
+    // keeps every coin already taken.
+    if {
+        landing.land_y > 700.0 -> { r respawn(state.coins); },
+        else -> {}
+    }
+
+    coins:a:Coin = map coin in state.coins {
+        y collect_coin(coin, pos_x, landing.land_y);
+    };
+    won:b = pos_x > 3050.0;
+
+    // The camera trails the player with lead room ahead and never shows
+    // past either end of the level.
+    camera_goal:f = math_clamp(pos_x - 300.0, 0.0, 2400.0);
+    camera_x:f = state.camera_x + ((camera_goal - state.camera_x) * math_min(1.0, 0.012 * delta));
+
+    r Platformer {
+        player_x = pos_x, player_y = landing.land_y, vel_x = vel_x, vel_y = landing.land_vel,
+        coyote_ms = coyote_ms, camera_x = camera_x, coins = coins, won = won, done = false
+    };
+}
+
+f update(state:Platformer, input:GAME_Input):Platformer {
+    if {
+        array_contains(input.keys_pressed, `Esc`) -> {
+            r Platformer {
+                player_x = state.player_x, player_y = state.player_y, vel_x = state.vel_x, vel_y = state.vel_y,
+                coyote_ms = state.coyote_ms, camera_x = state.camera_x, coins = state.coins, won = state.won, done = true
+            };
+        },
+        array_contains(input.keys_pressed, `r`) -> { r new_game(); },
+        state.won -> { r state; },
+        else -> { r step_world(state, input); }
+    }
+}
+
+// A skyline of plum towers behind the action. It scrolls at forty percent
+// of camera speed, which is what makes it read as far away.
+f backdrop_shapes(camera_x:f):a:GAME_Shape {
+    slide:f = camera_x * 0.4;
+    r [
+        game_rect(0.0, 505.0, 800.0, 95.0, `#171320`),
+        game_rect(40.0 - slide, 340.0, 120.0, 260.0, `#241d2e`),
+        game_rect(230.0 - slide, 290.0, 90.0, 310.0, `#2c2438`),
+        game_rect(360.0 - slide, 380.0, 140.0, 220.0, `#241d2e`),
+        game_rect(585.0 - slide, 260.0, 26.0, 340.0, `#6d5a7e`),
+        game_rect(640.0 - slide, 320.0, 110.0, 280.0, `#3a2f4b`),
+        game_rect(830.0 - slide, 360.0, 130.0, 240.0, `#241d2e`),
+        game_rect(1010.0 - slide, 280.0, 90.0, 320.0, `#2c2438`),
+        game_rect(1170.0 - slide, 240.0, 26.0, 360.0, `#6d5a7e`),
+        game_rect(1230.0 - slide, 330.0, 150.0, 270.0, `#3a2f4b`),
+        game_rect(1450.0 - slide, 300.0, 100.0, 300.0, `#241d2e`),
+        game_rect(1600.0 - slide, 360.0, 120.0, 240.0, `#2c2438`)
+    ];
+}
+
+f no_shapes():a:GAME_Shape {
+    r [];
+}
+
+f win_banner(score:i):a:GAME_Shape {
+    r [
+        game_rect(170.0, 190.0, 460.0, 170.0, `#181226`),
+        game_rect_outline(170.0, 190.0, 460.0, 170.0, 3.0, `#6d5a7e`),
+        game_text(`You made it!`, 260.0, 220.0, 40.0, `#e9c46a`),
+        game_text(string_concat([`coins `, string_from(score), ` of 12`]), 320.0, 275.0, 22.0, `#e8ded1`),
+        game_text(`press R to run it again`, 275.0, 315.0, 20.0, `#757575`)
+    ];
+}
+
+f view(state:Platformer):GAME_Frame {
+    cam:f = state.camera_x;
+
+    plat_shapes:a:GAME_Shape = map plat in level_platforms() {
+        y game_rect(plat.plat_x - cam, plat.plat_y, plat.plat_w, plat.plat_h, plat.tint);
+    };
+    remaining:a:Coin = filter coin in state.coins {
+        y coin.taken == false;
+    };
+    coin_shapes:a:GAME_Shape = map coin in remaining {
+        y game_circle(coin.coin_x - cam, coin.coin_y, 7.0, `#e9c46a`);
+    };
+    taken:a:Coin = filter coin in state.coins {
+        y coin.taken;
+    };
+    score:i = array_length(taken);
+
+    // The goal flag, the player, and the numbers on screen.
+    goal:a:GAME_Shape = [
+        game_rect(3080.0 - cam, 420.0, 8.0, 140.0, `#e8ded1`),
+        game_rect(3088.0 - cam, 420.0, 40.0, 26.0, `#e9c46a`)
+    ];
+    player:a:GAME_Shape = [
+        game_rect(state.player_x - cam, state.player_y, 28.0, 36.0, `#7bc4b8`),
+        game_rect((state.player_x - cam) + 17.0, state.player_y + 9.0, 5.0, 7.0, `#101018`)
+    ];
+    hud:a:GAME_Shape = [
+        game_text(string_concat([`coins `, string_from(score), `/12`]), 20.0, 20.0, 26.0, `#e9c46a`),
+        game_text(`Arrows or A and D move, Space jumps, R restarts, Esc quits`, 20.0, 52.0, 16.0, `#757575`)
+    ];
+    banner:a:GAME_Shape = if {
+        state.won -> { r win_banner(score); },
+        else -> { r no_shapes(); }
+    };
+
+    world:a:GAME_Shape = array_concat(array_concat(backdrop_shapes(cam), plat_shapes), array_concat(coin_shapes, goal));
+    front:a:GAME_Shape = array_concat(array_concat(player, hud), banner);
+
+    r GAME_Frame {
+        shapes = array_concat(world, front),
+        background = `#101018`,
+        quit = state.done
+    };
+}
+
+config:GAME_Config = GAME_Config { title = `Nail platformer`, width = 800, height = 600, target_fps = 60 };
+
+final_state:Platformer = danger(game_run(config, new_game()));
+closing_taken:a:Coin = filter coin in final_state.coins {
+    y coin.taken;
+};
+print(string_concat([`closed with `, string_from(array_length(closing_taken)), ` of 12 coins picked up`]));

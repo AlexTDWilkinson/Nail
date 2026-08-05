@@ -254,6 +254,24 @@ pub struct Transpiler {
     struct_field_types: HashMap<String, HashMap<String, NailDataTypeDescriptor>>,
     // User function name -> declared return type, from function declarations.
     function_return_types: HashMap<String, NailDataTypeDescriptor>,
+    // Whether to emit runtime profiling (a drop guard per user function, an
+    // init call and a finish call in main). nailc and the IDE turn this on,
+    // making it the default for every build a user runs. It stays off here so
+    // library callers like code_transpile emit uninstrumented programs.
+    pub profile: bool,
+    // Fingerprint of the source this program was built from, embedded in the
+    // profile dump so the IDE can dim timings the moment the code on screen
+    // no longer matches the run. Set by whoever holds the source text.
+    pub profile_source_hash: Option<String>,
+    // Whether the program is being built for a browser. Changes the main
+    // scaffold (wasm-bindgen start instead of a tokio runtime), forces every
+    // collection operation onto the plain sync chain (a browser has one
+    // thread), and drives the wasm variant of the generated Cargo.toml.
+    pub wasm_target: bool,
+    // User function name -> profiling id, its index into the init name list.
+    // Source order, assigned once per transpile run.
+    profile_fn_ids: HashMap<String, usize>,
+    profile_fn_names: Vec<String>,
 }
 
 impl Transpiler {
@@ -274,6 +292,11 @@ impl Transpiler {
             enclosing_parallel_closures: Vec::new(),
             struct_field_types: HashMap::new(),
             function_return_types: HashMap::new(),
+            profile: false,
+            profile_source_hash: None,
+            wasm_target: false,
+            profile_fn_ids: HashMap::new(),
+            profile_fn_names: Vec::new(),
         }
     }
 
@@ -440,6 +463,81 @@ impl Transpiler {
     /// this once so every real program's dependencies are already cached.
     pub fn generate_cargo_toml_superset(package_name: &str, nail_path: &str) -> String {
         Self::render_cargo_toml(package_name, nail_path, CrateDependency::all().into_iter().collect())
+    }
+
+    /// The Cargo.toml for a browser build. A wasm program is a cdylib, not a
+    /// binary - the browser loads it, wasm-bindgen glues it to JavaScript,
+    /// and tokio shrinks to the executor-free subset wasm supports. The
+    /// wasm-bindgen CLI must match the crate version the lockfile resolves,
+    /// to the patch - install it with `cargo install wasm-bindgen-cli
+    /// --version <resolved>` when they drift.
+    pub fn generate_cargo_toml_wasm(&self, package_name: &str, nail_path: &str) -> String {
+        use std::collections::BTreeSet;
+
+        let mut dep_lines: BTreeSet<String> = BTreeSet::new();
+        dep_lines.insert("rayon = \"1.10.0\"".to_string());
+        dep_lines.insert("futures = \"0.3\"".to_string());
+        dep_lines.insert(CrateDependency::DashMap.to_cargo_dep().to_string());
+        dep_lines.insert(CrateDependency::Serde.to_cargo_dep().to_string());
+        dep_lines.insert("tokio = { version = \"1\", features = [\"sync\", \"macros\", \"rt\"] }".to_string());
+        dep_lines.insert("wasm-bindgen = \"0.2\"".to_string());
+        dep_lines.insert("wasm-bindgen-futures = \"0.4\"".to_string());
+
+        let mut nail_features: BTreeSet<&'static str> = BTreeSet::new();
+        for dep in self.get_required_dependencies() {
+            match dep.nail_feature() {
+                Some(feature) => {
+                    nail_features.insert(feature);
+                }
+                None => {
+                    // Tokio's native line asks for the full runtime, which
+                    // does not exist on wasm - the fixed line above replaces it.
+                    if dep != CrateDependency::Tokio {
+                        dep_lines.insert(dep.to_cargo_dep().to_string());
+                    }
+                }
+            }
+        }
+
+        let nail_dep = if nail_features.is_empty() {
+            format!("nail = {{ path = \"{}\" }}", nail_path)
+        } else {
+            let features: Vec<String> = nail_features.iter().map(|feature| format!("\"{}\"", feature)).collect();
+            format!("nail = {{ path = \"{}\", features = [{}] }}", nail_path, features.join(", "))
+        };
+
+        let mut manifest = String::new();
+        manifest.push_str("[package]\n");
+        manifest.push_str(&format!("name = \"{}\"\n", package_name));
+        manifest.push_str("version = \"0.1.0\"\n");
+        manifest.push_str("edition = \"2021\"\n");
+        manifest.push('\n');
+        manifest.push_str("[lib]\n");
+        manifest.push_str("crate-type = [\"cdylib\"]\n");
+        manifest.push('\n');
+        manifest.push_str("[dependencies]\n");
+        manifest.push_str(&nail_dep);
+        manifest.push('\n');
+        for line in dep_lines {
+            manifest.push_str(&line);
+            manifest.push('\n');
+        }
+        manifest.push('\n');
+        // Browsers download the binary, so release builds trade compile time
+        // for size as well as speed.
+        manifest.push_str("[profile.release]\n");
+        manifest.push_str("lto = \"thin\"\n");
+        manifest.push_str("codegen-units = 1\n");
+        manifest.push_str("opt-level = \"s\"\n");
+        manifest
+    }
+
+    /// Every stdlib function this program uses that cannot exist in a
+    /// browser, sorted. Empty means the program is fit for `--target=wasm`.
+    pub fn wasm_unsupported_functions(&self) -> Vec<String> {
+        let mut blockers: Vec<String> = self.used_stdlib_functions.iter().filter(|name| !stdlib_registry::is_stdlib_fn_wasm_safe(name)).cloned().collect();
+        blockers.sort();
+        return blockers;
     }
 
     fn render_cargo_toml(package_name: &str, nail_path: &str, required: HashSet<CrateDependency>) -> String {
@@ -1067,6 +1165,12 @@ impl Transpiler {
     /// - AsyncBlockOn: async context, body does async work — rayon inside
     ///   spawn_blocking with a per-element block_on.
     fn parallel_iter_mode(&self, body: &ASTNode) -> ParallelIterMode {
+        // A browser has one thread and no blocking executor, so every
+        // collection operation is a plain chain there - rayon runs those
+        // inline when it cannot spawn threads, which on wasm it cannot.
+        if self.wasm_target {
+            return ParallelIterMode::Sync;
+        }
         if self.in_sync_function || self.in_parallel_closure {
             ParallelIterMode::Sync
         } else if !Self::node_needs_async(body, &self.pure_functions) {
@@ -1095,6 +1199,13 @@ impl Transpiler {
     /// Per-capture clones keep the closures from moving outer variables
     /// (E0507). Callers emit the body then write_parallel_iter_close.
     fn write_parallel_iter_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, body: &ASTNode, rayon_method: &str, mode: ParallelIterMode, output: &mut String) -> Result<(), CodeError> {
+        if self.wasm_target && Self::node_needs_async(body, &self.pure_functions) {
+            return Err(CodeError {
+                help: Some("do the async work before the collection operation, or build natively".to_string()),
+                message: "the browser build cannot run async work inside a collection operation".to_string(),
+                code_span: body.code_span(),
+            });
+        }
         if let Some(element_type) = self.iterable_element_type(iterable) {
             self.record_variable_type(iterator, element_type);
         }
@@ -1606,7 +1717,11 @@ impl Transpiler {
         let mut return_types = HashMap::new();
         Self::collect_function_return_types(node, &mut return_types);
         self.function_return_types = return_types;
-        
+        let mut declarations = Vec::new();
+        Self::collect_function_declarations(node, &mut declarations);
+        self.profile_fn_names = declarations.iter().map(|(name, _)| name.clone()).collect();
+        self.profile_fn_ids = self.profile_fn_names.iter().enumerate().map(|(id, name)| (name.clone(), id)).collect();
+
         let mut output = String::new();
         writeln!(output, "use tokio;")?;
         writeln!(output, "use nail::std_lib;")?;
@@ -1667,10 +1782,32 @@ impl Transpiler {
         }
         
         writeln!(output)?;
-        writeln!(output, "#[tokio::main]")?;
-        writeln!(output, "async fn main() {{")?;
+        if self.wasm_target {
+            // A browser program has no main. The browser calls the start
+            // function when the wasm module loads, and the program runs as a
+            // task on the browser's own event loop.
+            writeln!(output, "#[wasm_bindgen::prelude::wasm_bindgen(start)]")?;
+            writeln!(output, "pub fn nail_start() {{")?;
+            writeln!(output, "    wasm_bindgen_futures::spawn_local(nail_browser_main());")?;
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+            writeln!(output, "async fn nail_browser_main() {{")?;
+        } else {
+            writeln!(output, "#[tokio::main]")?;
+            writeln!(output, "async fn main() {{")?;
+        }
         self.indent_level += 1;
+        // Browser builds skip instrumentation: no clock, no filesystem, no
+        // terminal, so the guards would be dead weight in the wasm binary.
+        let emit_profiling = self.profile && !self.wasm_target && !self.profile_fn_names.is_empty();
+        if emit_profiling {
+            let names: Vec<String> = self.profile_fn_names.iter().map(|name| format!("\"{}\"", name)).collect();
+            writeln!(output, "{}nail::prof::init(\"{}\", &[{}]);", self.indent(), self.profile_source_hash.as_deref().unwrap_or(""), names.join(", "))?;
+        }
         self.transpile_node(node, &mut output)?;
+        if emit_profiling {
+            writeln!(output, "{}nail::prof::finish();", self.indent())?;
+        }
         self.indent_level -= 1;
         writeln!(output, "}}")?;
         Ok(output)
@@ -1739,6 +1876,13 @@ impl Transpiler {
                 }
 
                 self.indent_level += 1;
+                if self.profile {
+                    if let Some(id) = self.profile_fn_ids.get(name) {
+                        // Bodies emit bare `return`, so measurement rides a
+                        // drop guard that fires on every exit path.
+                        writeln!(output, "{}let __nail_prof_guard = nail::prof::guard({});", self.indent(), id)?;
+                    }
+                }
                 self.transpile_node_internal(body, output, add_semicolons)?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
@@ -3117,5 +3261,34 @@ mod tests {
         let via_import_dangerous = format!("import_dangerous(`tests/test_import_helper.nail`)\n{}", trusted_side);
         let via_import = format!("import(`tests/test_import_helper.nail`)\n{}", trusted_side);
         assert_eq!(transpile_source(&via_import_dangerous), transpile_source(&via_import));
+    }
+
+    #[test]
+    fn test_profile_emits_init_guard_and_finish() {
+        let code = "f double_it(value:i):i { r value * 2; }\nresult:i = double_it(21);\nprint(result);";
+        let tokens = lexer(code);
+        let mut ast = parse(tokens).expect("Parse should succeed");
+        checker(&mut ast).expect("Type check should succeed");
+        let mut transpiler = Transpiler::new();
+        transpiler.profile = true;
+        let instrumented = transpiler.transpile(&ast).expect("Transpilation should succeed");
+        assert!(instrumented.contains("nail::prof::init(\"\", &[\"double_it\"]);"), "main starts by registering every user function");
+        assert!(instrumented.contains("let __nail_prof_guard = nail::prof::guard(0);"), "function bodies open with a drop guard");
+        assert!(instrumented.contains("nail::prof::finish();"), "main ends with the report call");
+    }
+
+    #[test]
+    fn test_profile_off_emits_nothing_and_skips_fnless_programs() {
+        let code = "f double_it(value:i):i { r value * 2; }\nresult:i = double_it(21);\nprint(result);";
+        assert!(!transpile_source(code).contains("nail::prof"), "library default is uninstrumented");
+
+        let fnless = "print(`hi`);";
+        let tokens = lexer(fnless);
+        let mut ast = parse(tokens).expect("Parse should succeed");
+        checker(&mut ast).expect("Type check should succeed");
+        let mut transpiler = Transpiler::new();
+        transpiler.profile = true;
+        let out = transpiler.transpile(&ast).expect("Transpilation should succeed");
+        assert!(!out.contains("nail::prof"), "no user functions means nothing to profile");
     }
 }
