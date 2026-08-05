@@ -35,7 +35,9 @@ struct Landing {
 
 // The whole game in one value. jump_held remembers whether the jump pad was
 // under a finger last frame, so holding it down is one jump and not a jump
-// every frame.
+// every frame. step_phase is how far the player has walked since the last
+// footstep sounded. The three pressing flags are what the player is asking
+// for right now, whether by key or by finger, so the pads can light up.
 struct Platformer {
     player_x:f,
     player_y:f,
@@ -45,6 +47,10 @@ struct Platformer {
     camera_x:f,
     coins:a:Coin,
     jump_held:b,
+    step_phase:f,
+    pressing_left:b,
+    pressing_right:b,
+    pressing_jump:b,
     won:b,
     done:b
 }
@@ -97,7 +103,8 @@ f level_coins():a:Coin {
 f respawn(coins:a:Coin):Platformer {
     r Platformer {
         player_x = 60.0, player_y = 524.0, vel_x = 0.0, vel_y = 0.0,
-        coyote_ms = 0.0, camera_x = 0.0, coins = coins, jump_held = false, won = false, done = false
+        coyote_ms = 0.0, camera_x = 0.0, coins = coins, jump_held = false, step_phase = 0.0,
+        pressing_left = false, pressing_right = false, pressing_jump = false, won = false, done = false
     };
 }
 
@@ -259,6 +266,28 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
         else -> {}
     }
 
+    // Footsteps come from ground covered rather than from a clock, so they
+    // keep pace with the run and stop dead when the player does. One step
+    // every 42 pixels is half the leg swing, which is a foot landing.
+    walking:b = landing.grounded && math_abs(vel_x) > 0.05;
+    walked:f = if {
+        walking -> { r state.step_phase + math_abs(vel_x * delta); },
+        else -> { r 0.0; }
+    };
+    stepped:b = walked > 42.0;
+    step_phase:f = if {
+        stepped -> { r walked - 42.0; },
+        else -> { r walked; }
+    };
+    if {
+        stepped -> { danger(audio_tone_start(150.0, 0.03, 0.05)); },
+        else -> {}
+    }
+
+    // What the player is asking for this frame, key or finger alike, so the
+    // pads can show it.
+    pressing_jump:b = jump_pad_now || array_contains(input.keys_down, `Space`) || array_contains(input.keys_down, `Up`) || array_contains(input.keys_down, `w`);
+
     // The camera trails the player with lead room ahead and never shows
     // past either end of the level.
     camera_goal:f = math_clamp(pos_x - 300.0, 0.0, 2400.0);
@@ -266,7 +295,8 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
 
     r Platformer {
         player_x = pos_x, player_y = landing.land_y, vel_x = vel_x, vel_y = landing.land_vel,
-        coyote_ms = coyote_ms, camera_x = camera_x, coins = coins, jump_held = jump_pad_now, won = won, done = false
+        coyote_ms = coyote_ms, camera_x = camera_x, coins = coins, jump_held = jump_pad_now, step_phase = step_phase,
+        pressing_left = left_held, pressing_right = right_held, pressing_jump = pressing_jump, won = won, done = false
     };
 }
 
@@ -275,7 +305,9 @@ f update(state:Platformer, input:GAME_Input):Platformer {
         array_contains(input.keys_pressed, `Esc`) -> {
             r Platformer {
                 player_x = state.player_x, player_y = state.player_y, vel_x = state.vel_x, vel_y = state.vel_y,
-                coyote_ms = state.coyote_ms, camera_x = state.camera_x, coins = state.coins, jump_held = state.jump_held, won = state.won, done = true
+                coyote_ms = state.coyote_ms, camera_x = state.camera_x, coins = state.coins, jump_held = state.jump_held,
+                step_phase = state.step_phase, pressing_left = false, pressing_right = false, pressing_jump = false,
+                won = state.won, done = true
             };
         },
         array_contains(input.keys_pressed, `r`) -> { r new_game(); },
@@ -434,23 +466,43 @@ f player_shapes(screen_x:f, world_x:f, pos_y:f, vel_x:f, vel_y:f):a:GAME_Shape {
     r array_concat(body, legs);
 }
 
-// The pads as they look: faint plates with a paler glyph, dim enough to
-// sit under the game rather than on top of it. They work under a mouse as
-// well as a finger, so they are drawn whatever the player is using.
-f control_pads():a:GAME_Shape {
+// A pad's plate brightens while its control is being asked for, whether the
+// asking came from a key or a finger, so the keyboard lights them too.
+f pad_plate_color(pressed:b):s {
+    if {
+        pressed -> { r `#7bc4b866`; },
+        else -> { r `#3b315055`; }
+    }
+}
+
+f pad_ink_color(pressed:b):s {
+    if {
+        pressed -> { r `#f4fbf9ee`; },
+        else -> { r `#e8ded188`; }
+    }
+}
+
+// The pads as they look: faint plates with a paler glyph, dim enough to sit
+// under the game rather than on top of it. The jump pad draws a figure
+// leaving a line of ground, which reads as jumping where an arrow alone
+// reads as up.
+f control_pads(state:Platformer):a:GAME_Shape {
     left:a:f = left_pad();
     right:a:f = right_pad();
     jump:a:f = jump_pad();
     left_x:f = danger(array_get(left, 0));
     right_x:f = danger(array_get(right, 0));
     jump_x:f = danger(array_get(jump, 0));
+    jump_ink:s = pad_ink_color(state.pressing_jump);
     r [
-        game_rect(left_x, 480.0, 74.0, 74.0, `#3b315055`),
-        game_triangle(left_x + 48.0, 500.0, left_x + 48.0, 534.0, left_x + 22.0, 517.0, `#e8ded188`),
-        game_rect(right_x, 480.0, 74.0, 74.0, `#3b315055`),
-        game_triangle(right_x + 26.0, 500.0, right_x + 26.0, 534.0, right_x + 52.0, 517.0, `#e8ded188`),
-        game_rect(jump_x, 470.0, 94.0, 94.0, `#3b315055`),
-        game_circle(jump_x + 47.0, 517.0, 19.0, `#7bc4b888`)
+        game_rect(left_x, 480.0, 74.0, 74.0, pad_plate_color(state.pressing_left)),
+        game_triangle(left_x + 48.0, 500.0, left_x + 48.0, 534.0, left_x + 22.0, 517.0, pad_ink_color(state.pressing_left)),
+        game_rect(right_x, 480.0, 74.0, 74.0, pad_plate_color(state.pressing_right)),
+        game_triangle(right_x + 26.0, 500.0, right_x + 26.0, 534.0, right_x + 52.0, 517.0, pad_ink_color(state.pressing_right)),
+        game_rect(jump_x, 470.0, 94.0, 94.0, pad_plate_color(state.pressing_jump)),
+        game_triangle(jump_x + 47.0, 487.0, jump_x + 29.0, 512.0, jump_x + 65.0, 512.0, jump_ink),
+        game_rect(jump_x + 41.0, 510.0, 12.0, 20.0, jump_ink),
+        game_rect(jump_x + 27.0, 541.0, 40.0, 6.0, jump_ink)
     ];
 }
 
@@ -487,7 +539,7 @@ f view(state:Platformer):GAME_Frame {
     };
 
     world:a:GAME_Shape = array_concat(array_concat(backdrop_shapes(cam), plat_shapes), array_concat(coin_shapes, goal));
-    front:a:GAME_Shape = array_concat(array_concat(player, hud), array_concat(control_pads(), banner));
+    front:a:GAME_Shape = array_concat(array_concat(player, hud), array_concat(control_pads(state), banner));
 
     r GAME_Frame {
         shapes = array_concat(world, front),

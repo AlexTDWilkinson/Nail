@@ -24,6 +24,8 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::io::Cursor;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::OnceLock;
 
 /// The checks every tone passes before any sound device is touched, so they
 /// answer the same way on a machine with no sound card and in a browser.
@@ -91,6 +93,36 @@ pub fn play_tone(hertz: f64, seconds: f64, volume: f64) -> Result<(), String> {
     return Ok(());
 }
 
+/// One thread owns the sound device for the life of the program and plays
+/// every tone through it.
+///
+/// A device per tone is what `audio_play_tone` does, and for a beep at the
+/// end of a job it is the honest choice. A game is the other case: sounds
+/// overlap, and two devices opened at once do not mix, they fight, which
+/// comes out as tones that vary in loudness or drop entirely. One device
+/// mixes them properly, and the tone still costs the caller nothing.
+#[cfg(not(target_arch = "wasm32"))]
+fn tone_player() -> &'static std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64, f64)>> {
+    static PLAYER: OnceLock<std::sync::Mutex<std::sync::mpsc::Sender<(f64, f64, f64)>>> = OnceLock::new();
+    return PLAYER.get_or_init(|| {
+        let (sender, receiver) = std::sync::mpsc::channel::<(f64, f64, f64)>();
+        std::thread::spawn(move || {
+            let Ok((_stream, handle)) = open_output() else {
+                // No sound device. Take the requests and drop them, so a
+                // program that asks for sound on a server still runs.
+                for _ in receiver {}
+                return;
+            };
+            use rodio::Source;
+            for (hertz, seconds, volume) in receiver {
+                let tone = rodio::source::SineWave::new(hertz as f32).take_duration(std::time::Duration::from_secs_f64(seconds)).amplify(volume as f32);
+                let _ = handle.play_raw(tone);
+            }
+        });
+        std::sync::Mutex::new(sender)
+    });
+}
+
 /// Starts a tone and returns at once, without waiting for it to finish.
 ///
 /// This is the one a game loop can call. A frame has about sixteen
@@ -100,18 +132,9 @@ pub fn play_tone(hertz: f64, seconds: f64, volume: f64) -> Result<(), String> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn tone_start(hertz: f64, seconds: f64, volume: f64) -> Result<(), String> {
     check_tone(hertz, seconds, volume, "audio_tone_start")?;
-
-    // The stream has to outlive this call for the sound to finish playing, and
-    // a Nail program has nowhere to keep it, so the playing thread owns it and
-    // drops it when the tone ends.
-    std::thread::spawn(move || {
-        let Ok((_stream, handle)) = open_output() else { return };
-        let Ok(sink) = rodio::Sink::try_new(&handle) else { return };
-        use rodio::Source;
-        let tone = rodio::source::SineWave::new(hertz as f32).take_duration(std::time::Duration::from_secs_f64(seconds)).amplify(volume as f32);
-        sink.append(tone);
-        sink.sleep_until_end();
-    });
+    if let Ok(sender) = tone_player().lock() {
+        let _ = sender.send((hertz, seconds, volume));
+    }
     return Ok(());
 }
 
