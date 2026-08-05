@@ -280,7 +280,7 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
         else -> { r walked; }
     };
     if {
-        stepped -> { danger(audio_tone_start(150.0, 0.03, 0.05)); },
+        stepped -> { danger(audio_tone_start(220.0, 0.045, 0.11)); },
         else -> {}
     }
 
