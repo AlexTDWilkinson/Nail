@@ -245,12 +245,35 @@ f update(state:Platformer, input:GAME_Input):Platformer {
     }
 }
 
-// A skyline of plum towers behind the action. It scrolls at forty percent
-// of camera speed, which is what makes it read as far away.
+// Four depths behind the action: a still sky with a crescent moon and
+// stars, a far ridge at fifteen percent of camera speed, the plum skyline
+// at forty, and near columns at seventy. Each layer moving a little faster
+// than the one behind it is what makes the world feel deep.
 f backdrop_shapes(camera_x:f):a:GAME_Shape {
+    far_slide:f = camera_x * 0.15;
     slide:f = camera_x * 0.4;
-    r [
-        game_rect(0.0, 505.0, 800.0, 95.0, `#171320`),
+    near_slide:f = camera_x * 0.7;
+    sky:a:GAME_Shape = [
+        game_circle(652.0, 92.0, 26.0, `#3d3a52`),
+        game_circle(662.0, 84.0, 20.0, `#101018`),
+        game_rect(90.0, 60.0, 2.0, 2.0, `#4a4458`),
+        game_rect(210.0, 130.0, 2.0, 2.0, `#4a4458`),
+        game_rect(330.0, 45.0, 3.0, 3.0, `#5c5470`),
+        game_rect(470.0, 110.0, 2.0, 2.0, `#4a4458`),
+        game_rect(555.0, 38.0, 2.0, 2.0, `#4a4458`),
+        game_rect(720.0, 160.0, 2.0, 2.0, `#4a4458`),
+        game_rect(150.0, 210.0, 2.0, 2.0, `#3f3a52`),
+        game_rect(620.0, 230.0, 3.0, 3.0, `#5c5470`)
+    ];
+    ridge:a:GAME_Shape = [
+        game_rect(0.0 - far_slide, 430.0, 260.0, 170.0, `#161221`),
+        game_rect(240.0 - far_slide, 470.0, 300.0, 130.0, `#141020`),
+        game_rect(520.0 - far_slide, 440.0, 240.0, 160.0, `#161221`),
+        game_rect(740.0 - far_slide, 480.0, 280.0, 120.0, `#141020`),
+        game_rect(1000.0 - far_slide, 450.0, 260.0, 150.0, `#161221`)
+    ];
+    haze:a:GAME_Shape = [game_rect(0.0, 505.0, 800.0, 95.0, `#171320`)];
+    mid:a:GAME_Shape = [
         game_rect(40.0 - slide, 340.0, 120.0, 260.0, `#241d2e`),
         game_rect(230.0 - slide, 290.0, 90.0, 310.0, `#2c2438`),
         game_rect(360.0 - slide, 380.0, 140.0, 220.0, `#241d2e`),
@@ -263,6 +286,17 @@ f backdrop_shapes(camera_x:f):a:GAME_Shape {
         game_rect(1450.0 - slide, 300.0, 100.0, 300.0, `#241d2e`),
         game_rect(1600.0 - slide, 360.0, 120.0, 240.0, `#2c2438`)
     ];
+    near:a:GAME_Shape = [
+        game_rect(120.0 - near_slide, 200.0, 18.0, 400.0, `#493c5c`),
+        game_rect(430.0 - near_slide, 260.0, 30.0, 340.0, `#3f3450`),
+        game_rect(760.0 - near_slide, 170.0, 18.0, 430.0, `#493c5c`),
+        game_rect(1080.0 - near_slide, 240.0, 26.0, 360.0, `#3f3450`),
+        game_rect(1420.0 - near_slide, 190.0, 18.0, 410.0, `#493c5c`),
+        game_rect(1760.0 - near_slide, 270.0, 34.0, 330.0, `#3f3450`),
+        game_rect(2100.0 - near_slide, 210.0, 18.0, 390.0, `#493c5c`),
+        game_rect(2400.0 - near_slide, 250.0, 26.0, 350.0, `#3f3450`)
+    ];
+    r array_concat(array_concat(sky, ridge), array_concat(array_concat(haze, mid), near));
 }
 
 f no_shapes():a:GAME_Shape {
@@ -287,7 +321,7 @@ f player_shapes(screen_x:f, world_x:f, pos_y:f, vel_x:f, vel_y:f):a:GAME_Shape {
     moving:b = math_abs(vel_x) > 0.02;
     grounded:b = vel_y == 0.0;
     swing:f = if {
-        moving && grounded -> { r math_sin(world_x * 0.05) * 5.0; },
+        moving && grounded -> { r math_sin(world_x * 0.075) * 5.0; },
         else -> { r 0.0; }
     };
     legs:a:GAME_Shape = if {
