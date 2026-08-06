@@ -33,7 +33,7 @@ use version_line::{Pin, Version};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{IsTerminal, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -162,7 +162,7 @@ fn usage() -> String {
         "nail - the Nail language. Opens each file with the version that wrote it\n",
         "\n",
         "Writing code:\n",
-        "  nail <file>                 open a file in the editor\n",
+        "  nail open <file>            open a file in the editor\n",
         "  nail open                   open the editor with nothing in it\n",
         "  nail new <file>             create a new file, ready to compile\n",
         "  nail run <file>             compile a file and run it\n",
@@ -173,6 +173,9 @@ fn usage() -> String {
         "\n",
         "The .nail extension is optional everywhere. `nail new hello` and\n",
         "`nail new hello.nail` do the same thing.\n",
+        "\n",
+        "`nail hello` opens a file too, but a name that is also a command is the\n",
+        "command, so a file called list.nail needs `nail open list`.\n",
         "\n",
         "Versions of Nail:\n",
         "  nail list [--available]     which are installed, how big, last used\n",
@@ -557,8 +560,7 @@ fn install(store: &Store, version: &Version) -> Fallible<()> {
     let cleanup = Cleanup(staging.clone());
 
     let tarball = staging.join("release.tar.xz");
-    println!("downloading Nail {}", version);
-    let downloaded = download(&url, &tarball)?;
+    let digest = download(&url, &tarball, &format!("Nail {}", version))?;
 
     println!("unpacking");
     unpack(&tarball, &staging)?;
@@ -568,7 +570,7 @@ fn install(store: &Store, version: &Version) -> Fallible<()> {
     if !unpacked.join("bin/nailc").is_file() {
         return fail(format!("the {} release does not contain bin/nailc", version));
     }
-    fs::write(unpacked.join(".installed"), format!("sha256 {}\n", hex(&sha256(&downloaded)))).map_err(|error| format!("cannot record the install: {}", error))?;
+    fs::write(unpacked.join(".installed"), format!("sha256 {}\n", hex(&digest))).map_err(|error| format!("cannot record the install: {}", error))?;
 
     let destination = store.version_dir(version);
     let _ = fs::remove_dir_all(&destination);
@@ -590,7 +592,14 @@ impl Drop for Cleanup {
     }
 }
 
-fn download(url: &str, destination: &Path) -> Fallible<Vec<u8>> {
+/// Streams a download to disk, hashing as it goes and drawing a progress bar
+/// while it does. A release is most of a gigabyte, so the bar is not decoration:
+/// without it the terminal sits silent for minutes and there is no way to tell
+/// a slow download from a dead one. Streaming rather than buffering also keeps
+/// a gigabyte out of memory, and the hash falls out of the same pass.
+fn download(url: &str, destination: &Path, label: &str) -> Fallible<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+
     let mut response = get(url)?;
     match response.status().as_u16() {
         200 => {}
@@ -598,11 +607,55 @@ fn download(url: &str, destination: &Path) -> Fallible<Vec<u8>> {
         status => return fail(format!("{} answered {}", url, status)),
     }
 
+    let total = response.content_length();
     let mut file = fs::File::create(destination).map_err(|error| format!("cannot write {}: {}", destination.display(), error))?;
-    let mut bytes = Vec::new();
-    response.read_to_end(&mut bytes).map_err(|error| format!("the download from {} was cut short: {}", url, error))?;
-    file.write_all(&bytes).map_err(|error| format!("cannot write {}: {}", destination.display(), error))?;
-    return Ok(bytes);
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 128 * 1024];
+    let mut done: u64 = 0;
+    let started = std::time::Instant::now();
+    let mut last_drawn = std::time::Instant::now();
+    let show = std::io::stderr().is_terminal();
+
+    loop {
+        let read = response.read(&mut buffer).map_err(|error| format!("the download from {} was cut short: {}", url, error))?;
+        if read == 0 {
+            break;
+        }
+        file.write_all(&buffer[..read]).map_err(|error| format!("cannot write {}: {}", destination.display(), error))?;
+        hasher.update(&buffer[..read]);
+        done += read as u64;
+
+        // Ten times a second is smooth to watch and cheap to draw. Every chunk
+        // would be a thousand writes a second and no more informative.
+        if show && last_drawn.elapsed() >= Duration::from_millis(100) {
+            draw_progress(label, done, total, started.elapsed());
+            last_drawn = std::time::Instant::now();
+        }
+    }
+
+    if show {
+        draw_progress(label, done, total, started.elapsed());
+        eprintln!();
+    }
+    return Ok(hasher.finalize().into());
+}
+
+/// One line, rewritten in place. Falls back to a plain byte count when the
+/// server did not say how big the thing is, because a bar with no end is a lie.
+fn draw_progress(label: &str, done: u64, total: Option<u64>, elapsed: Duration) {
+    let speed = if elapsed.as_secs_f64() > 0.0 { done as f64 / elapsed.as_secs_f64() } else { 0.0 };
+
+    match total {
+        Some(total) if total > 0 => {
+            let share = (done as f64 / total as f64).min(1.0);
+            let width = 24;
+            let filled = (share * width as f64).round() as usize;
+            let bar: String = "█".repeat(filled) + &"░".repeat(width - filled);
+            eprint!("\r  {} [{}] {:>3}%  {} / {}  {}/s   ", label, bar, (share * 100.0) as u32, human(done), human(total), human(speed as u64));
+        }
+        _ => eprint!("\r  {} {}  {}/s   ", label, human(done), human(speed as u64)),
+    }
+    let _ = std::io::stderr().flush();
 }
 
 fn version_in(url: &str) -> String {
@@ -1250,9 +1303,8 @@ fn command_self_update(store: &Store) -> Fallible<ExitCode> {
     let url = format!("{}/nail/{}", store.origin, TARGET);
     let current = std::env::current_exe().map_err(|error| format!("cannot find my own path: {}", error))?;
 
-    println!("downloading a new nail");
     let staging = current.with_extension("incoming");
-    let bytes = download(&url, &staging)?;
+    let _ = download(&url, &staging, "nail")?;
     let _guard = FileCleanup(staging.clone());
 
     fs::set_permissions(&staging, fs::Permissions::from_mode(0o755)).map_err(|error| format!("cannot make it executable: {}", error))?;

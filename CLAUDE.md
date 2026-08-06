@@ -38,7 +38,7 @@ A clean run currently reports 165/165 lexer/parser, 165/165 type checker and
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
-`./test_launcher.sh` reports 36 checks passing. `./test_error_messages.sh`
+`./test_launcher.sh` reports 37 checks passing. `./test_error_messages.sh`
 currently reports 22 passed, 3 failed. Those three predate this baseline and are
 not a regression.
 

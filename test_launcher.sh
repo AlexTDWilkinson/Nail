@@ -100,6 +100,7 @@ check "an unknown subcommand still forwards" "notacommand" "$("$LAUNCHER" notaco
 # open an empty editor, which nobody expects from a command line tool.
 check "bare nail prints the help" "Writing code:" "$("$LAUNCHER" 2>&1)"
 check "the help prefixes every command" "nail install <version>" "$("$LAUNCHER" help 2>&1)"
+check "the help leads with the explicit open" "nail open <file>" "$("$LAUNCHER" help 2>&1)"
 
 echo "== the other commands =="
 check "check type checks without building" "Type check successful" "$("$LAUNCHER" check demo 2>&1)"
