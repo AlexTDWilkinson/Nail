@@ -78,7 +78,28 @@ fn main() {
             }
             let modules = nail::parser::std_lib::stdlib::modules();
             println!("\n{} functions in {} libraries. `nail docs <name>` for one of them.", functions.len(), modules.len());
+            // The headings themselves, not a guessed keyword: guessing gave
+            // two different sections the name "error" and turned another into
+            // "if". Matching is loose enough that any word out of one works.
+            println!("\nThe language itself, rather than its library. `nail docs <any word below>`:");
+            let topics = nail::docs::topics();
+            for pair in topics.chunks(2) {
+                match pair {
+                    [left, right] => println!("  {:<38} {}", left, right),
+                    [only] => println!("  {}", only),
+                    _ => {}
+                }
+            }
             return;
+        }
+
+        // A language topic beats a fuzzy library match, because "errors" is a
+        // question about the language and no function is called that.
+        if !query.is_empty() && !functions.iter().any(|function| function.name == query) {
+            if let Some(section) = nail::docs::section(query) {
+                println!("{}", section);
+                return;
+            }
         }
 
         if let Some(exact) = functions.iter().find(|function| function.name == query) {

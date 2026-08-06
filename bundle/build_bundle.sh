@@ -78,8 +78,11 @@ mkdir -p "$ROOT/nail"
 cp "$REPO/Cargo.toml" "$REPO/Cargo.lock" "$ROOT/nail/"
 cp -r "$REPO/src" "$ROOT/nail/src"
 # assets/ is crate source too: game.rs embeds the font from it with
-# include_bytes!, so a nail/ without it does not compile.
+# include_bytes!, so a nail/ without it does not compile. The specification is
+# there for the same reason: docs.rs embeds it so `nail docs` can answer
+# questions about the language, and the answer belongs to this version.
 cp -r "$REPO/assets" "$ROOT/nail/assets"
+cp "$REPO/nail_language_spec.md" "$ROOT/nail/"
 
 # --- 4. Warmup projects ---------------------------------------------------
 # superset: every crate the registry can emit, all nail features.

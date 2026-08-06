@@ -150,41 +150,74 @@ mod release_guards {
     }
 
     /// `bundle/build_bundle.sh` copies a subset of the repository into the
-    /// bundle as the nail crate source. Anything the crate embeds with
-    /// `include_bytes!` or `include_str!` has to be inside that subset, or the
-    /// bundled crate does not compile. An embedded font in `assets/` was
-    /// missing from the copy, and only a release build revealed it.
+    /// bundle as the nail crate source, and every program a user builds
+    /// compiles that copy. So anything the *library* embeds with
+    /// `include_bytes!` or `include_str!` has to be inside what gets copied,
+    /// or every user build fails. An embedded font in `assets/` was missing
+    /// once and only a release build revealed it.
+    ///
+    /// Only the library counts. The binaries ship already compiled, so what
+    /// they embed is nobody's problem after the release machine is done.
     #[test]
-    fn embedded_files_are_inside_what_the_bundle_copies() {
+    fn what_the_library_embeds_is_inside_what_the_bundle_copies() {
         let script = std::fs::read_to_string(repo_root().join("bundle/build_bundle.sh")).expect("the bundle build script should exist");
 
-        let mut escaping = Vec::new();
         let mut sources = Vec::new();
-        collect_rust_sources(&repo_root().join("src"), &mut sources);
+        for module in library_modules() {
+            let file = repo_root().join("src").join(format!("{}.rs", module));
+            if file.is_file() {
+                sources.push(file);
+            }
+            let directory = repo_root().join("src").join(&module);
+            if directory.is_dir() {
+                collect_rust_sources(&directory, &mut sources);
+            }
+        }
+        sources.push(repo_root().join("src/lib.rs"));
+        assert!(sources.len() > 5, "expected to find the library's sources, found {}", sources.len());
+
+        let mut escaping: Vec<String> = Vec::new();
         for source in &sources {
             let text = std::fs::read_to_string(source).unwrap_or_default();
             for macro_name in ["include_bytes!", "include_str!"] {
                 for piece in text.split(macro_name).skip(1) {
                     let literal: String = piece.trim_start().trim_start_matches('(').trim_start().trim_start_matches('"').chars().take_while(|character| *character != '"').collect();
-                    // A path that climbs out of src/ lands somewhere the
-                    // bundle only has if the script was told to copy it.
-                    if literal.contains("../../../") {
-                        let directory = literal.trim_start_matches("../../../").split('/').next().unwrap_or("").to_string();
-                        if !directory.is_empty() && !escaping.contains(&directory) {
-                            escaping.push(directory);
-                        }
+                    if !literal.starts_with("../") {
+                        continue;
+                    }
+                    // What matters is the first thing named once the climbing
+                    // out of src/ stops. Landing back inside src/ is fine,
+                    // since all of src/ is copied.
+                    let landed = literal.trim_start_matches("../");
+                    if landed.starts_with("src/") {
+                        continue;
+                    }
+                    let target = landed.split('/').next().unwrap_or("").to_string();
+                    if !target.is_empty() && !escaping.contains(&target) {
+                        escaping.push(target);
                     }
                 }
             }
         }
 
-        for directory in &escaping {
+        for target in &escaping {
             assert!(
-                script.contains(&format!("$REPO/{}", directory)),
-                "src/ embeds a file from {}/ but bundle/build_bundle.sh never copies it into $ROOT/nail, so the bundled crate will not compile",
-                directory
+                script.contains(&format!("$REPO/{}", target)),
+                "the library embeds {} from outside src/, but bundle/build_bundle.sh never copies it into $ROOT/nail, so every user build would fail",
+                target
             );
         }
+    }
+
+    /// The modules `lib.rs` declares, which is what a user program compiles.
+    fn library_modules() -> Vec<String> {
+        let lib = std::fs::read_to_string(repo_root().join("src/lib.rs")).expect("src/lib.rs should exist");
+        return lib
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("pub mod ").or_else(|| line.trim().strip_prefix("mod ")))
+            .filter_map(|rest| rest.split(';').next())
+            .map(|name| name.trim().to_string())
+            .collect();
     }
 
     fn collect_rust_sources(root: &Path, found: &mut Vec<PathBuf>) {

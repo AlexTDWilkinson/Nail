@@ -1,6 +1,7 @@
 mod checker;
 mod colorizer;
 mod common;
+mod docs;
 mod embedded;
 mod formatter;
 mod lexer;

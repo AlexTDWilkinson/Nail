@@ -2,6 +2,7 @@ pub mod common;
 pub mod checker;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod colorizer;
+pub mod docs;
 pub mod embedded;
 pub mod formatter;
 #[cfg(not(target_arch = "wasm32"))]
