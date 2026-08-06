@@ -96,6 +96,11 @@ else
 fi
 check "an unknown subcommand still forwards" "notacommand" "$("$LAUNCHER" notacommand 2>&1)"
 
+# Running a command with no arguments prints its help. Bare `nail` used to
+# open an empty editor, which nobody expects from a command line tool.
+check "bare nail prints the help" "Writing code:" "$("$LAUNCHER" 2>&1)"
+check "the help prefixes every command" "nail install <version>" "$("$LAUNCHER" help 2>&1)"
+
 echo "== the other commands =="
 check "check type checks without building" "Type check successful" "$("$LAUNCHER" check demo 2>&1)"
 check "check reports a broken file" "no version line" "$("$LAUNCHER" check naked 2>&1)"

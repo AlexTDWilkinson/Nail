@@ -94,9 +94,14 @@ fn run(arguments: &[String]) -> Fallible<ExitCode> {
 
     let rest = &arguments[1..];
 
+    // No arguments prints the help, the way every other command line tool
+    // does. The editor with nothing in it is still reachable, as `nail open`.
     let command = match rest.first() {
         Some(first) => first.as_str(),
-        None => return launch(&store, Binary::Ide, &[]),
+        None => {
+            print!("{}", usage());
+            return Ok(ExitCode::SUCCESS);
+        }
     };
     let tail = &rest[1..];
 
@@ -156,33 +161,39 @@ fn usage() -> String {
     return concat!(
         "nail - the Nail language. Opens each file with the version that wrote it\n",
         "\n",
-        "  nail <file>              open a file in the editor\n",
-        "  nail new <file>          create a new file, ready to compile\n",
-        "  nail run <file>          compile a file and run it\n",
-        "  nail build <file>        compile a file, leaving the binary beside it\n",
-        "  nail check <file>        type check a file without building it\n",
-        "  nail test [pattern]      run every file in tests/, or those matching\n",
-        "  nail docs <name>         what the standard library says about a function\n",
-        "  nail <anything else>     forwarded to the compiler for that file\n",
+        "Writing code:\n",
+        "  nail <file>                 open a file in the editor\n",
+        "  nail open                   open the editor with nothing in it\n",
+        "  nail new <file>             create a new file, ready to compile\n",
+        "  nail run <file>             compile a file and run it\n",
+        "  nail build <file>           compile a file, leaving the binary beside it\n",
+        "  nail check <file>           type check a file without building it\n",
+        "  nail test [pattern]         run every file in tests/, or those matching\n",
+        "  nail docs <name>            what the standard library says about a function\n",
         "\n",
-        "The .nail extension is optional everywhere: `nail new hello` and\n",
+        "The .nail extension is optional everywhere. `nail new hello` and\n",
         "`nail new hello.nail` do the same thing.\n",
         "\n",
-        "Managing installed versions:\n",
-        "  list [--available]       which versions are installed, how big, last used\n",
-        "  install <version>        download one, or `latest` for the newest\n",
-        "  remove <version>         delete one\n",
-        "  gc [--caches] [--yes]    reclaim disk, dry run unless --yes\n",
-        "  which <file>             print the version that will run, and why\n",
-        "  fetch <path>             install every version a tree of files pins\n",
-        "  update <path> [--to <v>] move files to a newer version, if they still compile\n",
-        "  export <version> <file>  save a version for a machine with no network\n",
-        "  import <file>            install one from that file\n",
-        "  doctor                   check the install over\n",
-        "  self-update              replace this launcher\n",
-        "  config <key> [value]     warn, auto, auto-at, keep-days\n",
-        "  website [stdlib]         open the Nail website, or its library listing\n",
-        "  github                   open the source\n"
+        "Versions of Nail:\n",
+        "  nail list [--available]     which are installed, how big, last used\n",
+        "  nail install <version>      download one, or `latest` for the newest\n",
+        "  nail remove <version>       delete one\n",
+        "  nail gc [--caches] [--yes]  reclaim disk, dry run unless --yes\n",
+        "  nail which <file>           which version will run this, and why\n",
+        "  nail fetch <path>           install every version a tree of files pins\n",
+        "  nail update <path>          move files to a newer version, if they still compile\n",
+        "  nail export <version> <to>  save a version for a machine with no network\n",
+        "  nail import <file>          install one from that file\n",
+        "  nail doctor                 check the install over\n",
+        "  nail self-update            replace nail itself\n",
+        "  nail config <key> [value]   warn, auto, auto-at, keep-days\n",
+        "\n",
+        "Elsewhere:\n",
+        "  nail website [stdlib]       the website, or its standard library listing\n",
+        "  nail github                 the source\n",
+        "\n",
+        "Anything nail does not recognise is passed to the compiler for that file,\n",
+        "so a command added in a later release works through this one.\n"
     )
     .to_string();
 }
