@@ -1009,9 +1009,10 @@ f generate_games_section():s {
         <div style="width: 100%; max-width: 940px;">
             <h3 style="margin: 0 0 0.5rem 0;">Platformer</h3>
             <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
-                Click it, then arrows or A and D move, Space jumps, R restarts. On a phone the
-                pads in the corners do the same. A scrolling level, pits, coins and a flag, all
-                pure functions over one struct, with sound.
+                Click it, then arrows or A and D move, Space jumps, R starts the level over. On a
+                phone the pads in the corners do the same, and every screen between levels leaves
+                on a touch anywhere. Five levels of pits, coins, spikes and things that walk and
+                fly, all pure functions over one struct, with sound.
                 <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/platformer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
             </p>
             <iframe src="/games/platformer-embed" title="Platformer written in Nail" style="width: 100%; aspect-ratio: 800 / 600; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>

@@ -329,6 +329,7 @@ struct Editor {
     // Go to symbol, built from the parsed file when it parses and read off
     // the text when it does not
     symbol_filter: String,
+    symbol_source: SymbolSource,
     symbol_entries: Vec<FileSymbol>,
     symbol_matches: Vec<usize>,
     symbol_index: usize,
@@ -347,11 +348,18 @@ struct Editor {
     search_error: Option<String>,
     search_direction_forward: bool, // For F3/Shift+F3 navigation
     replace_field_active: bool, // true if replace field is active, false if find field is active
-    // File dialog system
+    // The file finder. `file_entries` is what it is showing, which is the
+    // ranked answer to whatever has been typed, and `file_index` is every
+    // file in the project it ranks them out of.
     file_entries: Vec<FileEntry>,
+    file_index: Vec<String>,
     file_dialog_index: usize,
     file_dialog_input: String,
-    current_directory: String,
+    // The directory the IDE was started in, which is also where its `.nail`
+    // file lives. One rule for both means the project the finder searches and
+    // the project whose settings are remembered are never two different
+    // things.
+    project_root: String,
     recent_files: Vec<String>,
     // Standard library browser
     stdlib_functions: Vec<StdLibFunction>,
@@ -406,11 +414,33 @@ struct ViewLayout {
     text: ratatui::layout::Rect,
 }
 
-/// A named thing in the open file and the line it is declared on.
+/// A named thing and the line it is declared on. `file` is the project file
+/// it lives in, relative to the project root, and is absent when the symbol
+/// came from the open buffer: an unsaved file has no path to name, and the
+/// picker over one file has no need of one.
 #[derive(Clone, Debug)]
 struct FileSymbol {
     label: String,
     line: usize,
+    file: Option<String>,
+}
+
+/// Where the list in the picker came from, which is what typing into it does
+/// next. Two of these narrow a list already in hand. The third asks the
+/// project again on every keystroke, because no list of every line in every
+/// file was ever built to narrow.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SymbolSource {
+    OpenFile,
+    Project,
+    ProjectText,
+}
+
+/// What one of the fuzzy pickers did with a key.
+enum PickerKey {
+    Handled,
+    Run(nail::keymap::Action),
+    Ignored,
 }
 
 #[derive(Clone, Debug)]
@@ -454,6 +484,7 @@ enum DialogMode {
     OpenFile,
     StdLibBrowser,
     Settings,
+    ConfirmQuit,
     CommandPalette,
     SymbolPicker,
 }
@@ -510,6 +541,7 @@ impl Editor {
             palette_matches: Vec::new(),
             palette_index: 0,
             symbol_filter: String::new(),
+            symbol_source: SymbolSource::OpenFile,
             symbol_entries: Vec::new(),
             symbol_matches: Vec::new(),
             symbol_index: 0,
@@ -524,9 +556,10 @@ impl Editor {
             search_direction_forward: true,
             replace_field_active: false,
             file_entries: Vec::new(),
+            file_index: Vec::new(),
             file_dialog_index: 0,
             file_dialog_input: String::new(),
-            current_directory: std::env::current_dir()
+            project_root: std::env::current_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."))
                 .to_string_lossy()
                 .to_string(),
@@ -575,10 +608,17 @@ impl Editor {
     }
     
     fn open_file_in_tab(&mut self, filename: String) -> Result<(), String> {
-        // Check if file is already open in a tab
+        // Is it already open? The same file reaches this by more than one
+        // name: the launcher opens what was typed on the command line, the
+        // finder opens a full path, and an import opens a path built from the
+        // importing file's own. Comparing the names would open a second tab
+        // on the same file and let the two copies drift apart, so what is
+        // compared is where the names lead.
+        let wanted = std::fs::canonicalize(&filename).unwrap_or_else(|_| std::path::PathBuf::from(&filename));
         for (i, tab) in self.tabs.iter().enumerate() {
             if let Some(tab_filename) = &tab.filename {
-                if tab_filename == &filename {
+                let same = std::fs::canonicalize(tab_filename).map(|open| open == wanted).unwrap_or_else(|_| tab_filename == &filename);
+                if same {
                     self.tab_index = i;
                     return Ok(());
                 }
@@ -685,82 +725,114 @@ impl Editor {
         Ok(())
     }
     
+    /// Reading the tree costs a few milliseconds on a project and is done on
+    /// every open rather than cached, so a file created a second ago by
+    /// something else is already there to be found. The alternative is a
+    /// cache and a way to tell it it is stale, which is a great deal of
+    /// machinery to save a walk nobody can feel.
     fn open_file_dialog(&mut self) {
         self.dialog_mode = DialogMode::OpenFile;
-        self.refresh_file_entries();
-        self.file_dialog_index = 0;
+        self.file_index = crate::utils::scan_project_files(std::path::Path::new(&self.project_root));
         self.file_dialog_input.clear();
+        self.filter_file_entries();
     }
-    
-    fn refresh_file_entries(&mut self) {
-        self.file_entries.clear();
-        
-        // Add recent files first
-        for (i, file) in self.recent_files.iter().enumerate() {
-            if i >= 5 { break; } // Show only first 5 recent files
-            self.file_entries.push(FileEntry {
-                name: format!("📄 {}", std::path::Path::new(file).file_name().unwrap_or_default().to_string_lossy()),
-                path: file.clone(),
-                is_directory: false,
-                is_recent: true,
-            });
+
+    /// Whether what has been typed is a path being spelled out rather than a
+    /// name being searched for. Everything the finder knows about lives under
+    /// the project, so a leading slash or tilde is the one unambiguous way to
+    /// say the file wanted is somewhere else entirely.
+    fn browsing_by_path(&self) -> bool {
+        return self.file_dialog_input.starts_with('/') || self.file_dialog_input.starts_with('~');
+    }
+
+    /// How many rows the finder will build. Nothing below this is reachable
+    /// by scrolling before the next keystroke changes the order anyway, and
+    /// building twenty thousand of them per keypress is work thrown away.
+    const FILE_MATCH_LIMIT: usize = 200;
+
+    fn filter_file_entries(&mut self) {
+        self.file_entries = if self.browsing_by_path() { self.entries_by_path() } else { self.entries_by_score() };
+        self.file_dialog_index = 0;
+    }
+
+    /// The project's files, best answer to the query first. With nothing
+    /// typed the order is the recently opened ones and then the rest by path,
+    /// which makes the finder a recent-files list until it is asked to be
+    /// something else.
+    fn entries_by_score(&self) -> Vec<FileEntry> {
+        let needle = self.file_dialog_input.to_lowercase();
+        let open_paths: Vec<&str> = self.tabs.iter().filter_map(|tab| tab.filename.as_deref()).collect();
+        let showing = self.get_current_tab().filename.clone();
+        let mut scored: Vec<(i32, FileEntry)> = Vec::new();
+        for relative in &self.file_index {
+            let mut score = match crate::utils::path_score(&relative.to_lowercase(), &needle) {
+                Some(score) => score,
+                None => continue,
+            };
+            let full = std::path::Path::new(&self.project_root).join(relative).to_string_lossy().to_string();
+            // A file opened recently is far more likely to be wanted than one
+            // never opened at all, and the more recently the more so.
+            let recent = self.recent_files.iter().position(|path| path == &full);
+            if let Some(position) = recent {
+                score += 60 - 5 * position.min(10) as i32;
+            }
+            if open_paths.contains(&full.as_str()) {
+                score += 10;
+            }
+            // With nothing typed the finder is a list of somewhere else to be,
+            // and the file already on screen is not somewhere else. Opening it
+            // and pressing return therefore lands on the file before this one,
+            // which is the move people make most. Once something is typed the
+            // penalty lifts, because then the user is naming a file rather
+            // than picking one, and they may well be naming this one.
+            if needle.is_empty() && showing.as_deref() == Some(full.as_str()) {
+                score -= 100;
+            }
+            scored.push((score, FileEntry { name: relative.clone(), path: full, is_directory: false, is_recent: recent.is_some() }));
         }
-        
-        // Add parent directory entry if not at root
-        if self.current_directory != "/" {
-            self.file_entries.push(FileEntry {
-                name: "📁 ..".to_string(),
-                path: std::path::Path::new(&self.current_directory)
-                    .parent()
-                    .unwrap_or_else(|| std::path::Path::new("/"))
-                    .to_string_lossy()
-                    .to_string(),
-                is_directory: true,
+        // Stable, so that files scoring the same stay in the alphabetical
+        // order the walk left them in rather than shuffling as the user types.
+        scored.sort_by(|left, right| right.0.cmp(&left.0));
+        scored.truncate(Self::FILE_MATCH_LIMIT);
+        return scored.into_iter().map(|(_, entry)| entry).collect();
+    }
+
+    /// Directory listing for a path typed out by hand, so that a file outside
+    /// the project is still reachable. The last piece of what has been typed
+    /// filters the directory above it, which is what tab completion would do
+    /// if this had tab completion.
+    fn entries_by_path(&self) -> Vec<FileEntry> {
+        let typed = match self.file_dialog_input.strip_prefix('~') {
+            Some(rest) => format!("{}{}", std::env::var("HOME").unwrap_or_else(|_| "~".to_string()), rest),
+            None => self.file_dialog_input.clone(),
+        };
+        let (directory, prefix) = match typed.rsplit_once('/') {
+            Some((directory, prefix)) => (if directory.is_empty() { "/" } else { directory }, prefix.to_lowercase()),
+            None => ("/", String::new()),
+        };
+        let entries = match std::fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(_) => return Vec::new(),
+        };
+        let mut found: Vec<FileEntry> = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.to_lowercase().starts_with(&prefix) {
+                continue;
+            }
+            let is_directory = entry.path().is_dir();
+            found.push(FileEntry {
+                name: if is_directory { format!("{}/", name) } else { name },
+                path: entry.path().to_string_lossy().to_string(),
+                is_directory,
                 is_recent: false,
             });
         }
-        
-        // Read current directory
-        if let Ok(entries) = std::fs::read_dir(&self.current_directory) {
-            let mut dirs = Vec::new();
-            let mut files = Vec::new();
-            
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                
-                // Skip hidden files
-                if name.starts_with('.') {
-                    continue;
-                }
-                
-                if path.is_dir() {
-                    dirs.push(FileEntry {
-                        name: format!("📁 {}", name),
-                        path: path.to_string_lossy().to_string(),
-                        is_directory: true,
-                        is_recent: false,
-                    });
-                } else if name.ends_with(".nail") || name.ends_with(".rs") || name.ends_with(".txt") {
-                    files.push(FileEntry {
-                        name: format!("📄 {}", name),
-                        path: path.to_string_lossy().to_string(),
-                        is_directory: false,
-                        is_recent: false,
-                    });
-                }
-            }
-            
-            // Sort directories and files separately
-            dirs.sort_by(|a, b| a.name.cmp(&b.name));
-            files.sort_by(|a, b| a.name.cmp(&b.name));
-            
-            // Add directories first, then files
-            self.file_entries.extend(dirs);
-            self.file_entries.extend(files);
-        }
+        found.sort_by(|left, right| right.is_directory.cmp(&left.is_directory).then(left.name.cmp(&right.name)));
+        found.truncate(Self::FILE_MATCH_LIMIT);
+        return found;
     }
-    
+
     fn handle_file_dialog_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Esc => {
@@ -768,17 +840,7 @@ impl Editor {
                 return true;
             }
             KeyCode::Enter => {
-                if !self.file_entries.is_empty() && self.file_dialog_index < self.file_entries.len() {
-                    let entry = &self.file_entries[self.file_dialog_index].clone();
-                    if entry.is_directory {
-                        self.current_directory = entry.path.clone();
-                        self.refresh_file_entries();
-                        self.file_dialog_index = 0;
-                    } else {
-                        let _ = self.open_file_in_tab(entry.path.clone());
-                        self.dialog_mode = DialogMode::None;
-                    }
-                }
+                self.handle_file_dialog_enter();
                 return true;
             }
             KeyCode::Up => {
@@ -794,31 +856,15 @@ impl Editor {
                 return true;
             }
             KeyCode::Char(c) => {
-                self.file_dialog_input.push(c);
-                // Filter entries based on input
-                self.filter_file_entries();
+                self.handle_file_dialog_input(c);
                 return true;
             }
             KeyCode::Backspace => {
-                self.file_dialog_input.pop();
-                self.filter_file_entries();
+                self.handle_file_dialog_backspace();
                 return true;
             }
             _ => return false,
         }
-    }
-    
-    fn filter_file_entries(&mut self) {
-        if self.file_dialog_input.is_empty() {
-            self.refresh_file_entries();
-        } else {
-            let input_lower = self.file_dialog_input.to_lowercase();
-            self.file_entries.retain(|entry| {
-                entry.name.to_lowercase().contains(&input_lower) ||
-                entry.path.to_lowercase().contains(&input_lower)
-            });
-        }
-        self.file_dialog_index = 0;
     }
 
     // Standard library browser methods
@@ -944,18 +990,22 @@ impl Editor {
         self.filter_file_entries();
     }
     
+    /// A directory is not something to open, so choosing one spells it into
+    /// the query and lists what is inside. The typed text stays the one place
+    /// the finder keeps where it is, which is why backspace walks back out
+    /// again without needing to know it is doing so.
     fn handle_file_dialog_enter(&mut self) {
-        if !self.file_entries.is_empty() && self.file_dialog_index < self.file_entries.len() {
-            let entry = &self.file_entries[self.file_dialog_index].clone();
-            if entry.is_directory {
-                self.current_directory = entry.path.clone();
-                self.refresh_file_entries();
-                self.file_dialog_index = 0;
-            } else {
-                let _ = self.open_file_in_tab(entry.path.clone());
-                self.dialog_mode = DialogMode::None;
-            }
+        let entry = match self.file_entries.get(self.file_dialog_index) {
+            Some(entry) => entry.clone(),
+            None => return,
+        };
+        if entry.is_directory {
+            self.file_dialog_input = format!("{}/", entry.path);
+            self.filter_file_entries();
+            return;
         }
+        let _ = self.open_file_in_tab(entry.path);
+        self.dialog_mode = DialogMode::None;
     }
     
     fn insert_stdlib_function(&mut self, func_name: &str) {
@@ -1425,7 +1475,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1453,7 +1505,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1482,7 +1536,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1509,7 +1565,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1537,7 +1595,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1557,7 +1617,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1579,7 +1641,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1601,7 +1665,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1712,7 +1778,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -1734,7 +1802,9 @@ impl Editor {
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
-        if !extend_selection {
+        if extend_selection {
+            self.anchor_selection();
+        } else {
             self.clear_selection();
         }
         
@@ -3095,6 +3165,18 @@ impl Editor {
         return stored_keymap().is_none();
     }
 
+    /// Escape is one key away from every cancel a user makes all day, so it
+    /// asks before it throws the session away.
+    pub fn ask_before_quitting(&mut self) {
+        self.dialog_mode = DialogMode::ConfirmQuit;
+    }
+
+    /// True when at least one tab has edits nobody has written to disk, which
+    /// is what the confirmation is really warning about.
+    pub fn has_unsaved_work(&self) -> bool {
+        return self.tabs.iter().any(|tab| tab.modified);
+    }
+
     pub fn open_settings(&mut self) {
         self.dialog_mode = DialogMode::Settings;
         self.settings_row = 0;
@@ -3992,6 +4074,20 @@ impl Editor {
         current_tab.selection_mode = true;
     }
     
+    /// Drops the anchor where the cursor is now, if a selection is not already
+    /// under way. Every shift+motion calls this before it moves, because the
+    /// anchor belongs where the selection started rather than where the first
+    /// press of the key landed: setting it afterwards is what used to make
+    /// shift+down select one line short.
+    fn anchor_selection(&mut self) {
+        let current_tab = self.get_current_tab_mut();
+        if current_tab.selection_start.is_none() {
+            current_tab.selection_start = Some((current_tab.cursor_x, current_tab.cursor_y));
+            current_tab.selection_end = Some((current_tab.cursor_x, current_tab.cursor_y));
+            current_tab.selection_mode = true;
+        }
+    }
+
     fn extend_selection(&mut self) {
         let current_tab = self.get_current_tab_mut();
         if current_tab.selection_start.is_none() {
@@ -4004,6 +4100,10 @@ impl Editor {
     }
     
     fn clear_selection(&mut self) {
+        // Losing the selection loses the trail of expansions that built it,
+        // because shrinking back to a selection the user has since moved away
+        // from would be a jump to somewhere they have not been.
+        self.expand_stack.clear();
         let current_tab = self.get_current_tab_mut();
         current_tab.selection_start = None;
         current_tab.selection_end = None;
@@ -4416,7 +4516,7 @@ impl Editor {
         return (tab.cursor_x, tab.cursor_y);
     }
 
-    fn delete_word_left(&mut self) {
+    pub fn delete_word_left(&mut self) {
         if self.has_selection() {
             self.delete_selected_text();
             return;
@@ -4426,7 +4526,7 @@ impl Editor {
         self.delete_span(target, cursor);
     }
 
-    fn delete_word_right(&mut self) {
+    pub fn delete_word_right(&mut self) {
         if self.has_selection() {
             self.delete_selected_text();
             return;
@@ -4436,33 +4536,18 @@ impl Editor {
         self.delete_span(cursor, target);
     }
 
-    /// Emacs' kill line: what is left of the line, or the line break itself
-    /// when there is nothing left of the line to take.
-    fn kill_to_line_end(&mut self) {
-        let (cursor_x, cursor_y) = self.cursor_position();
-        let width = {
-            let tab = self.get_current_tab();
-            tab.content.get(cursor_y).map_or(0, |line| line.chars().count())
-        };
-        if cursor_x < width {
-            self.delete_span((cursor_x, cursor_y), (width, cursor_y));
-        } else {
-            let has_next_line = cursor_y + 1 < self.get_current_tab().content.len();
-            if has_next_line {
-                self.delete_span((cursor_x, cursor_y), (0, cursor_y + 1));
-            }
-        }
-    }
-
     /// Joins the line below into this one, or every line of a selection into
     /// one, the way a paragraph gets un-wrapped.
-    fn join_lines(&mut self) {
+    pub fn join_lines(&mut self) {
         let (first, last) = self.selected_line_range();
         let last = if last > first { last } else { first + 1 };
         let line_count = self.get_current_tab().content.len();
         if last >= line_count {
             return;
         }
+        // Where the seam ends up, measured before the edit: the cursor belongs
+        // at the join rather than at the far end of whatever was dragged up.
+        let join_column = self.get_current_tab().content[first].trim_end().chars().count();
         let joined = {
             let tab = self.get_current_tab();
             let mut joined = tab.content[first].trim_end().to_string();
@@ -4481,6 +4566,9 @@ impl Editor {
         let end_column = self.get_current_tab().content[last].chars().count();
         self.replace_span((0, first), (end_column, last), &joined);
         self.clear_selection();
+        let tab = self.get_current_tab_mut();
+        tab.cursor_y = first;
+        tab.cursor_x = join_column;
     }
 
     /// Sorts the selected lines. Without a selection there is no obvious
@@ -4629,6 +4717,14 @@ impl Editor {
         self.go_to_line(target);
     }
 
+    pub fn go_to_next_error(&mut self) {
+        self.go_to_error(true);
+    }
+
+    pub fn go_to_previous_error(&mut self) {
+        self.go_to_error(false);
+    }
+
     /// Puts the cursor on a line counted from one. The view catches up on the
     /// next frame, which is the only place that knows how tall it is.
     fn go_to_line(&mut self, line_number: usize) {
@@ -4645,12 +4741,88 @@ impl Editor {
         tab.scroll_position = if delta < 0 { tab.scroll_position.saturating_sub(delta.unsigned_abs() as u16) } else { (tab.scroll_position + delta as u16).min(furthest) };
     }
 
+    /// Slides the view without taking the cursor along, which is the point of
+    /// scrolling by key: the cursor is allowed to go off screen and stay where
+    /// it was. The drawing code only chases the cursor when it has moved.
+    pub fn scroll_line_up(&mut self) {
+        self.scroll_by(-1);
+    }
+
+    pub fn scroll_line_down(&mut self) {
+        self.scroll_by(1);
+    }
+
     /// Letters in order, not letters in a row: typing "dupl" or "dl" both
     /// reach "Duplicate line", which is the whole point of typing a command's
     /// name instead of hunting for its key.
+    /// Whether the letters typed appear in order, which is all the command
+    /// palette needs: its list is short and already in the order a person
+    /// would want to read it, so there is nothing to rank. The answer comes
+    /// from the scorer the other pickers rank with, so that one query never
+    /// matches in one list and not in another.
     fn fuzzy_matches(haystack: &str, needle: &str) -> bool {
-        let mut remaining = haystack.chars();
-        return needle.chars().all(|wanted| remaining.any(|candidate| candidate == wanted));
+        return crate::utils::fuzzy_score(haystack, needle).is_some();
+    }
+
+    /// What a key press did to whichever picker is open. `Run` is the command
+    /// a user picked by name, handed back rather than carried out here: some
+    /// commands need the key loop's channels, and being chosen from a list
+    /// does not make a command a different command.
+    fn handle_picker_key(&mut self, key: KeyEvent) -> PickerKey {
+        let is_palette = self.dialog_mode == DialogMode::CommandPalette;
+        match key.code {
+            KeyCode::Esc => {
+                self.dialog_mode = DialogMode::None;
+                return PickerKey::Handled;
+            }
+            KeyCode::Up => {
+                if is_palette {
+                    self.palette_move(false);
+                } else {
+                    self.symbol_move(false);
+                }
+                return PickerKey::Handled;
+            }
+            KeyCode::Down => {
+                if is_palette {
+                    self.palette_move(true);
+                } else {
+                    self.symbol_move(true);
+                }
+                return PickerKey::Handled;
+            }
+            KeyCode::Enter => {
+                if !is_palette {
+                    self.symbol_choose();
+                    return PickerKey::Handled;
+                }
+                let chosen = self.palette_choice();
+                self.dialog_mode = DialogMode::None;
+                return match chosen {
+                    Some(action) => PickerKey::Run(action),
+                    None => PickerKey::Handled,
+                };
+            }
+            KeyCode::Backspace => {
+                if is_palette {
+                    self.palette_backspace();
+                } else {
+                    self.symbol_backspace();
+                }
+                return PickerKey::Handled;
+            }
+            // Modified letters are still commands, so they go back to the key
+            // tables rather than being typed into the filter.
+            KeyCode::Char(c) if !key.modifiers.intersects(ratatui::crossterm::event::KeyModifiers::CONTROL | ratatui::crossterm::event::KeyModifiers::ALT) => {
+                if is_palette {
+                    self.palette_input(c);
+                } else {
+                    self.symbol_input(c);
+                }
+                return PickerKey::Handled;
+            }
+            _ => return PickerKey::Ignored,
+        }
     }
 
     fn open_command_palette(&mut self) {
@@ -4705,39 +4877,186 @@ impl Editor {
         for (index, line) in self.get_current_tab().content.iter().enumerate() {
             let label = declaration_label(line);
             if let Some(label) = label {
-                symbols.push(FileSymbol { label, line: index + 1 });
+                symbols.push(FileSymbol { label, line: index + 1, file: None });
             }
         }
         return symbols;
     }
 
+    /// Every declaration in every Nail file in the project, from the files on
+    /// disk. A file open and edited is read from the buffer instead, so what
+    /// the picker offers is what the user has in front of them rather than
+    /// what was last saved.
+    ///
+    /// Reading the whole project is worth doing on the spot rather than
+    /// keeping an index in step with an editor: declarations are one line
+    /// each and finding them is a string comparison, so a project of a few
+    /// hundred files costs a few milliseconds and is never out of date.
+    fn collect_project_symbols(&self) -> Vec<FileSymbol> {
+        let mut symbols = Vec::new();
+        for relative in crate::utils::scan_project_files(std::path::Path::new(&self.project_root)) {
+            if !relative.ends_with(".nail") {
+                continue;
+            }
+            let lines = match self.project_lines(&relative) {
+                Some(lines) => lines,
+                None => continue,
+            };
+            for (index, line) in lines.iter().enumerate() {
+                if let Some(label) = declaration_label(line) {
+                    symbols.push(FileSymbol { label, line: index + 1, file: Some(relative.clone()) });
+                }
+            }
+        }
+        return symbols;
+    }
+
+    /// One project file's text, taken from the tab holding it when there is
+    /// one. A file being edited is answered for by what is on screen, so that
+    /// a symbol added a moment ago can be jumped to before it is saved.
+    fn project_lines(&self, relative: &str) -> Option<Vec<String>> {
+        let full = std::path::Path::new(&self.project_root).join(relative).to_string_lossy().to_string();
+        if let Some(tab) = self.tabs.iter().find(|tab| tab.filename.as_deref() == Some(full.as_str())) {
+            return Some(tab.content.clone());
+        }
+        return std::fs::read_to_string(&full).ok().map(|text| text.lines().map(|line| line.to_string()).collect());
+    }
+
+    /// Every line in the project that contains what was typed. Reading the
+    /// whole project takes a few milliseconds, which is less than the time
+    /// between two keystrokes, so there is no index to keep and nothing that
+    /// can be out of date.
+    ///
+    /// Nothing is searched for until two letters are in, because one letter
+    /// matches most lines of most files and a list of everything is not an
+    /// answer. Matching ignores case, which is what a search box is assumed
+    /// to do when nobody has said otherwise.
+    fn search_project(&mut self) {
+        self.symbol_entries.clear();
+        self.symbol_matches.clear();
+        self.symbol_index = 0;
+        let needle = self.symbol_filter.to_lowercase();
+        if needle.chars().count() < 2 {
+            return;
+        }
+        for relative in crate::utils::scan_project_files(std::path::Path::new(&self.project_root)) {
+            let lines = match self.project_lines(&relative) {
+                Some(lines) => lines,
+                None => continue,
+            };
+            for (index, line) in lines.iter().enumerate() {
+                if !line.to_lowercase().contains(&needle) {
+                    continue;
+                }
+                // Long lines are cut rather than wrapped, because a result
+                // list is for choosing between places and not for reading the
+                // code that is about to be opened anyway.
+                let text: String = line.trim().chars().take(160).collect();
+                self.symbol_entries.push(FileSymbol { label: text, line: index + 1, file: Some(relative.clone()) });
+                if self.symbol_entries.len() >= Self::PROJECT_SEARCH_LIMIT {
+                    self.symbol_matches = (0..self.symbol_entries.len()).collect();
+                    return;
+                }
+            }
+        }
+        self.symbol_matches = (0..self.symbol_entries.len()).collect();
+    }
+
+    /// How many hits the search will collect before it stops looking. The
+    /// title says when this is what happened, because a list that stops at a
+    /// round number and does not say so reads as a complete answer.
+    const PROJECT_SEARCH_LIMIT: usize = 200;
+
     fn open_symbol_picker(&mut self) {
         self.dialog_mode = DialogMode::SymbolPicker;
+        self.symbol_source = SymbolSource::OpenFile;
         self.symbol_entries = self.collect_file_symbols();
         self.symbol_filter.clear();
         self.filter_symbols();
     }
 
+    fn open_project_symbol_picker(&mut self) {
+        self.dialog_mode = DialogMode::SymbolPicker;
+        self.symbol_source = SymbolSource::Project;
+        self.symbol_entries = self.collect_project_symbols();
+        self.symbol_filter.clear();
+        self.filter_symbols();
+    }
+
+    /// Opens the file the cursor's line imports. Paths in an import are
+    /// written relative to the file doing the importing, which is how the
+    /// compiler reads them, so they are resolved the same way here.
+    ///
+    /// A line that imports nothing does nothing, and a path that names no
+    /// file does nothing either: the compiler already marks that line with an
+    /// import error, and a second complaint about it would only be in the way.
+    fn open_imported_file(&mut self) {
+        let tab = self.get_current_tab();
+        let line = match tab.content.get(tab.cursor_y) {
+            Some(line) => line.clone(),
+            None => return,
+        };
+        let path = match imported_path(&line) {
+            Some(path) => path,
+            None => return,
+        };
+        let beside = tab.filename.as_ref().and_then(|filename| std::path::Path::new(filename).parent().map(|parent| parent.to_path_buf()));
+        let base = beside.unwrap_or_else(|| std::path::PathBuf::from(&self.project_root));
+        let _ = self.open_file_in_tab(base.join(path).to_string_lossy().to_string());
+    }
+
+    /// The same picker again, over every line rather than every declaration.
+    /// It opens empty because there is nothing to show until there is
+    /// something to look for.
+    fn open_project_search(&mut self) {
+        self.dialog_mode = DialogMode::SymbolPicker;
+        self.symbol_source = SymbolSource::ProjectText;
+        self.symbol_filter.clear();
+        self.search_project();
+    }
+
+    /// A query is matched against the file's name as well as the symbol's, so
+    /// that `website new_post` narrows to one file's declarations without
+    /// anybody having to invent a syntax for saying so.
     fn filter_symbols(&mut self) {
         let needle = self.symbol_filter.to_lowercase();
-        self.symbol_matches = self
-            .symbol_entries
-            .iter()
-            .enumerate()
-            .filter(|(_, symbol)| Self::fuzzy_matches(&symbol.label.to_lowercase(), &needle))
-            .map(|(index, _)| index)
-            .collect();
+        let mut scored: Vec<(i32, usize)> = Vec::new();
+        for (index, symbol) in self.symbol_entries.iter().enumerate() {
+            // The name is what was asked for, so a match in it counts for
+            // more than the same letters found in the path. A match in the
+            // path still counts, because that is how one file's declarations
+            // are picked out of the whole project's.
+            let by_name = crate::utils::fuzzy_score(&symbol.label.to_lowercase(), &needle).map(|score| score + 40);
+            let by_file = match &symbol.file {
+                Some(file) => crate::utils::fuzzy_score(&format!("{} {}", symbol.label, file).to_lowercase(), &needle),
+                None => None,
+            };
+            if let Some(score) = by_name.into_iter().chain(by_file).max() {
+                scored.push((score, index));
+            }
+        }
+        // Stable, so equal scores keep the order they were collected in,
+        // which is file by file and top to bottom within each.
+        scored.sort_by(|left, right| right.0.cmp(&left.0));
+        self.symbol_matches = scored.into_iter().map(|(_, index)| index).collect();
         self.symbol_index = 0;
     }
 
     fn symbol_input(&mut self, c: char) {
         self.symbol_filter.push(c);
-        self.filter_symbols();
+        self.symbol_query_changed();
     }
 
     fn symbol_backspace(&mut self) {
         self.symbol_filter.pop();
-        self.filter_symbols();
+        self.symbol_query_changed();
+    }
+
+    fn symbol_query_changed(&mut self) {
+        match self.symbol_source {
+            SymbolSource::ProjectText => self.search_project(),
+            SymbolSource::OpenFile | SymbolSource::Project => self.filter_symbols(),
+        }
     }
 
     fn symbol_move(&mut self, forward: bool) {
@@ -4748,12 +5067,21 @@ impl Editor {
         self.symbol_index = if forward { (self.symbol_index + 1) % count } else { (self.symbol_index + count - 1) % count };
     }
 
+    /// A symbol from another file is opened before it is jumped to. A symbol
+    /// from this one is only jumped to, which is what keeps the picker usable
+    /// on a file that has never been saved and has no path to open.
     fn symbol_choose(&mut self) {
-        let line = match self.symbol_matches.get(self.symbol_index).and_then(|index| self.symbol_entries.get(*index)) {
-            Some(symbol) => symbol.line,
+        let chosen = match self.symbol_matches.get(self.symbol_index).and_then(|index| self.symbol_entries.get(*index)) {
+            Some(symbol) => symbol.clone(),
             None => return,
         };
-        self.go_to_line(line);
+        if let Some(file) = chosen.file {
+            let full = std::path::Path::new(&self.project_root).join(file).to_string_lossy().to_string();
+            if self.open_file_in_tab(full).is_err() {
+                return;
+            }
+        }
+        self.go_to_line(chosen.line);
         self.dialog_mode = DialogMode::None;
     }
 
@@ -4982,6 +5310,28 @@ fn name_until<'a>(text: &'a str, stops: &[char]) -> &'a str {
     return text[..end].trim();
 }
 
+/// The file an import line brings in, as it is written on the line. Only
+/// import lines answer, because a path is the one thing in a Nail file that
+/// names another file, and reading any old string literal as one would send
+/// people to files that do not exist.
+///
+/// The dangerous form is tried first: `import` is a prefix of
+/// `import_dangerous`, so testing the shorter one first would match both and
+/// then fail to find the bracket.
+fn imported_path(line: &str) -> Option<String> {
+    let text = line.trim_start();
+    let rest = match text.strip_prefix("import_dangerous") {
+        Some(rest) => rest,
+        None => text.strip_prefix("import")?,
+    };
+    let rest = rest.trim_start().strip_prefix('(')?.trim_start().strip_prefix('`')?;
+    let (path, _) = rest.split_once('`')?;
+    if path.is_empty() {
+        return None;
+    }
+    return Some(path.to_string());
+}
+
 /// The next selection outward from the one given: the word under a bare
 /// cursor, then whatever brackets enclose it, then the whole line, then the
 /// whole file. Returns nothing once the selection is the file, which is where
@@ -5099,3 +5449,308 @@ fn format_type(data_type: &lexer::NailDataTypeDescriptor) -> String {
     }
 }
 
+
+/// The pieces of the editor that are plain functions over text, which is the
+/// half of it that can be checked without a terminal in front of it.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chars(text: &str) -> Vec<char> {
+        return text.chars().collect();
+    }
+
+    /// An editor holding one unsaved buffer of the given lines. Nothing here
+    /// touches the disk, so these never write a session file.
+    fn editor_with(lines: &[&str]) -> Editor {
+        let mut editor = Editor::new_with_debug(false);
+        editor.tabs = vec![Tab::new_with_file("test.nail".to_string(), lines.iter().map(|line| line.to_string()).collect())];
+        editor.tab_index = 0;
+        return editor;
+    }
+
+    fn select(editor: &mut Editor, start: (usize, usize), end: (usize, usize)) {
+        let tab = editor.get_current_tab_mut();
+        tab.selection_start = Some(start);
+        tab.selection_end = Some(end);
+        tab.selection_mode = true;
+    }
+
+    #[test]
+    fn sorting_reorders_the_selected_lines_and_leaves_the_rest() {
+        let mut editor = editor_with(&["header", "zebra", "alpha", "middle"]);
+        // Dragged from the start of "zebra" to the start of "middle", which
+        // reaches two lines rather than three
+        select(&mut editor, (0, 1), (0, 3));
+        editor.sort_lines();
+        assert_eq!(editor.get_current_tab().content, vec!["header", "alpha", "zebra", "middle"]);
+    }
+
+    /// Shift with a motion has to keep the place it started from. It used to
+    /// drop its anchor after moving, which lost the first line of every
+    /// selection made this way and left sorting and joining working on one
+    /// line less than was highlighted.
+    #[test]
+    fn shift_with_a_motion_selects_from_where_it_started() {
+        let mut editor = editor_with(&["first", "second", "third"]);
+        editor.move_cursor_down_with_selection(true);
+        assert_eq!(editor.get_current_tab().selection_start, Some((0, 0)));
+        assert_eq!(editor.get_current_tab().selection_end, Some((0, 1)));
+        assert_eq!(editor.get_selected_text(), "first\n");
+
+        let mut editor = editor_with(&["alpha"]);
+        editor.move_cursor_right_with_selection(true);
+        assert_eq!(editor.get_selected_text(), "a");
+    }
+
+    #[test]
+    fn sorting_without_a_selection_leaves_the_file_alone() {
+        let mut editor = editor_with(&["zebra", "alpha"]);
+        editor.sort_lines();
+        assert_eq!(editor.get_current_tab().content, vec!["zebra", "alpha"]);
+    }
+
+    #[test]
+    fn joining_pulls_the_next_line_up_and_undo_puts_it_back() {
+        let mut editor = editor_with(&["first line", "    second line", "third"]);
+        editor.join_lines();
+        assert_eq!(editor.get_current_tab().content, vec!["first line second line", "third"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["first line", "    second line", "third"]);
+        assert!(editor.redo());
+        assert_eq!(editor.get_current_tab().content, vec!["first line second line", "third"]);
+    }
+
+    #[test]
+    fn a_bracket_typed_over_a_selection_wraps_it() {
+        let mut editor = editor_with(&["print(greeting);"]);
+        select(&mut editor, (6, 0), (14, 0));
+        editor.insert_char('`');
+        assert_eq!(editor.get_current_tab().content, vec!["print(`greeting`);"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["print(greeting);"]);
+    }
+
+    #[test]
+    fn deleting_a_word_takes_the_word_and_not_the_line() {
+        let mut editor = editor_with(&["alpha beta gamma"]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_x = 10;
+        }
+        editor.delete_word_left();
+        assert_eq!(editor.get_current_tab().content, vec!["alpha  gamma"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["alpha beta gamma"]);
+    }
+
+    /// The list of errors is walked in file order and wraps at the end, and a
+    /// message with no line in the file is not somewhere to jump to.
+    #[test]
+    fn the_error_keys_walk_the_errors_in_order() {
+        let mut editor = editor_with(&["one", "two", "three", "four", "five"]);
+        editor.code_errors = vec![
+            CodeError { message: "later".to_string(), code_span: CodeSpan { start_line: 4, start_column: 1, end_line: 4, end_column: 2 } },
+            CodeError { message: "earlier".to_string(), code_span: CodeSpan { start_line: 2, start_column: 1, end_line: 2, end_column: 2 } },
+            CodeError::from("a notice with no line".to_string()),
+        ];
+        editor.go_to_error(true);
+        assert_eq!(editor.get_current_tab().cursor_y, 1);
+        editor.go_to_error(true);
+        assert_eq!(editor.get_current_tab().cursor_y, 3);
+        // Past the last one, so back round to the first
+        editor.go_to_error(true);
+        assert_eq!(editor.get_current_tab().cursor_y, 1);
+        editor.go_to_error(false);
+        assert_eq!(editor.get_current_tab().cursor_y, 3);
+    }
+
+    /// The three switches on the find box, each of which changes what counts
+    /// as a match rather than how the matches are shown.
+    #[test]
+    fn the_search_switches_change_what_matches() {
+        let mut editor = editor_with(&["cat", "concat", "CAT", "c.t"]);
+        editor.search_query = "cat".to_string();
+        editor.find_all_matches();
+        assert_eq!(editor.search_results.len(), 3, "case insensitive plain text finds every cat");
+
+        editor.case_sensitive = true;
+        editor.find_all_matches();
+        assert_eq!(editor.search_results.len(), 2);
+
+        editor.whole_word = true;
+        editor.find_all_matches();
+        assert_eq!(editor.search_results.len(), 1, "concat contains cat but is not the word");
+
+        // Punctuation in a plain search means itself, so this finds the
+        // literal line and not the three letter words
+        editor.whole_word = false;
+        editor.search_query = "c.t".to_string();
+        editor.find_all_matches();
+        assert_eq!(editor.search_results.len(), 1);
+
+        editor.use_regex = true;
+        editor.find_all_matches();
+        assert_eq!(editor.search_results.len(), 3, "as a pattern the dot matches any letter");
+
+        // A pattern that cannot compile is a message under the box, not an
+        // error to dismiss, and finds nothing until it is finished
+        editor.search_query = "c(t".to_string();
+        editor.find_all_matches();
+        assert!(editor.search_results.is_empty());
+        assert!(editor.search_error.is_some());
+        assert!(editor.search_status_line().starts_with("Not a pattern yet"));
+    }
+
+    #[test]
+    fn the_palette_narrows_to_the_command_that_was_typed() {
+        let mut editor = editor_with(&["anything"]);
+        editor.open_command_palette();
+        assert!(editor.palette_matches.len() > 20, "an empty filter offers everything");
+        for letter in "sortl".chars() {
+            editor.palette_input(letter);
+        }
+        assert_eq!(editor.palette_choice(), Some(nail::keymap::Action::SortLines));
+    }
+
+    #[test]
+    fn the_symbol_picker_lists_what_the_file_declares() {
+        let mut editor = editor_with(&["nail latest", "greeting:s = `hi`;", "f shout(word:s):s {", "    y word;", "}"]);
+        editor.open_symbol_picker();
+        let labels: Vec<&str> = editor.symbol_matches.iter().map(|index| editor.symbol_entries[*index].label.as_str()).collect();
+        assert_eq!(labels, vec!["greeting", "f shout"]);
+        editor.symbol_move(true);
+        editor.symbol_choose();
+        assert_eq!(editor.get_current_tab().cursor_y, 2);
+        assert_eq!(editor.dialog_mode, DialogMode::None);
+    }
+
+    /// A click reports a row and a column of the terminal, and only the text
+    /// area's own corner turns that into a place in the file.
+    #[test]
+    fn a_click_lands_on_the_line_it_points_at() {
+        let mut editor = editor_with(&["first line", "second line", "third line"]);
+        editor.view = ViewLayout { tabs: ratatui::layout::Rect::new(0, 0, 80, 3), text: ratatui::layout::Rect::new(5, 4, 40, 10) };
+        editor.get_current_tab_mut().scroll_position = 1;
+
+        assert_eq!(editor.text_position_at(8, 5), Some((3, 2)));
+        // Past the end of a line is the end of that line, not a column that
+        // has no character in it
+        assert_eq!(editor.text_position_at(40, 4), Some((11, 1)));
+        // Outside the text area entirely
+        assert_eq!(editor.text_position_at(2, 1), None);
+    }
+
+    #[test]
+    fn a_declaration_is_recognized_by_its_keyword() {
+        assert_eq!(declaration_label("f handle_request(request:HTTP_Request):s {"), Some("f handle_request".to_string()));
+        assert_eq!(declaration_label("struct Player {"), Some("struct Player".to_string()));
+        assert_eq!(declaration_label("enum Suit {"), Some("enum Suit".to_string()));
+    }
+
+    /// A binding at the left margin is the file's own data. The same line
+    /// indented is a local inside something else, and listing those would bury
+    /// the declarations worth jumping to.
+    #[test]
+    fn only_a_binding_at_the_margin_counts_as_a_symbol() {
+        assert_eq!(declaration_label("greeting:s = `Hello`;"), Some("greeting".to_string()));
+        assert_eq!(declaration_label("    greeting:s = `Hello`;"), None);
+        assert_eq!(declaration_label("print(greeting);"), None);
+        assert_eq!(declaration_label(""), None);
+        assert_eq!(declaration_label("// a comment about f things"), None);
+    }
+
+    #[test]
+    fn an_import_line_says_which_file_it_brings_in() {
+        assert_eq!(imported_path("import(`website/safe/text_helpers.nail`)"), Some("website/safe/text_helpers.nail".to_string()));
+        assert_eq!(imported_path("  import_dangerous(`helper.nail`)"), Some("helper.nail".to_string()));
+        assert_eq!(imported_path("import (  `spaced.nail` )"), Some("spaced.nail".to_string()));
+    }
+
+    /// Anything that is not an import names no file, including a line that
+    /// only mentions one. Following those would land the user in a file the
+    /// program never reads.
+    #[test]
+    fn a_line_that_imports_nothing_names_no_file() {
+        assert_eq!(imported_path("print(`import(`)"), None);
+        assert_eq!(imported_path("// import(`commented_out.nail`)"), None);
+        assert_eq!(imported_path("imported:s = `not_an_import.nail`;"), None);
+        assert_eq!(imported_path("import()"), None);
+        assert_eq!(imported_path("import(``)"), None);
+        assert_eq!(imported_path(""), None);
+    }
+
+    #[test]
+    fn a_word_grows_out_of_a_bare_cursor() {
+        let text = chars("print(greeting);");
+        assert_eq!(word_span(&text, 8), Some((6, 14)));
+        // A cursor just past a word still means that word
+        assert_eq!(word_span(&text, 5), Some((0, 5)));
+        // Nothing but punctuation either side, so there is no word to take
+        assert_eq!(word_span(&chars("a  b"), 2), None);
+    }
+
+    #[test]
+    fn expanding_walks_from_word_to_brackets_to_line_to_file() {
+        let text = chars("print(greeting);\nnext();");
+        let word = wider_span(&text, 8, 8).expect("a cursor in a word has a word to grow into");
+        assert_eq!(word, (6, 14));
+        // The call holds nothing but that word, so the next step out is the
+        // brackets themselves rather than a repeat of what is already selected
+        let call = wider_span(&text, word.0, word.1).expect("the word is inside a call");
+        assert_eq!(call, (5, 15));
+        let line = wider_span(&text, call.0, call.1).expect("then the whole line");
+        assert_eq!(line, (0, 16));
+        let file = wider_span(&text, line.0, line.1).expect("then the whole file");
+        assert_eq!(file, (0, text.len()));
+        assert_eq!(wider_span(&text, 0, text.len()), None);
+    }
+
+    #[test]
+    fn brackets_are_matched_by_depth_rather_than_by_the_nearest_one() {
+        let text = chars("outer(inner(x), y)");
+        assert_eq!(enclosing_bracket_span(&text, 12, 13), Some((11, 13)));
+        // From outside the inner call, the pair found is the outer one
+        assert_eq!(enclosing_bracket_span(&text, 6, 14), Some((5, 17)));
+    }
+
+    #[test]
+    fn a_filter_matches_letters_in_order_not_letters_in_a_row() {
+        assert!(Editor::fuzzy_matches("duplicate line", "dupl"));
+        assert!(Editor::fuzzy_matches("duplicate line", "dl"));
+        assert!(Editor::fuzzy_matches("duplicate line", ""));
+        assert!(!Editor::fuzzy_matches("duplicate line", "ld"));
+        assert!(!Editor::fuzzy_matches("duplicate line", "duplicated"));
+    }
+
+    /// The window chases the cursor in both directions, and leaves it alone
+    /// when it is already on screen.
+    #[test]
+    fn the_view_follows_the_cursor_both_ways() {
+        let mut tab = Tab::new();
+        tab.content = (0..100).map(|index| format!("line {} {}", index, "x".repeat(200))).collect();
+
+        tab.cursor_y = 50;
+        tab.cursor_x = 0;
+        tab.follow_cursor(80, 20);
+        assert_eq!(tab.scroll_position, 31);
+        assert_eq!(tab.h_scroll, 0);
+
+        tab.cursor_x = 150;
+        tab.follow_cursor(80, 20);
+        assert_eq!(tab.h_scroll, 71);
+
+        // Already in view, so nothing moves
+        tab.cursor_y = 40;
+        tab.cursor_x = 100;
+        tab.follow_cursor(80, 20);
+        assert_eq!(tab.scroll_position, 31);
+        assert_eq!(tab.h_scroll, 71);
+
+        tab.cursor_y = 0;
+        tab.cursor_x = 0;
+        tab.follow_cursor(80, 20);
+        assert_eq!(tab.scroll_position, 0);
+        assert_eq!(tab.h_scroll, 0);
+    }
+}

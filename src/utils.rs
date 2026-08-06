@@ -2,6 +2,10 @@ use crate::checker::checker;
 use crate::parser::parse;
 use crate::parser::ASTNode;
 use crate::transpiler::Transpiler;
+// The key tables live in the library half of the crate rather than being
+// declared a second time here, so there is one Action enum and not two that
+// merely look alike.
+use nail::keymap::{Action, Resolution};
 use crate::CodeError;
 use crate::Editor;
 use log::error;
@@ -164,6 +168,11 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
     // changes, so an unedited frame costs one hash comparison.
     let mut profile_line_cache: Option<(u64, String, HashMap<String, usize>)> = None;
 
+    // Which tab the cursor was in and where, as of the last frame. The view
+    // chases the cursor only when this changes, which is what lets the scroll
+    // keys and the wheel move the page without it snapping straight back.
+    let mut last_cursor = (usize::MAX, usize::MAX, usize::MAX);
+
     loop {
         match rx.try_recv() {
             Ok(EditorMessage::Shutdown) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -206,7 +215,9 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
 
         let result_draw = locked_terminal.draw(|f| {
             // Use timeout-based lock to prevent deadlocks during drawing
-            let editor = match try_lock_with_timeout(&editor_arc, 50) {
+            // Held mutably because drawing is also what works out where things
+            // ended up on screen, and a click has to be able to ask later.
+            let mut editor = match try_lock_with_timeout(&editor_arc, 50) {
                 Some(editor) => editor,
                 None => {
                     log::warn!("Draw thread: editor lock timeout, skipping frame");
@@ -236,24 +247,8 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             }
 
             // Render tabs
-            let tab_titles: Vec<String> = editor.tabs.iter().enumerate().map(|(i, tab)| {
-                let mut title = if let Some(filename) = &tab.filename {
-                    std::path::Path::new(filename)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string()
-                } else {
-                    format!("Untitled {}", i + 1)
-                };
-                
-                if tab.modified {
-                    title.push('*');
-                }
-                
-                title
-            }).collect();
-            
+            let tab_titles = editor.tab_titles();
+
             let current_tab = editor.get_current_tab();
             let file_title = if current_tab.modified { 
                 format!("FILES [*] - Press Ctrl+S to save") 
@@ -313,9 +308,40 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 }
             };
 
+            // Where the text itself ends up: the content column minus the
+            // border drawn around it. A mouse click arrives as a row and a
+            // column of the terminal and this is what turns it into a line of
+            // the file, so it is recorded before anything is painted.
+            let content_area = match (editor.show_line_numbers, editor.show_minimap) {
+                (true, _) => content_layout[1],
+                (false, _) => content_layout[0],
+            };
+            let text_area = Rect {
+                x: content_area.x + 1,
+                y: content_area.y + 1,
+                width: content_area.width.saturating_sub(2),
+                height: content_area.height.saturating_sub(2),
+            };
+            editor.view = crate::ViewLayout { tabs: chunks[0], text: text_area };
+
+            // Slide the view to wherever the cursor went, but only when it
+            // went somewhere: the scroll keys and the wheel move the page
+            // without moving the cursor, and pulling the page back every frame
+            // would make them useless.
+            let cursor_now = {
+                let tab = editor.get_current_tab();
+                (editor.tab_index, tab.cursor_x, tab.cursor_y)
+            };
+            if cursor_now != last_cursor {
+                last_cursor = cursor_now;
+                let (width, height) = (text_area.width as usize, text_area.height as usize);
+                editor.get_current_tab_mut().follow_cursor(width, height);
+            }
+
             // Render main content
 
-            let visible_lines = if chunks[1].height > 2 { chunks[1].height as usize - 2 } else { 0 };
+            let visible_lines = text_area.height as usize;
+            let first_column = editor.get_current_tab().h_scroll as usize;
 
             // Colorize the entire content to properly handle multi-line constructs,
             // reusing the cached result when neither content nor theme changed.
@@ -497,14 +523,19 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                             style = style.fg(Color::White);
                         }
                         
-                        new_spans.push(Span::styled(ch.to_string(), style));
+                        // Everything above decides how the character looks at
+                        // its real column in the file. Only the columns the
+                        // view has scrolled to are drawn.
+                        if char_pos >= first_column {
+                            new_spans.push(Span::styled(ch.to_string(), style));
+                        }
                         char_pos += 1;
                     }
                 }
-                
+
                 // Handle case where cursor is at the end of the line
                 let cursor_y_visible = current_tab.cursor_y.saturating_sub(current_tab.scroll_position as usize);
-                if visible_line_idx == cursor_y_visible && char_pos == current_tab.cursor_x {
+                if visible_line_idx == cursor_y_visible && char_pos == current_tab.cursor_x && current_tab.cursor_x >= first_column {
                     new_spans.push(Span::styled(" ", Style::default().fg(Color::White)));
                 }
                 
@@ -521,13 +552,6 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 format!("NAIL - {}", filename) 
             } else { 
                 "NAIL".to_string() 
-            };
-            
-            let content_area = match (editor.show_line_numbers, editor.show_minimap) {
-                (true, true) => content_layout[1],  // Line numbers + content + minimap + scrollbar
-                (true, false) => content_layout[1], // Line numbers + content + scrollbar
-                (false, true) => content_layout[0], // Content + minimap + scrollbar
-                (false, false) => content_layout[0], // Content + scrollbar
             };
             
             if editor.debug_mode {
@@ -586,17 +610,11 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                     current_tab.cursor_y, current_tab.cursor_x, current_tab.scroll_position, cursor_y);
             }
 
-            if cursor_y < content_area.height.saturating_sub(2) as usize {
-                // Account for line numbers gutter when positioning cursor
-                let gutter_offset = if editor.show_line_numbers {
-                    calculate_line_number_width(current_tab.content.len())
-                } else {
-                    0
-                };
-                
-                let cursor_pos = Position { 
-                    x: content_area.x + current_tab.cursor_x as u16 + 1, 
-                    y: content_area.y + cursor_y as u16 + 1 
+            let cursor_column = current_tab.cursor_x.saturating_sub(first_column);
+            if cursor_y < text_area.height as usize && current_tab.cursor_x >= first_column && cursor_column < text_area.width as usize {
+                let cursor_pos = Position {
+                    x: text_area.x + cursor_column as u16,
+                    y: text_area.y + cursor_y as u16,
                 };
                 if editor.debug_mode {
                     log::info!("Setting cursor at: {:?}, content_area: {:?}", cursor_pos, content_area);
@@ -702,6 +720,10 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
     if editor.highlight_matching_brackets { visual_features.push("BR"); }
     if editor.show_whitespace { visual_features.push("WS"); }
     if editor.show_indentation_guides { visual_features.push("IG"); }
+    // Only shown when off, because a mouse that works is what everyone
+    // assumes, and a mouse that has been handed back to the terminal is the
+    // thing worth saying out loud.
+    if !editor.mouse_enabled { visual_features.push("no mouse"); }
     let features_info = if visual_features.is_empty() {
         String::new()
     } else {
@@ -711,8 +733,8 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
     // Tab info
     let tab_info = format!(" Tab {}/{} ", editor.tab_index + 1, editor.tabs.len());
     
-    // Keyboard shortcuts hint
-    let shortcuts = " Ctrl+L: Line# | Ctrl+Shift+H: Highlight | Ctrl+Shift+B: Brackets | Ctrl+Shift+W: Whitespace ";
+    // One hint, for the key that lists every other key by name
+    let shortcuts = " Ctrl+P: commands | Ctrl+R: symbols | F8: next error | F4: mouse ";
     
     // Create spans for different parts
     let mut spans = vec![
@@ -734,6 +756,13 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
         spans.push(Span::styled(features_info, Style::default().fg(Color::LightGreen).bg(Color::Black)));
     }
     
+    // Which bindings are in force, when they are not the ones a user would
+    // assume. Pushed before the width is measured, so the right flush below
+    // still counts it.
+    if let Some(label) = editor.keymap.label() {
+        spans.push(Span::styled(label, Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)));
+    }
+
     // Add padding to push shortcuts to the right
     let current_width: usize = spans.iter().map(|s| s.content.len()).sum();
     let shortcuts_width = shortcuts.len();
@@ -878,9 +907,11 @@ fn display_line_annotations(f: &mut Frame, editor: &Editor, content_area: Rect, 
             if line_0based < scroll || line_0based >= scroll + visible_rows {
                 continue; // Annotated line is scrolled out of view
             }
-            // Place the message after the end of the line's code so it never covers it
+            // Place the message after the end of the line's code so it never
+            // covers it, counting from wherever the view has scrolled across to
             let line_len = current_tab.content.get(line_0based).map(|l| l.chars().count()).unwrap_or(0) as u16;
-            (content_area.y + 1 + (line_0based - scroll) as u16, content_area.x + 1 + line_len + 2)
+            let line_end = line_len.saturating_sub(current_tab.h_scroll);
+            (content_area.y + 1 + (line_0based - scroll) as u16, content_area.x + 1 + line_end + 2)
         };
 
         if msg_x >= right_edge {
@@ -1075,7 +1106,9 @@ fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
         }
         start
     };
-    let popup_x = content_area.x + word_start as u16 + 1;
+    // Counted from the first column on screen, so the list still points at the
+    // word when the view has scrolled sideways
+    let popup_x = content_area.x + (word_start as u16).saturating_sub(current_tab.h_scroll) + 1;
     
     // Limit completions shown
     let max_items = 10;
@@ -1188,10 +1221,135 @@ fn display_dialog(f: &mut Frame, editor: &Editor) {
         DialogMode::StdLibBrowser => {
             display_stdlib_dialog(f, editor);
         }
+        DialogMode::Settings => {
+            display_settings_dialog(f, editor);
+        }
+        DialogMode::ConfirmQuit => {
+            display_confirm_quit_dialog(f, editor);
+        }
+        DialogMode::CommandPalette => {
+            display_palette_dialog(f, editor);
+        }
+        DialogMode::SymbolPicker => {
+            display_symbol_dialog(f, editor);
+        }
         DialogMode::None => {
             // No dialog to display
         }
     }
+}
+
+/// Asks before Escape throws the session away. It is small and says only the
+/// one thing it needs to, because it appears in front of someone who was in
+/// the middle of pressing Escape for a different reason.
+fn display_confirm_quit_dialog(f: &mut Frame, editor: &Editor) {
+    let unsaved = editor.has_unsaved_work();
+
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Quit?",
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+    if unsaved {
+        lines.push(Line::from(vec![Span::styled(
+            "You have changes that are not saved.",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )]));
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("ESC", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(" again to quit", Style::default().fg(Color::White)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("any other key", Style::default().fg(Color::Green)),
+        Span::styled(" to stay", Style::default().fg(Color::White)),
+    ]));
+
+    let width = 42;
+    let height = lines.len() + 2;
+    let popup_x = (f.area().width.saturating_sub(width)) / 2;
+    let popup_y = (f.area().height.saturating_sub(height as u16)) / 2;
+    let dialog_area = Rect::new(popup_x, popup_y, width, height as u16);
+
+    f.render_widget(Clear, dialog_area);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(if unsaved { Color::Red } else { Color::Yellow }))
+                    .title(" Quit ")
+                    .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            )
+            .style(Style::default().bg(editor.theme.background)),
+        dialog_area,
+    );
+}
+
+/// The settings screen. It is the first thing a new user sees, because the
+/// editor opens it once when nobody has ever chosen a keymap, so it has to
+/// explain itself without anywhere to put a manual.
+fn display_settings_dialog(f: &mut Frame, editor: &Editor) {
+    let rows = editor.settings_rows();
+
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Settings",
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+    )])];
+    lines.push(Line::from(""));
+
+    let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
+    for (index, (label, value)) in rows.iter().enumerate() {
+        let selected = index == editor.settings_row;
+        let marker = if selected { "> " } else { "  " };
+        let value_style = if selected {
+            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(marker, Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{:width$}  ", label, width = label_width), Style::default().fg(Color::Gray)),
+            Span::styled(format!(" {} ", value), value_style),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("UP", Style::default().fg(Color::Green)),
+        Span::styled(" and ", Style::default().fg(Color::DarkGray)),
+        Span::styled("DOWN", Style::default().fg(Color::Green)),
+        Span::styled(" to choose, ", Style::default().fg(Color::DarkGray)),
+        Span::styled("LEFT", Style::default().fg(Color::Green)),
+        Span::styled(" and ", Style::default().fg(Color::DarkGray)),
+        Span::styled("RIGHT", Style::default().fg(Color::Green)),
+        Span::styled(" to change", Style::default().fg(Color::DarkGray)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("ESC", Style::default().fg(Color::Red)),
+        Span::styled(" saves and closes", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    let width = 52;
+    let height = lines.len() + 2;
+    let popup_x = (f.area().width.saturating_sub(width)) / 2;
+    let popup_y = (f.area().height.saturating_sub(height as u16)) / 2;
+    let dialog_area = Rect::new(popup_x, popup_y, width, height as u16);
+
+    f.render_widget(Clear, dialog_area);
+
+    let dialog_paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title(" Settings (F2) ")
+                .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        )
+        .style(Style::default().bg(editor.theme.background));
+
+    f.render_widget(dialog_paragraph, dialog_area);
 }
 
 fn display_goto_line_dialog(f: &mut Frame, editor: &Editor) {
@@ -1262,6 +1420,112 @@ fn display_goto_line_dialog(f: &mut Frame, editor: &Editor) {
     f.render_widget(dialog_paragraph, dialog_area);
 }
 
+/// The three switches both search dialogs carry, drawn so that which ones are
+/// on can be read at a glance rather than worked out from the results.
+fn search_switches(editor: &Editor) -> Vec<Span<'static>> {
+    let switches = [("case", editor.case_sensitive), ("word", editor.whole_word), ("regex", editor.use_regex)];
+    let mut spans = Vec::new();
+    for (label, is_on) in switches {
+        let style = if is_on { Style::default().fg(Color::Black).bg(Color::Green) } else { Style::default().fg(Color::DarkGray) };
+        spans.push(Span::styled(format!(" {} ", label), style));
+        spans.push(Span::raw(" "));
+    }
+    return spans;
+}
+
+/// The fuzzy list behind both the command palette and go to symbol: what has
+/// been typed on top, the matches under it, one of them picked. They share a
+/// drawing because they are the same thing pointed at different contents, and
+/// learning one should be learning both.
+fn display_picker(f: &mut Frame, editor: &Editor, title: &str, filter: &str, rows: &[(String, String)], selected: usize) {
+    use ratatui::widgets::{Clear, List, ListItem, ListState};
+
+    let area = f.area();
+    let width = std::cmp::min(70, area.width.saturating_sub(4));
+    let height = std::cmp::min(18, area.height.saturating_sub(4));
+    let x = (area.width.saturating_sub(width)) / 2;
+    let y = (area.height.saturating_sub(height)) / 2;
+    let dialog_area = Rect::new(x, y, width, height);
+
+    f.render_widget(Clear, dialog_area);
+
+    let chunks = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(1), Constraint::Min(0)]).split(Rect::new(dialog_area.x + 1, dialog_area.y + 1, dialog_area.width.saturating_sub(2), dialog_area.height.saturating_sub(2)));
+
+    let block = Block::default().borders(Borders::ALL).title(title.to_string()).title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)).style(Style::default().bg(editor.theme.background));
+    f.render_widget(block, dialog_area);
+
+    let prompt = Paragraph::new(Line::from(vec![
+        Span::styled("> ", Style::default().fg(Color::Green)),
+        Span::styled(filter.to_string(), Style::default().fg(Color::White)),
+        Span::styled("_", Style::default().fg(Color::White).bg(Color::DarkGray)),
+    ]));
+    f.render_widget(prompt, chunks[0]);
+
+    // Hints sit at the right edge, so the names on the left line up and can
+    // be read as a column. The hint keeps its room and the label is cut to
+    // what is left: a search result whose line of code ran to the edge would
+    // otherwise push out the one thing saying which file it is in.
+    let inner_width = chunks[1].width as usize;
+    let items: Vec<ListItem> = rows
+        .iter()
+        .map(|(label, hint)| {
+            let room = inner_width.saturating_sub(hint.chars().count() + 1);
+            let label = if label.chars().count() > room { format!("{}…", label.chars().take(room.saturating_sub(1)).collect::<String>()) } else { label.clone() };
+            let padding = inner_width.saturating_sub(label.chars().count() + hint.chars().count());
+            ListItem::new(Line::from(vec![
+                Span::styled(label, Style::default().fg(Color::White)),
+                Span::raw(" ".repeat(padding)),
+                Span::styled(hint.clone(), Style::default().fg(Color::DarkGray)),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items).highlight_style(Style::default().fg(Color::Black).bg(Color::White));
+    let mut list_state = ListState::default();
+    if !rows.is_empty() {
+        list_state.select(Some(selected.min(rows.len() - 1)));
+    }
+    f.render_stateful_widget(list, chunks[1], &mut list_state);
+}
+
+fn display_palette_dialog(f: &mut Frame, editor: &Editor) {
+    let rows: Vec<(String, String)> = editor
+        .palette_matches
+        .iter()
+        .filter_map(|index| nail::keymap::COMMANDS.get(*index))
+        .map(|command| (command.name.to_string(), command.keys.to_string()))
+        .collect();
+    display_picker(f, editor, " Commands (Ctrl+P) ", &editor.palette_filter, &rows, editor.palette_index);
+}
+
+fn display_symbol_dialog(f: &mut Frame, editor: &Editor) {
+    let rows: Vec<(String, String)> = editor
+        .symbol_matches
+        .iter()
+        .filter_map(|index| editor.symbol_entries.get(*index))
+        .map(|symbol| {
+            let where_from = match &symbol.file {
+                Some(file) => format!("{}:{}", file, symbol.line),
+                None => format!("line {}", symbol.line),
+            };
+            (symbol.label.clone(), where_from)
+        })
+        .collect();
+    // One picker serves three lists, and the title is what says which, since
+    // their rows look alike. A search that stopped at its limit says so:
+    // a list that ends at a round number and keeps quiet reads as the whole
+    // answer when it is not.
+    let title = match editor.symbol_source {
+        crate::SymbolSource::OpenFile => " Go to symbol (Ctrl+R) ".to_string(),
+        crate::SymbolSource::Project => " Go to symbol in project (Ctrl+T) ".to_string(),
+        crate::SymbolSource::ProjectText if rows.len() >= crate::Editor::PROJECT_SEARCH_LIMIT => {
+            format!(" Search the project (Ctrl+E) - first {} ", rows.len())
+        }
+        crate::SymbolSource::ProjectText => format!(" Search the project (Ctrl+E) - {} ", rows.len()),
+    };
+    display_picker(f, editor, &title, &editor.symbol_filter, &rows, editor.symbol_index);
+}
+
 fn display_find_dialog(f: &mut Frame, editor: &Editor) {
     use ratatui::widgets::{Wrap, Clear};
     use ratatui::text::{Line, Span};
@@ -1269,17 +1533,17 @@ fn display_find_dialog(f: &mut Frame, editor: &Editor) {
     use ratatui::layout::Rect;
     use ratatui::widgets::{Block, Borders, Paragraph};
     
-    let search_status = editor.get_search_status();
-    
+    let search_status = editor.search_status_line();
+
     // Build dialog content
     let mut lines = vec![];
-    
+
     // Title
     lines.push(Line::from(vec![
         Span::styled("Find", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
     ]));
     lines.push(Line::from(""));
-    
+
     // Search input field
     lines.push(Line::from(vec![
         Span::styled("Find: ", Style::default().fg(Color::White)),
@@ -1287,13 +1551,9 @@ fn display_find_dialog(f: &mut Frame, editor: &Editor) {
         Span::styled("_", Style::default().fg(Color::White).bg(Color::DarkGray)), // Cursor
     ]));
     lines.push(Line::from(""));
-    
-    // Case sensitivity status
-    let case_text = if editor.case_sensitive { "Case sensitive" } else { "Case insensitive" };
-    lines.push(Line::from(vec![
-        Span::styled(case_text, Style::default().fg(Color::Gray)),
-    ]));
-    
+
+    lines.push(Line::from(search_switches(editor)));
+
     // Search results
     if !search_status.is_empty() {
         lines.push(Line::from(vec![
@@ -1301,7 +1561,7 @@ fn display_find_dialog(f: &mut Frame, editor: &Editor) {
         ]));
     }
     lines.push(Line::from(""));
-    
+
     // Help text
     lines.push(Line::from(vec![
         Span::styled("ENTER", Style::default().fg(Color::Green)),
@@ -1312,12 +1572,16 @@ fn display_find_dialog(f: &mut Frame, editor: &Editor) {
         Span::styled(": prev", Style::default().fg(Color::DarkGray)),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("Ctrl+I", Style::default().fg(Color::Green)),
-        Span::styled(": toggle case, ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Alt+C", Style::default().fg(Color::Green)),
+        Span::styled(": case, ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Alt+W", Style::default().fg(Color::Green)),
+        Span::styled(": word, ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Alt+R", Style::default().fg(Color::Green)),
+        Span::styled(": regex, ", Style::default().fg(Color::DarkGray)),
         Span::styled("ESC", Style::default().fg(Color::Red)),
         Span::styled(": close", Style::default().fg(Color::DarkGray)),
     ]));
-    
+
     // Calculate dialog size
     let width = 50;
     let height = lines.len() + 2; // +2 for borders
@@ -1355,7 +1619,7 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
     use ratatui::layout::Rect;
     use ratatui::widgets::{Block, Borders, Paragraph};
     
-    let search_status = editor.get_search_status();
+    let search_status = editor.search_status_line();
     
     // Build dialog content
     let mut lines = vec![];
@@ -1398,13 +1662,9 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
         ]));
     }
     lines.push(Line::from(""));
-    
-    // Case sensitivity status
-    let case_text = if editor.case_sensitive { "Case sensitive" } else { "Case insensitive" };
-    lines.push(Line::from(vec![
-        Span::styled(case_text, Style::default().fg(Color::Gray)),
-    ]));
-    
+
+    lines.push(Line::from(search_switches(editor)));
+
     // Search results
     if !search_status.is_empty() {
         lines.push(Line::from(vec![
@@ -1412,7 +1672,7 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
         ]));
     }
     lines.push(Line::from(""));
-    
+
     // Help text
     lines.push(Line::from(vec![
         Span::styled("ENTER", Style::default().fg(Color::Green)),
@@ -1512,490 +1772,232 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     continue;
                                 }
                             },
+                            // The two fuzzy pickers take the keys that mean
+                            // something to a list of choices, and hand back a
+                            // command when one is chosen by name.
+                            crate::DialogMode::CommandPalette | crate::DialogMode::SymbolPicker => {
+                                match editor.handle_picker_key(key) {
+                                    crate::PickerKey::Handled => continue,
+                                    crate::PickerKey::Run(action) => {
+                                        if run_action(&mut editor, action, &tx, &tx_build) {
+                                            break;
+                                        }
+                                        continue;
+                                    }
+                                    crate::PickerKey::Ignored => {}
+                                }
+                            },
+                            crate::DialogMode::ConfirmQuit => {
+                                if key.code == KeyCode::Esc {
+                                    let _ = tx.send(EditorMessage::Shutdown);
+                                    break;
+                                }
+                                // Any other key means the Escape was meant for
+                                // something else, so the editor stays open.
+                                editor.dialog_mode = crate::DialogMode::None;
+                                continue;
+                            },
+                            // The settings screen answers every key itself.
+                            // Nothing typed into it should reach the buffer,
+                            // and no binding should fire behind it.
+                            crate::DialogMode::Settings => {
+                                match key.code {
+                                    KeyCode::Up => editor.settings_previous_row(),
+                                    KeyCode::Down => editor.settings_next_row(),
+                                    KeyCode::Left => editor.settings_cycle_value(false),
+                                    KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ') => editor.settings_cycle_value(true),
+                                    KeyCode::Esc => editor.close_settings(),
+                                    _ => {}
+                                }
+                                continue;
+                            },
                             _ => {}
                         }
                         
-                        match key.code {
-                            KeyCode::Esc | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // SEND SHUTDOWN SIGNAL
-                                let _ = tx.send(EditorMessage::Shutdown);
-                                break;
+                        // Bindings resolve to a named action first, so which
+                        // key does a thing and what that thing is stay
+                        // separable. A key the table declines is text input,
+                        // and falls through to the editor's own routing,
+                        // which is where an open dialog or completion list
+                        // gets to claim it.
+                        // A prefix key is spent by the press after it, so
+                        // the waiting one is taken and cleared before this key
+                        // resolves rather than after.
+                        let pending = editor.pending_prefix.take();
+                        match nail::keymap::resolve(editor.keymap, pending, key) {
+                            Resolution::Pending(prefix) => {
+                                editor.pending_prefix = Some(prefix);
                             }
-                            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Save file with formatting
-                                log::info!("Ctrl+S detected - saving file...");
-                                editor.build_status = BuildStatus::Failed("Saving...".to_string());
-                                drop(editor); // Release lock before save
-
-                                let mut editor = match try_lock_with_timeout(&editor_arc, 1000) {
-                                    Some(editor) => editor,
-                                    None => {
-                                        log::error!("Key thread: editor lock timeout during save operation");
-                                        continue;
-                                    }
-                                };
-                                match editor.save_file() {
-                                    Ok(_) => {
-                                        editor.build_status = BuildStatus::Complete("Saved!".to_string());
-                                        log::info!("File saved successfully");
-                                    }
-                                    Err(e) => {
-                                        editor.build_status = BuildStatus::Failed(format!("Save failed: {}", e));
-                                        log::error!("Failed to save file: {}", e);
-                                    }
+                            Resolution::Run(action) => {
+                                if run_action(&mut editor, action, &tx, &tx_build) {
+                                    break;
                                 }
                             }
-                            KeyCode::F(5) => {
-                                // Load example files
-                                log::info!("F5 pressed - cycling through example files");
-
-                                // List of example files to cycle through
-                                // get all nail files from examples folder
-
-                                let example_files = match fs::read_dir("examples") {
-                                    Ok(dir) => dir
-                                        .filter_map(Result::ok)
-                                        .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "nail"))
-                                        .map(|entry| entry.path().to_string_lossy().to_string())
-                                        .collect::<Vec<String>>(),
-                                    Err(e) => {
-                                        log::warn!("Failed to read examples directory: {}", e);
-                                        editor.build_status = BuildStatus::Failed("Examples directory not found".to_string());
-                                        continue;
-                                    }
-                                };
-
-                                if example_files.is_empty() {
-                                    editor.build_status = BuildStatus::Failed("No example files found".to_string());
-                                    continue;
-                                }
-
-                                // Find current file index
-                                let current_tab = editor.get_current_tab();
-                                let current_index = if let Some(ref current) = current_tab.filename { 
-                                    example_files.iter().position(|f| f == current).unwrap_or(0) 
-                                } else { 
-                                    0 
-                                };
-
-                                // Try to load files until we find one that exists
-                                let mut attempts = 0;
-                                let mut loaded = false;
-                                while attempts < example_files.len() && !loaded {
-                                    let next_index = (current_index + 1 + attempts) % example_files.len();
-                                    let next_file = &example_files[next_index];
-
-                                    match editor.load_file(next_file) {
-                                        Ok(_) => {
-                                            editor.build_status = BuildStatus::Idle;
-                                            editor.code_errors = vec![format!("Loaded: {}", next_file).into()];
-                                            log::info!("Successfully loaded file: {}", next_file);
-                                            loaded = true;
-                                        }
-                                        Err(e) => {
-                                            log::warn!("Failed to load file {}: {}", next_file, e);
-                                            attempts += 1;
+                            // A cancelled chord must not leave its second key
+                            // in the buffer, so an unbound key only counts as
+                            // text when nothing was waiting on it.
+                            Resolution::Unbound if pending.is_some() => {}
+                            Resolution::Unbound => match key.code {
+                                KeyCode::Char(c) => {
+                                    log::warn!("Received KeyCode::Char('{}'), dialog_mode: {:?}", c, editor.dialog_mode);
+                                    // Check if we're in a dialog mode
+                                    match editor.dialog_mode {
+                                        crate::DialogMode::GoToLine => {
+                                            editor.handle_goto_line_input(c);
+                                        },
+                                        crate::DialogMode::Find => {
+                                            editor.handle_find_input(c);
+                                        },
+                                        crate::DialogMode::Replace => {
+                                            editor.handle_replace_dialog_input(c);
+                                        },
+                                        crate::DialogMode::OpenFile => {
+                                            editor.handle_file_dialog_input(c);
+                                        },
+                                        crate::DialogMode::StdLibBrowser => {
+                                            editor.handle_stdlib_dialog_input(c);
+                                        },
+                                        crate::DialogMode::Settings | crate::DialogMode::ConfirmQuit | crate::DialogMode::CommandPalette | crate::DialogMode::SymbolPicker => {},
+                                        crate::DialogMode::None => {
+                                            log::warn!("Calling insert_char('{}') in normal mode", c);
+                                            editor.insert_char(c);
+                                            log::warn!("After insert_char, current line: '{}'", editor.get_current_tab().content[editor.get_current_tab().cursor_y]);
+                                            // Only update completions for single character input
+                                            // to avoid overwhelming the system during paste operations
+                                            if !key.modifiers.contains(KeyModifiers::SHIFT) {
+                                                editor.update_completions();
+                                            }
                                         }
                                     }
-                                }
-
-                                if !loaded {
-                                    editor.build_status = BuildStatus::Failed("No example files found".to_string());
-                                }
-                            }
-                            KeyCode::F(6) => editor.toggle_theme(),
-                            KeyCode::F(7) => {
-                                match editor.build_status {
-                                    BuildStatus::Idle | BuildStatus::Failed(_) | BuildStatus::Complete(_) => {
-                                        let _ = tx_build.send(EditorMessage::BuildStart);
-                                    }
-                                    _ => {
-                                        // Don't allow new builds while one is in progress
-                                    }
-                                }
-                            }
-                            KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+L - Toggle line numbers
-                                editor.show_line_numbers = !editor.show_line_numbers;
-                                log::info!("Line numbers toggled: {}", editor.show_line_numbers);
-                            },
-                            KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Shift+H - Toggle current line highlighting
-                                editor.highlight_current_line = !editor.highlight_current_line;
-                                log::info!("Current line highlighting toggled: {}", editor.highlight_current_line);
-                            },
-                            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Shift+B - Toggle bracket matching
-                                editor.highlight_matching_brackets = !editor.highlight_matching_brackets;
-                                if !editor.highlight_matching_brackets {
-                                    editor.matching_bracket_pos = None;
-                                }
-                                log::info!("Bracket matching toggled: {}", editor.highlight_matching_brackets);
-                            },
-                            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Shift+W - Toggle whitespace visualization
-                                editor.show_whitespace = !editor.show_whitespace;
-                                log::info!("Whitespace visualization toggled: {}", editor.show_whitespace);
-                            },
-                            KeyCode::Char('g') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Shift+G - Toggle indentation guides
-                                editor.show_indentation_guides = !editor.show_indentation_guides;
-                                log::info!("Indentation guides toggled: {}", editor.show_indentation_guides);
-                            },
-                            KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Shift+M - Toggle minimap
-                                editor.show_minimap = !editor.show_minimap;
-                                log::info!("Minimap toggled: {}", editor.show_minimap);
-                            },
-                            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+A - Select all
-                                editor.select_all();
-                            },
-                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+C - Copy selection
-                                if let Err(e) = editor.copy_selection() {
-                                    log::error!("Failed to copy to clipboard: {}", e);
-                                }
-                            },
-                            KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+X - Cut selection
-                                if let Err(e) = editor.cut_selection() {
-                                    log::error!("Failed to cut to clipboard: {}", e);
-                                }
-                            },
-                            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+V - Paste from clipboard
-                                if let Err(e) = editor.paste_from_clipboard() {
-                                    log::error!("Failed to paste from clipboard: {}", e);
-                                }
-                            },
-                            KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) && !key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Z - Undo
-                                if editor.undo() {
-                                    log::info!("Undo operation performed");
-                                } else {
-                                    log::info!("Nothing to undo");
-                                }
-                            },
-                            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+Y - Redo
-                                if editor.redo() {
-                                    log::info!("Redo operation performed");
-                                } else {
-                                    log::info!("Nothing to redo");
-                                }
-                            },
-                            KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Shift+Z - Alternative Redo
-                                if editor.redo() {
-                                    log::info!("Redo operation performed (Ctrl+Shift+Z)");
-                                } else {
-                                    log::info!("Nothing to redo");
-                                }
-                            },
-                            KeyCode::Char('g') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+G - Go to Line dialog
-                                editor.show_goto_line_dialog();
-                            },
-                            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+F - Find dialog
-                                editor.show_find_dialog();
-                            },
-                            KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+H - Replace dialog
-                                editor.show_replace_dialog();
-                            },
-                            KeyCode::Char('i') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+I - Toggle case sensitivity in find/replace
-                                if matches!(editor.dialog_mode, crate::DialogMode::Find | crate::DialogMode::Replace) {
-                                    editor.toggle_case_sensitivity();
-                                }
-                            },
-                            KeyCode::F(3) => {
-                                // F3 - Find next
-                                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                                    editor.search_direction_forward = false;
-                                    editor.find_previous();
-                                } else {
-                                    editor.search_direction_forward = true;
-                                    editor.find_next();
-                                }
-                            },
-                            KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+O - Open file dialog
-                                editor.open_file_dialog();
-                            },
-                            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+W - Close current tab
-                                let tab_index = editor.tab_index;
-                                editor.close_tab(tab_index);
-                            },
-                            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+N - New tab
-                                editor.new_tab();
-                            },
-                            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Shift+P - Open standard library browser
-                                editor.open_stdlib_browser();
-                            },
-                            KeyCode::Tab if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+Tab - Next tab
-                                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                                    editor.prev_tab();
-                                } else {
-                                    editor.next_tab();
-                                }
-                            },
-                            KeyCode::Char(n) if key.modifiers.contains(KeyModifiers::CONTROL) && n.is_ascii_digit() => {
-                                // Ctrl+1-9 - Switch to specific tab
-                                if let Some(digit) = n.to_digit(10) {
-                                    let tab_index = (digit as usize).saturating_sub(1);
-                                    editor.switch_to_tab(tab_index);
-                                }
-                            },
-                            KeyCode::Char('/') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+/ - Toggle comment
-                                editor.toggle_comment();
-                            },
-                            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+D - Duplicate line
-                                editor.duplicate_line();
-                            },
-                            KeyCode::Up if key.modifiers.contains(KeyModifiers::ALT) => {
-                                // Alt+Up - Move line up
-                                editor.move_line_up();
-                            },
-                            KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
-                                // Alt+Down - Move line down
-                                editor.move_line_down();
-                            },
-                            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                // Ctrl+Shift+K - Delete line
-                                editor.delete_line();
-                            },
-                            KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+] - Jump to matching bracket
-                                editor.jump_to_matching_bracket();
-                            },
-                            KeyCode::Char(c) => {
-                                log::warn!("Received KeyCode::Char('{}'), dialog_mode: {:?}", c, editor.dialog_mode);
-                                // Check if we're in a dialog mode
-                                match editor.dialog_mode {
-                                    crate::DialogMode::GoToLine => {
-                                        editor.handle_goto_line_input(c);
-                                    },
-                                    crate::DialogMode::Find => {
-                                        editor.handle_find_input(c);
-                                    },
-                                    crate::DialogMode::Replace => {
-                                        editor.handle_replace_dialog_input(c);
-                                    },
-                                    crate::DialogMode::OpenFile => {
-                                        editor.handle_file_dialog_input(c);
-                                    },
-                                    crate::DialogMode::StdLibBrowser => {
-                                        editor.handle_stdlib_dialog_input(c);
-                                    },
-                                    crate::DialogMode::None => {
-                                        log::warn!("Calling insert_char('{}') in normal mode", c);
-                                        editor.insert_char(c);
-                                        log::warn!("After insert_char, current line: '{}'", editor.get_current_tab().content[editor.get_current_tab().cursor_y]);
-                                        // Only update completions for single character input
-                                        // to avoid overwhelming the system during paste operations
-                                        if !key.modifiers.contains(KeyModifiers::SHIFT) {
+                                },
+                                KeyCode::Tab => {
+                                    if editor.dialog_mode == crate::DialogMode::Replace {
+                                        // In replace mode, Tab switches between find and replace fields
+                                        editor.switch_replace_field();
+                                    } else if editor.show_completions {
+                                        editor.accept_completion();
+                                    } else if key.modifiers.contains(KeyModifiers::SHIFT) {
+                                        // Shift+Tab - Dedent
+                                        editor.dedent_selection();
+                                    } else {
+                                        // Tab - Indent (if there's selection) or trigger completion
+                                        let has_selection = {
+                                            let current_tab = editor.get_current_tab();
+                                            current_tab.has_selection()
+                                        };
+                                    
+                                        if has_selection {
+                                            editor.indent_selection();
+                                        } else {
+                                            // Trigger completion
                                             editor.update_completions();
+                                            if !editor.show_completions {
+                                                // If no completions, switch tabs as before
+                                                editor.next_tab();
+                                            }
                                         }
                                     }
-                                }
-                            },
-                            KeyCode::Up => {
-                                if editor.show_completions {
-                                    editor.previous_completion();
-                                } else {
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_cursor_up_with_selection(extend_selection);
-                                }
-                            },
-                            KeyCode::Down => {
-                                if editor.show_completions {
-                                    editor.next_completion();
-                                } else {
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_cursor_down_with_selection(extend_selection);
-                                }
-                            },
-                            KeyCode::PageDown => editor.scroll_down(),
-                            KeyCode::PageUp => editor.scroll_up(),
-                            KeyCode::Tab => {
-                                if editor.dialog_mode == crate::DialogMode::Replace {
-                                    // In replace mode, Tab switches between find and replace fields
-                                    editor.switch_replace_field();
-                                } else if editor.show_completions {
-                                    editor.accept_completion();
-                                } else if key.modifiers.contains(KeyModifiers::SHIFT) {
-                                    // Shift+Tab - Dedent
-                                    editor.dedent_selection();
-                                } else {
-                                    // Tab - Indent (if there's selection) or trigger completion
+                                },
+                                KeyCode::BackTab => {
+                                    // BackTab (Shift+Tab without explicit modifiers check) - Dedent
                                     let has_selection = {
                                         let current_tab = editor.get_current_tab();
                                         current_tab.has_selection()
                                     };
-                                    
-                                    if has_selection {
-                                        editor.indent_selection();
-                                    } else {
-                                        // Trigger completion
-                                        editor.update_completions();
-                                        if !editor.show_completions {
-                                            // If no completions, switch tabs as before
-                                            editor.next_tab();
-                                        }
-                                    }
-                                }
-                            },
-                            KeyCode::BackTab => {
-                                // BackTab (Shift+Tab without explicit modifiers check) - Dedent
-                                let has_selection = {
-                                    let current_tab = editor.get_current_tab();
-                                    current_tab.has_selection()
-                                };
                                 
-                                if has_selection {
-                                    editor.dedent_selection();
-                                } else {
-                                    editor.previous_tab();
-                                }
-                            },
-                            KeyCode::Backspace => {
-                                match editor.dialog_mode {
-                                    crate::DialogMode::GoToLine => {
-                                        editor.handle_goto_line_backspace();
-                                    },
-                                    crate::DialogMode::Find => {
-                                        editor.handle_find_backspace();
-                                    },
-                                    crate::DialogMode::Replace => {
-                                        editor.handle_replace_dialog_backspace();
-                                    },
-                                    crate::DialogMode::OpenFile => {
-                                        editor.handle_file_dialog_backspace();
-                                    },
-                                    crate::DialogMode::StdLibBrowser => {
-                                        editor.handle_stdlib_dialog_backspace();
-                                    },
-                                    crate::DialogMode::None => {
-                                        editor.delete_char();
-                                        editor.update_completions();
+                                    if has_selection {
+                                        editor.dedent_selection();
+                                    } else {
+                                        editor.previous_tab();
                                     }
-                                }
-                            },
-                            KeyCode::Delete => {
-                                editor.delete_forward();
-                                editor.update_completions();
-                            },
-                            KeyCode::Enter => {
-                                match editor.dialog_mode {
-                                    crate::DialogMode::GoToLine => {
-                                        editor.execute_goto_line();
-                                    },
-                                    crate::DialogMode::Find => {
-                                        // Enter in find mode - find next
-                                        editor.find_next();
-                                    },
-                                    crate::DialogMode::Replace => {
-                                        // Enter in replace mode - replace current and find next
-                                        if key.modifiers.contains(KeyModifiers::ALT) {
-                                            // Alt+Enter - Replace all
-                                            editor.replace_all();
-                                        } else {
-                                            // Regular Enter - Replace current
-                                            editor.replace_current();
-                                        }
-                                    },
-                                    crate::DialogMode::OpenFile => {
-                                        editor.handle_file_dialog_enter();
-                                    },
-                                    crate::DialogMode::StdLibBrowser => {
-                                        editor.handle_stdlib_dialog_enter();
-                                    },
-                                    crate::DialogMode::None => {
-                                        if editor.show_completions {
-                                            editor.accept_completion();
-                                        } else {
-                                            editor.insert_newline();
+                                },
+                                KeyCode::Backspace => {
+                                    match editor.dialog_mode {
+                                        crate::DialogMode::GoToLine => {
+                                            editor.handle_goto_line_backspace();
+                                        },
+                                        crate::DialogMode::Find => {
+                                            editor.handle_find_backspace();
+                                        },
+                                        crate::DialogMode::Replace => {
+                                            editor.handle_replace_dialog_backspace();
+                                        },
+                                        crate::DialogMode::OpenFile => {
+                                            editor.handle_file_dialog_backspace();
+                                        },
+                                        crate::DialogMode::StdLibBrowser => {
+                                            editor.handle_stdlib_dialog_backspace();
+                                        },
+                                        crate::DialogMode::Settings | crate::DialogMode::ConfirmQuit | crate::DialogMode::CommandPalette | crate::DialogMode::SymbolPicker => {},
+                                        crate::DialogMode::None => {
+                                            editor.delete_char();
+                                            editor.update_completions();
                                         }
                                     }
-                                }
+                                },
+                                KeyCode::Delete => {
+                                    editor.delete_forward();
+                                    editor.update_completions();
+                                },
+                                KeyCode::Enter => {
+                                    match editor.dialog_mode {
+                                        crate::DialogMode::GoToLine => {
+                                            editor.execute_goto_line();
+                                        },
+                                        crate::DialogMode::Find => {
+                                            // Enter in find mode - find next
+                                            editor.find_next();
+                                        },
+                                        crate::DialogMode::Replace => {
+                                            // Enter in replace mode - replace current and find next
+                                            if key.modifiers.contains(KeyModifiers::ALT) {
+                                                // Alt+Enter - Replace all
+                                                editor.replace_all();
+                                            } else {
+                                                // Regular Enter - Replace current
+                                                editor.replace_current();
+                                            }
+                                        },
+                                        crate::DialogMode::OpenFile => {
+                                            editor.handle_file_dialog_enter();
+                                        },
+                                        crate::DialogMode::StdLibBrowser => {
+                                            editor.handle_stdlib_dialog_enter();
+                                        },
+                                        crate::DialogMode::Settings | crate::DialogMode::ConfirmQuit | crate::DialogMode::CommandPalette | crate::DialogMode::SymbolPicker => {},
+                                        crate::DialogMode::None => {
+                                            if editor.show_completions {
+                                                editor.accept_completion();
+                                            } else {
+                                                editor.insert_newline();
+                                            }
+                                        }
+                                    }
+                                },
+                                KeyCode::Esc => {
+                                    if editor.dialog_mode != crate::DialogMode::None {
+                                        // Close any open dialog
+                                        editor.close_dialog();
+                                    } else if editor.show_detail_view {
+                                        // Go back to completion list from detail view
+                                        editor.show_detail_view = false;
+                                    } else if editor.show_completions {
+                                        // Close completions entirely
+                                        editor.show_completions = false;
+                                        editor.show_detail_view = false;  // Reset detail view too
+                                        editor.completions.clear();
+                                    } else if editor.has_selection() {
+                                        // Clear selection if no completions are showing
+                                        editor.clear_selection();
+                                    } else {
+                                        // Nothing left to dismiss, so this
+                                        // Escape was aimed at the editor
+                                        // itself. It still asks first.
+                                        editor.ask_before_quitting();
+                                    }
+                                },
+                                _ => {}
                             },
-                            KeyCode::Esc => {
-                                if editor.dialog_mode != crate::DialogMode::None {
-                                    // Close any open dialog
-                                    editor.close_dialog();
-                                } else if editor.show_detail_view {
-                                    // Go back to completion list from detail view
-                                    editor.show_detail_view = false;
-                                } else if editor.show_completions {
-                                    // Close completions entirely
-                                    editor.show_completions = false;
-                                    editor.show_detail_view = false;  // Reset detail view too
-                                    editor.completions.clear();
-                                } else if editor.has_selection() {
-                                    // Clear selection if no completions are showing
-                                    editor.clear_selection();
-                                }
-                            },
-                            KeyCode::F(1) => {
-                                // Toggle detail view for selected completion
-                                if editor.show_completions && !editor.completions.is_empty() {
-                                    editor.show_detail_view = !editor.show_detail_view;
-                                }
-                            },
-                            KeyCode::Left => {
-                                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    // Ctrl+Left - Move to previous word
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_cursor_left_word_with_selection(extend_selection);
-                                } else {
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_cursor_left_with_selection(extend_selection);
-                                }
-                            },
-                            KeyCode::Right => {
-                                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    // Ctrl+Right - Move to next word
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_cursor_right_word_with_selection(extend_selection);
-                                } else {
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_cursor_right_with_selection(extend_selection);
-                                }
-                            },
-                            KeyCode::Home => {
-                                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    // Ctrl+Home - Move to start of file
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_to_file_start_with_selection(extend_selection);
-                                } else if key.modifiers.contains(KeyModifiers::SHIFT) {
-                                    // Shift+Home - Extend selection to line start (keep old behavior for selection)
-                                    editor.move_to_line_start_with_selection(true);
-                                } else {
-                                    // Home - Smart home (toggle between first non-whitespace and line start)
-                                    editor.smart_home();
-                                }
-                            },
-                            KeyCode::End => {
-                                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    // Ctrl+End - Move to end of file
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_to_file_end_with_selection(extend_selection);
-                                } else {
-                                    // End - Move to end of line
-                                    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
-                                    editor.move_to_line_end_with_selection(extend_selection);
-                                }
-                            },
-                            _ => {}
                         }
                     }
                     Ok(Event::Paste(data)) => {
@@ -2010,9 +2012,40 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                         editor.paste_text(&data);
                         // Don't update completions during paste to avoid lag
                     }
-                    Ok(Event::Mouse(_)) => {
-                        // Ignore mouse events for now to prevent issues
-                        // Mouse events can cause problems if not handled properly
+                    // A click puts the cursor where it points, a drag selects,
+                    // and the wheel scrolls without taking the cursor along.
+                    // While a dialog is open the mouse is ignored, because
+                    // clicking the text behind a dialog is not a thing anyone
+                    // means to do.
+                    Ok(Event::Mouse(mouse)) => {
+                        use ratatui::crossterm::event::{MouseButton, MouseEventKind};
+
+                        // A terminal reports every twitch of the pointer, and
+                        // most of those mean nothing here. Deciding that before
+                        // reaching for the editor keeps the common case from
+                        // queueing behind whatever else holds the lock.
+                        let interesting = matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left) | MouseEventKind::Up(MouseButton::Left) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown);
+                        if !interesting {
+                            continue;
+                        }
+                        let mut editor = match try_lock_with_timeout(&editor_arc, 200) {
+                            Some(editor) => editor,
+                            None => {
+                                log::warn!("Key thread: editor lock timeout, skipping mouse event");
+                                continue;
+                            }
+                        };
+                        if editor.dialog_mode != crate::DialogMode::None {
+                            continue;
+                        }
+                        match mouse.kind {
+                            MouseEventKind::Down(MouseButton::Left) => editor.mouse_press(mouse.column, mouse.row),
+                            MouseEventKind::Drag(MouseButton::Left) => editor.mouse_drag(mouse.column, mouse.row),
+                            MouseEventKind::Up(MouseButton::Left) => editor.mouse_release(),
+                            MouseEventKind::ScrollUp => editor.scroll_by(-3),
+                            MouseEventKind::ScrollDown => editor.scroll_by(3),
+                            _ => {}
+                        }
                     }
                     Ok(_) => {
                         // Other events (resize, etc.) - ignore
@@ -2030,6 +2063,299 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                 std::thread::sleep(Duration::from_millis(100));
             }
         }
+    }
+}
+
+/// Carries out any action at all, including the four that need the key loop's
+/// own channels. Returns whether the editor should shut down, which is the one
+/// thing an action can ask for that the caller has to do itself.
+///
+/// Both the keyboard and the command palette come through here, because a
+/// command picked from a list by name has to do exactly what its key does,
+/// including the ones that quit or start a build.
+fn run_action(editor: &mut Editor, action: Action, tx: &Sender<EditorMessage>, tx_build: &Sender<EditorMessage>) -> bool {
+    match action {
+        Action::Quit => {
+            // Which files were open is worth keeping, and this is the last
+            // moment there is to write it down.
+            editor.save_session();
+            let _ = tx.send(EditorMessage::Shutdown);
+            return true;
+        }
+        Action::Save => {
+            log::info!("Save requested");
+            match editor.save_file() {
+                Ok(_) => {
+                    editor.build_status = BuildStatus::Complete("Saved!".to_string());
+                    log::info!("File saved successfully");
+                }
+                Err(e) => {
+                    editor.build_status = BuildStatus::Failed(format!("Save failed: {}", e));
+                    log::error!("Failed to save file: {}", e);
+                }
+            }
+        }
+        Action::CycleExampleFiles => {
+            log::info!("Cycling through example files");
+            let example_files = match fs::read_dir("examples") {
+                Ok(dir) => dir.filter_map(Result::ok).filter(|entry| entry.path().extension().map_or(false, |ext| ext == "nail")).map(|entry| entry.path().to_string_lossy().to_string()).collect::<Vec<String>>(),
+                Err(e) => {
+                    log::warn!("Failed to read examples directory: {}", e);
+                    editor.build_status = BuildStatus::Failed("Examples directory not found".to_string());
+                    return false;
+                }
+            };
+
+            if example_files.is_empty() {
+                editor.build_status = BuildStatus::Failed("No example files found".to_string());
+                return false;
+            }
+
+            // Find current file index
+            let current_tab = editor.get_current_tab();
+            let current_index = match &current_tab.filename {
+                Some(current) => example_files.iter().position(|file| file == current).unwrap_or(0),
+                None => 0,
+            };
+
+            // Try to load files until we find one that exists
+            let mut attempts = 0;
+            let mut loaded = false;
+            while attempts < example_files.len() && !loaded {
+                let next_index = (current_index + 1 + attempts) % example_files.len();
+                let next_file = &example_files[next_index];
+
+                match editor.load_file(next_file) {
+                    Ok(_) => {
+                        editor.build_status = BuildStatus::Idle;
+                        editor.code_errors = vec![format!("Loaded: {}", next_file).into()];
+                        log::info!("Successfully loaded file: {}", next_file);
+                        loaded = true;
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load file {}: {}", next_file, e);
+                        attempts += 1;
+                    }
+                }
+            }
+
+            if !loaded {
+                editor.build_status = BuildStatus::Failed("No example files found".to_string());
+            }
+        }
+        Action::Build => {
+            match editor.build_status {
+                BuildStatus::Idle | BuildStatus::Failed(_) | BuildStatus::Complete(_) => {
+                    let _ = tx_build.send(EditorMessage::BuildStart);
+                }
+                _ => {
+                    // Don't allow new builds while one is in progress
+                }
+            }
+        }
+        other => apply_action(editor, other),
+    }
+    return false;
+}
+
+/// Carries out an action against the editor. Four of them are missing on
+/// purpose: quitting, saving, cycling the examples and starting a build all
+/// need the key loop's own channels or its ability to break out, so
+/// `run_action` above keeps those and hands everything else here. Listing them
+/// rather than catching the rest with a wildcard means a new action cannot be
+/// added without someone deciding which side of that line it falls on.
+fn apply_action(editor: &mut Editor, action: Action) {
+    match action {
+        Action::Quit | Action::Save | Action::CycleExampleFiles | Action::Build => {}
+        Action::ToggleTheme => editor.toggle_theme(),
+        Action::ToggleLineNumbers => {
+            editor.show_line_numbers = !editor.show_line_numbers;
+            log::info!("Line numbers toggled: {}", editor.show_line_numbers);
+        }
+        Action::ToggleCurrentLineHighlight => {
+            editor.highlight_current_line = !editor.highlight_current_line;
+            log::info!("Current line highlighting toggled: {}", editor.highlight_current_line);
+        }
+        Action::ToggleBracketMatching => {
+            editor.highlight_matching_brackets = !editor.highlight_matching_brackets;
+            if !editor.highlight_matching_brackets {
+                editor.matching_bracket_pos = None;
+            }
+            log::info!("Bracket matching toggled: {}", editor.highlight_matching_brackets);
+        }
+        Action::ToggleWhitespace => {
+            editor.show_whitespace = !editor.show_whitespace;
+            log::info!("Whitespace visualization toggled: {}", editor.show_whitespace);
+        }
+        Action::ToggleIndentationGuides => {
+            editor.show_indentation_guides = !editor.show_indentation_guides;
+            log::info!("Indentation guides toggled: {}", editor.show_indentation_guides);
+        }
+        Action::ToggleMinimap => {
+            editor.show_minimap = !editor.show_minimap;
+            log::info!("Minimap toggled: {}", editor.show_minimap);
+        }
+        Action::SelectAll => editor.select_all(),
+        Action::Cut => {
+            if let Err(e) = editor.cut_selection() {
+                log::error!("Failed to cut to clipboard: {}", e);
+            }
+        }
+        Action::Paste => {
+            if let Err(e) = editor.paste_from_clipboard() {
+                log::error!("Failed to paste from clipboard: {}", e);
+            }
+        }
+        Action::Undo => {
+            if editor.undo() {
+                log::info!("Undo operation performed");
+            } else {
+                log::info!("Nothing to undo");
+            }
+        }
+        Action::Redo => {
+            if editor.redo() {
+                log::info!("Redo operation performed");
+            } else {
+                log::info!("Nothing to redo");
+            }
+        }
+        Action::GoToLineDialog => editor.show_goto_line_dialog(),
+        Action::FindDialog => editor.show_find_dialog(),
+        Action::ReplaceDialog => editor.show_replace_dialog(),
+        Action::ToggleCaseSensitivity => {
+            if matches!(editor.dialog_mode, crate::DialogMode::Find | crate::DialogMode::Replace) {
+                editor.toggle_case_sensitivity();
+            }
+        }
+        Action::FindNext => {
+            editor.search_direction_forward = true;
+            editor.find_next();
+        }
+        Action::FindPrevious => {
+            editor.search_direction_forward = false;
+            editor.find_previous();
+        }
+        Action::OpenFileDialog => editor.open_file_dialog(),
+        Action::CloseTab => {
+            let tab_index = editor.tab_index;
+            editor.close_tab(tab_index);
+        }
+        Action::NewTab => editor.new_tab(),
+        Action::StdLibBrowser => editor.open_stdlib_browser(),
+        Action::NextTab => editor.next_tab(),
+        Action::PreviousTab => editor.prev_tab(),
+        Action::SwitchToTab(index) => editor.switch_to_tab(index),
+        Action::ToggleComment => editor.toggle_comment(),
+        Action::DuplicateLine => editor.duplicate_line(),
+        Action::MoveLineUp => editor.move_line_up(),
+        Action::MoveLineDown => editor.move_line_down(),
+        Action::DeleteLine => editor.delete_line(),
+        Action::JumpToMatchingBracket => editor.jump_to_matching_bracket(),
+        Action::ToggleCompletionDetail => {
+            if editor.show_completions && !editor.completions.is_empty() {
+                editor.show_detail_view = !editor.show_detail_view;
+            }
+        }
+        Action::ScrollUp => editor.scroll_up(),
+        Action::ScrollDown => editor.scroll_down(),
+        // An open completion list owns the up and down keys, because picking
+        // from it is what the user is in the middle of doing.
+        Action::CursorUp { extend } => {
+            if editor.show_completions {
+                editor.previous_completion();
+            } else {
+                editor.move_cursor_up_with_selection(extend || editor.mark_active);
+            }
+        }
+        Action::CursorDown { extend } => {
+            if editor.show_completions {
+                editor.next_completion();
+            } else {
+                editor.move_cursor_down_with_selection(extend || editor.mark_active);
+            }
+        }
+        Action::CursorLeft { extend } => editor.move_cursor_left_with_selection(extend || editor.mark_active),
+        Action::CursorRight { extend } => editor.move_cursor_right_with_selection(extend || editor.mark_active),
+        Action::CursorWordLeft { extend } => editor.move_cursor_left_word_with_selection(extend || editor.mark_active),
+        Action::CursorWordRight { extend } => editor.move_cursor_right_word_with_selection(extend || editor.mark_active),
+        Action::SmartHome => editor.smart_home(),
+        Action::LineStart { extend } => editor.move_to_line_start_with_selection(extend || editor.mark_active),
+        Action::LineEnd { extend } => editor.move_to_line_end_with_selection(extend || editor.mark_active),
+        Action::FileStart { extend } => editor.move_to_file_start_with_selection(extend || editor.mark_active),
+        Action::FileEnd { extend } => editor.move_to_file_end_with_selection(extend || editor.mark_active),
+        Action::Copy => {
+            if let Err(e) = editor.copy_selection() {
+                log::error!("Failed to copy to clipboard: {}", e);
+            }
+        }
+        Action::SetMark => editor.set_mark(),
+        Action::ClearMark => editor.clear_mark(),
+        Action::KillToLineEnd => editor.kill_to_line_end(),
+        Action::DeleteForward => {
+            editor.delete_forward();
+            editor.update_completions();
+        }
+        Action::OpenSettings => editor.open_settings(),
+        // Editing a word at a time is only ever meant for the buffer, so a
+        // dialog with the keyboard keeps it.
+        Action::DeleteWordLeft => {
+            if editor.dialog_mode == crate::DialogMode::None {
+                editor.delete_word_left();
+                editor.update_completions();
+            }
+        }
+        Action::DeleteWordRight => {
+            if editor.dialog_mode == crate::DialogMode::None {
+                editor.delete_word_right();
+                editor.update_completions();
+            }
+        }
+        Action::NextError => editor.go_to_error(true),
+        Action::PreviousError => editor.go_to_error(false),
+        Action::CommandPalette => editor.open_command_palette(),
+        Action::SymbolPicker => editor.open_symbol_picker(),
+        Action::ProjectSymbolPicker => editor.open_project_symbol_picker(),
+        Action::ProjectSearch => editor.open_project_search(),
+        Action::OpenImportedFile => editor.open_imported_file(),
+        Action::ExpandSelection => editor.expand_selection(),
+        Action::ShrinkSelection => editor.shrink_selection(),
+        Action::JoinLines => editor.join_lines(),
+        Action::SortLines => editor.sort_lines(),
+        // The search switches belong to the search boxes. Outside them the key
+        // would change what the next search means with nothing on screen to
+        // say so, which is how a search comes back empty for no visible reason.
+        Action::ToggleWholeWord => {
+            if matches!(editor.dialog_mode, crate::DialogMode::Find | crate::DialogMode::Replace) {
+                editor.toggle_whole_word();
+            }
+        }
+        Action::ToggleRegex => {
+            if matches!(editor.dialog_mode, crate::DialogMode::Find | crate::DialogMode::Replace) {
+                editor.toggle_regex();
+            }
+        }
+        Action::ToggleMouse => set_mouse_capture(editor, !editor.mouse_enabled),
+        Action::ScrollLineUp => editor.scroll_by(-1),
+        Action::ScrollLineDown => editor.scroll_by(1),
+    }
+}
+
+/// Asks the terminal to start or stop reporting the mouse. Handing it back is
+/// how the user gets their terminal's own click to select and copy working
+/// again, which is worth more than our clicks whenever they want to take text
+/// out of the window.
+fn set_mouse_capture(editor: &mut Editor, wanted: bool) {
+    use ratatui::crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+
+    let result = if wanted { execute!(io::stdout(), EnableMouseCapture) } else { execute!(io::stdout(), DisableMouseCapture) };
+    match result {
+        Ok(()) => {
+            editor.mouse_enabled = wanted;
+            editor.mouse_dragging = false;
+            editor.build_status = BuildStatus::Complete(if wanted { "Mouse on".to_string() } else { "Mouse off, terminal selection back".to_string() });
+        }
+        Err(e) => log::error!("Could not change mouse reporting: {}", e),
     }
 }
 
@@ -2494,55 +2820,182 @@ pub fn create_welcome_message() -> Vec<String> {
     WELCOME_MESSAGE.lines().map(String::from).collect()
 }
 
+/// Directories the finder never walks into. Both hold build output measured
+/// in tens of thousands of files, none of which anybody opens by hand, and a
+/// finder that offers them is worse than one that does not exist. Anything
+/// starting with a dot is skipped as well, which covers `.git` and the rest.
+const SKIPPED_DIRECTORIES: &[&str] = &["target", "node_modules"];
+
+/// What the finder is willing to list. A Nail project is `.nail` files plus
+/// the handful of others a person actually edits beside them, and a binary
+/// offered by name is only ever a mistake about to happen.
+const LISTED_EXTENSIONS: &[&str] = &["nail", "rs", "txt", "md", "toml", "json", "sh", "html", "css", "js"];
+
+/// A ceiling on how much of a directory tree the finder will hold. It exists
+/// so that starting the IDE in a home directory by accident costs a moment
+/// rather than the session. The walk is breadth first, so when the ceiling is
+/// reached what survives is the part of the tree nearest the project root,
+/// which is the part worth having.
+const PROJECT_FILE_LIMIT: usize = 20000;
+
+/// Every file under `root` the finder is willing to open, as paths relative
+/// to `root`, sorted. Symbolic links to directories are listed but not walked
+/// into: a link pointing at an ancestor is a loop, and no project needs the
+/// finder to chase one to find out.
+pub fn scan_project_files(root: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(root.to_path_buf());
+    while let Some(directory) = queue.pop_front() {
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let is_directory = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+            if is_directory {
+                if !SKIPPED_DIRECTORIES.contains(&name.as_str()) {
+                    queue.push_back(entry.path());
+                }
+                continue;
+            }
+            let listed = Path::new(&name).extension().map(|extension| LISTED_EXTENSIONS.contains(&extension.to_string_lossy().as_ref())).unwrap_or(false);
+            if !listed {
+                continue;
+            }
+            let path = entry.path();
+            let relative = path.strip_prefix(root).unwrap_or(&path);
+            found.push(relative.to_string_lossy().to_string());
+            if found.len() >= PROJECT_FILE_LIMIT {
+                found.sort();
+                return found;
+            }
+        }
+    }
+    found.sort();
+    return found;
+}
+
+/// How well `haystack` answers `needle`, or `None` when it does not contain
+/// the needle's letters in order at all. Both are expected in lower case, so
+/// that the caller lowers each candidate once rather than once per query.
+///
+/// The shape being rewarded is the one people actually type: the first
+/// letters of the words, and runs of letters they remember exactly. A letter
+/// scores on its own, more when it continues the previous match, and more
+/// again when it starts a word, and every letter skipped over on the way
+/// costs a little. Matching is greedy rather than exhaustive, which can miss
+/// the very best alignment in a repetitive path, but it is linear and it is
+/// predictable, and both matter more here than the last point of score.
+pub fn fuzzy_score(haystack: &str, needle: &str) -> Option<i32> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    let letters: Vec<char> = haystack.chars().collect();
+    let mut score = 0;
+    let mut searched_from = 0;
+    let mut previous: Option<usize> = None;
+    for wanted in needle.chars() {
+        let at = letters[searched_from..].iter().position(|letter| *letter == wanted)? + searched_from;
+        score += 1;
+        if previous == Some(at.wrapping_sub(1)) {
+            score += 8;
+        }
+        if at == 0 || matches!(letters[at - 1], '/' | '_' | '-' | '.' | ' ') {
+            score += 6;
+        }
+        let skipped = at - previous.map(|index| index + 1).unwrap_or(0);
+        score -= (skipped as i32).min(10);
+        previous = Some(at);
+        searched_from = at + 1;
+    }
+    return Some(score);
+}
+
+/// How well a path answers a query. The file name is tried on its own and
+/// heavily favoured, because a query is nearly always a name rather than a
+/// route to one, and a directory that happens to spell the same letters
+/// should not bury the file actually being asked for. Longer paths lose a
+/// little, so that when two files match equally the nearer one is offered
+/// first.
+pub fn path_score(relative_path: &str, needle: &str) -> Option<i32> {
+    // An empty query is not a ranking. Every file ties, and the order they
+    // are already in stands, which is the alphabetical one the walk left.
+    if needle.is_empty() {
+        return Some(0);
+    }
+    let file_name = relative_path.rsplit('/').next().unwrap_or(relative_path);
+    let by_name = fuzzy_score(file_name, needle).map(|score| score + 40);
+    let by_path = fuzzy_score(relative_path, needle);
+    let best = by_name.into_iter().chain(by_path).max()?;
+    return Some(best - relative_path.chars().count() as i32 / 8);
+}
+
+/// The finder: a query line and the files that answer it, best first. What is
+/// typed is always shown, empty or not, because a picker whose prompt appears
+/// only once there is something in it gives the user nothing to type at.
 fn display_file_dialog(f: &mut Frame, editor: &Editor) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
-    
-    // Create the dialog area
+
     let area = f.area();
     let width = std::cmp::min(80, area.width.saturating_sub(4));
     let height = std::cmp::min(20, area.height.saturating_sub(4));
     let x = (area.width.saturating_sub(width)) / 2;
     let y = (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
-    
-    // Clear the area
+
     f.render_widget(Clear, dialog_area);
-    
-    // Create file list items
-    let items: Vec<ListItem> = editor.file_entries.iter().map(|entry| {
-        let style = if entry.is_recent {
-            Style::default().fg(Color::Yellow)
-        } else if entry.is_directory {
-            Style::default().fg(Color::Blue)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        ListItem::new(entry.name.clone()).style(style)
-    }).collect();
-    
-    // Create the list widget
+
+    let title = if editor.browsing_by_path() {
+        " Open file - by path ".to_string()
+    } else {
+        format!(" Open file - {} of {} ", editor.file_entries.len(), editor.file_index.len())
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+    let inner = block.inner(dialog_area);
+    f.render_widget(block, dialog_area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let query_area = Rect::new(inner.x, inner.y, inner.width, 1);
+    let query = Paragraph::new(format!("> {}", editor.file_dialog_input)).style(Style::default().fg(Color::Yellow).bg(Color::Black));
+    f.render_widget(query, query_area);
+    if inner.height < 2 {
+        return;
+    }
+
+    let items: Vec<ListItem> = editor
+        .file_entries
+        .iter()
+        .map(|entry| {
+            let style = if entry.is_directory {
+                Style::default().fg(Color::Blue)
+            } else if entry.is_recent {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(entry.name.clone()).style(style)
+        })
+        .collect();
+
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" Open File - {} ", editor.current_directory))
-            .title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
-        )
         .style(Style::default().fg(Color::White).bg(Color::Black))
         .highlight_style(Style::default().fg(Color::Black).bg(Color::White));
-    
-    // Create list state
+
     let mut list_state = ListState::default();
     list_state.select(Some(editor.file_dialog_index));
-    
-    f.render_stateful_widget(list, dialog_area, &mut list_state);
-    
-    // Show search input if any
-    if !editor.file_dialog_input.is_empty() {
-        let input_area = Rect::new(dialog_area.x + 1, dialog_area.y + dialog_area.height - 2, dialog_area.width - 2, 1);
-        let input_paragraph = Paragraph::new(format!("Filter: {}", editor.file_dialog_input))
-            .style(Style::default().fg(Color::Yellow).bg(Color::Black));
-        f.render_widget(input_paragraph, input_area);
-    }
+
+    f.render_stateful_widget(list, Rect::new(inner.x, inner.y + 1, inner.width, inner.height - 1), &mut list_state);
 }
 
 fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
@@ -2806,5 +3259,58 @@ mod tests {
     fn config_write_upgrades_a_file_from_the_old_writer() {
         let written = config_text_with(legacy_file_without_trailing_newline(), &[("build_code_nanos", "42".to_string())]);
         assert_eq!(written, "theme=light\nbuild_code_nanos=42\n");
+    }
+
+    #[test]
+    fn a_query_that_is_not_in_the_name_at_all_does_not_match() {
+        assert_eq!(fuzzy_score("website.nail", "zzz"), None);
+    }
+
+    #[test]
+    fn an_empty_query_matches_everything_equally() {
+        assert_eq!(fuzzy_score("website.nail", ""), Some(0));
+        assert_eq!(path_score("examples/website.nail", ""), Some(0));
+        assert_eq!(path_score("a.nail", ""), path_score("examples/deeply/nested/thing.nail", ""));
+    }
+
+    #[test]
+    fn typing_the_start_of_a_name_beats_the_same_letters_scattered() {
+        let exact = path_score("tests/parser.nail", "parser").unwrap();
+        let scattered = path_score("tests/pretty_arrays_error.nail", "parser").unwrap();
+        assert!(exact > scattered, "exact {} should beat scattered {}", exact, scattered);
+    }
+
+    #[test]
+    fn the_file_name_counts_for_more_than_the_directories_above_it() {
+        let in_name = path_score("src/website.nail", "website").unwrap();
+        let in_directory = path_score("website/other_thing.nail", "website").unwrap();
+        assert!(in_name > in_directory, "name {} should beat directory {}", in_name, in_directory);
+    }
+
+    #[test]
+    fn the_nearer_of_two_equal_matches_is_offered_first() {
+        let near = path_score("main.nail", "main").unwrap();
+        let far = path_score("examples/deeply/nested/main.nail", "main").unwrap();
+        assert!(near > far, "near {} should beat far {}", near, far);
+    }
+
+    #[test]
+    fn initials_reach_a_path_nobody_wants_to_type_out() {
+        assert!(path_score("examples/website/page_sections.nail", "ewps").is_some());
+    }
+
+    #[test]
+    fn the_walk_skips_build_output_and_hidden_directories() {
+        let root = std::env::temp_dir().join("nail_finder_walk_test");
+        let _ = fs::remove_dir_all(&root);
+        for directory in ["src", "target", ".git", "src/deep"] {
+            fs::create_dir_all(root.join(directory)).unwrap();
+        }
+        for file in ["src/main.nail", "src/deep/buried.nail", "target/generated.rs", ".git/config.toml", "src/.hidden.nail", "src/program.bin"] {
+            fs::write(root.join(file), "").unwrap();
+        }
+        let found = scan_project_files(&root);
+        assert_eq!(found, vec!["src/deep/buried.nail".to_string(), "src/main.nail".to_string()]);
+        let _ = fs::remove_dir_all(&root);
     }
 }

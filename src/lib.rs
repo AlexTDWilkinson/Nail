@@ -4,6 +4,8 @@ pub mod checker;
 pub mod colorizer;
 pub mod embedded;
 pub mod formatter;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod keymap;
 pub mod lexer;
 pub mod parser;
 pub mod version_line;

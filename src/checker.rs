@@ -2402,7 +2402,10 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                             for field in struct_fields {
                                 if let ASTNode::StructDeclarationField { name, data_type, .. } = field {
                                     if name == field_name {
-                                        return data_type.clone();
+                                        // A field declared with an enum's name arrives as
+                                        // Struct(name), so reading it has to resolve the
+                                        // same way its declaration did.
+                                        return resolve_custom_type(state, data_type);
                                     }
                                 }
                             }
@@ -2431,7 +2434,7 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                         for field in struct_fields {
                             if let ASTNode::StructDeclarationField { name, data_type, .. } = field {
                                 if name == field_name {
-                                    return data_type.clone();
+                                    return resolve_custom_type(state, data_type);
                                 }
                             }
                         }

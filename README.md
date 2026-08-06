@@ -210,11 +210,27 @@ Full design in `nail_language_spec.md`, under Versioning and Toolchain Pinning.
 
 ## 🎮 IDE Controls
 
+**Ctrl+P** lists every command by name, with its keys beside it, so the rest of
+this list is a shortcut rather than something to memorise.
+
+- **Ctrl+P**: Command palette
+- **Ctrl+R**: Go to a function, struct or constant in this file
+- **Ctrl+F** / **Ctrl+H**: Find, find and replace (Alt+C, Alt+W, Alt+R switch
+  case, whole word and regular expressions)
+- **F8**: Jump to the next error, **Shift+F8** the previous one
 - **F7**: Compile and run current file
-- **F6**: Toggle theme (dark/light)
 - **Ctrl+S**: Save file
 - **Ctrl+C**: Exit
-- **Standard vim movements**: Navigate like a pro
+- **F4**: Hand the mouse back to the terminal, so its own select and copy work
+- **Mouse**: Click to put the cursor there, drag to select, wheel to scroll
+
+The first run asks which key bindings you want, with your machine's own answer
+already selected: CUA by default, emacs if `EDITOR` or your inputrc says emacs.
+The choice is remembered, and **F2** opens the settings screen to change it
+later along with the theme and the display options.
+
+Files you had open are reopened where you left them the next time the IDE
+starts in that directory.
 
 ## 📚 Project Structure
 

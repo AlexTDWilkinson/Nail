@@ -1,14 +1,36 @@
 nail latest
 // A scrolling platformer in flat colours, in a real window.
 //
-// Run left and right, jump the gaps, take the coins, reach the flag at the
-// far right of a level four screens wide. The whole game is pure functions
-// over one state struct: `view` turns state into a frame of rectangles and
-// `update` folds the keyboard into the next state. `game_run` does the rest.
-// Arrows or A and D move, Space or Up jumps, R restarts, Esc quits.
+// Five levels, each one wider and meaner than the last. Run and jump, take the
+// coins, stomp what walks and what flies, and touch the flag at the far right.
+// The whole game is pure functions over one state struct: `view` turns state
+// into a frame of rectangles and `update` folds the input into the next state.
+// `game_run` does the rest.
+//
+// Everything the game can be asked for has two ways in, a key and a place on
+// the screen to touch, so a phone plays the same game a keyboard does. Arrows
+// or A and D move, Space or Up jumps, R restarts the level, Esc quits, and the
+// pads in the corners say all of it by finger. The screens between levels are
+// the same story: press Space or touch anywhere.
 //
 // All motion is multiplied by input.delta_ms, so the game plays at the same
 // speed whatever frame rate the machine manages.
+
+// What a thing that wants you dead does. Walkers pace a stretch of ground and
+// can be stomped from above. Flyers do the same in the air, bobbing as they go.
+enum Menace {
+    Walker,
+    Flyer
+}
+
+// Which screen the game is on. Everything except Running is a card over a
+// frozen level, and all of them leave on the same press.
+enum Mode {
+    Title,
+    Running,
+    Cleared,
+    Finished
+}
 
 // One coin. Taken coins stay in the array so the counter knows the total.
 struct Coin {
@@ -26,6 +48,30 @@ struct Platform {
     tint:s
 }
 
+// A patch of spikes, always five teeth and eighty pixels wide, sitting on top
+// of whatever surface it names. Touching one costs the run.
+struct Spike {
+    spike_x:f,
+    spike_y:f
+}
+
+// One walker or flyer. It paces between foe_from and foe_to, foe_dir says
+// which way it is going at the moment, and foe_bob is how far a flyer is
+// through its bob. Dead ones stay in the array so nothing has to be rebuilt,
+// they simply stop being drawn and stop being dangerous.
+struct Enemy {
+    foe_x:f,
+    foe_y:f,
+    foe_from:f,
+    foe_to:f,
+    foe_dir:f,
+    foe_pace:f,
+    foe_home:f,
+    foe_bob:f,
+    menace:Menace,
+    foe_alive:b
+}
+
 // What a vertical collision pass decided: where the player ended up,
 // what happened to the fall speed, and whether feet found ground.
 struct Landing {
@@ -34,12 +80,26 @@ struct Landing {
     grounded:b
 }
 
-// The whole game in one value. jump_held remembers whether the jump pad was
-// under a finger last frame, so holding it down is one jump and not a jump
-// every frame. step_phase is how far the player has walked since the last
-// footstep sounded. The three pressing flags are what the player is asking
-// for right now, whether by key or by finger, so the pads can light up.
+// The whole game in one value. banked is the coins from levels already
+// finished, so the level counter can stay a level counter.
+//
+// The three held flags remember what was under a finger last frame, so that
+// holding something down is one press and not a press every frame: jump_held
+// for the jump pad, reset_held for the restart pad, tap_held for a finger
+// anywhere at all, which is what the cards between levels wait on. They are
+// three flags and not one because running into the flag with a thumb still on
+// the right pad has to leave the card up, while reaching for restart with that
+// same thumb still down has to work.
+//
+// step_phase is how far the player has walked since the last footstep sounded.
+// The three pressing flags are what the player is asking for right now,
+// whether by key or by finger, so the pads can light up.
 struct Platformer {
+    mode:Mode,
+    level:i,
+    banked:i,
+    deaths:i,
+    intro_ms:f,
     player_x:f,
     player_y:f,
     vel_x:f,
@@ -47,70 +107,398 @@ struct Platformer {
     coyote_ms:f,
     camera_x:f,
     coins:a:Coin,
+    foes:a:Enemy,
     jump_held:b,
+    reset_held:b,
+    tap_held:b,
     step_phase:f,
     pressing_left:b,
     pressing_right:b,
     pressing_jump:b,
-    won:b,
     done:b
 }
 
-// The level, 3200 pixels wide against an 800 pixel window. Ground segments
-// in cream with three pits between them, floating platforms in rose and
-// cream stepping up toward the coins.
-f level_platforms():a:Platform {
+// The pieces a level is built from. Naming them once keeps the level tables
+// below readable as level tables rather than as walls of numbers.
+f ground(from_x:f, to_x:f):Platform {
+    r Platform { plat_x = from_x, plat_y = 560.0, plat_w = to_x - from_x, plat_h = 40.0, tint = `#e8ded1` };
+}
+
+f shelf(pos_x:f, pos_y:f, width:f):Platform {
+    r Platform { plat_x = pos_x, plat_y = pos_y, plat_w = width, plat_h = 18.0, tint = `#e8ded1` };
+}
+
+f ledge(pos_x:f, pos_y:f, width:f):Platform {
+    r Platform { plat_x = pos_x, plat_y = pos_y, plat_w = width, plat_h = 18.0, tint = `#d98c9e` };
+}
+
+f coin_at(pos_x:f, pos_y:f):Coin {
+    r Coin { coin_x = pos_x, coin_y = pos_y, taken = false };
+}
+
+f spikes_at(pos_x:f, top_y:f):Spike {
+    r Spike { spike_x = pos_x, spike_y = top_y };
+}
+
+// A walker stands on a surface, so its top is twenty six pixels above it.
+f walker(from_x:f, to_x:f, top_y:f, pace:f):Enemy {
+    r Enemy {
+        foe_x = from_x, foe_y = top_y, foe_from = from_x, foe_to = to_x, foe_dir = 1.0,
+        foe_pace = pace, foe_home = top_y, foe_bob = 0.0, menace = Menace::Walker, foe_alive = true
+    };
+}
+
+// A flyer hangs around a height rather than resting on anything.
+f flyer(from_x:f, to_x:f, home_y:f, pace:f):Enemy {
+    r Enemy {
+        foe_x = from_x, foe_y = home_y, foe_from = from_x, foe_to = to_x, foe_dir = 1.0,
+        foe_pace = pace, foe_home = home_y, foe_bob = 0.0, menace = Menace::Flyer, foe_alive = true
+    };
+}
+
+f level_count():i {
+    r 5;
+}
+
+// How wide each level is. The flag stands a hundred and twenty pixels short of
+// the far edge, and the camera stops eight hundred short of it, which is the
+// width of the window.
+f level_span(level:i):f {
+    if {
+        level == 1 -> { r 3200.0; },
+        level == 2 -> { r 3400.0; },
+        level == 3 -> { r 3600.0; },
+        level == 4 -> { r 3800.0; },
+        else -> { r 4000.0; }
+    }
+}
+
+f flag_x(level:i):f {
+    r level_span(level) - 120.0;
+}
+
+f level_name(level:i):s {
+    if {
+        level == 1 -> { r `Warm up`; },
+        level == 2 -> { r `Something walks here`; },
+        level == 3 -> { r `Wings over the gaps`; },
+        level == 4 -> { r `The long night`; },
+        else -> { r `The tower`; }
+    }
+}
+
+// Level one. Four stretches of ground with three pits between them and a
+// staircase of ledges over each, plus one slow walker to meet.
+f level_one_platforms():a:Platform {
     r [
-        Platform { plat_x = 0.0, plat_y = 560.0, plat_w = 900.0, plat_h = 40.0, tint = `#e8ded1` },
-        Platform { plat_x = 1020.0, plat_y = 560.0, plat_w = 780.0, plat_h = 40.0, tint = `#e8ded1` },
-        Platform { plat_x = 1960.0, plat_y = 560.0, plat_w = 640.0, plat_h = 40.0, tint = `#e8ded1` },
-        Platform { plat_x = 2760.0, plat_y = 560.0, plat_w = 440.0, plat_h = 40.0, tint = `#e8ded1` },
-        Platform { plat_x = 330.0, plat_y = 445.0, plat_w = 140.0, plat_h = 18.0, tint = `#d98c9e` },
-        Platform { plat_x = 540.0, plat_y = 345.0, plat_w = 120.0, plat_h = 18.0, tint = `#e8ded1` },
-        Platform { plat_x = 915.0, plat_y = 470.0, plat_w = 95.0, plat_h = 18.0, tint = `#d98c9e` },
-        Platform { plat_x = 1150.0, plat_y = 445.0, plat_w = 130.0, plat_h = 18.0, tint = `#e8ded1` },
-        Platform { plat_x = 1350.0, plat_y = 335.0, plat_w = 120.0, plat_h = 18.0, tint = `#d98c9e` },
-        Platform { plat_x = 1560.0, plat_y = 430.0, plat_w = 110.0, plat_h = 18.0, tint = `#e8ded1` },
-        Platform { plat_x = 1830.0, plat_y = 465.0, plat_w = 100.0, plat_h = 18.0, tint = `#d98c9e` },
-        Platform { plat_x = 2050.0, plat_y = 445.0, plat_w = 130.0, plat_h = 18.0, tint = `#e8ded1` },
-        Platform { plat_x = 2250.0, plat_y = 340.0, plat_w = 120.0, plat_h = 18.0, tint = `#d98c9e` },
-        Platform { plat_x = 2440.0, plat_y = 240.0, plat_w = 110.0, plat_h = 18.0, tint = `#e8ded1` },
-        Platform { plat_x = 2625.0, plat_y = 460.0, plat_w = 110.0, plat_h = 18.0, tint = `#d98c9e` },
-        Platform { plat_x = 2900.0, plat_y = 440.0, plat_w = 130.0, plat_h = 18.0, tint = `#d98c9e` }
+        ground(0.0, 900.0), ground(1020.0, 1800.0), ground(1960.0, 2600.0), ground(2760.0, 3200.0),
+        ledge(330.0, 445.0, 140.0), shelf(540.0, 345.0, 120.0), ledge(915.0, 470.0, 95.0),
+        shelf(1150.0, 445.0, 130.0), ledge(1350.0, 335.0, 120.0), shelf(1560.0, 430.0, 110.0),
+        ledge(1830.0, 465.0, 100.0), shelf(2050.0, 445.0, 130.0), ledge(2250.0, 340.0, 120.0),
+        shelf(2440.0, 240.0, 110.0), ledge(2625.0, 460.0, 110.0), ledge(2900.0, 440.0, 130.0)
     ];
 }
 
-// Twelve coins, one hovering over most perches and a bold one down by the
-// first pit. Positions are centres, coins draw as circles.
-f level_coins():a:Coin {
+f level_one_coins():a:Coin {
     r [
-        Coin { coin_x = 400.0, coin_y = 410.0, taken = false },
-        Coin { coin_x = 600.0, coin_y = 310.0, taken = false },
-        Coin { coin_x = 770.0, coin_y = 525.0, taken = false },
-        Coin { coin_x = 962.0, coin_y = 435.0, taken = false },
-        Coin { coin_x = 1215.0, coin_y = 410.0, taken = false },
-        Coin { coin_x = 1410.0, coin_y = 300.0, taken = false },
-        Coin { coin_x = 1615.0, coin_y = 395.0, taken = false },
-        Coin { coin_x = 1880.0, coin_y = 430.0, taken = false },
-        Coin { coin_x = 2115.0, coin_y = 410.0, taken = false },
-        Coin { coin_x = 2310.0, coin_y = 305.0, taken = false },
-        Coin { coin_x = 2495.0, coin_y = 205.0, taken = false },
-        Coin { coin_x = 2965.0, coin_y = 405.0, taken = false }
+        coin_at(400.0, 410.0), coin_at(600.0, 310.0), coin_at(770.0, 525.0), coin_at(962.0, 435.0),
+        coin_at(1215.0, 410.0), coin_at(1410.0, 300.0), coin_at(1615.0, 395.0), coin_at(1880.0, 430.0),
+        coin_at(2115.0, 410.0), coin_at(2310.0, 305.0), coin_at(2495.0, 205.0), coin_at(2965.0, 405.0)
     ];
 }
 
-// The player back at the start with untouched velocity. Coins are passed in
-// so falling into a pit costs the run, not the collection.
-f respawn(coins:a:Coin):Platformer {
+f level_one_foes():a:Enemy {
+    r [walker(1150.0, 1700.0, 534.0, 0.06)];
+}
+
+f level_one_spikes():a:Spike {
+    r [];
+}
+
+// Level two. Stepping stones in every pit, two walkers pacing the flats, one
+// perched on a shelf, and the first spikes.
+f level_two_platforms():a:Platform {
+    r [
+        ground(0.0, 820.0), ground(970.0, 1500.0), ground(1670.0, 2200.0), ground(2380.0, 3400.0),
+        shelf(300.0, 450.0, 130.0), ledge(500.0, 350.0, 110.0), shelf(690.0, 455.0, 100.0),
+        ledge(860.0, 470.0, 90.0),
+        shelf(1060.0, 445.0, 120.0), ledge(1250.0, 340.0, 110.0), shelf(1420.0, 445.0, 110.0),
+        ledge(1540.0, 465.0, 95.0),
+        shelf(1780.0, 440.0, 120.0), ledge(1960.0, 335.0, 110.0), shelf(2120.0, 440.0, 110.0),
+        ledge(2250.0, 460.0, 100.0),
+        shelf(2500.0, 430.0, 120.0), ledge(2700.0, 330.0, 110.0), shelf(2900.0, 430.0, 120.0),
+        ledge(3080.0, 350.0, 110.0)
+    ];
+}
+
+f level_two_coins():a:Coin {
+    r [
+        coin_at(365.0, 410.0), coin_at(555.0, 310.0), coin_at(740.0, 415.0), coin_at(905.0, 430.0),
+        coin_at(1120.0, 405.0), coin_at(1305.0, 300.0), coin_at(1475.0, 405.0), coin_at(1585.0, 425.0),
+        coin_at(1840.0, 400.0), coin_at(2015.0, 295.0), coin_at(2300.0, 420.0), coin_at(2755.0, 290.0)
+    ];
+}
+
+f level_two_foes():a:Enemy {
+    r [
+        walker(340.0, 780.0, 534.0, 0.07),
+        walker(1700.0, 2150.0, 534.0, 0.085),
+        walker(2500.0, 2620.0, 404.0, 0.05)
+    ];
+}
+
+f level_two_spikes():a:Spike {
+    r [spikes_at(1180.0, 560.0), spikes_at(2660.0, 560.0)];
+}
+
+// Level three. Wider pits, and flyers bobbing over most of them.
+f level_three_platforms():a:Platform {
+    r [
+        ground(0.0, 600.0), ground(760.0, 1150.0), ground(1320.0, 1700.0), ground(1875.0, 2300.0),
+        ground(2485.0, 3600.0),
+        shelf(250.0, 455.0, 110.0), ledge(430.0, 350.0, 100.0),
+        shelf(630.0, 470.0, 100.0),
+        shelf(880.0, 445.0, 110.0), ledge(1060.0, 340.0, 100.0),
+        shelf(1200.0, 455.0, 100.0),
+        shelf(1400.0, 440.0, 110.0), ledge(1580.0, 335.0, 100.0),
+        shelf(1740.0, 460.0, 100.0),
+        shelf(1980.0, 440.0, 110.0), ledge(2160.0, 340.0, 100.0),
+        shelf(2350.0, 455.0, 100.0),
+        shelf(2600.0, 430.0, 110.0), ledge(2790.0, 330.0, 100.0), shelf(2980.0, 430.0, 110.0),
+        ledge(3170.0, 340.0, 100.0), shelf(3330.0, 440.0, 110.0)
+    ];
+}
+
+f level_three_coins():a:Coin {
+    r [
+        coin_at(305.0, 415.0), coin_at(480.0, 310.0), coin_at(680.0, 430.0), coin_at(935.0, 405.0),
+        coin_at(1110.0, 300.0), coin_at(1250.0, 415.0), coin_at(1455.0, 400.0), coin_at(1630.0, 295.0),
+        coin_at(1790.0, 420.0), coin_at(2035.0, 400.0), coin_at(2210.0, 300.0), coin_at(2400.0, 415.0)
+    ];
+}
+
+f level_three_foes():a:Enemy {
+    r [
+        flyer(560.0, 780.0, 390.0, 0.09),
+        walker(800.0, 1120.0, 534.0, 0.08),
+        flyer(1680.0, 1900.0, 380.0, 0.1),
+        walker(1920.0, 2260.0, 534.0, 0.09),
+        flyer(2300.0, 2500.0, 375.0, 0.1),
+        walker(2600.0, 2700.0, 404.0, 0.05)
+    ];
+}
+
+f level_three_spikes():a:Spike {
+    r [spikes_at(1480.0, 560.0), spikes_at(2900.0, 560.0), spikes_at(3200.0, 560.0)];
+}
+
+// Level four. Six stretches of ground, a stone in the middle of every pit, and
+// enough in the air that standing still is the worst plan.
+f level_four_platforms():a:Platform {
+    r [
+        ground(0.0, 520.0), ground(700.0, 1000.0), ground(1180.0, 1450.0), ground(1640.0, 1950.0),
+        ground(2150.0, 2500.0), ground(2700.0, 3800.0),
+        shelf(560.0, 470.0, 90.0), ledge(1030.0, 460.0, 90.0), shelf(1500.0, 465.0, 90.0),
+        ledge(1990.0, 455.0, 90.0), shelf(2540.0, 460.0, 90.0),
+        shelf(220.0, 450.0, 110.0), ledge(380.0, 345.0, 100.0),
+        shelf(790.0, 440.0, 110.0), ledge(920.0, 335.0, 100.0),
+        shelf(1250.0, 445.0, 110.0), ledge(1380.0, 335.0, 100.0),
+        shelf(1700.0, 440.0, 110.0), ledge(1860.0, 330.0, 100.0),
+        shelf(2200.0, 445.0, 110.0), ledge(2360.0, 335.0, 100.0),
+        shelf(2750.0, 440.0, 110.0), ledge(2930.0, 330.0, 100.0), shelf(3120.0, 420.0, 110.0),
+        ledge(3300.0, 320.0, 100.0), shelf(3480.0, 430.0, 110.0)
+    ];
+}
+
+f level_four_coins():a:Coin {
+    r [
+        coin_at(275.0, 410.0), coin_at(430.0, 305.0), coin_at(605.0, 430.0), coin_at(845.0, 400.0),
+        coin_at(970.0, 295.0), coin_at(1075.0, 420.0), coin_at(1305.0, 405.0), coin_at(1430.0, 295.0),
+        coin_at(1545.0, 425.0), coin_at(1755.0, 400.0), coin_at(1910.0, 290.0), coin_at(2035.0, 415.0)
+    ];
+}
+
+f level_four_foes():a:Enemy {
+    r [
+        walker(220.0, 460.0, 534.0, 0.09),
+        flyer(520.0, 700.0, 390.0, 0.11),
+        walker(730.0, 970.0, 534.0, 0.1),
+        flyer(1490.0, 1640.0, 385.0, 0.12),
+        walker(1680.0, 1920.0, 534.0, 0.1),
+        flyer(1970.0, 2150.0, 375.0, 0.12),
+        walker(2200.0, 2310.0, 419.0, 0.06),
+        walker(2750.0, 2880.0, 534.0, 0.1),
+        flyer(3140.0, 3290.0, 340.0, 0.13)
+    ];
+}
+
+f level_four_spikes():a:Spike {
+    r [
+        spikes_at(1300.0, 560.0), spikes_at(1780.0, 560.0), spikes_at(2300.0, 560.0),
+        spikes_at(2950.0, 560.0), spikes_at(3400.0, 560.0)
+    ];
+}
+
+// Level five. Seven short stretches, six pits, and a tower at the end that has
+// to be climbed and then walked back down.
+f level_five_platforms():a:Platform {
+    r [
+        ground(0.0, 480.0), ground(660.0, 900.0), ground(1080.0, 1300.0), ground(1500.0, 1700.0),
+        ground(1900.0, 2150.0), ground(2350.0, 2600.0), ground(2800.0, 4000.0),
+        ledge(520.0, 470.0, 90.0), shelf(940.0, 465.0, 90.0), ledge(1350.0, 470.0, 90.0),
+        shelf(1750.0, 460.0, 90.0), ledge(2200.0, 465.0, 90.0), shelf(2650.0, 460.0, 90.0),
+        shelf(180.0, 450.0, 100.0), ledge(330.0, 345.0, 90.0),
+        shelf(700.0, 440.0, 100.0), ledge(830.0, 335.0, 90.0),
+        shelf(1120.0, 445.0, 100.0), ledge(1230.0, 340.0, 90.0),
+        shelf(1520.0, 440.0, 100.0), ledge(1620.0, 335.0, 90.0),
+        shelf(1930.0, 445.0, 100.0), ledge(2050.0, 340.0, 90.0),
+        shelf(2380.0, 440.0, 100.0), ledge(2490.0, 335.0, 90.0),
+        shelf(2850.0, 450.0, 100.0), ledge(2990.0, 350.0, 90.0), shelf(3130.0, 250.0, 90.0),
+        ledge(3270.0, 150.0, 90.0), shelf(3420.0, 250.0, 100.0), ledge(3580.0, 350.0, 100.0),
+        shelf(3740.0, 450.0, 110.0)
+    ];
+}
+
+f level_five_coins():a:Coin {
+    r [
+        coin_at(230.0, 410.0), coin_at(375.0, 305.0), coin_at(565.0, 430.0), coin_at(750.0, 400.0),
+        coin_at(875.0, 295.0), coin_at(985.0, 425.0), coin_at(1170.0, 405.0), coin_at(1275.0, 300.0),
+        coin_at(1395.0, 430.0), coin_at(1570.0, 400.0), coin_at(1795.0, 420.0), coin_at(1980.0, 405.0),
+        coin_at(2245.0, 425.0), coin_at(2430.0, 400.0),
+        coin_at(2900.0, 410.0), coin_at(3035.0, 310.0), coin_at(3175.0, 210.0), coin_at(3315.0, 110.0)
+    ];
+}
+
+f level_five_foes():a:Enemy {
+    r [
+        walker(230.0, 420.0, 534.0, 0.1),
+        flyer(470.0, 680.0, 390.0, 0.12),
+        walker(680.0, 880.0, 534.0, 0.11),
+        flyer(930.0, 1090.0, 385.0, 0.13),
+        walker(1100.0, 1280.0, 534.0, 0.11),
+        flyer(1290.0, 1510.0, 400.0, 0.13),
+        walker(1520.0, 1620.0, 414.0, 0.06),
+        flyer(1690.0, 1910.0, 390.0, 0.14),
+        walker(1920.0, 2130.0, 534.0, 0.12),
+        flyer(2140.0, 2360.0, 390.0, 0.14),
+        walker(2380.0, 2480.0, 414.0, 0.06),
+        flyer(2590.0, 2810.0, 390.0, 0.14),
+        walker(2820.0, 3030.0, 534.0, 0.12),
+        flyer(2950.0, 3450.0, 410.0, 0.13)
+    ];
+}
+
+f level_five_spikes():a:Spike {
+    r [
+        spikes_at(1210.0, 560.0), spikes_at(2050.0, 560.0), spikes_at(2500.0, 560.0),
+        spikes_at(3050.0, 560.0), spikes_at(3450.0, 560.0)
+    ];
+}
+
+// One way in to all of it, so everything else asks for a level by number.
+f level_platforms(level:i):a:Platform {
+    if {
+        level == 1 -> { r level_one_platforms(); },
+        level == 2 -> { r level_two_platforms(); },
+        level == 3 -> { r level_three_platforms(); },
+        level == 4 -> { r level_four_platforms(); },
+        else -> { r level_five_platforms(); }
+    }
+}
+
+f level_coins(level:i):a:Coin {
+    if {
+        level == 1 -> { r level_one_coins(); },
+        level == 2 -> { r level_two_coins(); },
+        level == 3 -> { r level_three_coins(); },
+        level == 4 -> { r level_four_coins(); },
+        else -> { r level_five_coins(); }
+    }
+}
+
+f level_foes(level:i):a:Enemy {
+    if {
+        level == 1 -> { r level_one_foes(); },
+        level == 2 -> { r level_two_foes(); },
+        level == 3 -> { r level_three_foes(); },
+        level == 4 -> { r level_four_foes(); },
+        else -> { r level_five_foes(); }
+    }
+}
+
+f level_spikes(level:i):a:Spike {
+    if {
+        level == 1 -> { r level_one_spikes(); },
+        level == 2 -> { r level_two_spikes(); },
+        level == 3 -> { r level_three_spikes(); },
+        level == 4 -> { r level_four_spikes(); },
+        else -> { r level_five_spikes(); }
+    }
+}
+
+// Every coin in the game, counted rather than written down, so the closing
+// line can never disagree with the levels.
+f total_coins():i {
+    r array_length(level_coins(1)) + array_length(level_coins(2)) + array_length(level_coins(3)) + array_length(level_coins(4)) + array_length(level_coins(5));
+}
+
+f taken_count(coins:a:Coin):i {
+    taken:a:Coin = filter coin in coins {
+        y coin.taken;
+    };
+    r array_length(taken);
+}
+
+// The run so far. A level that has been cleared is already in the bank, so
+// adding its coins again on a card would count them twice.
+f coins_so_far(state:Platformer):i {
+    if {
+        state.mode == Mode::Cleared || state.mode == Mode::Finished -> { r state.banked; },
+        else -> { r state.banked + taken_count(state.coins); }
+    }
+}
+
+// A level from its beginning. Coins and enemies come back fresh, the score
+// from earlier levels and the tally of deaths carry on. Every held flag starts
+// true, so the press that asked for this level is not read again inside it.
+f start_level(level:i, banked:i, deaths:i):Platformer {
     r Platformer {
-        player_x = 60.0, player_y = 524.0, vel_x = 0.0, vel_y = 0.0,
-        coyote_ms = 0.0, camera_x = 0.0, coins = coins, jump_held = false, step_phase = 0.0,
-        pressing_left = false, pressing_right = false, pressing_jump = false, won = false, done = false
+        mode = Mode::Running, level = level, banked = banked, deaths = deaths, intro_ms = 1700.0,
+        player_x = 60.0, player_y = 524.0, vel_x = 0.0, vel_y = 0.0, coyote_ms = 0.0, camera_x = 0.0,
+        coins = level_coins(level), foes = level_foes(level), jump_held = true, reset_held = true,
+        tap_held = true, step_phase = 0.0, pressing_left = false, pressing_right = false,
+        pressing_jump = false, done = false
+    };
+}
+
+// After dying. The level starts over and the enemies come back, but the coins
+// already taken stay taken, so a bad fall costs the run and not the collection.
+f respawn(state:Platformer):Platformer {
+    r Platformer {
+        mode = Mode::Running, level = state.level, banked = state.banked, deaths = state.deaths + 1,
+        intro_ms = 0.0, player_x = 60.0, player_y = 524.0, vel_x = 0.0, vel_y = 0.0, coyote_ms = 0.0,
+        camera_x = 0.0, coins = state.coins, foes = level_foes(state.level), jump_held = true,
+        reset_held = true, tap_held = true, step_phase = 0.0, pressing_left = false,
+        pressing_right = false, pressing_jump = false, done = false
+    };
+}
+
+// The screens between levels change which card is showing and nothing else,
+// so they all come through here rather than writing the state out again.
+f with_mode(state:Platformer, mode:Mode, tap_held:b, done:b):Platformer {
+    r Platformer {
+        mode = mode, level = state.level, banked = state.banked, deaths = state.deaths,
+        intro_ms = state.intro_ms, player_x = state.player_x, player_y = state.player_y,
+        vel_x = state.vel_x, vel_y = state.vel_y, coyote_ms = state.coyote_ms,
+        camera_x = state.camera_x, coins = state.coins, foes = state.foes,
+        jump_held = state.jump_held, reset_held = state.reset_held, tap_held = tap_held,
+        step_phase = state.step_phase, pressing_left = false, pressing_right = false,
+        pressing_jump = false, done = done
     };
 }
 
 f new_game():Platformer {
-    r respawn(level_coins());
+    r with_mode(start_level(1, 0, 0), Mode::Title, false, false);
 }
 
 // The player is a 28 by 36 rectangle. True when it overlaps a platform.
@@ -186,6 +574,75 @@ f collect_coin(coin:Coin, pos_x:f, pos_y:f):Coin {
     }
 }
 
+// Walkers are a little wider than flyers, and both are square.
+f foe_size(menace:Menace):f {
+    if {
+        menace == Menace::Walker -> { r 26.0; },
+        else -> { r 24.0; }
+    }
+}
+
+// One enemy's step. Both kinds pace between the same two ends and turn around
+// at either, a flyer adding a bob it carries in its own phase so two of them
+// side by side are not in lockstep.
+f move_enemy(foe:Enemy, delta:f):Enemy {
+    size:f = foe_size(foe.menace);
+    raw_x:f = foe.foe_x + (foe.foe_dir * foe.foe_pace * delta);
+    turned:b = raw_x < foe.foe_from || raw_x > (foe.foe_to - size);
+    dir:f = if {
+        turned -> { r 0.0 - foe.foe_dir; },
+        else -> { r foe.foe_dir; }
+    };
+    pos_x:f = math_clamp(raw_x, foe.foe_from, foe.foe_to - size);
+    raw_bob:f = foe.foe_bob + (0.004 * delta);
+    bob:f = if {
+        raw_bob > 6.2831853 -> { r raw_bob - 6.2831853; },
+        else -> { r raw_bob; }
+    };
+    pos_y:f = if {
+        foe.menace == Menace::Flyer -> { r foe.foe_home + (math_sin(bob) * 34.0); },
+        else -> { r foe.foe_y; }
+    };
+    r Enemy {
+        foe_x = pos_x, foe_y = pos_y, foe_from = foe.foe_from, foe_to = foe.foe_to, foe_dir = dir,
+        foe_pace = foe.foe_pace, foe_home = foe.foe_home, foe_bob = bob, menace = foe.menace,
+        foe_alive = foe.foe_alive
+    };
+}
+
+// A living enemy overlapping the player. Dead ones are simply scenery that is
+// no longer drawn.
+f enemy_hit(foe:Enemy, pos_x:f, pos_y:f):b {
+    size:f = foe_size(foe.menace);
+    r foe.foe_alive && pos_x < (foe.foe_x + size) && (pos_x + 28.0) > foe.foe_x && pos_y < (foe.foe_y + size) && (pos_y + 36.0) > foe.foe_y;
+}
+
+// Landing on one counts as a stomp, walking into one does not. The test is
+// where the feet were before this step rather than where they are now, so a
+// fast fall cannot pass through the top of a head and come out as a hit.
+f stomped(foe:Enemy, pos_x:f, pos_y:f, old_y:f, fall_vel:f):b {
+    r enemy_hit(foe, pos_x, pos_y) && fall_vel > 0.0 && (old_y + 36.0) <= (foe.foe_y + 14.0);
+}
+
+f squash_enemy(foe:Enemy, pos_x:f, pos_y:f, old_y:f, fall_vel:f):Enemy {
+    if {
+        stomped(foe, pos_x, pos_y, old_y, fall_vel) -> {
+            r Enemy {
+                foe_x = foe.foe_x, foe_y = foe.foe_y, foe_from = foe.foe_from, foe_to = foe.foe_to,
+                foe_dir = foe.foe_dir, foe_pace = foe.foe_pace, foe_home = foe.foe_home,
+                foe_bob = foe.foe_bob, menace = foe.menace, foe_alive = false
+            };
+        },
+        else -> { r foe; }
+    }
+}
+
+// Spikes are eighty wide and their teeth stand seventeen pixels proud of the
+// surface they sit on, so only feet low enough to be among them are caught.
+f spike_hit(spike:Spike, pos_x:f, pos_y:f):b {
+    r pos_x < (spike.spike_x + 80.0) && (pos_x + 28.0) > spike.spike_x && (pos_y + 36.0) > (spike.spike_y - 13.0) && pos_y < spike.spike_y;
+}
+
 // Four notes climbing a major chord. The whole tune is queued in one go and
 // the sound system keeps its time, so no frame waits on it. Each note says
 // which beat it lands on rather than carrying a hand-added offset, and the
@@ -206,11 +663,28 @@ f play_fall_tune():v {
     danger(audio_tone_after(233.0, 0.34, 0.14, beat * 2.0));
 }
 
-// The three on-screen pads, in the coordinates both the drawing and the
-// touching use. A finger or a mouse inside one counts as that control.
+// The last level earns a longer version of the win tune, up an octave and out
+// through the fifth, so finishing the game does not sound like finishing a
+// level.
+f play_finish_tune():v {
+    beat:f = 0.15;
+    danger(audio_tone_after(523.0, 0.15, 0.14, beat * 0.0));
+    danger(audio_tone_after(659.0, 0.15, 0.14, beat * 1.0));
+    danger(audio_tone_after(784.0, 0.15, 0.14, beat * 2.0));
+    danger(audio_tone_after(1047.0, 0.15, 0.15, beat * 3.0));
+    danger(audio_tone_after(1319.0, 0.15, 0.15, beat * 4.0));
+    danger(audio_tone_after(1568.0, 0.45, 0.17, beat * 5.0));
+}
+
+// The pads, in the coordinates both the drawing and the touching use. A finger
+// or a mouse inside one counts as that control. The three at the bottom play
+// the game, the small one at the top right starts the level over, and the last
+// is the whole window, which is what leaves a card between levels.
 f left_pad():a:f { r [20.0, 480.0, 74.0, 74.0]; }
 f right_pad():a:f { r [104.0, 480.0, 74.0, 74.0]; }
 f jump_pad():a:f { r [648.0, 470.0, 94.0, 94.0]; }
+f reset_pad():a:f { r [722.0, 14.0, 62.0, 62.0]; }
+f whole_window():a:f { r [0.0, 0.0, 800.0, 600.0]; }
 
 f point_in_pad(point_x:f, point_y:f, pad:a:f):b {
     pad_x:f = danger(array_get(pad, 0));
@@ -231,12 +705,21 @@ f pad_pressed(input:GAME_Input, pad:a:f):b {
     r touched || (input.mouse_down && point_in_pad(input.mouse_x, input.mouse_y, pad));
 }
 
-// One physics step: read the keys, move and collide on each axis in turn,
-// then settle the pits, the coins, the flag and the camera.
-f step_world(state:Platformer, input:GAME_Input):Platformer {
+// Yes, go on, carry on: the one answer every card between levels is waiting
+// for, from whichever key is nearest.
+f confirm_key(input:GAME_Input):b {
+    r array_contains(input.keys_pressed, `Space`) || array_contains(input.keys_pressed, `Enter`) || array_contains(input.keys_pressed, `Up`) || array_contains(input.keys_pressed, `w`);
+}
+
+// One physics step: read the input, move and collide on each axis in turn,
+// then settle the enemies, the pits, the spikes, the coins, the flag and the
+// camera. reset_down is whether the restart pad is under a finger, which the
+// caller has already looked at, and which is remembered so holding it down
+// restarts once.
+f step_world(state:Platformer, input:GAME_Input, reset_down:b):Platformer {
     // A stalled frame is capped so the player never tunnels through a floor.
     delta:f = math_min(input.delta_ms, 32.0);
-    platforms:a:Platform = level_platforms();
+    platforms:a:Platform = level_platforms(state.level);
 
     // Keys and pads say the same things, so a phone and a keyboard play the
     // same game. A held jump pad only jumps on the frame it went down.
@@ -248,7 +731,7 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
     // Sideways first, clamped to the ends of the level.
     vel_x:f = step_vel_x(state.vel_x, left_held, right_held, delta);
     slid_x:f = collide_x(state.player_x + (vel_x * delta), state.player_y, state.player_x, platforms);
-    pos_x:f = math_clamp(slid_x, 0.0, 3172.0);
+    pos_x:f = math_clamp(slid_x, 0.0, level_span(state.level) - 28.0);
 
     // A jump is allowed while feet are on ground or for the 90 millisecond
     // coyote window just after walking off an edge. Jumping spends the
@@ -262,38 +745,62 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
     fall_vel:f = math_min(launch_vel + (0.0022 * delta), 0.95);
     landing:Landing = collide_y(state.player_y + (fall_vel * delta), pos_x, state.player_y, fall_vel, platforms);
 
+    // The enemies move before anything is asked about them, so what the player
+    // is judged against is where they are now and not where they were.
+    moved_foes:a:Enemy = map foe in state.foes {
+        y move_enemy(foe, delta);
+    };
+    settled_foes:a:Enemy = map foe in moved_foes {
+        y squash_enemy(foe, pos_x, landing.land_y, state.player_y, fall_vel);
+    };
+    stomps:a:Enemy = filter foe in moved_foes {
+        y stomped(foe, pos_x, landing.land_y, state.player_y, fall_vel);
+    };
+    bounced:b = array_length(stomps) > 0;
+
+    // A stomp kills the enemy first and hurts second, so landing on one of two
+    // that overlap is a stomp and not a death. Anything still alive and still
+    // touching after that is what kills the run.
+    touching:a:Enemy = filter foe in settled_foes {
+        y enemy_hit(foe, pos_x, landing.land_y);
+    };
+    spiked:a:Spike = filter spike in level_spikes(state.level) {
+        y spike_hit(spike, pos_x, landing.land_y);
+    };
+    if {
+        array_length(touching) > 0 || array_length(spiked) > 0 || landing.land_y > 700.0 -> {
+            play_fall_tune();
+            r respawn(state);
+        },
+        else -> {}
+    }
+
+    // A stomp throws the player back up, which is both the reward and the way
+    // out of a row of walkers.
+    vel_y:f = if {
+        bounced -> { r -0.62; },
+        else -> { r landing.land_vel; }
+    };
     coyote_ms:f = if {
+        bounced -> { r 90.0; },
         landing.grounded -> { r 0.0; },
         jumped -> { r 90.0; },
         else -> { r state.coyote_ms + delta; }
     };
 
-    // The pits are the floor of the world. Falling out costs the run but
-    // keeps every coin already taken.
-    if {
-        landing.land_y > 700.0 -> {
-            play_fall_tune();
-            r respawn(state.coins);
-        },
-        else -> {}
-    }
-
     coins:a:Coin = map coin in state.coins {
         y collect_coin(coin, pos_x, landing.land_y);
     };
-    won:b = pos_x > 3050.0;
-    if {
-        won && (state.won == false) -> { play_win_tune(); },
-        else -> {}
-    }
 
     // Sounds mark moments, not states: a coin the instant it is taken, a
     // jump as it leaves the ground, a thud on landing from a real fall.
     // audio_tone_start comes straight back, so no frame waits for a sound.
-    taken_before:a:Coin = filter coin in state.coins { y coin.taken; };
-    taken_now:a:Coin = filter coin in coins { y coin.taken; };
     if {
-        array_length(taken_now) > array_length(taken_before) -> { danger(audio_tone_start(880.0, 0.06, 0.15)); },
+        taken_count(coins) > taken_count(state.coins) -> { danger(audio_tone_start(880.0, 0.06, 0.15)); },
+        else -> {}
+    }
+    if {
+        bounced -> { danger(audio_tone_start(330.0, 0.07, 0.16)); },
         else -> {}
     }
     if {
@@ -339,52 +846,132 @@ f step_world(state:Platformer, input:GAME_Input):Platformer {
         else -> {}
     }
 
+    // The flag. The last level ends the game, every other one puts up a card
+    // and banks what this level was worth.
+    reached:b = pos_x > (flag_x(state.level) - 30.0);
+    finished:b = reached && (state.level >= level_count());
+    mode:Mode = if {
+        finished -> { r Mode::Finished; },
+        reached -> { r Mode::Cleared; },
+        else -> { r Mode::Running; }
+    };
+    if {
+        finished -> { play_finish_tune(); },
+        reached -> { play_win_tune(); },
+        else -> {}
+    }
+    banked:i = if {
+        reached -> { r state.banked + taken_count(coins); },
+        else -> { r state.banked; }
+    };
+
     // What the player is asking for this frame, key or finger alike, so the
     // pads can show it.
     pressing_jump:b = jump_pad_now || array_contains(input.keys_down, `Space`) || array_contains(input.keys_down, `Up`) || array_contains(input.keys_down, `w`);
 
     // The camera trails the player with lead room ahead and never shows
     // past either end of the level.
-    camera_goal:f = math_clamp(pos_x - 300.0, 0.0, 2400.0);
+    camera_goal:f = math_clamp(pos_x - 300.0, 0.0, level_span(state.level) - 800.0);
     camera_x:f = state.camera_x + ((camera_goal - state.camera_x) * math_min(1.0, 0.012 * delta));
 
     r Platformer {
-        player_x = pos_x, player_y = landing.land_y, vel_x = vel_x, vel_y = landing.land_vel,
-        coyote_ms = coyote_ms, camera_x = camera_x, coins = coins, jump_held = jump_pad_now, step_phase = step_phase,
-        pressing_left = left_held, pressing_right = right_held, pressing_jump = pressing_jump, won = won, done = false
+        mode = mode, level = state.level, banked = banked, deaths = state.deaths,
+        intro_ms = math_max(state.intro_ms - delta, 0.0),
+        player_x = pos_x, player_y = landing.land_y, vel_x = vel_x, vel_y = vel_y,
+        coyote_ms = coyote_ms, camera_x = camera_x, coins = coins, foes = settled_foes,
+        jump_held = jump_pad_now, reset_held = reset_down, tap_held = pad_pressed(input, whole_window()),
+        step_phase = step_phase, pressing_left = left_held, pressing_right = right_held,
+        pressing_jump = pressing_jump, done = false
     };
+}
+
+// The title card waits for anything at all, and the whole window is the
+// button, which is the only thing a first-time finger reliably finds.
+f title_update(state:Platformer, input:GAME_Input):Platformer {
+    tap:b = pad_pressed(input, whole_window());
+    go:b = confirm_key(input) || (tap && (state.tap_held == false));
+    if {
+        go -> { r start_level(1, 0, 0); },
+        else -> { r with_mode(state, Mode::Title, tap, false); }
+    }
+}
+
+f cleared_update(state:Platformer, input:GAME_Input):Platformer {
+    tap:b = pad_pressed(input, whole_window());
+    go:b = confirm_key(input) || (tap && (state.tap_held == false));
+    if {
+        go -> { r start_level(state.level + 1, state.banked, state.deaths); },
+        else -> { r with_mode(state, Mode::Cleared, tap, false); }
+    }
+}
+
+f finished_update(state:Platformer, input:GAME_Input):Platformer {
+    tap:b = pad_pressed(input, whole_window());
+    go:b = confirm_key(input) || (tap && (state.tap_held == false));
+    if {
+        go -> { r start_level(1, 0, 0); },
+        else -> { r with_mode(state, Mode::Finished, tap, false); }
+    }
+}
+
+// R and the pad at the top right are the same thing, and both start the level
+// over rather than the game, which is what a stuck run actually needs. A
+// restart is not a death, so the tally is left alone.
+f running_update(state:Platformer, input:GAME_Input):Platformer {
+    reset_down:b = pad_pressed(input, reset_pad());
+    restarting:b = array_contains(input.keys_pressed, `r`) || (reset_down && (state.reset_held == false));
+    if {
+        restarting -> { r start_level(state.level, state.banked, state.deaths); },
+        else -> { r step_world(state, input, reset_down); }
+    }
 }
 
 f update(state:Platformer, input:GAME_Input):Platformer {
     if {
-        array_contains(input.keys_pressed, `Esc`) -> {
-            r Platformer {
-                player_x = state.player_x, player_y = state.player_y, vel_x = state.vel_x, vel_y = state.vel_y,
-                coyote_ms = state.coyote_ms, camera_x = state.camera_x, coins = state.coins, jump_held = state.jump_held,
-                step_phase = state.step_phase, pressing_left = false, pressing_right = false, pressing_jump = false,
-                won = state.won, done = true
-            };
-        },
-        array_contains(input.keys_pressed, `r`) -> { r new_game(); },
-        state.won -> { r state; },
-        else -> { r step_world(state, input); }
+        array_contains(input.keys_pressed, `Esc`) -> { r with_mode(state, state.mode, state.tap_held, true); },
+        state.mode == Mode::Title -> { r title_update(state, input); },
+        state.mode == Mode::Cleared -> { r cleared_update(state, input); },
+        state.mode == Mode::Finished -> { r finished_update(state, input); },
+        else -> { r running_update(state, input); }
+    }
+}
+
+// The night deepens as the levels go on, which is the cheapest way to make
+// five runs through the same city feel like five different nights.
+f sky_tint(level:i):s {
+    if {
+        level == 1 -> { r `#101018`; },
+        level == 2 -> { r `#0e1420`; },
+        level == 3 -> { r `#161022`; },
+        level == 4 -> { r `#1a1020`; },
+        else -> { r `#1e1018`; }
+    }
+}
+
+f moon_tint(level:i):s {
+    if {
+        level == 1 -> { r `#d9b45f`; },
+        level == 2 -> { r `#c9d2e8`; },
+        level == 3 -> { r `#d9a0c0`; },
+        level == 4 -> { r `#e0a95f`; },
+        else -> { r `#d97a6a`; }
     }
 }
 
 // A lofi mountain city at night, five depths deep: a still sky with a
-// gold crescent and stars, triangle mountains barely creeping at eight
+// crescent and stars, triangle mountains barely creeping at eight
 // percent of camera speed, a hillside of far buildings at fifteen, the
 // plum skyline with lit windows at forty, and near towers at seventy.
 // Every layer outruns the one behind it, which is what makes it deep.
-f backdrop_shapes(camera_x:f):a:GAME_Shape {
+f backdrop_shapes(camera_x:f, level:i):a:GAME_Shape {
     mountain_slide:f = camera_x * 0.08;
     far_slide:f = camera_x * 0.15;
     slide:f = camera_x * 0.4;
     near_slide:f = camera_x * 0.7;
     sky:a:GAME_Shape = [
         game_circle(650.0, 94.0, 40.0, `#1c1826`),
-        game_circle(650.0, 94.0, 30.0, `#d9b45f`),
-        game_circle(662.0, 85.0, 24.0, `#101018`),
+        game_circle(650.0, 94.0, 30.0, moon_tint(level)),
+        game_circle(662.0, 85.0, 24.0, sky_tint(level)),
         game_rect(90.0, 60.0, 2.0, 2.0, `#4a4458`),
         game_rect(210.0, 130.0, 2.0, 2.0, `#4a4458`),
         game_rect(330.0, 45.0, 3.0, 3.0, `#5c5470`),
@@ -475,14 +1062,71 @@ f no_shapes():a:GAME_Shape {
     r [];
 }
 
-f win_banner(score:i):a:GAME_Shape {
+// The built-in font is monospaced and every glyph advances 0.602 of its size,
+// so a line can be centred without measuring anything.
+f text_left(content:s, centre_x:f, size:f):f {
+    width:f = danger(float_from(string_length(content))) * size * 0.602;
+    r centre_x - (width / 2.0);
+}
+
+f centred_text(content:s, centre_x:f, top_y:f, size:f, tint:s):GAME_Shape {
+    r game_text(content, text_left(content, centre_x, size), top_y, size, tint);
+}
+
+// One patch of spikes: five teeth on a dark base, which is all a patch ever is.
+f spike_shapes(spike:Spike, cam:f):a:GAME_Shape {
+    base_x:f = spike.spike_x - cam;
+    top_y:f = spike.spike_y;
     r [
-        game_rect(170.0, 190.0, 460.0, 170.0, `#181226`),
-        game_rect_outline(170.0, 190.0, 460.0, 170.0, 3.0, `#6d5a7e`),
-        game_text(`You made it!`, 260.0, 220.0, 40.0, `#e9c46a`),
-        game_text(string_concat([`coins `, string_from(score), ` of 12`]), 320.0, 275.0, 22.0, `#e8ded1`),
-        game_text(`press R to run it again`, 275.0, 315.0, 20.0, `#757575`)
+        game_rect(base_x, top_y - 4.0, 80.0, 6.0, `#8f4a44`),
+        game_triangle(base_x, top_y, base_x + 8.0, top_y - 17.0, base_x + 16.0, top_y, `#e0d7e8`),
+        game_triangle(base_x + 16.0, top_y, base_x + 24.0, top_y - 17.0, base_x + 32.0, top_y, `#e0d7e8`),
+        game_triangle(base_x + 32.0, top_y, base_x + 40.0, top_y - 17.0, base_x + 48.0, top_y, `#e0d7e8`),
+        game_triangle(base_x + 48.0, top_y, base_x + 56.0, top_y - 17.0, base_x + 64.0, top_y, `#e0d7e8`),
+        game_triangle(base_x + 64.0, top_y, base_x + 72.0, top_y - 17.0, base_x + 80.0, top_y, `#e0d7e8`)
     ];
+}
+
+// A walker shuffles its feet by how far along it is rather than by a clock,
+// same as the player does, and looks the way it is walking.
+f walker_shapes(foe:Enemy, cam:f):a:GAME_Shape {
+    screen_x:f = foe.foe_x - cam;
+    swing:f = math_sin(foe.foe_x * 0.09) * 3.0;
+    eye_x:f = if {
+        foe.foe_dir < 0.0 -> { r 4.0; },
+        else -> { r 16.0; }
+    };
+    r [
+        game_rect(screen_x + 2.0 + swing, foe.foe_y + 20.0, 8.0, 6.0, `#8f4a44`),
+        game_rect(screen_x + 16.0 - swing, foe.foe_y + 20.0, 8.0, 6.0, `#8f4a44`),
+        game_rect(screen_x, foe.foe_y, 26.0, 22.0, `#c9695f`),
+        game_rect(screen_x + 3.0, foe.foe_y + 2.0, 20.0, 3.0, `#8f4a44`),
+        game_rect(screen_x + eye_x, foe.foe_y + 8.0, 6.0, 7.0, `#1a1020`)
+    ];
+}
+
+// A flyer flaps at three times its bob, so the wings beat rather than drift.
+f flyer_shapes(foe:Enemy, cam:f):a:GAME_Shape {
+    screen_x:f = foe.foe_x - cam;
+    flap:f = math_sin(foe.foe_bob * 3.0) * 7.0;
+    eye_x:f = if {
+        foe.foe_dir < 0.0 -> { r 4.0; },
+        else -> { r 14.0; }
+    };
+    r [
+        game_triangle(screen_x - 13.0, foe.foe_y + 10.0 - flap, screen_x + 2.0, foe.foe_y + 2.0, screen_x + 2.0, foe.foe_y + 18.0, `#b6a4e8`),
+        game_triangle(screen_x + 37.0, foe.foe_y + 10.0 - flap, screen_x + 22.0, foe.foe_y + 2.0, screen_x + 22.0, foe.foe_y + 18.0, `#b6a4e8`),
+        game_circle(screen_x + 12.0, foe.foe_y + 12.0, 12.0, `#8f7bd4`),
+        game_rect(screen_x + eye_x, foe.foe_y + 8.0, 6.0, 7.0, `#1a1020`)
+    ];
+}
+
+f enemy_shapes(foe:Enemy, cam:f):a:GAME_Shape {
+    if {
+        foe.foe_alive == false -> { r no_shapes(); },
+        foe.menace == Menace::Walker -> { r walker_shapes(foe, cam); },
+        else -> { r flyer_shapes(foe, cam); }
+    }
 }
 
 // The player drawn as a body with two legs. On the ground the legs swing
@@ -540,14 +1184,17 @@ f pad_ink_color(pressed:b):s {
 // The pads as they look: faint plates with a paler glyph, dim enough to sit
 // under the game rather than on top of it. The jump pad draws a figure
 // leaving a line of ground, which reads as jumping where an arrow alone
-// reads as up.
+// reads as up. The restart pad up in the corner is a letter, because the key
+// that does the same thing is that letter.
 f control_pads(state:Platformer):a:GAME_Shape {
     left:a:f = left_pad();
     right:a:f = right_pad();
     jump:a:f = jump_pad();
+    reset:a:f = reset_pad();
     left_x:f = danger(array_get(left, 0));
     right_x:f = danger(array_get(right, 0));
     jump_x:f = danger(array_get(jump, 0));
+    reset_x:f = danger(array_get(reset, 0));
     jump_ink:s = pad_ink_color(state.pressing_jump);
     r [
         game_rect(left_x, 480.0, 74.0, 74.0, pad_plate_color(state.pressing_left)),
@@ -557,8 +1204,81 @@ f control_pads(state:Platformer):a:GAME_Shape {
         game_rect(jump_x, 470.0, 94.0, 94.0, pad_plate_color(state.pressing_jump)),
         game_triangle(jump_x + 47.0, 487.0, jump_x + 29.0, 512.0, jump_x + 65.0, 512.0, jump_ink),
         game_rect(jump_x + 41.0, 510.0, 12.0, 20.0, jump_ink),
-        game_rect(jump_x + 27.0, 541.0, 40.0, 6.0, jump_ink)
+        game_rect(jump_x + 27.0, 541.0, 40.0, 6.0, jump_ink),
+        game_rect(reset_x, 14.0, 62.0, 62.0, pad_plate_color(false)),
+        centred_text(`R`, reset_x + 31.0, 30.0, 30.0, pad_ink_color(false))
     ];
+}
+
+// The card the title screen puts over a still level one.
+f title_card():a:GAME_Shape {
+    r [
+        game_rect(0.0, 0.0, 800.0, 600.0, `#101018bb`),
+        centred_text(`NAIL PLATFORMER`, 400.0, 150.0, 46.0, `#e9c46a`),
+        centred_text(`five levels, and something on every one of them`, 400.0, 225.0, 18.0, `#e8ded1`),
+        centred_text(`arrows or A and D run, Space jumps, R starts the level over`, 400.0, 262.0, 16.0, `#9a94a8`),
+        centred_text(`on a phone, the pads in the corners do all three`, 400.0, 292.0, 16.0, `#9a94a8`),
+        centred_text(`land on what moves, and it stops moving`, 400.0, 330.0, 16.0, `#9a94a8`),
+        game_rect(250.0, 392.0, 300.0, 84.0, `#7bc4b833`),
+        game_rect_outline(250.0, 392.0, 300.0, 84.0, 2.0, `#7bc4b8`),
+        centred_text(`START`, 400.0, 412.0, 40.0, `#f4fbf9`),
+        centred_text(`press Space or touch anywhere`, 400.0, 500.0, 16.0, `#757575`)
+    ];
+}
+
+// Between levels. The number on the card is what this level was worth, and the
+// running total underneath is the game so far.
+f cleared_card(level:i, score:i, total:i, deaths:i):a:GAME_Shape {
+    r [
+        game_rect(0.0, 0.0, 800.0, 600.0, `#101018aa`),
+        game_rect(160.0, 150.0, 480.0, 280.0, `#181226`),
+        game_rect_outline(160.0, 150.0, 480.0, 280.0, 3.0, `#6d5a7e`),
+        centred_text(string_concat([`Level `, string_from(level), ` clear`]), 400.0, 180.0, 38.0, `#e9c46a`),
+        centred_text(string_concat([`coins on this one `, string_from(score), ` of `, string_from(array_length(level_coins(level)))]), 400.0, 244.0, 20.0, `#e8ded1`),
+        centred_text(string_concat([`coins so far `, string_from(total), `, deaths `, string_from(deaths)]), 400.0, 274.0, 20.0, `#9a94a8`),
+        game_rect(300.0, 320.0, 200.0, 66.0, `#7bc4b833`),
+        game_rect_outline(300.0, 320.0, 200.0, 66.0, 2.0, `#7bc4b8`),
+        centred_text(`NEXT`, 400.0, 336.0, 34.0, `#f4fbf9`),
+        centred_text(`press Space or touch anywhere`, 400.0, 400.0, 15.0, `#757575`)
+    ];
+}
+
+// The end of the game, which is the only place the whole run is added up.
+f finished_card(total:i, deaths:i):a:GAME_Shape {
+    r [
+        game_rect(0.0, 0.0, 800.0, 600.0, `#101018aa`),
+        game_rect(160.0, 150.0, 480.0, 280.0, `#181226`),
+        game_rect_outline(160.0, 150.0, 480.0, 280.0, 3.0, `#e9c46a`),
+        centred_text(`You made it!`, 400.0, 178.0, 42.0, `#e9c46a`),
+        centred_text(`all five levels, end to end`, 400.0, 238.0, 20.0, `#e8ded1`),
+        centred_text(string_concat([`coins `, string_from(total), ` of `, string_from(total_coins()), `, deaths `, string_from(deaths)]), 400.0, 272.0, 20.0, `#e8ded1`),
+        game_rect(270.0, 320.0, 260.0, 66.0, `#7bc4b833`),
+        game_rect_outline(270.0, 320.0, 260.0, 66.0, 2.0, `#7bc4b8`),
+        centred_text(`PLAY AGAIN`, 400.0, 338.0, 30.0, `#f4fbf9`),
+        centred_text(`press Space or touch anywhere`, 400.0, 400.0, 15.0, `#757575`)
+    ];
+}
+
+// The name of the level, for as long as the level has just started.
+f intro_card(level:i, intro_ms:f):a:GAME_Shape {
+    if {
+        intro_ms <= 0.0 -> { r no_shapes(); },
+        else -> {
+            r [
+                centred_text(string_concat([`Level `, string_from(level)]), 400.0, 120.0, 22.0, `#9a94a8`),
+                centred_text(level_name(level), 400.0, 150.0, 34.0, `#e9c46a`)
+            ];
+        }
+    }
+}
+
+f overlay_shapes(state:Platformer):a:GAME_Shape {
+    if {
+        state.mode == Mode::Title -> { r title_card(); },
+        state.mode == Mode::Cleared -> { r cleared_card(state.level, taken_count(state.coins), state.banked, state.deaths); },
+        state.mode == Mode::Finished -> { r finished_card(state.banked, state.deaths); },
+        else -> { r intro_card(state.level, state.intro_ms); }
+    }
 }
 
 // Physics runs on its own fixed step, so a frame usually lands part way
@@ -570,8 +1290,36 @@ f mix(before:f, after:f, part:f):f {
     r before + ((after - before) * part);
 }
 
+f blend_enemy(before:Enemy, after:Enemy, part:f):Enemy {
+    r Enemy {
+        foe_x = mix(before.foe_x, after.foe_x, part),
+        foe_y = mix(before.foe_y, after.foe_y, part),
+        foe_from = after.foe_from, foe_to = after.foe_to, foe_dir = after.foe_dir,
+        foe_pace = after.foe_pace, foe_home = after.foe_home, foe_bob = after.foe_bob,
+        menace = after.menace, foe_alive = after.foe_alive
+    };
+}
+
+// Enemies are paired by position in the array, which holds because a step only
+// ever rewrites the array it was given. A death hands back a fresh set, and
+// the length check is what keeps that frame from pairing the wrong ones.
+f blend_enemies(before:a:Enemy, after:a:Enemy, part:f):a:Enemy {
+    if {
+        array_length(before) != array_length(after) -> { r after; },
+        else -> {}
+    }
+    r map index in array_range(0, array_length(after)) {
+        y blend_enemy(danger(array_get(before, index)), danger(array_get(after, index)), part);
+    };
+}
+
 f blend(previous:Platformer, current:Platformer, part:f):Platformer {
     r Platformer {
+        mode = current.mode,
+        level = current.level,
+        banked = current.banked,
+        deaths = current.deaths,
+        intro_ms = current.intro_ms,
         player_x = mix(previous.player_x, current.player_x, part),
         player_y = mix(previous.player_y, current.player_y, part),
         vel_x = current.vel_x,
@@ -579,20 +1327,23 @@ f blend(previous:Platformer, current:Platformer, part:f):Platformer {
         coyote_ms = current.coyote_ms,
         camera_x = mix(previous.camera_x, current.camera_x, part),
         coins = current.coins,
+        foes = blend_enemies(previous.foes, current.foes, part),
         jump_held = current.jump_held,
+        reset_held = current.reset_held,
+        tap_held = current.tap_held,
         step_phase = current.step_phase,
         pressing_left = current.pressing_left,
         pressing_right = current.pressing_right,
         pressing_jump = current.pressing_jump,
-        won = current.won,
         done = current.done
     };
 }
 
 f view(state:Platformer):GAME_Frame {
     cam:f = state.camera_x;
+    level:i = state.level;
 
-    plat_shapes:a:GAME_Shape = map plat in level_platforms() {
+    plat_shapes:a:GAME_Shape = map plat in level_platforms(level) {
         y game_rect(plat.plat_x - cam, plat.plat_y, plat.plat_w, plat.plat_h, plat.tint);
     };
     remaining:a:Coin = filter coin in state.coins {
@@ -601,32 +1352,44 @@ f view(state:Platformer):GAME_Frame {
     coin_shapes:a:GAME_Shape = map coin in remaining {
         y game_circle(coin.coin_x - cam, coin.coin_y, 7.0, `#e9c46a`);
     };
-    taken:a:Coin = filter coin in state.coins {
-        y coin.taken;
-    };
-    score:i = array_length(taken);
+    score:i = taken_count(state.coins);
+
+    // Spikes and enemies are several shapes each, so they are gathered rather
+    // than mapped: an array of arrays is not a thing Nail has.
+    hazard_shapes:a:GAME_Shape = [];
+    for spike in level_spikes(level) {
+        hazard_shapes = array_concat(hazard_shapes, spike_shapes(spike, cam));
+    }
+    foe_shapes:a:GAME_Shape = [];
+    for foe in state.foes {
+        foe_shapes = array_concat(foe_shapes, enemy_shapes(foe, cam));
+    }
 
     // The goal flag, the player, and the numbers on screen.
+    goal_x:f = flag_x(level);
     goal:a:GAME_Shape = [
-        game_rect(3080.0 - cam, 420.0, 8.0, 140.0, `#e8ded1`),
-        game_rect(3088.0 - cam, 420.0, 40.0, 26.0, `#e9c46a`)
+        game_rect(goal_x - cam, 420.0, 8.0, 140.0, `#e8ded1`),
+        game_rect(goal_x + 8.0 - cam, 420.0, 40.0, 26.0, `#e9c46a`)
     ];
     player:a:GAME_Shape = player_shapes(state.player_x - cam, state.player_x, state.player_y, state.vel_x, state.vel_y);
     hud:a:GAME_Shape = [
-        game_text(string_concat([`coins `, string_from(score), `/12`]), 20.0, 20.0, 26.0, `#e9c46a`),
-        game_text(`Arrows or A and D move, Space jumps, R restarts, Esc quits`, 20.0, 52.0, 16.0, `#757575`)
+        game_text(string_concat([`level `, string_from(level), `/`, string_from(level_count()), `   coins `, string_from(score), `/`, string_from(array_length(level_coins(level))), `   deaths `, string_from(state.deaths)]), 20.0, 20.0, 24.0, `#e9c46a`),
+        game_text(`Arrows or A and D move, Space jumps, R restarts the level, Esc quits`, 20.0, 52.0, 15.0, `#757575`)
     ];
-    banner:a:GAME_Shape = if {
-        state.won -> { r win_banner(score); },
+
+    // The pads are for playing with, so they show while there is something to
+    // play and stay out of the way of every card.
+    pads:a:GAME_Shape = if {
+        state.mode == Mode::Running -> { r control_pads(state); },
         else -> { r no_shapes(); }
     };
 
-    world:a:GAME_Shape = array_concat(array_concat(backdrop_shapes(cam), plat_shapes), array_concat(coin_shapes, goal));
-    front:a:GAME_Shape = array_concat(array_concat(player, hud), array_concat(control_pads(state), banner));
+    world:a:GAME_Shape = array_concat(array_concat(backdrop_shapes(cam, level), plat_shapes), array_concat(hazard_shapes, array_concat(coin_shapes, goal)));
+    front:a:GAME_Shape = array_concat(array_concat(foe_shapes, player), array_concat(hud, array_concat(pads, overlay_shapes(state))));
 
     r GAME_Frame {
         shapes = array_concat(world, front),
-        background = `#101018`,
+        background = sky_tint(level),
         quit = state.done
     };
 }
@@ -634,7 +1397,4 @@ f view(state:Platformer):GAME_Frame {
 config:GAME_Config = GAME_Config { title = `Nail platformer`, width = 800, height = 600, target_fps = 120, pixel_size = 2, physics_hz = 60 };
 
 final_state:Platformer = danger(game_run(config, new_game()));
-closing_taken:a:Coin = filter coin in final_state.coins {
-    y coin.taken;
-};
-print(string_concat([`closed with `, string_from(array_length(closing_taken)), ` of 12 coins picked up`]));
+print(string_concat([`closed on level `, string_from(final_state.level), ` with `, string_from(coins_so_far(final_state)), ` coins of `, string_from(total_coins()), ` and `, string_from(final_state.deaths), ` deaths`]));

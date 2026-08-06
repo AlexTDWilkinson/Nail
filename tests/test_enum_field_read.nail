@@ -1,0 +1,25 @@
+nail latest
+// Reading an enum-typed field back out has to type as that enum. The parser
+// cannot tell an enum name from a struct name, so both arrive as a struct and
+// only the checker knows the difference: a field read that skipped resolving
+// it made every struct built from another one's enum field fail to check.
+enum Beast { Walker, Flyer }
+struct Foe { pace:f, kind:Beast }
+
+f faster(foe:Foe):Foe {
+    r Foe { pace = foe.pace + 1.0, kind = foe.kind };
+}
+
+f label(foe:Foe):s {
+    if {
+        foe.kind == Beast::Walker -> { r `walks`; },
+        else -> { r `flies`; }
+    }
+}
+
+flock:a:Foe = [Foe { pace = 1.0, kind = Beast::Walker }, Foe { pace = 2.0, kind = Beast::Flyer }];
+hurried:a:Foe = map foe in flock {
+    y faster(foe);
+};
+first:Foe = danger(array_get(hurried, 0));
+print(string_concat([label(first), ` at `, string_from(first.pace)]));
