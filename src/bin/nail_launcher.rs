@@ -1119,7 +1119,16 @@ fn command_new(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
     }
     let body = format!("nail {}\nprint(`hello from nail`);\n", pin);
     fs::write(&path, body).map_err(|error| format!("cannot write {}: {}", path.display(), error))?;
+
+    // Creating is not opening. mkdir does not enter the directory and touch
+    // does not start an editor, and a command that launched a full screen one
+    // would have to be quit before the shell came back, which is a trap when
+    // the file was all that was wanted. The next step is printed instead.
     println!("{} (nail {})", path.display(), pin);
+    if std::io::stdout().is_terminal() {
+        let name = path.file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_else(|| path.display().to_string());
+        println!("  nail open {}   to edit it", name);
+    }
     return Ok(ExitCode::SUCCESS);
 }
 

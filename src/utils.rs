@@ -2747,8 +2747,24 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
 
         // Check for error tokens (collect_lexer_errors also finds errors nested
         // inside FunctionSignature tokens, so every one gets its own line)
-        let lexing_errors: Vec<CodeError> =
+        let mut lexing_errors: Vec<CodeError> =
             lexer::collect_lexer_errors(&tokens).into_iter().map(|error| CodeError { message: error.message, code_span: error.code_span }).collect();
+
+        // A file with no version line is not a Nail file: the compiler refuses
+        // it outright. The editor used to say nothing and quietly write one in
+        // on save, which fixed the file while hiding the rule, so the first
+        // time anyone met it was on someone else's machine. It is an error
+        // here now, the same one the compiler gives, and saving still writes
+        // the line so the fix stays one keystroke away.
+        if nail::version_line::scan_header(content.as_bytes()).pin.is_none() {
+            lexing_errors.insert(
+                0,
+                CodeError {
+                    message: "No version line. Line one says which Nail wrote this file, so it keeps compiling the same way forever. Add `nail latest`, or save and one is written for you.".to_string(),
+                    code_span: crate::common::CodeSpan { start_line: 1, start_column: 1, end_line: 1, end_column: 1 },
+                },
+            );
+        }
 
         {
             let mut editor = lock(&editor_arc);
