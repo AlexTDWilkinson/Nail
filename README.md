@@ -165,6 +165,46 @@ print(content);
    ./test_rust_compilation.sh    # compile the generated Rust (slow)
    ```
 
+## 🔨 Hammer: programs that do not rot
+
+A Nail file says on its first line which compiler wrote it:
+
+```nail
+nail 0.3.1
+```
+
+Hammer reads that line, makes sure that exact version is on the machine,
+and hands the file to it. So a program that compiled once
+compiles forever: no dependency mismatches, no bit rot, and migration is a
+choice rather than a requirement.
+
+The line is **required**, with no implicit default, for the same reason Nail has
+no nulls: a file that compiles against whatever happens to be newest is exactly
+the drift being prevented. You never type it, though. The IDE writes it on save
+and `hammer new` starts a file already stamped.
+
+Files you are actively working on say `nail latest` instead, which means the
+newest version installed here. Source you ship carries a version.
+
+```bash
+hammer new file.nail        # start a file, stamped and ready to compile
+hammer file.nail            # open it in the IDE that wrote it
+hammer run file.nail        # compile and run it
+hammer which file.nail      # which version will run, and why
+hammer list                 # what is installed, how big, last used
+hammer fetch .              # install every version this tree pins, then go offline
+hammer update . --yes       # migrate the files that still compile, leave the rest
+hammer gc                   # reclaim disk
+```
+
+Anything Hammer does not recognise is forwarded to the resolved version's
+compiler, so `hammer fmt old.nail` runs the formatter that shipped with
+`old.nail`, not today's. Only Hammer goes on `PATH`. Installed versions
+deliberately do not, because one on `PATH` would shadow it and the version line would
+stop deciding anything.
+
+Full design in `nail_language_spec.md`, under Versioning and Toolchain Pinning.
+
 ## 🎮 IDE Controls
 
 - **F7**: Compile and run current file

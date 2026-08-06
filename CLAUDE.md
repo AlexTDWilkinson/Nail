@@ -32,10 +32,14 @@ Generated files to watch for and delete:
 This is non-negotiable to maintain language stability and prevent regressions.
 
 A clean run currently reports 164/164 lexer/parser, 164/164 type checker and
-148/148 transpiler, with zero failures. `cargo test --lib` reports 1144 passing
-(1162 with `--features "game audio"`), and `./test_e2e.sh` reports 357 programs
+148/148 transpiler, with zero failures. `cargo test --lib` reports 1165 passing
+(1183 with `--features "game audio"`), and `./test_e2e.sh` reports 357 programs
 passing. Treat any number below that as a
 regression to investigate, not a new baseline.
+
+`./test_hammer.sh` reports 19 checks passing. `./test_error_messages.sh`
+currently reports 22 passed, 3 failed. Those three predate this baseline and are
+not a regression.
 
 ## CRITICAL: Never Use Workarounds
 
@@ -118,6 +122,10 @@ HTML entities like `&lt;` are unaffected - this rule is about prose punctuation 
 - **`./test_all_stages.sh --with-rust`** - DO NOT USE UNLESS EXPLICITLY ASKED - Also runs Rust compilation tests (EXTREMELY SLOW)
 
 **Other suites** (not part of the standard pre-commit run):
+- **`./test_hammer.sh`** - Exercises every hammer subcommand against a throwaway
+  store. Nothing else runs them, so a broken subcommand otherwise reaches users
+  untouched (`hammer run` once shipped passing a flag nailc had never heard of).
+  Run it after touching `src/bin/hammer.rs` or `src/version_line.rs`
 - **`./test_e2e.sh`** - End-to-end runs of compiled Nail programs
 - **`./test_error_messages.sh`** - Checks runtime error message wording against goldens
 - **`./check_all_features.sh`** - Verifies every feature-gated combination still compiles

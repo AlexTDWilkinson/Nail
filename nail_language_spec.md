@@ -982,94 +982,262 @@ error: 'count' is declared as an integer (i) but its value is a string (s)
 help: either change the declaration to 'count:s' or make the value an integer (i)
 ```
 
-## Versioning and Toolchain Pinning (Planned)
-
-**Status: design commitment — not yet implemented.** This section records the
-long-term plan so syntax and file formats evolve toward it.
-
-### End goal
+## Versioning and Toolchain Pinning
 
 A Nail file records which compiler version it was written for, and the
-toolchain automatically obtains and runs that **exact** version to compile it.
-A Nail program that compiled once compiles forever — there are no dependency
-mismatches, no "works on my machine", and no bit rot from language changes.
-Old code never needs migration to keep working; migration is a choice, not a
-requirement.
+toolchain obtains and runs that **exact** version to compile it. A Nail program
+that compiled once compiles forever. There are no dependency mismatches, no
+"works on my machine", and no bit rot from language changes. Old code never
+needs migration to keep working: migration is a choice, not a requirement.
 
-### Version pragma
+The tool that does this is **Hammer**. It reads which version a file asks for,
+makes sure that version is on the machine, checks that it really came from us,
+and hands the file to it. Nothing else.
 
-Files will declare their language version with an optional header pragma on
-the first line:
+### Why a version number is enough
+
+In most languages a compiler version does not pin what a program compiles
+against, so a lockfile has to carry the rest. Nail has no package manager and a
+closed dependency set: the standard library registry declares every crate a
+program can reach, the bundle vendors all of them, and `nailc
+--cargo-toml-superset` emits the complete list. A version is therefore a total
+pin, down to the byte, on its own. This is why nothing beside the file is
+needed, and why a lockfile must never be added.
+
+### Version version line
+
+A file declares its version on the first line:
 
 ```nail
-nail 0.1
+nail 0.3.1
 ```
 
-- Files without a pragma are compiled with the current toolchain as today.
-- The pragma syntax is reserved now so that files carrying it remain
-  parseable by every future compiler version.
+**The line is required.** Two states, both explicit:
 
-### Rollout phases
+| line one | means | who writes it |
+|---|---|---|
+| `nail 0.3.1` | archived and frozen, compiles the same forever | the IDE, on save |
+| `nail latest` | tracks whatever is installed here | you, once |
 
-1. **Tag releases** — semantic version tags (`v0.1.0`) and a changelog, so
-   there is something concrete to pin to.
-2. **Parse and warn** — the compiler parses the pragma and warns when the
-   file's declared version does not match the running compiler, but compiles
-   anyway.
-3. **Exact-version execution** — a toolchain manager (in the spirit of
-   rustup) resolves the pragma, downloads the archived compiler binary for
-   that exact release, and delegates compilation to it. Deferred until there
-   are real users spread across multiple releases.
+There is no third state. A file with no version line is an error, not a
+default, because a default would mean the file compiles against whatever
+happens to be newest, which is the drift this whole design exists to prevent.
+An implicit fallback here would be the same shape as a null or an implicit
+conversion, both of which the language already refuses.
 
-### Distribution: the bundle
+`latest` means the newest version **installed on this machine**, never the
+newest published. Opening a file can therefore never start a download of a
+compiler nobody asked for, and a `latest` file is fully deterministic on a
+given machine while deliberately not being so across machines. Source you
+maintain says `latest`. Source you ship or archive carries a triple.
 
-Nail ships as **one immutable bundle per release**, installed at `/opt/nail`.
-The promise: download, install, open — it works. Offline. No Rust
-installation, no C compiler, no crates.io, nothing else on the machine.
+Three scoping rules keep the requirement from being a burden:
+
+- **Only the entry file needs one.** Imported files inherit it, since one
+  compiler compiles everything it reaches and only the entry decides which.
+- **It is enforced on files, not in the lexer.** `nailc` checks the file it was
+  handed. Lexing a fragment of source is unaffected.
+- **The IDE writes it on save**, so in practice nobody meets the error. A
+  released IDE stamps its own version. A development checkout stamps `latest`,
+  since its version was never published and pinning to it would produce a file
+  nobody else could open. A file that already has a line is never rewritten,
+  including a `latest` one, because re-stamping would silently migrate code
+  somebody pinned on purpose. `hammer new` starts a file already stamped.
+
+**Hammer stays permissive where the compiler is strict.** A missing or garbled
+first line makes Hammer fall back to the newest installed version and say so on
+stderr, rather than refuse. Refusing to launch is a far worse failure than
+compiling, the garbled line might be legitimate syntax from a release that does
+not exist yet, and by the time `nailc` runs the correct compiler has already
+been chosen. Strictness belongs where it can be acted on.
+
+### The grammar, which can never change
+
+Hammer built today has to read a file written in ten years, and a compiler from
+ten years ago has to read a file written today. So this grammar is frozen:
+
+```text
+file    = [ BOM ] [ shebang LF ] version line ( LF | EOF )
+shebang = "#!" *( byte except LF )
+version line  = "nail" SP ( "latest" / version ) [ CR ]
+version = num "." num "." num [ "-" pre ]
+num     = 1*9DIGIT
+pre     = 1*( ALPHA / DIGIT / "-" / "." )
+```
+
+One ASCII space, no leading whitespace, no trailing comment, no quotes. A
+shebang may sit above the version line so that `#!/usr/bin/env nail` scripts do not
+fight it for line one, and nothing else may.
+
+**There are no ranges.** `^0.3`, `>=0.3.1` and a bare `0.3` cannot be written.
+A range would mean the same file compiles differently over time, which is the
+rot this whole design exists to kill. The parser accepts one sentinel word or
+an exact triple and nothing in between, so the rule is enforced by the shape of
+the parser rather than by a check somewhere downstream.
+
+Parsing reads bytes, not text, and never looks past the first 4 KB. A file
+whose body is invalid UTF-8, or which uses syntax from a release that does not
+exist yet, still resolves and launches. A malformed first line reads as
+unpinned rather than as an error, for the same reason.
+
+A prerelease suffix (`0.4.0-dev`) marks a locally built compiler that was never
+published. Hammer refuses to fetch one and says why.
+
+The implementation is `src/version line.rs`, shared by the compiler and by Hammer.
+
+### Resolution
+
+In order, stopping at the first that applies:
+
+1. `--nail-version=<v>` on the command line
+2. the entry file's version line
+3. the newest version installed
+
+The **entry file decides the whole program**. One compiler compiles every
+source it reaches, so an imported file pinned to something older must not drag
+the entry file's compiler backwards with it.
+
+### What Hammer owns, and what it forwards
+
+Hammer is a multiplexer. It owns only the commands that are about the *set* of
+installed versions, because no single version can answer those. Everything else
+is forwarded to the resolved version's `nailc`:
+
+```
+hammer fmt old.nail     runs the formatter that shipped with old.nail's compiler
+```
+
+So `fmt`, `test`, `build` and anything invented in ten years work through a
+Hammer built today, without Hammer ever being taught about them. Forwarding is
+also better than calling `nailc` directly, because the file's own version does
+the work rather than the newest one.
+
+The reserved list is frozen. Growing it later would shadow a subcommand some
+future `nailc` wants for itself.
+
+| | |
+|---|---|
+| `install` `remove` `list` `gc` | manage versions |
+| `which <file>` | print the resolved version and why |
+| `fetch <path>` | install every version a tree pins, so it can go offline |
+| `update <path>` | migrate files that still compile |
+| `export` / `import` | move a release to a machine with no network |
+| `doctor` | check the install over |
+| `self-update` | the only thing that rewrites Hammer |
+| `config` | warn and gc thresholds |
+| `run` `open` | explicit forms of the default |
+| `--` | escape hatch, forwards something that collides with the above |
+
+`hammer update` splits across the same line. Hammer walks the tree and makes
+sure the target version is present, and that version's `nailc --stamp=<v>` type
+checks each file and rewrites line one **only if it passes**. A file that no
+longer compiles keeps its old version line and keeps working, which is what makes
+migration optional forever. Files that track `latest` are skipped, and the
+vendor folder is left alone: source pinned by its author is not ours to
+restamp.
+
+### Distribution
+
+Nail ships as **one immutable bundle per release**, installed at
+`/opt/nail/versions/<version>`. The promise: download, install, open, it works.
+Offline. No Rust installation, no C compiler, no crates.io, nothing else on the
+machine.
 
 The bundle contains everything a build touches:
 
-- `bin/` — the IDE (`nail`) and compiler (`nailc`)
-- `toolchain/` — a pinned Rust toolchain (rustc, cargo, rust-lld, std for
-  the host and for `x86_64-unknown-linux-musl`)
-- `cargo-home/` — `config.toml` (the single source of build configuration)
-  plus vendored sources for every crate the stdlib registry can emit
-- `nail/` — the nail crate source that generated programs depend on
-- `cache/` — a pre-warmed shared build cache, so the first build on a fresh
+- `bin/` the IDE (`nail`) and compiler (`nailc`)
+- `toolchain/` a pinned Rust toolchain (rustc, cargo, rust-lld, std for the
+  host and for `x86_64-unknown-linux-musl`)
+- `cargo-home/` `config.toml` (the single source of build configuration) plus
+  vendored sources for every crate the stdlib registry can emit
+- `nail/` the nail crate source that generated programs depend on
+- `cache/` a pre-warmed shared build cache, so the first build on a fresh
   machine compiles only the user's program (seconds, not minutes)
 
 Design decisions and why:
 
-- **Fixed install path.** Cargo's build fingerprints embed absolute paths.
-  Building the bundle's warm cache at `/opt/nail` and installing to
-  `/opt/nail` is what lets the shipped cache stay valid on every machine.
+- **Per-version fixed path.** Cargo's build fingerprints embed absolute paths,
+  so a bundle's warm cache is only valid at the path it was warmed at. The
+  version is known when the bundle is built, so building at
+  `/opt/nail/versions/<version>` and installing to the same place keeps the
+  shipped cache valid while letting many versions live side by side.
+- **Full copy per version.** No layer sharing between versions. A pinned
+  version must never meet a rustc it was not built against, and paying the full
+  download size per version is the correct price for that.
+- **Versions are never on `PATH`.** Only Hammer is. A version on `PATH` would
+  shadow Hammer and the version line would stop deciding which compiler runs, which
+  is the entire point.
 - **Static musl output.** User programs target `x86_64-unknown-linux-musl`,
   linked by the bundled `rust-lld` with `link-self-contained=yes`. Linking
-  needs zero system files, and the produced binaries are fully static — they
+  needs zero system files, and the produced binaries are fully static, so they
   run on any Linux distribution, including inside empty containers.
-- **Scrubbed build environment.** The IDE invokes the bundled cargo by
-  absolute path with a clean environment (`RUSTFLAGS`, `CARGO_*`, rustup
-  installs, and the user's `PATH` cannot leak in). All configuration lives in
-  the bundle's `cargo-home/config.toml`.
+- **Scrubbed build environment.** The IDE invokes the bundled cargo by absolute
+  path with a clean environment (`RUSTFLAGS`, `CARGO_*`, rustup installs, and
+  the user's `PATH` cannot leak in). All configuration lives in the bundle's
+  `cargo-home/config.toml` rather than in code.
 - **Closed dependency set.** Nail programs can only ever require crates the
-  stdlib registry declares (`nailc --cargo-toml-superset` emits the full
-  set), which is why complete vendoring and cache pre-warming are possible
-  at all. Registry crates must be pure Rust or bundle their C source; crates
-  that require system libraries at build time are not accepted.
+  stdlib registry declares, which is why complete vendoring and cache
+  pre-warming are possible at all. Registry crates must be pure Rust or bundle
+  their C source. Crates that require system libraries at build time are not
+  accepted.
 - **Tools require a glibc distribution.** The bundled rustc is the official
-  glibc build; the IDE and toolchain therefore run on mainstream distros
-  (Ubuntu, Debian, Fedora, Arch, ...) but not musl-based ones like Alpine.
-  Output binaries, being static, run anywhere.
-- **Development checkouts are unaffected.** When no bundle is installed
-  (`NAIL_HOME` overrides the default location), the IDE falls back to the
-  system cargo — the workflow in this repository.
+  glibc build, so the IDE and toolchain run on mainstream distros (Ubuntu,
+  Debian, Fedora, Arch) but not musl-based ones like Alpine. Output binaries,
+  being static, run anywhere.
+- **Development checkouts are unaffected.** A binary finds its bundle from its
+  own location, so when there is none (a source checkout) builds fall back to
+  the system cargo, which is the workflow in this repository.
 
-Tooling in `bundle/`: `build_bundle.sh` assembles and warms the bundle (the
-only step that needs network and a musl C compiler — a build-machine
-concern), `install.sh` installs it, and `test_bundle.sh` is the release
-gate: on a machine with no Rust, no cc, and no network, compile and run a
-Nail program using only the bundle. A release that fails the gate does not
-ship.
+### Where releases come from
+
+Hammer bakes in **one origin, forever**, and asks it for a version by name:
+
+```
+GET  {origin}/versions/latest            the newest published version
+GET  {origin}/versions/<v>/x86_64-linux  the bundle
+GET  {origin}/hammer/x86_64-linux        hammer itself, for self-update
+```
+
+The origin serves those files itself, off disk, through the reverse proxy. What
+a user downloads is a compiled artifact rather than a git tag, so a source host
+has nothing that corresponds to a release and there is no reason to send anyone
+to one. No index document exists either: a version is named by its URL, and
+that is the whole protocol. The target is in the path so that adding a second
+one later does not change a request already in the wild.
+
+Releases are **not signed**. Publishing means writing a file to the release
+box, so being able to publish is already the credential, and a key kept beside
+the artifact it signs would add custody without adding much. A missing version
+is a plain `404`, and pre-1.0 releases may be removed.
+
+Nothing appears under `versions/` until it has been downloaded and unpacked
+whole, because the unpack happens beside the final location and is moved in
+with a rename. An interrupted download cannot leave something that looks
+installed but is not.
+
+### Disk
+
+A version is gigabytes, and the largest part of it, the build cache, is
+reconstructible. So reclaiming disk is tiered rather than all-or-nothing:
+`hammer gc --caches` drops stale caches (minutes to rebuild, nothing lost),
+and `hammer gc` also uninstalls versions abandoned for much longer. Both are
+dry runs until `--yes`. The newest installed version and anything used inside
+the keep window are never touched.
+
+Hammer warns when there is enough to reclaim to be worth mentioning, and
+deletes nothing on its own unless `hammer config auto` says otherwise. Users
+will not run `gc` and disks will fill, but deleting gigabytes that cost a long
+download to restore is worse than nagging.
+
+### Tooling
+
+`bundle/build_bundle.sh` assembles and warms a bundle (the only step needing
+network and a musl C compiler, a build-machine concern), `bundle/install.sh` is
+the one-time bootstrap that installs Hammer and hands `/opt/nail` to the user,
+and `bundle/test_bundle.sh` is the release gate: on a machine with no Rust, no
+cc and no network, compile and run a Nail program using only the bundle. A
+release that fails the gate does not ship. `deploy/releases.sh` uploads a built
+bundle to the release box and points `latest` at it.
 
 ## Standard Library
 
