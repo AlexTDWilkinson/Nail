@@ -372,6 +372,15 @@ f generate_css():s {
         overflow-x: auto;
         margin: 2rem 0;
         position: relative;
+        /* A grid or flex child refuses to shrink below its content unless it
+           is told it may, and a block of code is wider than a phone. Without
+           this the block pushes its whole column wide and the page scrolls
+           sideways rather than the code scrolling inside its own edges. */
+        min-width: 0;
+    }
+
+    .rust-details {
+        min-width: 0;
     }
 
     .code-example pre {

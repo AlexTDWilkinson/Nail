@@ -234,7 +234,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
         hardware. That is the whole difference.
     </p>
 
-    <div style="display: grid; gap: 2rem;">
+    <div style="display: grid; gap: 2rem; grid-template-columns: minmax(0, 1fr);">
         <div>
             <h3 style="margin-bottom: 1rem;">Concurrent I/O operations (c.../c)</h3>
             <div class="code-example" style="position: relative;">
