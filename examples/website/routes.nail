@@ -1,3 +1,4 @@
+nail latest
 // The request handler and its routes.
 
 // Every request lands here. Routing is ordinary Nail code rather than a table
@@ -34,6 +35,26 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 status = 200,
                 body = danger(hashmap_get(state, `page_viewer_embed`)),
                 content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
+        request.path == `/downloads` -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_downloads`)),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
+        request.path == `/install` -> {
+            // The bootstrap one-liner: curl this into sh and it installs
+            // Hammer. Served as plain text so a browser shows the script
+            // rather than downloading it, since reading it first is the
+            // sensible thing to do with anything you are about to run as root.
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `install_script`)),
+                content_type = `text/plain; charset=utf-8`,
                 headers = headers
             };
         },

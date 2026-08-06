@@ -35,6 +35,8 @@ DATA_PATHS=(
 	nail_language_spec.md
 	README.md
 	wasm_demos
+	# Served at /install: the bootstrap one-liner the get-started section shows.
+	bundle/install.sh
 )
 
 # Reads a key out of .env without sourcing it, so odd characters in a value

@@ -1,9 +1,10 @@
+nail latest
 // Site configuration, the files this server reads at startup, and the demo
 // values it computes at startup by really running the code the page displays.
 
 // Website configuration
-site_title:s = `Nail - a simple language with a huge standard library`;
-site_description:s = `Few constructs, a thousand built-in functions. No null, no mutation, no package manager, no unsafe. Errors you cannot ignore, and iteration that uses every core without being asked.`;
+site_title:s = `Nail - Rust's speed, Python's ease, zero dependencies`;
+site_description:s = `A small language with a huge standard library, transpiled to Rust. No null, no mutation, no package manager, no unsafe. Every file pins the compiler that wrote it, so a program that compiled once compiles forever.`;
 
 // Navigation structure
 struct NavItem {
@@ -16,6 +17,7 @@ nav_items:a:NavItem = [
     NavItem { name = `Library`, path = `/stdlib` },
     NavItem { name = `Games`, path = `#games` },
     NavItem { name = `Get started`, path = `#start` },
+    NavItem { name = `Downloads`, path = `/downloads` },
     NavItem { name = `Documentation`, path = `https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md` }
 ];
 
@@ -38,6 +40,27 @@ f read_fallback(err:e):s {
     print(`read failed:`, err);
     r `(file unavailable)`;
 }
+
+// No release list means this is a local run rather than the deployed site.
+f read_no_releases(err:e):s {
+    r ``;
+}
+
+// Served at /install, so the one-liner on the get-started section works. It is
+// the same script that lives in the repository, not a copy that can drift, and
+// anyone who would rather read it before running it is reading exactly what
+// runs. It installs Hammer only: versions of Nail come down later, when a file
+// asks for one.
+install_script:s = safe(fs_read(`bundle/install.sh`), read_fallback);
+
+// Every published release, written by deploy/releases.sh at publish time: the
+// website is sandboxed away from the release directory and cannot list it
+// itself. One line per version, tab separated: version, bytes, date.
+//
+// This is read by people on the downloads page. Hammer never reads it. Hammer
+// names a version in a URL and that is the whole protocol, and a list it
+// depended on would be one more thing that has to stay correct forever.
+releases_tsv:s = safe(fs_read(`releases.tsv`), read_no_releases);
 
 // Same CPU-heavy work as the parallel example, on separate OS threads.
 // Timed, so the run output can show how long the whole block took.

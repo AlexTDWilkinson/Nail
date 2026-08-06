@@ -74,6 +74,43 @@ directory. They are listed in `DATA_PATHS` in `scripts/deploy.sh`:
 `nail_language_spec.md`, `README.md`. If you add a `read_file` call to the
 website, add its path there or the deployed site panics on startup.
 
+## Publishing a Nail release
+
+Hammer fetches compilers from this box, and the box serves them itself. Caddy
+reads the file straight off disk, so the bytes never pass through the website
+process and its 192M limit is irrelevant. A bundle is roughly one to two
+gigabytes against ~10GB of droplet disk and 500GB/month of transfer, which is
+one or two versions live at a time and a few hundred downloads a month.
+
+There is no source host in the path. What a user downloads is a compiled
+artifact, so a git tag has nothing that corresponds to it and the two would
+drift apart immediately.
+
+```bash
+./bundle/build_bundle.sh                                  # build it
+./deploy/releases.sh bundle/nail-0.1.0-linux-x86_64.tar.xz  # ship it
+```
+
+`releases.sh` uploads the bundle beside its final name and renames it into
+place, so a hammer that asks mid-upload gets a 404 rather than half a file. It
+also uploads `target/release/hammer` for `hammer self-update`, writes
+`/versions/latest`, and installs the Caddy fragment.
+
+That fragment is `/etc/caddy/sites.d/nail.caddy`, **replacing** the one
+`add-app.sh` wrote for the same hostname (Caddy allows one block per host), and
+proxying the website as its fallback route. Re-running `add-app.sh` reverts to
+plain proxying, and re-running `releases.sh` puts the release routes back.
+
+Unpublishing an alpha, which is allowed before 1.0:
+
+```bash
+./deploy/releases.sh --withdraw 0.1.0
+```
+
+Releases are **not signed**. Being able to write to this box is the credential:
+anyone who can publish here is already part of the project. Set `RELEASE_DOMAIN`
+in `.env` to the hostname Hammer fetches from.
+
 ## Port 8080
 
 The port comes from the Nail source (`examples/nail_website.nail`), not from

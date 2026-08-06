@@ -1,3 +1,4 @@
+nail latest
 // The stylesheet for the whole page, one CSS block per area of the site.
 // Dark theme in the style of the current generation of language sites
 // (Astro, Bun, Deno, Gleam): near-black blue base, one warm amber accent,
@@ -869,6 +870,55 @@ f generate_css():s {
         }
     }`;
 
+    // The downloads table. It borrows the benchmark table's shape, and adds a
+    // badge for whichever release `latest` currently points at.
+    release_styles:s = css`
+    .release-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        margin: 1.5rem 0;
+        overflow: hidden;
+    }
+
+    .release-table th, .release-table td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .release-table th {
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border-strong);
+    }
+
+    .release-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .release-table a {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
+    .release-latest {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--bg-deep);
+        background: var(--primary);
+        border-radius: 0.3rem;
+        padding: 0.1rem 0.4rem;
+        margin-left: 0.5rem;
+    }`;
+
     r array_join([
         base_styles,
         navbar_styles,
@@ -883,6 +933,7 @@ f generate_css():s {
         philosophy_styles,
         table_styles,
         footer_styles,
-        sandbox_styles
+        sandbox_styles,
+        release_styles
     ], ``);
 }

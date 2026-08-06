@@ -1,3 +1,4 @@
+nail latest
 // The HTML builders: one function per section of the page, plus the head,
 // the navbar, the footer and the menu script.
 
@@ -53,10 +54,14 @@ f generate_hero(hero_code:s):s {
     hero_html:s = array_join([
         html`<section id="home" class="hero">
     <h1 class="hero-title">Nail</h1>
-    <p class="hero-tagline">A simple language with a huge standard library: it transpiles to Rust and uses every core without being asked</p>
+    <p class="hero-tagline">Rust's speed, Python's ease, zero dependencies</p>
     <p class="hero-description">
-        No null. No mutation. No package manager. No unsafe. Errors you can't ignore, and iteration
-        that runs in parallel whenever it's safe to.
+        A small language with a huge standard library. No null. No mutation. No package manager.
+        No unsafe. Errors you can't ignore, and iteration that runs in parallel whenever it's safe to.
+    </p>
+    <p class="hero-description">
+        Every file records the compiler that wrote it, so a program that compiled once compiles
+        forever. Program it once, run it forever.
     </p>
     <p class="hero-description">
         Rust does the heavy lifting underneath: one command turns your file into a real program, so
@@ -324,14 +329,28 @@ f generate_get_started():s {
     r html`<section id="start" class="philosophy">
     <div class="section-header">
         <h2>Get started</h2>
-        <p>A Rust toolchain and one clone. Rust does the building. The editor comes with the language.</p>
+        <p>One download. No Rust to install, no C compiler, nothing else on the machine.</p>
     </div>
     <div class="philosophy-content">
-        <div class="code-example"><span class="code-label">Shell</span><pre>git clone https://github.com/AlexTDWilkinson/Nail.git
-cd Nail
+        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh
 
 # Opens the file in Nail's own IDE
-cargo run -- examples/hello_world.nail</pre></div>
+nail hello.nail</pre></div>
+        <p>
+            That installs <strong>Hammer</strong>, which is the only thing that goes on your PATH.
+            Open a Nail file with it and it reads which version of Nail the file was written for,
+            downloads exactly that version if you do not have it, and hands
+            the file over. The compiler, the editor, a pinned Rust toolchain and every library
+            already built come down in one piece, so the first program compiles in seconds and
+            everything after that works with the network unplugged.
+        </p>
+        <p>
+            Prefer to see what you are running first? Take the
+            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/bundle/install.sh" style="color: var(--primary); text-decoration: underline;">install script</a>
+            and read it, or build from source with <span class="inline-code">git clone</span> and
+            <span class="inline-code">cargo run</span>. Linux is the supported platform for the
+            tools. The programs you build are static binaries and run anywhere.
+        </p>
         <p>
             There is no editor to choose. Nail ships one, and it runs the real compiler over your file
             as you type, so an error is underlined where it actually is instead of being guessed at by
@@ -340,9 +359,10 @@ cargo run -- examples/hello_world.nail</pre></div>
             F6 changes the theme.
         </p>
         <p>
-            That standardisation is the feature. Nothing to install, no language server to keep in
+            That standardisation is the feature. Nothing to configure, no language server to keep in
             sync, no formatter to argue about, no plugin that quietly disagrees with the compiler.
-            The same compiler, as <strong>nailc</strong>, is what your build scripts call.
+            The same compiler, as <strong>nailc</strong>, is what your build scripts call, and it is
+            the version your file asked for rather than whichever one happens to be newest.
         </p>
         <p style="font-size: 0.95rem;">
             One command turns your file into a program you can run: Nail writes the Rust, picks the
@@ -579,19 +599,51 @@ program wall time 18.2ms, it could run 55.0 times a second. Times are cumulative
 f generate_versioning():s {
     r html`<section id="versioning" class="philosophy">
     <div class="section-header">
-        <h2>Planned: programs that don't rot</h2>
-        <p>Not built yet. This is what we're building next, and why</p>
+        <h2>Programs that don't rot</h2>
+        <p>A file says which Nail wrote it, and that is the Nail that compiles it. Forever</p>
     </div>
     <div class="philosophy-content">
         <p>
-            Every Nail file will record the compiler it was written for. The IDE stamps it on save,
-            the toolchain fetches exactly that version and builds with it. Old code keeps working
+            Every Nail file records the compiler it was written for, on its first line. The IDE
+            stamps it on save, so you never type it. Hammer reads it, fetches exactly that version
+            if the machine does not have it, and hands the file over. Old code keeps working
             because nothing drags it forward.
         </p>
-        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Nail</span><pre>nail 0.1</pre></div>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Nail</span><pre>nail 0.1.0</pre></div>
+        <p>
+            A version number is enough on its own, which is unusual. Everywhere else a compiler
+            version does not pin what a program builds against, so a lock file has to carry the
+            rest. Nail has no package manager and a closed set of libraries: everything a program
+            can call ships with the compiler, already vendored and already built. Pin the
+            compiler and you have pinned every byte underneath it. There is nothing else to lock.
+        </p>
+        <p>
+            Files you are still working on say <strong>nail latest</strong> instead, meaning the
+            newest version on this machine. Source you ship carries a number. There is no third
+            option: no ranges, no carets, no "any 0.3.x". A range would mean the same file
+            compiling differently next year, which is the whole thing being avoided, so the
+            grammar simply cannot express one.
+        </p>
+        <p>
+            The line is required, and leaving it out is an error rather than a default. A file
+            that compiles against whatever happens to be newest is precisely the drift being
+            prevented, and an implicit fallback here would be the same shape as a null, which
+            this language does not have either. You never type it: the editor writes it when you
+            save, and <span class="inline-code">hammer new</span> starts a file with it already
+            in place.
+        </p>
+        <p>
+            Migration is a choice and never a requirement. <strong>hammer update</strong> compiles
+            each file against the newer version first and only moves the ones that pass. Anything
+            that would break keeps its old pin and keeps working, for as long as you like.
+        </p>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Shell</span><pre>hammer which report.nail    # which compiler runs, and why
+hammer fetch .              # grab every version this project pins, then go offline
+hammer update . --yes       # move the files that still compile, leave the rest</pre></div>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            Status: planned, not built. Tagged releases first, then a mismatch warning, then the
-            automatic fetch-and-build.
+            A release is one file on one box, served over HTTPS, and a version number names
+            exactly one of them. There is no index to go stale, no package registry to resolve
+            against, and nothing to look up.
         </p>
     </div>
 </section>`;
@@ -977,4 +1029,107 @@ f generate_games_section():s {
         </div>
     </div>
 </section>`;
+}
+
+// One release, as a row: version, size, date, and a direct link. The list
+// comes from deploy/releases.sh, which writes it at publish time because this
+// server is sandboxed away from the directory the releases live in.
+f release_row(line:s, newest:s):s {
+    fields:a:s = string_split(line, `\t`);
+    version:s = safe(array_get(fields, 0), missing_field);
+    bytes_text:s = safe(array_get(fields, 1), missing_field);
+    date:s = safe(array_get(fields, 2), missing_field);
+    megabytes:i = safe(int_from(bytes_text), zero_size) / 1048576;
+
+    marker:s = if {
+        version == newest -> { r html`<span class="release-latest">latest</span>`; },
+        else -> { r ``; }
+    };
+
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `version`, version);
+    hashmap_set(values, `size`, string_from(megabytes));
+    hashmap_set(values, `date`, date);
+    hashmap_set(values, `marker`, marker);
+    r danger(template_render(html`<tr>
+        <td><code>{{version}}</code> {{{marker}}}</td>
+        <td>{{date}}</td>
+        <td>{{size}} MB</td>
+        <td><a href="/versions/{{version}}/x86_64-linux">x86_64-linux</a></td>
+    </tr>`, values));
+}
+
+f missing_field(err:e):s {
+    r `?`;
+}
+
+f zero_size(err:e):i {
+    r 0;
+}
+
+f generate_downloads_page(releases_tsv:s, nav_html:s):s {
+    lines:a:s = filter line in string_split(releases_tsv, `\n`) {
+        y string_trim(line) != ``;
+    };
+    first_line:s = safe(array_get(lines, 0), no_line);
+    newest:s = safe(array_get(string_split(first_line, `\t`), 0), missing_field);
+
+    rows:s = array_join(map line in lines { y release_row(line, newest); }, ``);
+
+    body:s = if {
+        array_length(lines) == 0 -> { r html`<p>No releases published yet.</p>`; },
+        else -> { r array_join([html`<table class="release-table">
+            <thead><tr><th>Version</th><th>Published</th><th>Size</th><th>Download</th></tr></thead>
+            <tbody>`, rows, html`</tbody>
+        </table>`], ``); }
+    };
+
+    values:h<s,s> = hashmap_new();
+    hashmap_set(values, `rows`, body);
+    section:s = danger(template_render(html`<section class="philosophy">
+    <div class="section-header">
+        <h2>Downloads</h2>
+        <p>You do not normally need this page. Hammer fetches the version a file asks for, by itself</p>
+    </div>
+    <div class="philosophy-content">
+        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh</pre></div>
+        <p>
+            That installs Hammer, and Hammer is all you need. Open any Nail file with it and it
+            reads the version on the file's first line, downloads exactly that version if this
+            machine does not have it, and hands the file over. You never pick a version by hand.
+        </p>
+        <div class="code-example"><span class="code-label">Shell</span><pre>hammer new hello.nail     # a file, stamped and ready
+hammer run hello.nail     # compile and run it
+hammer list               # what is installed, how big, last used
+hammer install 0.1.0      # a specific version, on purpose
+hammer gc                 # reclaim disk from versions you stopped using</pre></div>
+        <h3>Every release</h3>
+        <p>
+            Each of these is a complete toolchain: the compiler, the editor, a pinned Rust
+            toolchain, every library already built, and a warm build cache. Nothing else has to be
+            on the machine, and nothing is downloaded again afterwards. That is why they are large.
+        </p>
+        {{{rows}}}
+        <p style="font-size: 0.95rem; color: var(--text-secondary); margin-top: 1.5rem;">
+            Linux x86_64, on a distribution using glibc (Ubuntu, Debian, Fedora, Arch). The
+            programs you build are static binaries and run anywhere, including in empty
+            containers. Versions before 1.0 may be withdrawn.
+        </p>
+    </div>
+</section>`, values));
+
+    r array_join([
+        generate_head(`Download Nail`, `Every published release of Nail, and the one command that makes picking one unnecessary.`),
+        html`<body hx-boost="true">`,
+        generate_navbar(nav_html),
+        section,
+        generate_footer(),
+        generate_menu_script(),
+        html`</body>
+</html>`
+    ], ``);
+}
+
+f no_line(err:e):s {
+    r ``;
 }
