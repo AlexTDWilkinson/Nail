@@ -64,6 +64,14 @@ EOF
 	echo "wrote the release list"
 }
 
+# Built here rather than checked, because it takes seconds. That makes the
+# published launcher current by construction, which is the other half of the
+# drift this script exists to prevent.
+build_launcher() {
+	echo "building the launcher from the current tree"
+	cargo build --release --locked --bin nail-launcher >/dev/null
+}
+
 write_caddy_fragment() {
 # Caddy fragment. It replaces the one add-app.sh wrote for this host, since
 # Caddy allows one block per hostname, and proxies the website as its fallback.
@@ -110,6 +118,7 @@ if [[ "${1:-}" == "--refresh" ]]; then
 	# The launcher is version independent, so it can be replaced without
 	# republishing a release. This is also what stops `curl | sudo sh` handing
 	# someone an older launcher than the one that is current.
+	build_launcher
 	if [[ -x target/release/nail-launcher ]]; then
 		"${SSH[@]}" "$HOST" "mkdir -p $SRV/nail"
 		"${SCP[@]}" target/release/nail-launcher "$HOST:$SRV/nail/.incoming"
@@ -136,6 +145,21 @@ fi
 TARBALL="${1:?usage: $0 <bundle.tar.xz>}"
 [[ -f "$TARBALL" ]] || { echo "no such file: $TARBALL" >&2; exit 1; }
 
+# A bundle takes half an hour to build and the repository moves in minutes, so
+# the two drift apart without anyone noticing. Refuse rather than publish a
+# toolchain that does not match the source it claims to be.
+HEAD_COMMIT="$(git rev-parse HEAD)"
+BUILT_FROM="$(cat "$TARBALL.built-from" 2>/dev/null || echo missing)"
+if [[ "$BUILT_FROM" != "$HEAD_COMMIT" && "${ALLOW_STALE:-}" != "1" ]]; then
+	echo "error: this bundle was not built from the current commit." >&2
+	echo "  bundle: $BUILT_FROM" >&2
+	echo "  HEAD:   $HEAD_COMMIT" >&2
+	echo >&2
+	echo "Rebuild it with ./bundle/build_bundle.sh, or set ALLOW_STALE=1 if you" >&2
+	echo "are certain the difference does not reach the compiler." >&2
+	exit 1
+fi
+
 # The version is the bundle's own name, so there is no way to publish one
 # release under another's number.
 VERSION="$(basename "$TARBALL" | sed -n 's/^nail-\(.*\)-linux-x86_64\.tar\.xz$/\1/p')"
@@ -159,6 +183,7 @@ for file in nail.desktop nail.xml nail.svg; do
 done
 echo "uploaded desktop integration"
 
+build_launcher
 if [[ -x target/release/nail-launcher ]]; then
 	"${SCP[@]}" target/release/nail-launcher "$HOST:$SRV/nail/.incoming"
 	"${SSH[@]}" "$HOST" "chmod 755 $SRV/nail/.incoming && mv $SRV/nail/.incoming $SRV/nail/x86_64-linux"

@@ -148,6 +148,17 @@ OUT="$REPO/bundle/nail-$NAIL_VERSION-linux-x86_64.tar.xz"
 XZ_OPT="-9e -T0" tar -cJf "$OUT" -C "$(dirname "$ROOT")" "$(basename "$ROOT")"
 echo "bundle: $OUT ($(du -h "$OUT" | cut -f1))"
 
+# Which commit this was built from, beside the tarball rather than inside it,
+# so publishing can check it without decompressing 800MB. A bundle takes half
+# an hour to build and the repository moves in minutes, so without this the two
+# drift apart quietly and the site hands out a toolchain missing the commands
+# its own installer advertises. Which is exactly what happened.
+BUILT_FROM="$(cd "$REPO" && git rev-parse HEAD 2>/dev/null || echo unknown)"
+if [ -n "$(cd "$REPO" && git status --porcelain 2>/dev/null)" ]; then
+    BUILT_FROM="$BUILT_FROM-dirty"
+fi
+printf '%s\n' "$BUILT_FROM" > "$OUT.built-from"
+
 cat <<EOF
 
 Built. To publish it:
