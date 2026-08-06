@@ -10,7 +10,7 @@ use ratatui::crossterm::execute;
 use ratatui::prelude::Position;
 use std::backtrace::Backtrace;
 use std::panic;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{
     mpsc::{Receiver, Sender},
     Arc, Mutex,
@@ -2187,12 +2187,11 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             // same kind: a changed Cargo.toml rebuilds dependencies and takes
             // minutes, a changed main.rs alone takes seconds.
             let deps_changed = !toml_unchanged;
-            let build_times_path = transpilation_dir.join(BUILD_TIMES_FILE);
             let compile_started = std::time::Instant::now();
             let mut editor = editor_arc.lock().unwrap();
             editor.build_status = BuildStatus::Compiling;
             editor.compile_started = Some(compile_started);
-            editor.compile_estimate = read_build_estimate(&build_times_path, deps_changed);
+            editor.compile_estimate = read_build_estimate(deps_changed);
             drop(editor); // Release the lock
             let mut cargo = match &bundle {
                 Some(bundle) => bundle.cargo_command(),
@@ -2207,7 +2206,7 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                         // Only a finished build is a fair estimate. A failed
                         // one stops at the first error, far short of the work
                         // the next successful build has to do.
-                        record_build_time(&build_times_path, deps_changed, compile_elapsed);
+                        record_build_time(deps_changed, compile_elapsed);
                         log::debug!("Compiler stdout: {}", String::from_utf8_lossy(&output.stdout));
 
                         let binary_path = match &bundle {
@@ -2252,44 +2251,70 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
     }
 }
 
-/// Where the IDE remembers how long builds take. It sits in the generated
-/// project beside the build it describes, and is disposable: a missing or
-/// unreadable file just means the next build reports seconds instead of a
-/// percentage, and then writes the file itself.
-const BUILD_TIMES_FILE: &str = ".nail_build_times.json";
+/// Everything the IDE remembers about a project lives in one `.nail` file in
+/// the directory it was started from: plain `key=value` lines, one per line.
+/// It is a convenience, never a requirement, so a missing or unreadable file
+/// only costs the defaults. The one thing kept out of it is the profiler dump,
+/// which a separate process rewrites every second.
+const PROJECT_CONFIG_FILE: &str = ".nail";
+
+fn project_config_path() -> Option<PathBuf> {
+    Some(std::env::current_dir().ok()?.join(PROJECT_CONFIG_FILE))
+}
+
+fn config_value_in(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| line.strip_prefix(key)?.strip_prefix('=').map(|value| value.trim().to_string()))
+}
+
+/// Rewrites the given keys and leaves every other line the file already had
+/// alone, so two parts of the IDE storing different things never erase each
+/// other. Existing keys keep their position, new ones go at the end.
+fn config_text_with(existing: &str, pairs: &[(&str, String)]) -> String {
+    let mut lines: Vec<String> = existing.lines().map(|line| line.to_string()).collect();
+    for (key, value) in pairs {
+        let replacement = format!("{}={}", key, value);
+        match lines.iter_mut().find(|line| line.starts_with(&format!("{}=", key))) {
+            Some(line) => *line = replacement,
+            None => lines.push(replacement),
+        }
+    }
+    return format!("{}\n", lines.join("\n"));
+}
+
+pub fn read_config_value(key: &str) -> Option<String> {
+    let text = fs::read_to_string(project_config_path()?).ok()?;
+    config_value_in(&text, key)
+}
+
+pub fn write_config_values(pairs: &[(&str, String)]) {
+    let path = match project_config_path() {
+        Some(path) => path,
+        None => return,
+    };
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+    if let Err(e) = fs::write(&path, config_text_with(&existing, pairs)) {
+        log::warn!("Could not write {}: {}", PROJECT_CONFIG_FILE, e);
+    }
+}
 
 /// A build that rebuilt dependencies and one that only recompiled the program
 /// are minutes apart, so each kind remembers its own duration and is only ever
 /// compared against its own kind.
 fn build_time_key(deps_changed: bool) -> &'static str {
     if deps_changed {
-        "deps_nanos"
+        "build_deps_nanos"
     } else {
-        "code_nanos"
+        "build_code_nanos"
     }
 }
 
-fn read_build_estimate(path: &Path, deps_changed: bool) -> Option<std::time::Duration> {
-    let text = fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let nanos = value.get(build_time_key(deps_changed))?.as_u64()?;
+fn read_build_estimate(deps_changed: bool) -> Option<std::time::Duration> {
+    let nanos: u64 = read_config_value(build_time_key(deps_changed))?.parse().ok()?;
     Some(std::time::Duration::from_nanos(nanos))
 }
 
-/// Keeps the other kind's recorded time, so switching between dependency
-/// builds and program builds does not throw away either estimate.
-fn record_build_time(path: &Path, deps_changed: bool, took: std::time::Duration) {
-    let mut value = fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .filter(|value: &serde_json::Value| value.is_object())
-        .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
-    if let Some(object) = value.as_object_mut() {
-        object.insert(build_time_key(deps_changed).to_string(), serde_json::Value::from(took.as_nanos() as u64));
-        if let Err(e) = fs::write(path, value.to_string()) {
-            log::warn!("Could not record build time: {}", e);
-        }
-    }
+fn record_build_time(deps_changed: bool, took: std::time::Duration) {
+    write_config_values(&[(build_time_key(deps_changed), (took.as_nanos() as u64).to_string())]);
 }
 
 /// A profiled program writes .nail_profile.json via tmp and rename, so a
@@ -2736,4 +2761,50 @@ pub fn find_matching_bracket(content: &[String], cursor_y: usize, cursor_x: usiz
     }
     
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_read_ignores_keys_that_only_share_a_prefix() {
+        let text = "theme=light\nbuild_code_nanos=42\n";
+        assert_eq!(config_value_in(text, "theme"), Some("light".to_string()));
+        assert_eq!(config_value_in(text, "build"), None);
+        assert_eq!(config_value_in(text, "build_code_nanos"), Some("42".to_string()));
+        assert_eq!(config_value_in(text, "missing"), None);
+    }
+
+    #[test]
+    fn config_write_keeps_lines_it_does_not_own() {
+        let existing = "theme=light\nbuild_deps_nanos=900\n";
+        let written = config_text_with(existing, &[("build_code_nanos", "42".to_string())]);
+        assert_eq!(config_value_in(&written, "theme"), Some("light".to_string()));
+        assert_eq!(config_value_in(&written, "build_deps_nanos"), Some("900".to_string()));
+        assert_eq!(config_value_in(&written, "build_code_nanos"), Some("42".to_string()));
+    }
+
+    #[test]
+    fn config_write_replaces_in_place_rather_than_appending_a_duplicate() {
+        let written = config_text_with("theme=light\nbuild_code_nanos=42\n", &[("theme", "dark".to_string())]);
+        assert_eq!(written, "theme=dark\nbuild_code_nanos=42\n");
+    }
+
+    #[test]
+    fn config_write_starts_a_file_that_does_not_exist_yet() {
+        assert_eq!(config_text_with("", &[("theme", "dark".to_string())]), "theme=dark\n");
+    }
+
+    /// The old config writer left no trailing newline, so a file saved by an
+    /// earlier version must still read and grow correctly.
+    fn legacy_file_without_trailing_newline() -> &'static str {
+        "theme=light"
+    }
+
+    #[test]
+    fn config_write_upgrades_a_file_from_the_old_writer() {
+        let written = config_text_with(legacy_file_without_trailing_newline(), &[("build_code_nanos", "42".to_string())]);
+        assert_eq!(written, "theme=light\nbuild_code_nanos=42\n");
+    }
 }
