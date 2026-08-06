@@ -53,3 +53,6 @@ wasm_demos
 
 # Build directory nail run/build/test creates beside a source file
 .nail-build/
+
+# Records which commit a built bundle came from, beside the tarball
+bundle/*.built-from
