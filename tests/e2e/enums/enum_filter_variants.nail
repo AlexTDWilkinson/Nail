@@ -1,3 +1,4 @@
+nail latest
 // E2E: filtering an array of enums by variant
 enum Color { Red, Green, Blue }
 palette:a:Color = [Color::Red, Color::Blue, Color::Red, Color::Green];

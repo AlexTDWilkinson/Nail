@@ -1,3 +1,4 @@
+nail latest
 // Regression test: map/filter closures must clone captured outer variables
 // instead of moving them into the async block (E0507).
 

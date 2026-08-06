@@ -1,3 +1,4 @@
+nail latest
 // Every build is profiled. Run this program, then open it in the IDE:
 // each function wears the timings the program just measured for itself.
 

@@ -1,3 +1,4 @@
+nail latest
 // E2E: the _by family takes a function the program named - no closures
 struct Book {
     title:s,

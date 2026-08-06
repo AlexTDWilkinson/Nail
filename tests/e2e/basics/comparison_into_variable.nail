@@ -1,3 +1,4 @@
+nail latest
 // E2E: comparison results stored in boolean variables
 is_big:b = 10 > 5;
 is_equal:b = 3 == 4;

@@ -1,3 +1,4 @@
+nail latest
 // E2E: recursive string building
 f repeat_word(word:s, count:i):s {
     r if {

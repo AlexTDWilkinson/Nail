@@ -1,3 +1,4 @@
+nail latest
 // The Nail website: a real web server, written in Nail, that serves the page
 // describing Nail. This file is the entry point and the table of contents.
 //

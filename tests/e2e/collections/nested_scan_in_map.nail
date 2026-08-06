@@ -1,3 +1,4 @@
+nail latest
 // E2E: a scan nested inside a map — running totals per row
 grid:a:a:i = [[1, 2, 3], [10, 20, 30]];
 running:a:a:i = map row in grid { y scan acc cell in row from 0 { y acc + cell; }; };

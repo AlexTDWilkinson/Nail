@@ -1,3 +1,4 @@
+nail latest
 // E2E: the string_* text utilities every program ends up writing for itself
 print(string_to_camel_case(`user id number`));
 print(string_to_pascal_case(`user account`));

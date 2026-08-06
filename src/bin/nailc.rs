@@ -45,6 +45,10 @@ fn main() {
         eprintln!("  --target=wasm  Build for the browser: emits a wasm-bindgen start function");
         eprintln!("                 instead of a main, and refuses programs that call stdlib");
         eprintln!("                 functions needing an operating system (files, servers, etc.)");
+        eprintln!("  --stamp=<v>    Rewrite the file's version line to <v> or to `latest`, but");
+        eprintln!("                 only if it still type checks. This is the half of");
+        eprintln!("                 `hammer update` that a release has to do, because deciding");
+        eprintln!("                 whether a file survives a migration means compiling it.");
         process::exit(1);
     }
 
@@ -68,6 +72,26 @@ fn main() {
     if mode == "-o" || mode == "--stdout" || mode == "--no-profile" || mode == "--target=wasm" {
         mode = "--transpile";
     }
+    if args.iter().any(|arg| arg == "--run") {
+        mode = "--run";
+    }
+
+    // Stamping is its own mode: check the file, and rewrite line one only if
+    // the check passed. A file that no longer compiles keeps its old version line
+    // and keeps working, which is what makes migration optional forever.
+    let stamp_to = match args.iter().find_map(|arg| arg.strip_prefix("--stamp=")) {
+        Some(text) => match text.parse::<nail::version_line::Pin>() {
+            Ok(pin) => {
+                mode = "--stamp";
+                Some(pin)
+            }
+            Err(_) => {
+                eprintln!("`{}` is not a version like 0.3.1, or the word `latest`", text);
+                process::exit(1);
+            }
+        },
+        None => None,
+    };
     
     // If --skip-check is present with --transpile, handle it specially
     if skip_check && mode == "--transpile" {
@@ -75,7 +99,7 @@ fn main() {
     }
 
     // Machine-readable modes must not print pipeline banners to stdout
-    let quiet = matches!(mode, "--transpile" | "--transpile-skip-check" | "--deps-only" | "--cargo-toml");
+    let quiet = matches!(mode, "--transpile" | "--transpile-skip-check" | "--deps-only" | "--cargo-toml" | "--stamp" | "--run");
     
     // Read the input file
     let input = match fs::read_to_string(filename) {
@@ -85,7 +109,31 @@ fn main() {
             process::exit(1);
         }
     };
-    
+
+    // A Nail file has to say which compiler it was written for. Leaving it out
+    // would mean the file compiles with whatever is newest, which is exactly
+    // the drift the version line exists to prevent, so it is an error rather
+    // than a default. The IDE writes the line on save and `--stamp` adds it to
+    // a file that has none, so this is reachable mainly by hand-made files.
+    //
+    // Only the entry file needs one. Imported files inherit it, because one
+    // compiler compiles everything it reaches and only the entry decides which.
+    // Hammer stays deliberately permissive here and falls back to the newest
+    // installed version: refusing to launch a file is a far worse failure than
+    // compiling it, and by the time this runs the right compiler was chosen.
+    if stamp_to.is_none() && nail::version_line::scan_header(input.as_bytes()).pin.is_none() {
+        eprintln!("error: '{}' has no version line", filename);
+        eprintln!();
+        eprintln!("Every Nail file says on its first line which compiler wrote it, so that it");
+        eprintln!("keeps compiling the same way forever. Add one of these as line one:");
+        eprintln!();
+        eprintln!("  nail {}     this exact compiler, frozen", env!("CARGO_PKG_VERSION"));
+        eprintln!("  nail latest    whichever version is installed, for code you are still writing");
+        eprintln!();
+        eprintln!("Or let a tool do it: `nailc {} --stamp=latest`", filename);
+        process::exit(1);
+    }
+
     
     let mut stage_timings: Vec<(&str, std::time::Duration)> = Vec::new();
 
@@ -175,6 +223,20 @@ fn main() {
         }
     };
     
+    if let Some(pin) = &stamp_to {
+        // The type check above is the whole gate: reaching here means the file
+        // compiles under this compiler, so it is safe to say so on line one.
+        let stamped = nail::version_line::stamp(&input, pin);
+        if stamped == input {
+            return;
+        }
+        if let Err(error) = fs::write(filename, stamped) {
+            eprintln!("Error writing '{}': {}", filename, error);
+            process::exit(1);
+        }
+        return;
+    }
+
     if mode == "--check-only" {
         println!("\nType-checked AST:");
         println!("{:#?}", checked_ast);
@@ -225,6 +287,73 @@ fn main() {
             println!("{}", dep.to_cargo_dep());
         }
         return;
+    }
+
+    // Compile the program and run it, which is what `hammer run` asks for.
+    // Same steps the IDE performs for F7: write the generated Rust and its
+    // manifest into a build directory beside the source, build with the
+    // bundled cargo when there is one, then hand over to the result.
+    if mode == "--run" {
+        let package_name = "nail_transpilation";
+        let build_dir = Path::new(filename).parent().unwrap_or(Path::new(".")).join(".nail-build");
+        if let Err(error) = fs::create_dir_all(build_dir.join("src")) {
+            eprintln!("Cannot create {}: {}", build_dir.display(), error);
+            process::exit(1);
+        }
+
+        // An installed release builds with its own pinned toolchain and its
+        // own copy of the nail crate. A development checkout uses the system
+        // cargo and the crate next door.
+        let bundle = nail::toolchain::BundledToolchain::detect();
+        let nail_crate_path = match &bundle {
+            Some(bundle) => bundle.nail_crate_path().display().to_string(),
+            // The build directory sits beside the source rather than beside
+            // the crate, so a relative --nail-path would resolve from the
+            // wrong place. Anchor it to where the command was run.
+            None => fs::canonicalize(&nail_path).map(|path| path.display().to_string()).unwrap_or_else(|_| nail_path.clone()),
+        };
+
+        // Written only when changed, so cargo's mtime fingerprints survive and
+        // an unchanged program does not relink.
+        let manifest = transpiler.generate_cargo_toml(package_name, &nail_crate_path);
+        let manifest_path = build_dir.join("Cargo.toml");
+        if fs::read_to_string(&manifest_path).map(|existing| existing != manifest).unwrap_or(true) {
+            if let Err(error) = fs::write(&manifest_path, &manifest) {
+                eprintln!("Cannot write {}: {}", manifest_path.display(), error);
+                process::exit(1);
+            }
+        }
+        let main_path = build_dir.join("src/main.rs");
+        if fs::read_to_string(&main_path).map(|existing| existing != rust_code).unwrap_or(true) {
+            if let Err(error) = fs::write(&main_path, &rust_code) {
+                eprintln!("Cannot write {}: {}", main_path.display(), error);
+                process::exit(1);
+            }
+        }
+
+        let mut cargo = match &bundle {
+            Some(bundle) => bundle.cargo_command(),
+            None => process::Command::new("cargo"),
+        };
+        let status = cargo.arg("build").arg("--release").current_dir(&build_dir).status();
+        match status {
+            Ok(status) if status.success() => {}
+            Ok(_) => process::exit(1),
+            Err(error) => {
+                eprintln!("Cannot run cargo: {}", error);
+                process::exit(1);
+            }
+        }
+
+        let binary = match &bundle {
+            Some(bundle) => bundle.built_binary_path(package_name),
+            None => build_dir.join("target/release").join(package_name),
+        };
+        // Arguments after the file are the program's, not ours.
+        let program_args: Vec<&String> = args.iter().skip(2).filter(|arg| !arg.starts_with("--")).collect();
+        let error = std::os::unix::process::CommandExt::exec(process::Command::new(&binary).args(program_args));
+        eprintln!("Cannot run {}: {}", binary.display(), error);
+        process::exit(1);
     }
 
     if mode == "--cargo-toml" {

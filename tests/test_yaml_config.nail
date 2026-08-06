@@ -1,3 +1,4 @@
+nail latest
 // YAML, for the documents a program does not get to choose the format of.
 
 struct Job {

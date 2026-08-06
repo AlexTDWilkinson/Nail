@@ -1,3 +1,4 @@
+nail latest
 // E2E: safe handles float_from parse failure
 f parse_fallback(error_msg:e):f {
     print(`float parse failed`);

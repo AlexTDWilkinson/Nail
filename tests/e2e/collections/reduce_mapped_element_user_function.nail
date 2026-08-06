@@ -1,3 +1,4 @@
+nail latest
 // E2E: the element's contribution comes from a function the program declares
 f weight(word:s):i {
     r string_length(word) * 2;

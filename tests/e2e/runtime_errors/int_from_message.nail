@@ -1,3 +1,4 @@
+nail latest
 // E2E: int_from runtime error names the function and echoes the input
 f show_error(error_msg:e):i {
     print(error_msg);

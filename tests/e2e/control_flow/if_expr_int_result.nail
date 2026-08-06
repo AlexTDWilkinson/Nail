@@ -1,3 +1,4 @@
+nail latest
 // E2E: if expression producing an int used in arithmetic
 base:i = 7;
 bonus:i = if { base % 2 == 0 -> { r 10; }, else -> { r 20; } };

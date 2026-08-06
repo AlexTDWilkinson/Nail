@@ -1,3 +1,4 @@
+nail latest
 // Demonstrate panic and todo functions in if statement branches
 // These functions exit the program when called
 

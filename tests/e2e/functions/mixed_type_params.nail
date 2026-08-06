@@ -1,3 +1,4 @@
+nail latest
 // E2E: parameters of four different basic types
 f describe(label:s, count:i, weight:f, active:b):s {
     r string_concat([label, `:`, string_from(count), `:`, string_from(weight), `:`, string_from(active)]);

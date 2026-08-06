@@ -1,3 +1,4 @@
+nail latest
 // E2E: the path_* pieces a program takes apart and puts back together
 print(path_stem(`/tmp/report.pdf`));
 print(path_stem(`archive.tar.gz`));

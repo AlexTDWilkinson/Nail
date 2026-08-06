@@ -1,3 +1,4 @@
+nail latest
 // E2E: mime_* by file name, and the front matter a document carries
 print(mime_for_path(`index.html`));
 print(mime_for_path(`/srv/app/public/logo.svg`));

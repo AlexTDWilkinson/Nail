@@ -1,3 +1,4 @@
+nail latest
 // E2E: a directory into one archive file and back out again
 danger(fs_create_dir(`source/nested`));
 danger(fs_write(`source/top.txt`, `the top file`));

@@ -1,3 +1,4 @@
+nail latest
 // E2E: scan body captures an outer immutable bonus value
 bonus:i = 2;
 nums:a:i = [1, 2, 3];

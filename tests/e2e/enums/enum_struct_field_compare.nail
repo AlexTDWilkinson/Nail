@@ -1,3 +1,4 @@
+nail latest
 // E2E: comparing an enum stored in a struct field
 enum Color { Red, Green, Blue }
 struct Shirt { size_num:i, color_kind:Color }

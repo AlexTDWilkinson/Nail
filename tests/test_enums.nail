@@ -1,3 +1,4 @@
+nail latest
 // Enum Declaration Tests
 
 enum GameState {

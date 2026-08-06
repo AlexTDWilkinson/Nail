@@ -1,3 +1,4 @@
+nail latest
 // A function parameter may shadow a global of a different type without
 // affecting the global.
 total:i = 100;

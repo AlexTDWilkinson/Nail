@@ -1,3 +1,4 @@
+nail latest
 // E2E: find first string matching a prefix predicate
 words:a:s = [`apple`, `banana`, `cherry`];
 b_word:s = danger(find word in words { y string_starts_with(word, `b`); });

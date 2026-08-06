@@ -1,3 +1,4 @@
+nail latest
 // Negative test: duplicate enum definitions should FAIL type checking
 // because the transpiler would emit two Rust enums with the same name.
 enum Color { Red, Green }

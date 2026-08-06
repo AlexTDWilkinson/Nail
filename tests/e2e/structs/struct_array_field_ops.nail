@@ -1,3 +1,4 @@
+nail latest
 // E2E: stdlib array functions on an array field of a struct
 struct Bag { items:a:i }
 sack:Bag = Bag { items = [4, 5, 6] };

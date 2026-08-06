@@ -1,3 +1,4 @@
+nail latest
 // E2E: reading a few fields out of JSON without describing the whole shape
 answer:s = `{"user":{"name":"Ada","age":36,"score":9.5,"active":true,"nickname":null},"items":[{"name":"first"},{"name":"second"}],"count":"12"}`;
 print(danger(json_get_string(answer, `user.name`)));

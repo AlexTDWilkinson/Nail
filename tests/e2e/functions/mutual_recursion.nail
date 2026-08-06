@@ -1,3 +1,4 @@
+nail latest
 // E2E: mutually recursive functions
 f is_even_rec(num:i):b {
     r if {

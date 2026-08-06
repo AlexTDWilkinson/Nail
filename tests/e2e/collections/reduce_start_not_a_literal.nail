@@ -1,3 +1,4 @@
+nail latest
 // E2E: the start of an associative fold need not be written as a literal
 numbers:a:i = [1, 2, 3, 4, 5];
 opening:i = array_length(numbers);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: filter predicate captures an outer immutable threshold
 threshold:i = 10;
 nums:a:i = [4, 15, 9, 22];

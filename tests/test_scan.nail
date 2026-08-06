@@ -1,3 +1,4 @@
+nail latest
 // A scan is a reduce that keeps its work: one accumulator value per element,
 // so the result is always as long as the array it scanned.
 

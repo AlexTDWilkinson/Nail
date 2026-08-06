@@ -1,3 +1,4 @@
+nail latest
 // E2E: if expression with four branches assigned to a variable
 day_num:i = 3;
 day_name:s = if {

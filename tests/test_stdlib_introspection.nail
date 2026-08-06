@@ -1,3 +1,4 @@
+nail latest
 // The standard library describes itself: stdlib_functions returns the same
 // registry entries the type checker uses, so a program can list what it can call.
 functions:a:STDLIB_Function = stdlib_functions();

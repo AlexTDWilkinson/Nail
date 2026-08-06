@@ -1,3 +1,4 @@
+nail latest
 // E2E: three levels of nesting, each level a parallel operation
 cube:a:a:a:i = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
 tripled:a:a:a:i = map plane in cube { y map row in plane { y map cell in row { y cell * 3; }; }; };

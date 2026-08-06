@@ -1,3 +1,4 @@
+nail latest
 // E2E: for loop over an int array
 nums:a:i = [10, 20, 30];
 for num in nums {

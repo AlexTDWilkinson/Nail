@@ -1,3 +1,4 @@
+nail latest
 // Simple Markdown Blog Example in Nail
 
 port:i = 8080;

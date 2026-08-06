@@ -1,3 +1,4 @@
+nail latest
 // E2E: env_get runtime error echoes the missing variable name
 f show_error(error_msg:e):s {
     print(error_msg);

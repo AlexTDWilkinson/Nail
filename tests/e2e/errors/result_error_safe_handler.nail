@@ -1,3 +1,4 @@
+nail latest
 // E2E: safe runs handler on error path
 f half_of(value:i):i!e {
     if {

@@ -1,3 +1,4 @@
+nail latest
 // E2E: enum with many variants assigned and printed
 enum Weekday { Monday, Tuesday, Wednesday, Thursday, Friday }
 start_day:Weekday = Weekday::Monday;

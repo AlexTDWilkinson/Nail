@@ -1,3 +1,4 @@
+nail latest
 // Reading a file without holding it: a fold, a reader, joining, and a range read.
 
 scratch:s = path_join(fs_temp_dir(), `nail_streaming_test`);

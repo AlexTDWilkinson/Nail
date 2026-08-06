@@ -1,3 +1,4 @@
+nail latest
 // QuickSort implementation example from the website
 
 f quicksort(arr:a:i):a:i {

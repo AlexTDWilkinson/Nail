@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Builds the Nail release bundle: one immutable directory at /opt/nail holding
-# the IDE, a pinned Rust toolchain, vendored crate sources, the nail crate
-# source, and a pre-warmed build cache - then tars it for distribution.
+# Builds the Nail release bundle: one immutable directory holding the IDE, a
+# pinned Rust toolchain, vendored crate sources, the nail crate source, and a
+# pre-warmed build cache - then tars it for distribution.
 #
-# Must be built AT the final install path (/opt/nail): cargo fingerprints
-# embed absolute paths, and building at the final path is what makes the
-# shipped warm cache valid on user machines.
+# Must be built AT the final install path (/opt/nail/versions/<version>):
+# cargo fingerprints embed absolute paths, and building at the final path is
+# what makes the shipped warm cache valid on user machines. Many versions live
+# side by side, and the version is known here at build time, so a per-version
+# path is still a fixed path.
 #
 # Build-machine requirements (users need none of this):
 #   - network access (crates.io + static.rust-lang.org)
@@ -16,11 +18,11 @@ set -euo pipefail
 RUST_VERSION="${RUST_VERSION:-1.92.0}"
 HOST=x86_64-unknown-linux-gnu
 TARGET=x86_64-unknown-linux-musl
-ROOT="${NAIL_HOME:-/opt/nail}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 DIST=https://static.rust-lang.org/dist
 DOWNLOADS="$REPO/bundle/downloads"
 NAIL_VERSION="$(grep -m1 '^version' "$REPO/Cargo.toml" | cut -d'"' -f2)"
+ROOT="${NAIL_HOME:-/opt/nail/versions/$NAIL_VERSION}"
 
 if ! mkdir -p "$ROOT" 2>/dev/null || [ ! -w "$ROOT" ]; then
     echo "error: $ROOT is not writable. Run: sudo mkdir -p $ROOT && sudo chown $USER $ROOT" >&2
@@ -51,21 +53,33 @@ if [ ! -x "$ROOT/toolchain/bin/cargo" ]; then
     for archive in "rust-$RUST_VERSION-$HOST" "rust-std-$RUST_VERSION-$TARGET"; do
         rm -rf "$DOWNLOADS/$archive"
         tar -xJf "$DOWNLOADS/$archive.tar.xz" -C "$DOWNLOADS"
-        "$DOWNLOADS/$archive/install.sh" --prefix="$ROOT/toolchain" --disable-ldconfig >/dev/null
+        # Only the components a build actually uses. The combined installer
+        # otherwise brings rust-docs, rust-analyzer, clippy and rustfmt, which
+        # is hundreds of megabytes nobody unpacks.
+        WANTED="$(grep -E '^(rustc|cargo|rust-std)' "$DOWNLOADS/$archive/components" | paste -sd,)"
+        "$DOWNLOADS/$archive/install.sh" --prefix="$ROOT/toolchain" --disable-ldconfig --components="$WANTED" >/dev/null
         rm -rf "$DOWNLOADS/$archive"
     done
 fi
 echo "toolchain: $("$ROOT/toolchain/bin/rustc" --version)"
 
 # --- 2. IDE + nailc binaries (host target, bundled toolchain) -------------
-(cd "$REPO" && PATH="$ROOT/toolchain/bin:$PATH" "$ROOT/toolchain/bin/cargo" build --release --bin nail --bin nailc)
+# Hammer is built here too but does NOT go in the bundle: it is version
+# independent, one copy serves every release, and it is published on its own.
+# --locked: build exactly what Cargo.lock says or fail. A release must be one
+# set of bytes, so a bundle build is never allowed to quietly resolve a newer
+# dependency than the one that was tested.
+(cd "$REPO" && PATH="$ROOT/toolchain/bin:$PATH" "$ROOT/toolchain/bin/cargo" build --locked --release --bin nail --bin nailc --bin hammer)
 cp "$REPO/target/release/nail" "$REPO/target/release/nailc" "$ROOT/bin/"
 
 # --- 3. nail crate source (generated programs depend on it by path) -------
 rm -rf "$ROOT/nail"
 mkdir -p "$ROOT/nail"
-cp "$REPO/Cargo.toml" "$ROOT/nail/"
+cp "$REPO/Cargo.toml" "$REPO/Cargo.lock" "$ROOT/nail/"
 cp -r "$REPO/src" "$ROOT/nail/src"
+# assets/ is crate source too: game.rs embeds the font from it with
+# include_bytes!, so a nail/ without it does not compile.
+cp -r "$REPO/assets" "$ROOT/nail/assets"
 
 # --- 4. Warmup projects ---------------------------------------------------
 # superset: every crate the registry can emit, all nail features.
@@ -120,6 +134,22 @@ warm_build "$ROOT/warmup/superset"
 warm_build "$ROOT/warmup/minimal"
 
 # --- 7. Package -----------------------------------------------------------
+# The warmup projects were scaffolding for building the cache. The cache itself
+# is what ships, so they do not need to.
+rm -rf "$ROOT/warmup"
+
+# The archive holds one directory named for the version, which is exactly what
+# Hammer unpacks into /opt/nail/versions.
+#
+# -9e is the strongest xz preset and -T0 spreads it over every core, so the
+# extra ratio costs build-machine time rather than wall clock. Users pay the
+# download once and unpack with the fast path either way.
 OUT="$REPO/bundle/nail-$NAIL_VERSION-linux-x86_64.tar.xz"
-tar -cJf "$OUT" -C "$(dirname "$ROOT")" "$(basename "$ROOT")"
+XZ_OPT="-9e -T0" tar -cJf "$OUT" -C "$(dirname "$ROOT")" "$(basename "$ROOT")"
 echo "bundle: $OUT ($(du -h "$OUT" | cut -f1))"
+
+cat <<EOF
+
+Built. To publish it:
+  ./deploy/releases.sh $OUT
+EOF

@@ -1,3 +1,4 @@
+nail latest
 // Error test: array element type and searched value type must agree
 numbers:a:i = [1, 2, 3];
 found:b = array_contains(numbers, `three`);

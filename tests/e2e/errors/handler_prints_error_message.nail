@@ -1,3 +1,4 @@
+nail latest
 // E2E: error handler receives and prints the error message
 f always_fails(value:i):i!e {
     r e(`custom failure text`);

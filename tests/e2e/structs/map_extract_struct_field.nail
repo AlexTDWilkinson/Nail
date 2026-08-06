@@ -1,3 +1,4 @@
+nail latest
 // E2E: map extracting a field from structs into an int array
 struct Employee { name:s, salary:i }
 staff:a:Employee = [Employee { name = `Ann`, salary = 100 }, Employee { name = `Ben`, salary = 200 }];

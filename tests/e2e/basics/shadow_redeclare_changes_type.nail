@@ -1,3 +1,4 @@
+nail latest
 // Shadowing may redeclare a name with a new type; the old value stays usable
 // in the shadowing initializer.
 count:i = 5;

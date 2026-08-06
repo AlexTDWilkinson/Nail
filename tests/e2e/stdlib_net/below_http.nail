@@ -1,3 +1,4 @@
+nail latest
 // E2E: the network below HTTP. Only localhost is touched, and only ports that
 // nothing listens on, so the answers are the same on any machine.
 print(array_length(danger(net_dns_lookup(`localhost`))) > 0);

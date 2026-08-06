@@ -1,3 +1,4 @@
+nail latest
 // E2E: enum as a struct field with Debug printing
 enum Color { Red, Green, Blue }
 struct Shirt { size_num:i, color_kind:Color }

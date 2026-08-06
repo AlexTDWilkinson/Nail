@@ -1,3 +1,4 @@
+nail latest
 // The network below HTTP: what a name resolves to, and whether a port is open.
 // Every call takes a deadline, because a network operation without one is how a
 // program hangs forever with nothing in the log.

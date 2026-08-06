@@ -1,3 +1,4 @@
+nail latest
 // E2E: scan over an array of structs reads a field of each element
 struct Order { name:s, amount:i }
 orders:a:Order = [Order { name = `first`, amount = 5 }, Order { name = `second`, amount = 15 }];

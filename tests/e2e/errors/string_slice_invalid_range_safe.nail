@@ -1,3 +1,4 @@
+nail latest
 // E2E: safe handles string_slice with start greater than end
 f bad_slice(error_msg:e):s {
     print(`slice failed`);

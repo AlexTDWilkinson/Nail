@@ -1,3 +1,4 @@
+nail latest
 // Bound SQL parameters, CSPRNG tokens, HMAC, hex, HTML escaping and cookies.
 
 struct Person {

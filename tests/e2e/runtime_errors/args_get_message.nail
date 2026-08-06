@@ -1,3 +1,4 @@
+nail latest
 // E2E: args_get runtime error echoes the index and the argument count
 f show_error(error_msg:e):s {
     print(error_msg);

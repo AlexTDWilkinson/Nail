@@ -1,3 +1,4 @@
+nail latest
 // E2E: if condition using logical not on a boolean
 is_locked:b = false;
 if { !is_locked -> { print(`open`); }, else -> { print(`locked`); } }

@@ -1,3 +1,4 @@
+nail latest
 // E2E: filter struct array on a boolean field
 struct Task { title:s, done:b }
 tasks:a:Task = [Task { title = `wash`, done = true }, Task { title = `cook`, done = false }, Task { title = `shop`, done = true }];

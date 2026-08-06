@@ -6,6 +6,7 @@ pub mod embedded;
 pub mod formatter;
 pub mod lexer;
 pub mod parser;
+pub mod version_line;
 pub mod prof;
 pub mod transpiler;
 pub mod statics_for_tests;

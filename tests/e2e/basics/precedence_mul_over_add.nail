@@ -1,3 +1,4 @@
+nail latest
 // E2E: multiplication binds tighter than addition and subtraction
 print(2 + 3 * 4 - 5);
 print(10 - 2 * 3);

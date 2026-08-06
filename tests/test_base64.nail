@@ -1,3 +1,4 @@
+nail latest
 // Base64 encoding, both alphabets.
 
 plain:s = `hello world`;

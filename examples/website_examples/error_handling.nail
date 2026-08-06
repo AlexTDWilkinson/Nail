@@ -1,3 +1,4 @@
+nail latest
 // Nail forces explicit error handling - no silent failures!
 // Functions that can fail return type!e (result types)
 

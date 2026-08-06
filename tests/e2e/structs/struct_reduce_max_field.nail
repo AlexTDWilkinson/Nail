@@ -1,3 +1,4 @@
+nail latest
 // E2E: reduce finding max field value across structs
 struct Peak { height:i }
 peaks:a:Peak = [Peak { height = 300 }, Peak { height = 950 }, Peak { height = 620 }];

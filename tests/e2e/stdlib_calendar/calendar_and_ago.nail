@@ -1,3 +1,4 @@
+nail latest
 // E2E: the calendar arithmetic a billing cycle or a page timestamp needs
 // 2024-03-15 12:30:45 UTC
 moment:i = danger(time_from_parts(2024, 3, 15, 12, 30, 45));

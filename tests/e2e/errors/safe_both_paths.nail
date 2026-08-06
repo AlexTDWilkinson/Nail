@@ -1,3 +1,4 @@
+nail latest
 // E2E: safe on success and failure paths of the same function
 f checked_sub(minuend:i, subtrahend:i):i!e {
     if {

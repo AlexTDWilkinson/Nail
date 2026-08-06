@@ -1,3 +1,4 @@
+nail latest
 // An identifier that merely begins with a keyword is still an identifier:
 // `structure_of` is not a struct declaration, `enumerate` is not an enum.
 

@@ -1,3 +1,4 @@
+nail latest
 // E2E: reduce summing a struct field across an array of structs
 struct Item { label:s, cost:i }
 items:a:Item = [Item { label = `pen`, cost = 3 }, Item { label = `book`, cost = 12 }, Item { label = `bag`, cost = 25 }];

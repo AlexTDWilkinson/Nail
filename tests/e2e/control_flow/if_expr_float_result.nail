@@ -1,3 +1,4 @@
+nail latest
 // E2E: if expression producing a float value
 ratio:f = 0.75;
 scaled:f = if { ratio > 0.5 -> { r ratio * 2.0; }, else -> { r 0.0; } };

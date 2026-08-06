@@ -1,3 +1,4 @@
+nail latest
 // Hashmap types in function signatures. The function-signature lexer used to
 // stop scanning a type at '<', so a hashmap parameter consumed nothing and the
 // lexer spun forever on the same character.

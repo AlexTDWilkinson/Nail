@@ -1,2 +1,3 @@
+nail latest
 // Error test: math_divide only accepts numbers, not strings
 result:s = danger(math_divide(`ten`, `two`));

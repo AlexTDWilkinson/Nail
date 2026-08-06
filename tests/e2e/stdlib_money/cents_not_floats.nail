@@ -1,3 +1,4 @@
+nail latest
 // E2E: money_* counts in whole cents, so ten dimes are exactly a dollar
 dime:i = money_from_dollars(0.10);
 total:i = dime + dime + dime + dime + dime + dime + dime + dime + dime + dime;

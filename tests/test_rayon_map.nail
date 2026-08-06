@@ -1,3 +1,4 @@
+nail latest
 // Test Rayon parallelization in map
 numbers:a:i = [1, 2, 3, 4, 5];
 

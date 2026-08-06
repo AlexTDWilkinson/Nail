@@ -1,3 +1,4 @@
+nail latest
 // A variable may reuse a stdlib function's name; calls still resolve to the
 // stdlib function.
 string_from:i = 4;

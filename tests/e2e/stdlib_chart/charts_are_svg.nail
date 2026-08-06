@@ -1,3 +1,4 @@
+nail latest
 // E2E: every chart is a whole SVG document, which is a string like any other
 daily:a:f = [120.0, 180.0, 150.0, 240.0];
 days:a:s = [`mon`, `tue`, `wed`, `thu`];

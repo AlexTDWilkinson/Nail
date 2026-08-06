@@ -1,3 +1,4 @@
+nail latest
 // Error test: using a variable that was never declared
 total_count:i = 5;
 result:i = total_cont + 1;

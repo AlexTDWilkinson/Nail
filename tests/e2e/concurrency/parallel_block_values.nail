@@ -1,3 +1,4 @@
+nail latest
 // E2E: parallel block computes values usable after the block
 p
     upper_text:s = string_to_uppercase(`nail`);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: find returning a struct matched on a field condition
 struct City { name:s, population:i }
 cities:a:City = [City { name = `Oslo`, population = 700 }, City { name = `Rome`, population = 2800 }];

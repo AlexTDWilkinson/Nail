@@ -1,3 +1,4 @@
+nail latest
 // E2E: function with four int parameters
 f sum_four(first:i, second:i, third:i, fourth:i):i {
     r first + second + third + fourth;

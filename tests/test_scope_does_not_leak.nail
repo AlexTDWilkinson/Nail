@@ -1,3 +1,4 @@
+nail latest
 // Names introduced by a block belong to that block. A map iterator, a lambda
 // parameter or a function parameter that happens to share a name with a
 // function must not shadow it once the block is over.

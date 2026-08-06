@@ -1,3 +1,4 @@
+nail latest
 // E2E: unary minus applied twice yields the original value
 print(-(-5));
 num_val:i = -8;

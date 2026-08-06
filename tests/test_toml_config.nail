@@ -1,3 +1,4 @@
+nail latest
 // TOML, the format a person edits a configuration file in.
 
 struct Settings {

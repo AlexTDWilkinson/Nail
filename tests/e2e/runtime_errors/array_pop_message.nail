@@ -1,3 +1,4 @@
+nail latest
 // E2E: array_pop runtime error names the function
 f show_error(error_msg:e):a:i {
     print(error_msg);

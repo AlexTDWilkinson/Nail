@@ -1,3 +1,4 @@
+nail latest
 // E2E: array_push returns a new array and leaves the original unchanged
 nums:a:i = [1, 2];
 grown:a:i = array_push(nums, 3);

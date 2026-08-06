@@ -1,3 +1,4 @@
+nail latest
 // Error test: http_server without the handle_request function it dispatches to
 config:HTTP_Config = HTTP_Config {
     static_mounts = [],

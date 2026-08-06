@@ -1,3 +1,4 @@
+nail latest
 // E2E: function returning a string array
 f color_names():a:s {
     r [`red`, `green`, `blue`];

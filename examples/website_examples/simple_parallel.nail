@@ -1,3 +1,4 @@
+nail latest
 // p.../p runs each statement on its own OS thread (std::thread::spawn).
 // All threads are joined at /p, so every value below the block is ready.
 // Parallelism multiplies working: three cores compute in the same instant.

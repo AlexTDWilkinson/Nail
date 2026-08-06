@@ -1,3 +1,4 @@
+nail latest
 // What kind of file this is, and the values a document carries above its text.
 
 test_assert_equal_string(mime_for_path(`index.html`), `text/html; charset=utf-8`, `a page`);

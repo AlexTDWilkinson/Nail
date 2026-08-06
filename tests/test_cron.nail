@@ -1,3 +1,4 @@
+nail latest
 // Cron schedules, worked out as arithmetic rather than run by a scheduler: a
 // program asks when the next run is, sleeps until then, does the work, and asks
 // again. The loop stays in the program, where anyone reading it can see what

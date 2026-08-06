@@ -1,3 +1,4 @@
+nail latest
 // E2E: string_substring runtime errors echo the indices and string length
 f show_error(error_msg:e):s {
     print(error_msg);

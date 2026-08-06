@@ -1,3 +1,4 @@
+nail latest
 // E2E: filter array of structs by field predicate
 struct Worker { name:s, age:i }
 crew:a:Worker = [Worker { name = `Ann`, age = 30 }, Worker { name = `Ben`, age = 17 }, Worker { name = `Cal`, age = 45 }];

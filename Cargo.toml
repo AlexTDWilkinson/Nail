@@ -1,6 +1,6 @@
 [package]
 name = "nail"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 default-run = "nail"
 
@@ -15,6 +15,14 @@ path = "src/bin/nailc.rs"
 [[bin]]
 name = "nail-website"
 path = "src/bin/nail-website.rs"
+
+# Hammer: the launcher. It resolves a file's version pragma, installs that
+# exact release if it is missing, and hands the file to it. Deliberately
+# separate from the compiler and deliberately small, because it is the one
+# piece that can never be replaced by a newer Nail.
+[[bin]]
+name = "hammer"
+path = "src/bin/hammer.rs"
 
 
 [lib]
@@ -87,8 +95,9 @@ ratatui = { version = "0.28.1", features = ["all-widgets", "crossterm"] }
 axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["fs"] }
 tokio = { version = "1", features = ["full"] }
-# rustls instead of native-tls: bundle builds must not need system openssl
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "multipart"] }
+# rustls instead of native-tls: bundle builds must not need system openssl.
+# "blocking" is for Hammer, which downloads releases with no async runtime.
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "multipart", "blocking"] }
 notify = "6"
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde_rusqlite = "0.35"

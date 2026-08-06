@@ -1,3 +1,4 @@
+nail latest
 // Test nested indexed loops to ensure scoping works correctly
 
 print(`Testing nested indexed loops`);

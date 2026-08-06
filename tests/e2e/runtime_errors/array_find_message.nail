@@ -1,3 +1,4 @@
+nail latest
 // E2E: array_find and array_find_last runtime errors echo the missing value
 f show_error(error_msg:e):i {
     print(error_msg);

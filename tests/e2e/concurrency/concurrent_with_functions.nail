@@ -1,3 +1,4 @@
+nail latest
 // E2E: concurrent block calling user functions
 f square_num(base_num:i):i { r base_num * base_num; }
 c

@@ -1,3 +1,4 @@
+nail latest
 // E2E: vector arithmetic, the operations that can fail, and the bridge to the
 // flat arrays of coordinates the drawing functions take.
 f pointing_east(problem:e):LINALG_Vec2 { r linalg_vec2(1.0, 0.0); }

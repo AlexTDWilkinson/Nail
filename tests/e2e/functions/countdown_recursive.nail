@@ -1,3 +1,4 @@
+nail latest
 // E2E: recursive countdown that prints on the way down
 f countdown(num:i):i {
     print(num);

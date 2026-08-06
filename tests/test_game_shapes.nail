@@ -1,3 +1,4 @@
+nail latest
 // A game, described rather than drawn.
 //
 // Exactly like the TUI: the whole game is a state struct and two pure

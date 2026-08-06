@@ -1,3 +1,4 @@
+nail latest
 // E2E: reduce concatenating strings from empty string init
 words:a:s = [`nail`, `is`, `fun`];
 sentence:s = reduce acc word in words from `` { y string_concat([acc, word, ` `]); };

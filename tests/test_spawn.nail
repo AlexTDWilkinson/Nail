@@ -1,3 +1,4 @@
+nail latest
 // Test spawn block functionality
 // Spawn blocks run asynchronously in the background
 

@@ -1,3 +1,4 @@
+nail latest
 // E2E: hashmap_get and hashmap_remove runtime errors echo the missing key
 f show_error(error_msg:e):i {
     print(error_msg);

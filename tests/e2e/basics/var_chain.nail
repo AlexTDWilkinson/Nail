@@ -1,3 +1,4 @@
+nail latest
 // E2E: chained variable definitions referencing earlier variables
 first_num:i = 2;
 second_num:i = first_num * 3;

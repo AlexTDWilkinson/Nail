@@ -1,3 +1,4 @@
+nail latest
 // Assertions, which a Nail program uses to check itself. Every assertion here
 // holds, so the program runs to the end and exits cleanly.
 

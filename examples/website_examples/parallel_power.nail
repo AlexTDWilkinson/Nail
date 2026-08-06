@@ -1,3 +1,4 @@
+nail latest
 // Nail makes parallelism trivial with p...p/ blocks
 // Everything inside runs concurrently!
 

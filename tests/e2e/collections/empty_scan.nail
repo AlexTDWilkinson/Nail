@@ -1,3 +1,4 @@
+nail latest
 // E2E: scan over an empty array records no steps
 empty_nums:a:i = [];
 running:a:i = scan acc num in empty_nums from 42 { y acc + num; };

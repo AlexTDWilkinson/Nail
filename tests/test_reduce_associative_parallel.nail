@@ -1,3 +1,4 @@
+nail latest
 // A reduce whose step is provably associative may be split across cores; every
 // other fold must stay sequential, because regrouping it could change the
 // answer. Both kinds are exercised here.

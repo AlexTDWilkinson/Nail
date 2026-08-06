@@ -1,3 +1,4 @@
+nail latest
 // E2E: recursive factorial
 f factorial(num:i):i {
     r if {

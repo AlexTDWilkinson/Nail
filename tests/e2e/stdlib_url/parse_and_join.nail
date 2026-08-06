@@ -1,3 +1,4 @@
+nail latest
 // E2E: taking a URL apart, putting it back, and resolving a link against it
 parts:URL_Parts = danger(url_parse(`https://Example.COM/blog/post?page=2#top`));
 print(parts.scheme);

@@ -1,3 +1,4 @@
+nail latest
 // Pure helper functions for the import tests. Everything here only
 // computes, so a program can bring this file in with import.
 sandboxed_prefix:s = string_to_uppercase(`ok`);

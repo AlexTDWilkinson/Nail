@@ -1,3 +1,4 @@
+nail latest
 // This test should FAIL type checking
 // Attempting to define a struct with a stdlib type name
 

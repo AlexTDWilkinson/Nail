@@ -1,3 +1,4 @@
+nail latest
 // E2E: counting into a hashmap, and building one from two arrays
 counts:h<s,i> = hashmap_new();
 print(hashmap_increment(counts, `hit`));

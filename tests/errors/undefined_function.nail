@@ -1,2 +1,3 @@
+nail latest
 // Error test: calling a function that does not exist (typo of math_sqrt)
 result:f = math_sqrtt(4.0);

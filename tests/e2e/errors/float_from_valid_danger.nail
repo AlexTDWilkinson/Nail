@@ -1,3 +1,4 @@
+nail latest
 // E2E: danger unwraps successful float_from
 parsed:f = danger(float_from(`2.5`));
 print(parsed);

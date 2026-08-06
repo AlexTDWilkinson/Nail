@@ -1,3 +1,4 @@
+nail latest
 // E2E: arithmetic on nested struct field access chains
 struct Corner { x_pos:i, y_pos:i }
 struct Rect { top_left:Corner, bottom_right:Corner }

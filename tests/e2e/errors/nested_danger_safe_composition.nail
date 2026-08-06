@@ -1,3 +1,4 @@
+nail latest
 // E2E: nested composition of danger around safe
 f divide_pair(top_num:i, bottom_num:i):i!e {
     if {

@@ -1,3 +1,4 @@
+nail latest
 // E2E: loop with index and break
 loop idx {
     if { idx >= 3 -> { break; }, else -> { print(idx); } }

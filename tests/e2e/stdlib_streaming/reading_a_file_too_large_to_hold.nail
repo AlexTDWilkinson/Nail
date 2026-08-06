@@ -1,3 +1,4 @@
+nail latest
 // E2E: reading a file a piece at a time, so its size does not have to fit in
 // memory. Four ways: a fold, a reader loop, joining files, and a range read.
 danger(fs_write(`app.log`, `INFO start

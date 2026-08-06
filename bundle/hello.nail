@@ -1,3 +1,4 @@
+nail latest
 // Warmup fixture for the bundle build: the smallest real Nail program,
 // used to pre-build the no-features dependency set and as the offline
 // install gate's test program.

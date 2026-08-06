@@ -1,3 +1,4 @@
+nail latest
 // E2E: function taking a string array parameter
 f join_words(words:a:s):s {
     r string_join(words, ` `);

@@ -1,3 +1,4 @@
+nail latest
 // Checking that text is the shape it claims to be, which is what a program
 // does with everything that arrives from outside itself.
 

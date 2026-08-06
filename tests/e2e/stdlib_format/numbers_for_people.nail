@@ -1,3 +1,4 @@
+nail latest
 // E2E: format_* turns numbers into the text a person reads
 print(format_decimals(3.5, 2));
 print(format_thousands(1234567));

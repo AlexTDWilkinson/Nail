@@ -1,3 +1,4 @@
+nail latest
 // E2E: float function results feeding arithmetic
 f area_of(width_val:f, height_val:f):f {
     r width_val * height_val;

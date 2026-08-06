@@ -1,3 +1,4 @@
+nail latest
 // Shadowing regression tests for binding-keyed move analysis.
 // Each shadowed name gets a distinct binding id, so move/clone decisions
 // never conflate two bindings that share a name.

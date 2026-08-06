@@ -1,3 +1,4 @@
+nail latest
 // Test both concurrent and parallel blocks
 
 // Concurrent block using tokio::join!

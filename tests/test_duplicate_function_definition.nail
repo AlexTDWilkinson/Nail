@@ -1,3 +1,4 @@
+nail latest
 // Negative test: duplicate function definitions should FAIL type checking
 // because the transpiler would emit two Rust fns with the same name.
 f greet():s {

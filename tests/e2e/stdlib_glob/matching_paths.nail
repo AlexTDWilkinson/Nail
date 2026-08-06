@@ -1,3 +1,4 @@
+nail latest
 // E2E: shell glob patterns, matched against a path without touching the disk
 print(path_matches_glob(`*.nail`, `main.nail`));
 print(path_matches_glob(`*.nail`, `tests/main.nail`));

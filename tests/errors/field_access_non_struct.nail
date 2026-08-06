@@ -1,3 +1,4 @@
+nail latest
 // Error test: accessing a field on a plain integer
 count:i = 5;
 value:i = count.value;

@@ -1,3 +1,4 @@
+nail latest
 // E2E: function with zero parameters
 f make_greeting():s {
     r `hello from nail`;

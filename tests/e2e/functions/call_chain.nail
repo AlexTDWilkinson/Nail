@@ -1,3 +1,4 @@
+nail latest
 // E2E: function calling another function
 f double_val(num:i):i { r num * 2; }
 f quadruple(num:i):i { r double_val(double_val(num)); }

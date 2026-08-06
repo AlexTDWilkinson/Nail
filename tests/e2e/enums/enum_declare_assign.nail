@@ -1,3 +1,4 @@
+nail latest
 // E2E: enum declaration and variant assignment
 enum Color { Red, Green, Blue }
 chosen:Color = Color::Green;

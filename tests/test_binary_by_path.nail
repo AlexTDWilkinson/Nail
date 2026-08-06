@@ -1,3 +1,4 @@
+nail latest
 // Binary files handled by path: hashed, encoded, resized. Nothing binary ever
 // becomes a Nail value, which is why none of this needs a bytes type.
 

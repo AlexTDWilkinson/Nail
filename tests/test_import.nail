@@ -1,3 +1,4 @@
+nail latest
 // Test sandboxed file inclusion: the helper is brought in with import, so
 // the compiler proves it only computes. Calling it and printing results
 // happens here, on the trusted side.

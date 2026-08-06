@@ -1,3 +1,4 @@
+nail latest
 // Hello World - Your first Nail program
 
 greeting:s = `Hello, World!`;

@@ -1,3 +1,4 @@
+nail latest
 // E2E: struct declaration, instantiation, field access
 struct Point { x_coord:i, y_coord:i }
 origin_point:Point = Point { x_coord = 3, y_coord = 4 };

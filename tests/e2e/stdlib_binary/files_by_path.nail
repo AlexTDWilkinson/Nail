@@ -1,3 +1,4 @@
+nail latest
 // E2E: binary files handled by path - hashed, encoded, resized, measured.
 // Nothing binary becomes a Nail value.
 danger(fs_write(`hello.txt`, `hello`));

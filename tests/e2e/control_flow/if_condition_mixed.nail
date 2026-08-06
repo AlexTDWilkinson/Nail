@@ -1,3 +1,4 @@
+nail latest
 // E2E: if condition combining and, or, and not
 temp_val:i = 72;
 raining:b = false;

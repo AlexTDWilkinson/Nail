@@ -1,3 +1,4 @@
+nail latest
 // E2E: safe handles int_from parse failure
 f parse_fallback(error_msg:e):i {
     print(`parse failed`);

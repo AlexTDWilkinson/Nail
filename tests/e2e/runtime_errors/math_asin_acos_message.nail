@@ -1,3 +1,4 @@
+nail latest
 // E2E: math_asin and math_acos runtime errors echo the out-of-range input
 f show_error(error_msg:e):f {
     print(error_msg);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: function returning a struct
 struct Point { x_coord:i, y_coord:i }
 f make_point(x_input:i, y_input:i):Point {

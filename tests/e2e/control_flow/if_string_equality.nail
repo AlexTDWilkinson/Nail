@@ -1,3 +1,4 @@
+nail latest
 // E2E: string equality comparison in an if condition
 password_val:s = `secret`;
 if { password_val == `secret` -> { print(`match`); }, else -> { print(`no match`); } }

@@ -1,3 +1,4 @@
+nail latest
 // E2E: panic prints prior stdout then exits with nonzero code
 print(`before panic`);
 panic(`boom`);

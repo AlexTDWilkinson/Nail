@@ -1,3 +1,4 @@
+nail latest
 // Error test: defining a function whose name is a stdlib function
 f math_sqrt(value:f):f {
     r value * 2.0;

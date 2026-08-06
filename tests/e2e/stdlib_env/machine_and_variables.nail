@@ -1,3 +1,4 @@
+nail latest
 // E2E: environment variables and what the machine says about itself.
 // Machine-specific values are only checked for shape, so this reads the same
 // on any computer.

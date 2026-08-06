@@ -1,3 +1,4 @@
+nail latest
 // E2E: the element's contribution is itself a collection operation, which has
 // to run as a plain parallel chain inside the fold's closures
 grid:a:a:i = [[1, 2, 3], [4, 5], [6, 7, 8, 9]];

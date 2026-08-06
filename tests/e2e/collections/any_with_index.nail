@@ -1,3 +1,4 @@
+nail latest
 // E2E: any with index parameter, true and false cases
 nums:a:i = [9, 1, 9];
 has_match:b = any num idx in nums { y num == idx; };

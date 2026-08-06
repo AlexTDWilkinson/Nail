@@ -1,3 +1,4 @@
+nail latest
 // c.../c starts every statement at the same time and waits for all of them.
 // The compiler turns this block into Rust's tokio::join!, async I/O on one
 // thread. Concurrency overlaps waiting: three reads cost one wait. It cannot

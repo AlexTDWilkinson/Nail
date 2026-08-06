@@ -1,3 +1,4 @@
+nail latest
 // E2E: core collection operations
 nums:a:i = [1, 2, 3, 4, 5];
 doubled:a:i = map num in nums { y num * 2; };

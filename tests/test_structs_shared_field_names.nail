@@ -1,3 +1,4 @@
+nail latest
 // Positive test: different structs may reuse the same field names.
 struct FirstBox { value_field:i, label:s }
 struct SecondBox { value_field:f, label:s }

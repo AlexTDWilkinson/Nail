@@ -1,3 +1,4 @@
+nail latest
 // Nail forces you to handle errors - no silent failures!
 
 f divide(numerator:i, denominator:i):i!e {

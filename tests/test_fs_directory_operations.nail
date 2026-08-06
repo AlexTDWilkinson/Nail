@@ -1,3 +1,4 @@
+nail latest
 // Filesystem: appending, listing, walking, measuring, and cleaning up after
 // itself. Everything happens inside one directory under the machine's
 // temporary folder, which is removed at the end.

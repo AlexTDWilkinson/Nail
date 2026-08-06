@@ -1,3 +1,4 @@
+nail latest
 // E2E: float division keeps the fractional part
 print(7.0 / 2.0);
 print(1.0 / 4.0);

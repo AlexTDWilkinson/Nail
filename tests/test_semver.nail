@@ -1,3 +1,4 @@
+nail latest
 // Version numbers compared the way tools compare them, not the way text sorts.
 
 test_assert(semver_valid(`1.4.2`), `a plain version`);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: function returning boolean from comparison
 f is_even(num:i):b {
     r num % 2 == 0;

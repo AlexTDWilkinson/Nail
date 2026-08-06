@@ -461,8 +461,13 @@ impl Transpiler {
     /// Generate a Cargo.toml requiring every crate the stdlib registry can
     /// ever emit, with all nail features enabled. The bundle build compiles
     /// this once so every real program's dependencies are already cached.
+    /// Every crate the bundle can pre-build, which is every crate except those
+    /// needing libraries already installed on the machine. The bundle's whole
+    /// promise is that nothing is installed, so there is nothing for
+    /// pkg-config to find and those crates cannot be part of it.
     pub fn generate_cargo_toml_superset(package_name: &str, nail_path: &str) -> String {
-        Self::render_cargo_toml(package_name, nail_path, CrateDependency::all().into_iter().collect())
+        let bundled = CrateDependency::all().into_iter().filter(|dependency| !dependency.needs_system_libraries()).collect();
+        Self::render_cargo_toml(package_name, nail_path, bundled)
     }
 
     /// The Cargo.toml for a browser build. A wasm program is a cdylib, not a

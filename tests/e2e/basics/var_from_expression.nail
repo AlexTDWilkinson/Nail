@@ -1,3 +1,4 @@
+nail latest
 // E2E: variable initialized from an arithmetic expression
 base_num:i = 10;
 total_val:i = base_num * 2 + 5;

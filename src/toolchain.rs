@@ -1,8 +1,9 @@
 //! Bundled toolchain resolution for the Nail IDE.
 //!
-//! A Nail release installs as one immutable bundle at /opt/nail containing
-//! the IDE, a pinned Rust toolchain, vendored crate sources, the nail crate
-//! source, and a pre-warmed build cache. When the bundle is present, builds
+//! A Nail release installs as one immutable bundle at
+//! /opt/nail/versions/<version> containing the IDE, a pinned Rust toolchain,
+//! vendored crate sources, the nail crate source, and a pre-warmed build
+//! cache. Hammer installs and launches them. When the bundle is present, builds
 //! use its cargo with a scrubbed environment so nothing on the user's machine
 //! (rustup, RUSTFLAGS, crates.io) can affect or break compilation. Without a
 //! bundle (development checkouts), builds fall back to the system cargo.
@@ -22,20 +23,30 @@ use std::process::Command;
 /// toolchain's own musl libc and rust-lld, so linking needs zero system files.
 pub const BUNDLE_TARGET: &str = "x86_64-unknown-linux-musl";
 
-/// Default install location. Fixed on purpose: cargo's fingerprints embed
-/// absolute paths, so a fixed path lets the pre-warmed cache shipped in the
-/// bundle stay valid on every machine.
-const DEFAULT_BUNDLE_ROOT: &str = "/opt/nail";
+/// Where Hammer keeps installed versions. Each one lives at
+/// `<VERSION_STORE>/<version>` and is built at exactly that path, because
+/// cargo's fingerprints embed absolute paths and a bundle's pre-warmed cache
+/// is only valid at the path it was warmed at. The version is known when the
+/// bundle is built, so a per-version path is still a fixed path.
+pub const VERSION_STORE: &str = "/opt/nail/versions";
 
 pub struct BundledToolchain {
     root: PathBuf,
 }
 
 impl BundledToolchain {
-    /// Detect an installed bundle. NAIL_HOME overrides the default root
-    /// (used by the bundle build itself and by tests).
+    /// Detect the bundle this binary belongs to. Since many versions are
+    /// installed side by side, the root cannot be a constant: it is found from
+    /// the running executable's own location (`<root>/bin/nailc`), so a binary
+    /// always builds with the toolchain it shipped with. NAIL_HOME overrides
+    /// it, which is what the bundle build itself and the tests use. In a
+    /// development checkout nothing matches and builds fall back to the system
+    /// cargo, exactly as before.
     pub fn detect() -> Option<Self> {
-        let root = std::env::var_os("NAIL_HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(DEFAULT_BUNDLE_ROOT));
+        let root = match std::env::var_os("NAIL_HOME") {
+            Some(home) => PathBuf::from(home),
+            None => std::env::current_exe().ok()?.parent()?.parent()?.to_path_buf(),
+        };
         let toolchain = Self { root };
         if toolchain.cargo_binary().is_file() && toolchain.cargo_home().is_dir() && toolchain.nail_crate_path().join("Cargo.toml").is_file() {
             Some(toolchain)
@@ -84,5 +95,110 @@ impl BundledToolchain {
             command.env("HOME", home);
         }
         command
+    }
+}
+
+/// Guards on the things a release has to get right, which are exactly the
+/// things that cannot be noticed until a release is built. Each of these
+/// corresponds to a bug that shipped once.
+#[cfg(test)]
+mod release_guards {
+    use std::path::{Path, PathBuf};
+
+    fn repo_root() -> PathBuf {
+        return PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    }
+
+    fn nail_files(root: &Path, found: &mut Vec<PathBuf>) {
+        const SKIP: [&str; 4] = [".git", "target", "vendor", "node_modules"];
+        let entries = match std::fs::read_dir(root) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() && !SKIP.contains(&name.as_str()) => nail_files(&path, found),
+                // `.nail` itself is the editor's settings file, not source.
+                Ok(kind) if kind.is_file() && name.ends_with(".nail") && !name.starts_with('.') => found.push(path),
+                _ => {}
+            }
+        }
+    }
+
+    /// The compiler refuses a file with no version line, so a `.nail` file
+    /// anywhere in this repository that lacks one is a file that cannot be
+    /// compiled. The bundle's own warmup fixture was missing one, and nothing
+    /// noticed until a release build failed on it.
+    #[test]
+    fn every_nail_file_carries_a_version_line() {
+        let mut files = Vec::new();
+        nail_files(&repo_root(), &mut files);
+        assert!(files.len() > 100, "expected to find the repository's .nail files, found {}", files.len());
+
+        let unstamped: Vec<String> = files
+            .iter()
+            .filter(|path| {
+                let source = std::fs::read_to_string(path).unwrap_or_default();
+                crate::version_line::scan_header(source.as_bytes()).pin.is_none()
+            })
+            .map(|path| path.strip_prefix(repo_root()).unwrap_or(path).display().to_string())
+            .collect();
+
+        assert!(unstamped.is_empty(), "these .nail files have no version line, so nailc will refuse them:\n  {}", unstamped.join("\n  "));
+    }
+
+    /// `bundle/build_bundle.sh` copies a subset of the repository into the
+    /// bundle as the nail crate source. Anything the crate embeds with
+    /// `include_bytes!` or `include_str!` has to be inside that subset, or the
+    /// bundled crate does not compile. An embedded font in `assets/` was
+    /// missing from the copy, and only a release build revealed it.
+    #[test]
+    fn embedded_files_are_inside_what_the_bundle_copies() {
+        let script = std::fs::read_to_string(repo_root().join("bundle/build_bundle.sh")).expect("the bundle build script should exist");
+
+        let mut escaping = Vec::new();
+        let mut sources = Vec::new();
+        collect_rust_sources(&repo_root().join("src"), &mut sources);
+        for source in &sources {
+            let text = std::fs::read_to_string(source).unwrap_or_default();
+            for macro_name in ["include_bytes!", "include_str!"] {
+                for piece in text.split(macro_name).skip(1) {
+                    let literal: String = piece.trim_start().trim_start_matches('(').trim_start().trim_start_matches('"').chars().take_while(|character| *character != '"').collect();
+                    // A path that climbs out of src/ lands somewhere the
+                    // bundle only has if the script was told to copy it.
+                    if literal.contains("../../../") {
+                        let directory = literal.trim_start_matches("../../../").split('/').next().unwrap_or("").to_string();
+                        if !directory.is_empty() && !escaping.contains(&directory) {
+                            escaping.push(directory);
+                        }
+                    }
+                }
+            }
+        }
+
+        for directory in &escaping {
+            assert!(
+                script.contains(&format!("$REPO/{}", directory)),
+                "src/ embeds a file from {}/ but bundle/build_bundle.sh never copies it into $ROOT/nail, so the bundled crate will not compile",
+                directory
+            );
+        }
+    }
+
+    fn collect_rust_sources(root: &Path, found: &mut Vec<PathBuf>) {
+        let entries = match std::fs::read_dir(root) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => collect_rust_sources(&path, found),
+                Ok(kind) if kind.is_file() && path.extension().is_some_and(|extension| extension == "rs") => found.push(path),
+                _ => {}
+            }
+        }
     }
 }

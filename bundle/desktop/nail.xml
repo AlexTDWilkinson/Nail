@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tells the desktop what a .nail file is, so file managers give it an icon
+     and an "Open with" entry instead of treating it as unknown text. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+	<mime-type type="text/x-nail">
+		<comment>Nail source code</comment>
+		<glob pattern="*.nail"/>
+		<sub-class-of type="text/plain"/>
+		<icon name="nail"/>
+		<!-- The version line is the first thing in the file, which makes it a
+		     reliable signature as well as the thing Hammer reads. -->
+		<magic priority="60">
+			<match type="string" value="nail " offset="0"/>
+		</magic>
+	</mime-type>
+</mime-info>

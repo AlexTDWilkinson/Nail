@@ -1,3 +1,4 @@
+nail latest
 // E2E: 3x3 transforms - the order two of them combine in, undoing one, and
 // the difference between moving a point and moving a direction.
 f no_transform(problem:e):LINALG_Mat3 { r linalg_mat3_identity(); }

@@ -1,3 +1,4 @@
+nail latest
 // E2E: reduce over array of structs summing a field
 struct Score { points:i }
 scores:a:Score = [Score { points = 5 }, Score { points = 7 }, Score { points = 8 }];

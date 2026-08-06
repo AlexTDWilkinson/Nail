@@ -19,7 +19,19 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
     let mut last_line_had_closing_brace = false;
     let mut in_multiline_string = false;
 
+    // A shebang and a version version line are addressed to Hammer rather than to
+    // the language, so they pass through untouched. Reading them as code would
+    // reformat them into something Hammer can no longer parse, which would
+    // silently unpin the file.
+    let header_lines = crate::version_line::scan_header(lines.join("\n").as_bytes()).lines as usize;
+
     for (i, line) in lines.iter().enumerate() {
+        if i < header_lines {
+            formatted_lines.push(line.clone());
+            last_line_had_closing_brace = false;
+            continue;
+        }
+
         // Lines that are part of a multi-line string literal (or that open one)
         // must pass through verbatim: reformatting or re-indenting them would
         // change the string's contents.

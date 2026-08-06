@@ -1,3 +1,4 @@
+nail latest
 // E2E: danger unwraps successful string_slice
 part:s = danger(string_slice(`nailrocks`, 0, 4));
 print(part);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: && binds tighter than ||
 print(true || false && false);
 print((true || false) && false);

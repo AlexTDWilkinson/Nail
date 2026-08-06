@@ -1,3 +1,4 @@
+nail latest
 // E2E: semver_* compares versions as numbers, not as text
 print(semver_valid(`1.4.2`));
 print(semver_valid(`1.4`));

@@ -1,3 +1,4 @@
+nail latest
 // E2E: safe handles array_get index out of bounds
 f missing_item(error_msg:e):i {
     print(`index out of bounds`);

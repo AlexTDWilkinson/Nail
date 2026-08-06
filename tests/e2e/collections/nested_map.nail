@@ -1,3 +1,4 @@
+nail latest
 // E2E: nested map over a:a:i doubling every cell
 grid:a:a:i = [[1, 2], [3, 4], [5, 6]];
 doubled_grid:a:a:i = map row in grid { y map cell in row { y cell * 2; }; };

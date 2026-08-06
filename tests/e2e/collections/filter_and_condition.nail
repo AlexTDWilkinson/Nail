@@ -1,3 +1,4 @@
+nail latest
 // E2E: filter with && compound predicate
 nums:a:i = [1, 4, 6, 9, 12, 15];
 mid_range:a:i = filter num in nums { y num > 3 && num < 12; };

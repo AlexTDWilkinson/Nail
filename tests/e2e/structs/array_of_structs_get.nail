@@ -1,3 +1,4 @@
+nail latest
 // E2E: arrays of structs with array_get and danger
 struct Pair { left_val:i, right_val:i }
 pairs:a:Pair = [Pair { left_val = 1, right_val = 2 }, Pair { left_val = 3, right_val = 4 }];

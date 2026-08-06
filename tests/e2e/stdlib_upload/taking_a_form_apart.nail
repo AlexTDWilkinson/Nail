@@ -1,3 +1,4 @@
+nail latest
 // E2E: a multipart/form-data body taken apart the way a browser sends one. The
 // body is written here rather than received, so the test needs no server.
 boundary:s = `----NailBoundary123`;

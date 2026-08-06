@@ -1,3 +1,4 @@
+nail latest
 // E2E: recursive sum from 1 to n
 f sum_to(num:i):i {
     r if {

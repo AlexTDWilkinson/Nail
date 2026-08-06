@@ -1,3 +1,4 @@
+nail latest
 // E2E: function with one int parameter and int return
 f square(num:i):i {
     r num * num;

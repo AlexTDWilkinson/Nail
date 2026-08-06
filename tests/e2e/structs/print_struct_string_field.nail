@@ -1,3 +1,4 @@
+nail latest
 // E2E: printing struct with string field keeps quotes in Debug output
 struct Person { name:s, age:i }
 someone:Person = Person { name = `Alice`, age = 30 };

@@ -1,3 +1,4 @@
+nail latest
 // E2E: struct copy assignment to a new variable
 struct Coord { x_val:i, y_val:i }
 original:Coord = Coord { x_val = 7, y_val = 9 };

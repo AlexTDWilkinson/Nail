@@ -1,3 +1,4 @@
+nail latest
 // E2E: reading and writing numbers in other bases
 print(danger(int_from_hex(`ff`)));
 print(danger(int_from_hex(`0xFF`)));

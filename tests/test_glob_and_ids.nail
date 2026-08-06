@@ -1,3 +1,4 @@
+nail latest
 // Matching paths against shell patterns, and the identifiers that go in URLs.
 
 // `*` stays inside one path segment, so `*.nail` is the files here and

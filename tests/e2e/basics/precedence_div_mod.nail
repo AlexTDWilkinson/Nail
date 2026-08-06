@@ -1,3 +1,4 @@
+nail latest
 // E2E: division and modulo are left associative at equal precedence
 print(100 / 10 / 2);
 print(2 * 3 % 4);

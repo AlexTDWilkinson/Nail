@@ -1,3 +1,4 @@
+nail latest
 // E2E: array_slice runtime errors echo the range and the array length
 f show_error(error_msg:e):a:i {
     print(error_msg);

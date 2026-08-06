@@ -1,3 +1,4 @@
+nail latest
 // E2E: string stdlib functions on a struct string field
 struct Tag { label:s }
 marker:Tag = Tag { label = `hello` };

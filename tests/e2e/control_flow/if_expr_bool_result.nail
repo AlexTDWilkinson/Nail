@@ -1,3 +1,4 @@
+nail latest
 // E2E: if expression producing a boolean value
 count_val:i = 4;
 is_small:b = if { count_val < 10 -> { r true; }, else -> { r false; } };

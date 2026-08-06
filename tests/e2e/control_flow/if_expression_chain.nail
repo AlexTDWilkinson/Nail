@@ -1,3 +1,4 @@
+nail latest
 // E2E: if expression with multiple branches
 f letter_grade(score:i):s {
     r if {

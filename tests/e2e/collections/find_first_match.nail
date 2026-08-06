@@ -1,3 +1,4 @@
+nail latest
 // E2E: find returns first matching element via danger
 nums:a:i = [4, 9, 16, 25];
 first_big:i = danger(find num in nums { y num > 10; });

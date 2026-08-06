@@ -1,3 +1,4 @@
+nail latest
 // E2E: function results used inside arithmetic
 f base_price():i { r 100; }
 f tax_amount(price:i):i { r price / 10; }

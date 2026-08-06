@@ -1,3 +1,4 @@
+nail latest
 // An upload arrives as bytes over the network, so the server writes it to a file
 // before UTF-8 is ever involved and hands the handler the path. This is what
 // makes uploads work without a bytes type.

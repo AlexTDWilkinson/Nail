@@ -1,3 +1,4 @@
+nail latest
 // Editing an array by building the new one: Nail arrays are immutable, so
 // every operation here returns a fresh array rather than changing this one.
 

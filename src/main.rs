@@ -5,6 +5,7 @@ mod embedded;
 mod formatter;
 mod lexer;
 mod parser;
+mod version_line;
 mod statics_for_tests;
 mod stdlib_registry;
 // mod stdlib_types; // Merged into stdlib_registry
@@ -34,7 +35,6 @@ use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::Write;
-use std::path::PathBuf;
 
 use std::sync::mpsc::channel;
 use std::sync::Arc;
@@ -2953,23 +2953,13 @@ impl Editor {
     }
 
     fn save_config(&self) -> std::io::Result<()> {
-        let home_dir = env::current_dir().expect("Could not get the directory that is running Nail to save configuration");
-        let config_path = PathBuf::from(home_dir).join(".nail");
-        
-        // Debugging print to check file path
-        log::info!("Saving configuration to {:?}", config_path);
-
-        let mut file = fs::OpenOptions::new().write(true).create(true).truncate(true).open(&config_path)?;
-
-        let theme = format!(
-            "theme={}",
-            match self.theme {
-                x if x == &*LIGHT_THEME => "light",
-                _ => "dark",
-            }
-        );
-
-        file.write_all(theme.as_bytes())?;
+        // Merged into the project's .nail file rather than written over it,
+        // because build timings live there too
+        let theme = match self.theme {
+            x if x == &*LIGHT_THEME => "light",
+            _ => "dark",
+        };
+        crate::utils::write_config_values(&[("theme", theme.to_string())]);
         Ok(())
     }
     
@@ -3002,6 +2992,28 @@ impl Editor {
             if current_tab.scroll_position > max_scroll {
                 current_tab.scroll_position = max_scroll;
             }
+        }
+
+        // The IDE maintains the file's version line, so the user never types
+        // it. A file that already has one is left exactly as it is, including
+        // `nail latest`: re-stamping would silently migrate code the author
+        // pinned on purpose. Only a file with no line gets one, and since the
+        // compiler now requires the line, this is what keeps that requirement
+        // from ever being something a person has to think about.
+        //
+        // A released IDE stamps its own version, which is a real release
+        // anyone else can fetch. A development checkout stamps `latest`
+        // instead, because its version was never published and pinning to it
+        // would produce a file nobody else could open.
+        let source = current_tab.content.join("\n");
+        if crate::version_line::scan_header(source.as_bytes()).pin.is_none() {
+            let pin = match nail::toolchain::BundledToolchain::detect() {
+                Some(_) => env!("CARGO_PKG_VERSION").parse::<crate::version_line::Version>().map(crate::version_line::Pin::Exact).unwrap_or(crate::version_line::Pin::Latest),
+                None => crate::version_line::Pin::Latest,
+            };
+            let stamped = crate::version_line::stamp(&source, &pin);
+            current_tab.content = stamped.split('\n').map(String::from).collect();
+            current_tab.cursor_y += 1;
         }
 
         let filename = current_tab.filename.clone().expect("filename checked above");
@@ -3164,21 +3176,7 @@ enum CompletionContext {
 }
 
 fn load_config() -> String {
-        let home_dir = env::current_dir().expect("Could not get the directory that is running Nail to save configuration");
-        let config_path = PathBuf::from(home_dir).join(".nail");
-
-        // Debugging print to check file path
-        log::info!("Loading configuration from {:?}", config_path);
-
-        if let Ok(config_data) = fs::read_to_string(&config_path) {
-            for line in config_data.lines() {
-                if line.starts_with("theme=") {
-                    return line["theme=".len()..].to_string();
-                }
-            }
-        }
-
-        "dark".to_string()
+    return crate::utils::read_config_value("theme").unwrap_or_else(|| "dark".to_string());
 }
 
 impl Editor {

@@ -1,3 +1,4 @@
+nail latest
 // Error test: filter body must return a boolean, not a number
 numbers:a:i = [1, 2, 3];
 evens:a:i = filter num in numbers {

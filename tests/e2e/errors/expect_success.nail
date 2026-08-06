@@ -1,3 +1,4 @@
+nail latest
 // E2E: expect unwraps success values like danger
 value_num:i = expect(int_from(`7`));
 print(value_num * 3);

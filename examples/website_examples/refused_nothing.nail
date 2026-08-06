@@ -1,3 +1,4 @@
+nail latest
 // announce returns nothing, and this code tries to keep the nothing.
 f announce():v {
     print(`hello`);

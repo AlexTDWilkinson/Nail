@@ -1,3 +1,4 @@
+nail latest
 // Archives: a directory in one file, and back out again. Everything here works
 // from path to path, so nothing has to fit in memory.
 

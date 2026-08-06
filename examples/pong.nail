@@ -1,3 +1,4 @@
+nail latest
 // Pong against the wall, in a real window.
 //
 // This is the game the test suite checks as pure functions, run for real:

@@ -1,3 +1,4 @@
+nail latest
 // Learning from data. Every model here is a plain struct you can print and
 // store, and everything involving randomness takes the seed as an argument so
 // the answers are the same on every machine and every run.

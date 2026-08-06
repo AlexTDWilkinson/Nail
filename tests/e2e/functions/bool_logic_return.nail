@@ -1,3 +1,4 @@
+nail latest
 // E2E: function returning combined boolean logic
 f in_range(num:i, low:i, high:i):b {
     r num >= low && num <= high;

@@ -1,3 +1,4 @@
+nail latest
 // Negative test: omitting a declared field in a struct literal should FAIL type checking
 // because the generated Rust struct literal would be incomplete.
 struct Point { x_val:i, y_val:i }

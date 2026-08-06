@@ -1,3 +1,4 @@
+nail latest
 // Test that stdlib structs can be instantiated properly
 
 // Test creating HTTP_Response structs

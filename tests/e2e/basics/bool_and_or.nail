@@ -1,3 +1,4 @@
+nail latest
 // E2E: boolean && and || operators
 print(true && true);
 print(true && false);

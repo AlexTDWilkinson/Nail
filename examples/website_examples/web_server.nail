@@ -1,3 +1,4 @@
+nail latest
 port:i = 3000;
 html:s = html`<h1>Hello from Nail!</h1>`;
 http_server_start(port, html);

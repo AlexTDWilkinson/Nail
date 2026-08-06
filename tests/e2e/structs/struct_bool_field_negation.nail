@@ -1,3 +1,4 @@
+nail latest
 // E2E: negating a boolean struct field
 struct Flag { enabled:b }
 setting:Flag = Flag { enabled = false };

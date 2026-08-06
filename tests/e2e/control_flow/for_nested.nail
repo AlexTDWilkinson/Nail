@@ -1,3 +1,4 @@
+nail latest
 // E2E: nested for loops over ranges
 for outer_num in array_range(0, 2) {
     for inner_num in array_range(0, 2) {

@@ -1,3 +1,4 @@
+nail latest
 // E2E: array_first and array_last runtime errors name the function
 f show_error(error_msg:e):i {
     print(error_msg);

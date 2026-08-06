@@ -1,3 +1,4 @@
+nail latest
 // E2E: a signed token round-trips, and nothing else verifies against it
 struct Session {
     user:s,

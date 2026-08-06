@@ -1,3 +1,4 @@
+nail latest
 // E2E: for loop over a string array
 words:a:s = [`red`, `green`, `blue`];
 for word in words {

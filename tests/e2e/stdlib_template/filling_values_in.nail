@@ -1,3 +1,4 @@
+nail latest
 // E2E: template_render escapes values on the way in
 values:h<s,s> = hashmap_new();
 hashmap_set(values, `name`, `Alex`);

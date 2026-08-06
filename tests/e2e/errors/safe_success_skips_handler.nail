@@ -1,3 +1,4 @@
+nail latest
 // E2E: safe does not run handler on success
 f checked_double(value:i):i!e {
     if {

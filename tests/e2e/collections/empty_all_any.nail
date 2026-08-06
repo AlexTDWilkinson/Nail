@@ -1,3 +1,4 @@
+nail latest
 // E2E: all over empty array is true, any over empty array is false
 empty_nums:a:i = [];
 all_result:b = all num in empty_nums { y num > 0; };

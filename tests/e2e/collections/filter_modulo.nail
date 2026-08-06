@@ -1,3 +1,4 @@
+nail latest
 // E2E: filter with modulo predicate keeping multiples of three
 nums:a:i = [3, 6, 7, 9, 10, 12];
 threes:a:i = filter num in nums { y num % 3 == 0; };

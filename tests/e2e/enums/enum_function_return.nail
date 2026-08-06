@@ -1,3 +1,4 @@
+nail latest
 // E2E: enum returned from a function
 enum Color { Red, Green, Blue }
 f favorite():Color {

@@ -1,3 +1,4 @@
+nail latest
 // E2E: the most common value, and how it breaks a tie
 print(danger(stats_mode([1.0, 2.0, 2.0, 3.0])));
 print(danger(stats_mode([5.0])));

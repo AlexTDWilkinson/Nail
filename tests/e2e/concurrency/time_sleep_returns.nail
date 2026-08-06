@@ -1,3 +1,4 @@
+nail latest
 // E2E: time_sleep pauses then execution continues
 print(`before sleep`);
 time_sleep(0.05);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: danger unwraps successful int_from
 parsed:i = danger(int_from(`42`));
 print(parsed + 1);

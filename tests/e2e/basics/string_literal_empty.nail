@@ -1,3 +1,4 @@
+nail latest
 // E2E: empty string prints as a blank line
 print(``);
 empty_str:s = ``;

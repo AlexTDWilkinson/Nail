@@ -1,3 +1,4 @@
+nail latest
 // E2E: float literals print with a decimal point
 print(0.0);
 print(1.5);

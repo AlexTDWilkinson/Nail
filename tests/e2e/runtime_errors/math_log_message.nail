@@ -1,3 +1,4 @@
+nail latest
 // E2E: math_log family runtime errors echo the non-positive input
 f show_error(error_msg:e):f {
     print(error_msg);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: array_chunk runtime error echoes the invalid chunk size
 f show_error(error_msg:e):a:a:i {
     print(error_msg);

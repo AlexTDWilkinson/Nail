@@ -1,3 +1,4 @@
+nail latest
 // E2E: map over string array building new strings with string_concat
 words:a:s = [`hi`, `bye`];
 excited:a:s = map word in words { y string_concat([word, `!`]); };

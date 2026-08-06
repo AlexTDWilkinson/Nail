@@ -1,3 +1,4 @@
+nail latest
 // E2E: if statement nested inside another if statement branch
 outer_num:i = 10;
 if {

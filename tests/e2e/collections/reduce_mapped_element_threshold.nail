@@ -1,3 +1,4 @@
+nail latest
 // E2E: a mapped fold big enough to be split across cores agrees with the same
 // fold run sequentially over a short array
 numbers:a:i = array_range(1, 2000001);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: struct field in if expression condition
 struct Player { score:i }
 gamer:Player = Player { score = 85 };

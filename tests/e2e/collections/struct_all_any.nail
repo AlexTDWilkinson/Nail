@@ -1,3 +1,4 @@
+nail latest
 // E2E: all and any over struct fields
 struct Player { name:s, score:i }
 players:a:Player = [Player { name = `Ana`, score = 50 }, Player { name = `Bo`, score = 80 }];

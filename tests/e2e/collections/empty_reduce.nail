@@ -1,3 +1,4 @@
+nail latest
 // E2E: reduce over empty array returns the init value
 empty_nums:a:i = [];
 total:i = reduce acc num in empty_nums from 42 { y acc + num; };

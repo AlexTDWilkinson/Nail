@@ -1,3 +1,4 @@
+nail latest
 // E2E: nested expression mixing all integer operators
 print((((10 + 2) / 3) * (7 - 2)) % 7);
 result_val:i = ((100 / (5 * 2)) - (3 % 2)) * 2;

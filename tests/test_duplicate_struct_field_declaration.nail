@@ -1,3 +1,4 @@
+nail latest
 // Negative test: a struct declaring the same field twice should FAIL type checking
 // because the generated Rust struct would have duplicate fields.
 struct Broken {

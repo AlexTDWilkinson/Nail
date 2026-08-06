@@ -1,2 +1,3 @@
+nail latest
 // E2E: danger unwraps successful math_factorial
 print(danger(math_factorial(5)));

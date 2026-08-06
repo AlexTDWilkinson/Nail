@@ -1,3 +1,4 @@
+nail latest
 // E2E: inner loop break returns control to the outer loop
 loop outer_idx {
     if {

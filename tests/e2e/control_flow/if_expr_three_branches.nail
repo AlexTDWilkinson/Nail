@@ -1,3 +1,4 @@
+nail latest
 // E2E: if expression with three branches assigned to a variable
 temp:i = 75;
 verdict:s = if { temp >= 90 -> { r `hot`; }, temp >= 60 -> { r `warm`; }, else -> { r `cold`; } };

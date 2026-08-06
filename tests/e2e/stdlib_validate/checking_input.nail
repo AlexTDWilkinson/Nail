@@ -1,3 +1,4 @@
+nail latest
 // E2E: validate_* answers the questions a program asks of outside input
 print(validate_email(`alex@houski.ca`));
 print(validate_email(`alex@localhost`));

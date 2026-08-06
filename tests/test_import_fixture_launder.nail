@@ -1,3 +1,4 @@
+nail latest
 // should FAIL type checking: on its own this file calls a function that does
 // not exist. It is a fixture for the import checker unit tests, where
 // the including program defines fetch_report as an unsandboxed helper and the

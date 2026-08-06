@@ -1,3 +1,4 @@
+nail latest
 // E2E: continue inside loop idx skips even indexes, break terminates
 loop idx {
     if {

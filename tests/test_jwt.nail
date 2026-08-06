@@ -1,3 +1,4 @@
+nail latest
 // Signed tokens, which is how a server recognises a visitor it has seen before
 // without trusting anything the browser sends back unsigned.
 

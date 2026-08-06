@@ -1,3 +1,4 @@
+nail latest
 // A 3D model viewer: drag to orbit, scroll to zoom, Esc to quit.
 //
 // The model is any glTF file. On a real machine the path is read from disk,

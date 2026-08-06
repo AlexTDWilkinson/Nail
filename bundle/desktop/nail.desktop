@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Nail
+GenericName=Nail editor
+Comment=Open a Nail file with the version of Nail it was written for
+# Hammer, not a compiler: it reads the file's version line, fetches that exact
+# release if this machine does not have it, and hands the file over. %f is one
+# file, because each file names its own compiler and one process serves one
+# version.
+Exec=/opt/nail/bin/hammer %f
+Icon=nail
+# The editor draws in a terminal, so the file manager has to open one. It is
+# also where the first-run download reports its progress, which would otherwise
+# be several silent gigabytes.
+Terminal=true
+Categories=Development;IDE;TextEditor;
+MimeType=text/x-nail;
+Keywords=nail;hammer;compiler;
+StartupNotify=false

@@ -1,3 +1,4 @@
+nail latest
 // E2E: writing CSV out, with the escaping a comma in a name needs
 first:h<s,s> = hashmap_new();
 hashmap_set(first, `name`, `Doe, Jane`);

@@ -1,3 +1,4 @@
+nail latest
 // Reading HTML somebody else wrote: a fetched page, a feed, a saved export.
 // Elements are found by CSS selector, the same query a browser inspector uses.
 

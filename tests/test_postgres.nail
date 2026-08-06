@@ -1,3 +1,4 @@
+nail latest
 // Postgres, for when the data lives on a server rather than in a file. The
 // shape is the same as the SQLite module: a connection is a handle, values are
 // bound rather than pasted in, and rows come back as the struct asked for.

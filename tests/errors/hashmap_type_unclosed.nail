@@ -1,3 +1,4 @@
+nail latest
 // Error test: hashmap parameter type missing its closing '>'
 f lookup(config:h<s,s):s {
     r danger(hashmap_get(config, `title`));

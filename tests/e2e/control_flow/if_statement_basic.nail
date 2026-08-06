@@ -1,3 +1,4 @@
+nail latest
 // E2E: if as a standalone statement with else
 age:i = 20;
 if { age >= 18 -> { print(`adult`); }, else -> { print(`minor`); } }

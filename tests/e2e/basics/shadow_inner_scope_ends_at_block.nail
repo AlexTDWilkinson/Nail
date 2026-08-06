@@ -1,3 +1,4 @@
+nail latest
 // A shadow declared inside a loop body dies with the block; the outer
 // binding is untouched afterwards.
 counter:i = 1;

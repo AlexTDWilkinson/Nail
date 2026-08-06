@@ -1,3 +1,4 @@
+nail latest
 // E2E: int_pow runtime errors echo the base and exponent
 f show_error(error_msg:e):i {
     print(error_msg);

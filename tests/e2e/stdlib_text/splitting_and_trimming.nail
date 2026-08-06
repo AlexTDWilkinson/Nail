@@ -1,3 +1,4 @@
+nail latest
 // E2E: splitting at one separator, trimming named characters, code points
 pair:a:s = danger(string_split_once(`key=a=b`, `=`));
 print(pair);

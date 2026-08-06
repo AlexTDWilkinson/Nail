@@ -1,3 +1,4 @@
+nail latest
 // Fixture for the import parser unit tests. Valid on its own, but a
 // program that brings it in with import must be rejected, because a
 // safe-inserted file may only declare things and this one runs a statement.

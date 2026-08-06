@@ -1,3 +1,4 @@
+nail latest
 // Your program. The downloaded file runs inside the compile-time sandbox.
 import(`examples/website_examples/jailbreak_attempt.nail`)
 

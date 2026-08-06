@@ -6,12 +6,15 @@
 # blocked if this fails.
 set -euo pipefail
 
-ROOT="${NAIL_HOME:-/opt/nail}"
+# Versions live side by side, so with no NAIL_HOME the gate runs against the
+# newest one installed.
+ROOT="${NAIL_HOME:-$(ls -d /opt/nail/versions/*/ 2>/dev/null | sort -V | tail -1)}"
+ROOT="${ROOT%/}"
 TARGET=x86_64-unknown-linux-musl
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-[ -x "$ROOT/bin/nailc" ] || { echo "FAIL: no bundle at $ROOT" >&2; exit 1; }
+[ -n "$ROOT" ] && [ -x "$ROOT/bin/nailc" ] || { echo "FAIL: no bundle at ${ROOT:-/opt/nail/versions}" >&2; exit 1; }
 
 # Same steps the IDE build thread performs, with the same scrubbed env.
 mkdir -p "$WORK/src"
@@ -47,4 +50,20 @@ if ! file "$BINARY" | grep -q "static"; then
     echo "FAIL: binary is not statically linked" >&2
     exit 1
 fi
+
+# The other half of the promise: a file that pins this version must reach this
+# version's compiler through hammer, with no network involved.
+if [ -x /opt/nail/bin/hammer ]; then
+    VERSION="$(basename "$ROOT")"
+    printf 'nail %s\n' "$VERSION" > "$WORK/pinned.nail"
+    cat "$(dirname "$0")/hello.nail" >> "$WORK/pinned.nail"
+    RESOLVED="$(/opt/nail/bin/hammer which "$WORK/pinned.nail")"
+    case "$RESOLVED" in
+        *"pins $VERSION"*) echo "hammer resolves the version line to $VERSION" ;;
+        *) echo "FAIL: hammer did not resolve the version line: $RESOLVED" >&2; exit 1 ;;
+    esac
+else
+    echo "note: no hammer installed, skipped the resolution check"
+fi
+
 echo "PASS: offline build + run OK"

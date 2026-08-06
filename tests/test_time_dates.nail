@@ -1,3 +1,4 @@
+nail latest
 // Time: writing a moment out, reading it back, and the calendar arithmetic in
 // between. Everything is UTC, and every example uses a fixed timestamp so the
 // answers are the same on every machine and every run.

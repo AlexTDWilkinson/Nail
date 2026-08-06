@@ -1,3 +1,4 @@
+nail latest
 // E2E: user function called inside reduce body
 f combine(acc_val:i, num:i):i { r acc_val + num * 2; }
 values:a:i = [1, 2, 3];

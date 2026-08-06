@@ -1,3 +1,4 @@
+nail latest
 // Test concurrent blocks for I/O operations
 // These use async/await under the hood (tokio::join!)
 

@@ -1,3 +1,4 @@
+nail latest
 // A Point needs both coordinates, and this literal hopes nobody notices.
 struct Point {
     x_pos:i,

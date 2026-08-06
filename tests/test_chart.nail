@@ -1,3 +1,4 @@
+nail latest
 // Charts as SVG documents, which are strings like any other and go straight
 // into a page or a file.
 

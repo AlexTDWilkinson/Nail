@@ -1,3 +1,4 @@
+nail latest
 // Positive test: only exact Rust built-in type names are reserved; names that
 // merely resemble them are fine.
 struct Strings { first_text:s }

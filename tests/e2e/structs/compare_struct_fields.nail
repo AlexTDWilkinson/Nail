@@ -1,3 +1,4 @@
+nail latest
 // E2E: comparing struct fields with relational operators
 struct Pair { left_val:i, right_val:i }
 sample:Pair = Pair { left_val = 3, right_val = 8 };

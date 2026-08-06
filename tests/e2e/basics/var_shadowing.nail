@@ -1,3 +1,4 @@
+nail latest
 // E2E: variable redeclaration shadows the previous value
 count_val:i = 5;
 count_val:i = count_val + 10;

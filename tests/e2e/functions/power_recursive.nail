@@ -1,3 +1,4 @@
+nail latest
 // E2E: recursive integer power
 f power(base:i, exp:i):i {
     r if {

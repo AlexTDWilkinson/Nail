@@ -1,3 +1,4 @@
+nail latest
 // Numbers turned into the text a person reads: prices, sizes, counts, places.
 
 test_assert_equal_string(format_decimals(3.5, 2), `3.50`, `a price keeps its trailing zero`);

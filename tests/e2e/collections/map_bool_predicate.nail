@@ -1,3 +1,4 @@
+nail latest
 // E2E: map producing a boolean array from a predicate
 nums:a:i = [1, 2, 3, 4];
 parity:a:b = map num in nums { y num % 2 == 0; };

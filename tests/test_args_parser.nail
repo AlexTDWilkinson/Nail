@@ -1,3 +1,4 @@
+nail latest
 // Describing a command line as data, and getting the help page from that
 // description so the two can never disagree.
 

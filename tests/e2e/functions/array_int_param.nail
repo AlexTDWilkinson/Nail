@@ -1,3 +1,4 @@
+nail latest
 // E2E: function taking an int array parameter
 f total_of(nums:a:i):i {
     r array_sum(nums);

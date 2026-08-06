@@ -1,3 +1,4 @@
+nail latest
 // Error test: function body missing its closing brace
 f double_it(value:i):i {
     r value * 2;

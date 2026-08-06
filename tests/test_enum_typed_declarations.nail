@@ -1,3 +1,4 @@
+nail latest
 // Positive test: enum names work everywhere a type annotation is allowed -
 // variable declarations, struct fields, function params, and return types.
 enum Rank { Gold, Silver }

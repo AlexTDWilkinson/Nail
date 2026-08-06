@@ -1,3 +1,4 @@
+nail latest
 // Summary statistics over an array of numbers.
 
 latencies:a:f = [12.0, 15.0, 11.0, 45.0, 13.0, 14.0, 12.0, 130.0];

@@ -1,3 +1,4 @@
+nail latest
 // E2E: map over array_range_inclusive (end included)
 cubes:a:i = map num in array_range_inclusive(1, 4) { y num * num * num; };
 print(cubes);

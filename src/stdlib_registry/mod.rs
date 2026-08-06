@@ -169,7 +169,7 @@ mod yaml;
 /// Defines the CrateDependency enum and all its lookup methods from a single
 /// table so adding a crate is one line instead of four match arms.
 macro_rules! crate_dependencies {
-    ($($variant:ident => { cargo: $cargo:literal, name: $name:literal, import: $import:literal $(, feature: $feature:literal)? }),* $(,)?) => {
+    ($($variant:ident => { cargo: $cargo:literal, name: $name:literal, import: $import:literal $(, feature: $feature:literal)? $(, system_libraries: $system:literal)? }),* $(,)?) => {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         pub enum CrateDependency {
             $($variant,)*
@@ -203,10 +203,24 @@ macro_rules! crate_dependencies {
             pub fn nail_feature(&self) -> Option<&'static str> {
                 match self { $(CrateDependency::$variant => crate_dependencies!(@feature $($feature)?),)* }
             }
+
+            /// Whether this crate needs libraries that must already be on the
+            /// machine, found through pkg-config at build time.
+            ///
+            /// The bundle exists to make builds work with nothing installed,
+            /// so it cannot contain these: there is no system to find the
+            /// libraries on. They stay usable in a source checkout, where the
+            /// developer has the dev packages, and a bundled install cannot
+            /// build a program that reaches them.
+            pub fn needs_system_libraries(&self) -> bool {
+                match self { $(CrateDependency::$variant => crate_dependencies!(@system $($system)?),)* }
+            }
         }
     };
     (@feature $feature:literal) => { Some($feature) };
     (@feature) => { None };
+    (@system $system:literal) => { $system };
+    (@system) => { false };
 }
 
 crate_dependencies! {
@@ -246,7 +260,7 @@ crate_dependencies! {
     Chrono => { cargo: "chrono = \"0.4\"", name: "chrono", import: "use chrono;" },
     Rusqlite => { cargo: "rusqlite = { version = \"0.31\", features = [\"bundled\"] }", name: "rusqlite", import: "use rusqlite;" },
     DataFusion => { cargo: "datafusion = \"50\"", name: "datafusion", import: "use datafusion;", feature: "datafusion" },
-    Rodio => { cargo: "rodio = \"0.19\"", name: "rodio", import: "use rodio;", feature: "audio" },
+    Rodio => { cargo: "rodio = \"0.19\"", name: "rodio", import: "use rodio;", feature: "audio", system_libraries: true },
     TokioPostgres => { cargo: "tokio-postgres = \"0.7\"", name: "tokio-postgres", import: "use tokio_postgres;", feature: "postgres" },
     Image => { cargo: "image = { version = \"0.25\", default-features = false, features = [\"png\", \"jpeg\", \"gif\", \"webp\", \"bmp\", \"tiff\"] }", name: "image", import: "use image;", feature: "image" },
     Scraper => { cargo: "scraper = \"0.20\"", name: "scraper", import: "use scraper;", feature: "html" },
@@ -268,8 +282,8 @@ crate_dependencies! {
     Ammonia => { cargo: "ammonia = \"4\"", name: "ammonia", import: "use ammonia;", feature: "html" },
     TokioTungstenite => { cargo: "tokio-tungstenite = { version = \"0.23\", features = [\"rustls-tls-webpki-roots\"] }", name: "tokio-tungstenite", import: "use tokio_tungstenite;", feature: "websocket" },
     ValkeyClient => { cargo: "redis = { version = \"0.27\", features = [\"tokio-comp\"] }", name: "redis", import: "use redis;", feature: "valkey" },
-    Winit => { cargo: "winit = \"0.30\"", name: "winit", import: "use winit;", feature: "game" },
-    Softbuffer => { cargo: "softbuffer = \"0.4\"", name: "softbuffer", import: "use softbuffer;", feature: "game" },
+    Winit => { cargo: "winit = \"0.30\"", name: "winit", import: "use winit;", feature: "game", system_libraries: true },
+    Softbuffer => { cargo: "softbuffer = \"0.4\"", name: "softbuffer", import: "use softbuffer;", feature: "game", system_libraries: true },
     TinySkia => { cargo: "tiny-skia = \"0.11\"", name: "tiny-skia", import: "use tiny_skia;", feature: "game" },
     Fontdue => { cargo: "fontdue = \"0.9\"", name: "fontdue", import: "use fontdue;", feature: "game" },
     Gltf => { cargo: "gltf = { version = \"1\", default-features = false, features = [\"import\", \"utils\"] }", name: "gltf", import: "use gltf;", feature: "game" },

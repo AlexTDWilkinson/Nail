@@ -1,3 +1,4 @@
+nail latest
 // Drawing a picture with no window and no graphics card. Every shape is a
 // string, so a chart is a map and a join like anything else in Nail.
 

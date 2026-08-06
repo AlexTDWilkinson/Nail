@@ -1,3 +1,4 @@
+nail latest
 // Test the factorial example from the website
 
 f factorial(number:i):i {

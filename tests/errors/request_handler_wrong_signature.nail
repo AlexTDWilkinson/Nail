@@ -1,3 +1,4 @@
+nail latest
 // Error test: handle_request declared with the wrong signature
 f handle_request(request:HTTP_Request):s {
     r request.path;

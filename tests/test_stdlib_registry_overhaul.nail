@@ -1,3 +1,4 @@
+nail latest
 // Tests for stdlib registry overhaul additions and changes:
 // array_sum / array_min / array_max, array_pop returning a new array,
 // math_pi / math_e / math_round_to_int / math_log2, and int_pow.

@@ -1,3 +1,4 @@
+nail latest
 // E2E: parallel block running collection operations
 nums:a:i = [1, 2, 3, 4];
 p

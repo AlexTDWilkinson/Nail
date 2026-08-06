@@ -1,3 +1,4 @@
+nail latest
 // E2E: reading HTML somebody else wrote, by CSS selector
 page:s = html`<!doctype html>
 <html>

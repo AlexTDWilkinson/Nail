@@ -1,3 +1,4 @@
+nail latest
 f greet(name:s):s {
     r array_join([`Hello, `, name, `!`], ``);
 }

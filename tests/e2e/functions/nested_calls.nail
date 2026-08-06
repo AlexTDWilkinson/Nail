@@ -1,3 +1,4 @@
+nail latest
 // E2E: nested call expressions f(g(h(x)))
 f add_one(num:i):i { r num + 1; }
 f triple(num:i):i { r num * 3; }

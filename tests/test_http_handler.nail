@@ -1,3 +1,4 @@
+nail latest
 // The HTTP server hands every request to handle_request, whatever its method
 // or path, and routing happens here in Nail rather than in a route table.
 

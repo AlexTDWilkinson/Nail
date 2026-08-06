@@ -1,3 +1,4 @@
+nail latest
 // E2E: user function called inside map body
 f square(num:i):i { r num * num; }
 values:a:i = [1, 2, 3, 4];

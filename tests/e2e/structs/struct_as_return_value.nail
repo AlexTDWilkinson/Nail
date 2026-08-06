@@ -1,3 +1,4 @@
+nail latest
 // E2E: struct as function return value
 struct Coord { x_val:i, y_val:i }
 f make_coord(x_input:i, y_input:i):Coord { r Coord { x_val = x_input, y_val = y_input }; }

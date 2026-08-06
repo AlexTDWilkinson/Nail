@@ -1,3 +1,4 @@
+nail latest
 // E2E: comparing fields between two struct instances
 struct Runner { speed:i }
 fast_runner:Runner = Runner { speed = 12 };

@@ -1,3 +1,4 @@
+nail latest
 // Logging: what a program says about itself, on standard error.
 
 log_set_level(LOG_Level::Debug);

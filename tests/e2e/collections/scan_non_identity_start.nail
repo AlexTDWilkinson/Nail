@@ -1,3 +1,4 @@
+nail latest
 // E2E: scan from a non-zero start shifts every step, not only the last
 sales:a:i = [100, 200, 300];
 balances:a:i = scan acc sale in sales from 1000 { y acc + sale; };

@@ -1,3 +1,4 @@
+nail latest
 // Test both concurrent (c) and parallel (p) blocks
 // Shows the difference between async I/O and true threading
 

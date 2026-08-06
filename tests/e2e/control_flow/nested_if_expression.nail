@@ -1,3 +1,4 @@
+nail latest
 // E2E: if expression nested inside a branch of another if expression
 x_val:i = 7;
 y_val:i = 3;

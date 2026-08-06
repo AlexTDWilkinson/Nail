@@ -1,3 +1,4 @@
+nail latest
 // Test ownership issues with loops
 data:s = `Some data`;
 

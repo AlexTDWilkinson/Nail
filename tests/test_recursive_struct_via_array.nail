@@ -1,3 +1,4 @@
+nail latest
 // Positive test: a struct may contain itself through an array field, because
 // the array introduces indirection so the type is not infinitely sized.
 struct Tree {

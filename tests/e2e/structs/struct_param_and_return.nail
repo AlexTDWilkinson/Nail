@@ -1,3 +1,4 @@
+nail latest
 // E2E: function that both takes and returns a struct
 struct Pt { x_val:i, y_val:i }
 f translate(point:Pt, dx_amount:i, dy_amount:i):Pt {

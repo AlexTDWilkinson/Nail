@@ -1,3 +1,4 @@
+nail latest
 // Error test: a character that cannot start a parameter name
 f lookup(@bad:s):s {
     r bad;

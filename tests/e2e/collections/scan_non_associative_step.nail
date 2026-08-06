@@ -1,3 +1,4 @@
+nail latest
 // E2E: a scan runs in order, so a step that only works in order is fine
 sales:a:i = [100, 200, 300];
 countdown:a:i = scan acc sale in sales from 1000 { y acc - sale; };

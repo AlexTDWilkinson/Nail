@@ -1,3 +1,4 @@
+nail latest
 // E2E: a scan body may do work before yielding the next accumulator value
 numbers:a:i = [1, 2, 3];
 running:a:i = scan acc num in numbers from 0 {

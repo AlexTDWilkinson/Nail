@@ -1,3 +1,4 @@
+nail latest
 // A full-screen terminal program, described rather than drawn.
 //
 // The whole interface is two ordinary functions. `view` says what the screen

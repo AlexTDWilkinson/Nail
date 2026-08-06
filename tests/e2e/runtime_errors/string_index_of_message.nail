@@ -1,3 +1,4 @@
+nail latest
 // E2E: string_index_of and string_last_index_of errors echo the substring
 f show_error(error_msg:e):i {
     print(error_msg);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: spawned task runs; main waits long enough before finishing
 spawn {
     print(`spawned task ran`);

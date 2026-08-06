@@ -1,3 +1,4 @@
+nail latest
 // Test that loop syntax parses correctly
 // Note: In Nail, variables are immutable, so we can't have traditional counters
 // This test just verifies the loop/break/continue syntax works

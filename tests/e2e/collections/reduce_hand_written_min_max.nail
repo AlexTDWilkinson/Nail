@@ -1,3 +1,4 @@
+nail latest
 // E2E: min and max written out by hand as a fold, which the compiler proves
 // associative and may split across cores
 numbers:a:i = [3, 17, 8, 42, 11];

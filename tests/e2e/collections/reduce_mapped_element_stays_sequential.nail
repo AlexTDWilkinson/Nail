@@ -1,3 +1,4 @@
+nail latest
 // E2E: contributions the compiler cannot prove are whole numbers keep the fold
 // sequential, and the answers are the same either way
 prices:a:f = [1.5, 2.25, 3.0];

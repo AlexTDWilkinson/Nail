@@ -1,3 +1,4 @@
+nail latest
 // An MCP server in Nail: declare the tools, answer the calls, done.
 // Point any MCP client (Claude Code, Claude Desktop) at the compiled
 // binary and the model can roll dice and measure the world.

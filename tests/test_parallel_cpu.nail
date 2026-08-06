@@ -1,3 +1,4 @@
+nail latest
 // Test parallel blocks for CPU-intensive operations
 // These use OS threads under the hood (std::thread::spawn)
 

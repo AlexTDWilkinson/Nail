@@ -1,3 +1,4 @@
+nail latest
 // E2E: fs_read runtime error names the function, the path, and the OS reason
 f show_error(error_msg:e):s {
     print(error_msg);

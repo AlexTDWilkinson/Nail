@@ -1,3 +1,4 @@
+nail latest
 // Test Rayon-parallelized array operations
 
 // Test array_sort with Rayon

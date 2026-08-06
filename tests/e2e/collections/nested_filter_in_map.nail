@@ -1,3 +1,4 @@
+nail latest
 // E2E: a filter nested inside a map — the inner operation runs in the outer
 // map's rayon closure, where nothing may await
 grid:a:a:i = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]];

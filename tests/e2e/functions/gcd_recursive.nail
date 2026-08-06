@@ -1,3 +1,4 @@
+nail latest
 // E2E: recursive greatest common divisor
 f gcd_calc(first:i, second:i):i {
     r if {

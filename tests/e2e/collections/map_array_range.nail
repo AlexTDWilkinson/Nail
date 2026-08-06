@@ -1,3 +1,4 @@
+nail latest
 // E2E: map over array_range (end exclusive)
 tens:a:i = map num in array_range(1, 5) { y num * 10; };
 print(tens);

@@ -1,3 +1,4 @@
+nail latest
 // E2E: logical not operator
 print(!true);
 print(!false);

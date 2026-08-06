@@ -1,3 +1,4 @@
+nail latest
 // Test loop with spawn for background task
 // Since Nail is immutable, we can't have mutable counters
 // This test demonstrates basic loop functionality with break

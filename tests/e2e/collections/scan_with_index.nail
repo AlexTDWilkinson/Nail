@@ -1,3 +1,4 @@
+nail latest
 // E2E: scan can bind the index alongside the element
 values:a:i = [5, 5, 5, 5];
 weighted:a:i = scan acc value idx in values from 0 { y acc + value * idx; };

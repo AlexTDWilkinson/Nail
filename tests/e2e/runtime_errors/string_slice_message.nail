@@ -1,3 +1,4 @@
+nail latest
 // E2E: string_slice runtime error echoes the invalid range
 f show_error(error_msg:e):s {
     print(error_msg);

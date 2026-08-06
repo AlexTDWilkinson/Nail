@@ -1,3 +1,4 @@
+nail latest
 // E2E: danger unwraps successful integer math_divide
 quotient:i = danger(math_divide(10, 4));
 print(quotient);

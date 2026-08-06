@@ -1,3 +1,4 @@
+nail latest
 // E2E: float struct fields and arithmetic
 struct Measure { length:f, width:f }
 board:Measure = Measure { length = 2.5, width = 4.0 };

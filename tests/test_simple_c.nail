@@ -1,3 +1,4 @@
+nail latest
 c
     print(`test`);
 /c

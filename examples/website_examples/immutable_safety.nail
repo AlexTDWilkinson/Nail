@@ -1,3 +1,4 @@
+nail latest
 // Nail is 100% immutable - no mutations, no bugs!
 // All "updates" create new values
 

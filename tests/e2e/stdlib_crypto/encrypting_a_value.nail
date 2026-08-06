@@ -1,3 +1,4 @@
+nail latest
 // E2E: encrypting something and reading it back with the same secret
 secret:s = `a long random key from the environment`;
 sealed:s = danger(crypto_encrypt(`the secret plan`, secret));

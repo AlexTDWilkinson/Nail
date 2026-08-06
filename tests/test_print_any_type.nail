@@ -1,3 +1,4 @@
+nail latest
 // Test that print can handle any type through pretty-printing
 
 struct Point {

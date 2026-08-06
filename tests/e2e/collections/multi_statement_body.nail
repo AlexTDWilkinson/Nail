@@ -1,3 +1,4 @@
+nail latest
 // E2E: map body with intermediate variables before yielding
 nums:a:i = [2, 3, 4];
 processed:a:i = map num in nums {

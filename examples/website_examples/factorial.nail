@@ -1,3 +1,4 @@
+nail latest
 // Calculate factorial
 f factorial(number:i):i {
     if number <= 1 {

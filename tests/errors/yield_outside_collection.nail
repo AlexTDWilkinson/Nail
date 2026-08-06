@@ -1,3 +1,4 @@
+nail latest
 // Error test: y (yield) is only valid inside collection operation blocks
 f pick_one(flag:b):i {
     if {

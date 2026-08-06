@@ -1,3 +1,4 @@
+nail latest
 // E2E: cron schedules as arithmetic - the loop stays in the program
 print(time_cron_valid(`0 3 * * *`));
 print(time_cron_valid(`@daily`));

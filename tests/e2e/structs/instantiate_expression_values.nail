@@ -1,3 +1,4 @@
+nail latest
 // E2E: struct instantiation with expression field values
 struct Carton { width:i, height:i }
 base_size:i = 4;

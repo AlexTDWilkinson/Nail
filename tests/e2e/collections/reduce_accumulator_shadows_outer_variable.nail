@@ -1,3 +1,4 @@
+nail latest
 // A reduce accumulator may shadow an outer variable of a different type; the
 // outer binding is intact after the reduce.
 total:s = `outer`;

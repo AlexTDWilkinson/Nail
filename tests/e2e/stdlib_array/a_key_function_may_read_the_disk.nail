@@ -1,3 +1,4 @@
+nail latest
 // E2E: a key function is run over the array before anything is sorted, so it is
 // allowed to do I/O. This used to be refused with an error about async functions.
 struct Report {

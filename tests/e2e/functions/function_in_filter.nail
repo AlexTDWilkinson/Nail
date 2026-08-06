@@ -1,3 +1,4 @@
+nail latest
 // E2E: user function called inside filter body
 f is_big(num:i):b { r num > 10; }
 values:a:i = [4, 12, 9, 30];

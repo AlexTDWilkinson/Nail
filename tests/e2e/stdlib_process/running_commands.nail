@@ -1,3 +1,4 @@
+nail latest
 // E2E: running a command and learning everything about how it went
 ran:PROCESS_Result = danger(process_run_result(`sh`, [`-c`, `echo out; echo err 1>&2; exit 3`]));
 print(ran.stdout);

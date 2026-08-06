@@ -1,3 +1,4 @@
+nail latest
 // A lowercase variable may share its name with a struct type and may even be
 // shadowed by a field pulled out of itself.
 struct Player { name:s }

@@ -1,3 +1,4 @@
+nail latest
 // Negative test: an enum named after a Rust built-in type should FAIL type checking
 // because it would shadow the real type inside generated code.
 enum Option {

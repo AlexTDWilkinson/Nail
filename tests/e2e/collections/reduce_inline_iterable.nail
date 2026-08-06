@@ -1,3 +1,4 @@
+nail latest
 total:i = reduce acc num in array_range(1, 5000001) from 0 { y acc + num; };
 literal_total:i = reduce acc num in [1, 2, 3] from 0 { y acc + num; };
 print(total);

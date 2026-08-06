@@ -1,3 +1,4 @@
+nail latest
 // E2E: scan works inside a function and its result can be returned
 f running_totals(amounts:a:i):a:i {
     r scan acc amount in amounts from 0 { y acc + amount; };

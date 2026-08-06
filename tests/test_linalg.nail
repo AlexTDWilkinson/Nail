@@ -1,3 +1,4 @@
+nail latest
 // Vectors and matrices: construction, arithmetic, the operations that can
 // fail, and a transform built by composing matrices.
 f no_transform(problem:e):LINALG_Mat3 { r linalg_mat3_identity(); }

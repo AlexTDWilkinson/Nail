@@ -1,3 +1,4 @@
+nail latest
 // Blog with Markdown files loaded from disk
 
 port:i = 8081;

@@ -1,3 +1,4 @@
+nail latest
 // E2E: function with struct parameter reading fields
 struct Rect { width_val:i, height_val:i }
 f area(shape:Rect):i {

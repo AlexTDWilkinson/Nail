@@ -1,3 +1,4 @@
+nail latest
 // E2E: the coverage waves in one program. Colors, geography, json shaping,
 // roman numerals, checksums, path safety, hex arithmetic, csv text helpers,
 // probability, markdown, and charts all answer with pinned values.

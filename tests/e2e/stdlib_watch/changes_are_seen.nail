@@ -1,3 +1,4 @@
+nail latest
 // E2E: a watch sees a file arrive, and quiet time is an empty answer.
 danger(fs_create_dir(`incoming`));
 watcher:FS_Watcher = danger(fs_watch_start(`incoming`));

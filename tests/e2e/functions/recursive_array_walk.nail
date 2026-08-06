@@ -1,3 +1,4 @@
+nail latest
 // E2E: recursion over an array by index
 f sum_from(nums:a:i, idx:i):i {
     r if {

@@ -1,3 +1,4 @@
+nail latest
 // E2E: safe handles math_divide by zero and handler prints message
 f div_fallback(error_msg:e):i {
     print(error_msg);

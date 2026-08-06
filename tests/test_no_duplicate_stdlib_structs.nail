@@ -1,3 +1,4 @@
+nail latest
 // Test that stdlib structs are not redefined in generated code
 // This test should transpile without creating a duplicate HTTP_Response struct
 

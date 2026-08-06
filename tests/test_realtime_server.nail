@@ -1,3 +1,4 @@
+nail latest
 // The realtime server's callbacks type-check: handle_request as ever, and
 // handle_message answering websocket frames. Not started here - the shape is
 // what this file pins.

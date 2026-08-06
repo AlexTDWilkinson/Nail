@@ -1,3 +1,4 @@
+nail latest
 // error_message hands a handler the text inside the error value it received.
 
 f describe_failure(err:e):s {

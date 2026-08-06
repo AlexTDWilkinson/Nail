@@ -1,2 +1,3 @@
+nail latest
 // E2E: simplest possible program
 print(`Hello, World!`);
