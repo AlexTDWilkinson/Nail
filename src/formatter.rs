@@ -19,9 +19,9 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
     let mut last_line_had_closing_brace = false;
     let mut in_multiline_string = false;
 
-    // A shebang and a version version line are addressed to Hammer rather than to
+    // A shebang and a version line are addressed to the launcher rather than to
     // the language, so they pass through untouched. Reading them as code would
-    // reformat them into something Hammer can no longer parse, which would
+    // reformat them into something the launcher can no longer parse, which would
     // silently unpin the file.
     let header_lines = crate::version_line::scan_header(lines.join("\n").as_bytes()).lines as usize;
 

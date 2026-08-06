@@ -29,7 +29,7 @@ env_val() {
 HOST="${DEPLOY_HOST:-$(env_val DEPLOY_HOST)}"
 RELEASE_DOMAIN="${RELEASE_DOMAIN:-$(env_val RELEASE_DOMAIN)}"
 [[ -n "$HOST" ]] || { echo "set DEPLOY_HOST in .env" >&2; exit 1; }
-[[ -n "$RELEASE_DOMAIN" ]] || { echo "set RELEASE_DOMAIN in .env (the hostname hammer fetches from)" >&2; exit 1; }
+[[ -n "$RELEASE_DOMAIN" ]] || { echo "set RELEASE_DOMAIN in .env (the hostname nail fetches releases from)" >&2; exit 1; }
 
 SSH=(ssh -o StrictHostKeyChecking=accept-new)
 SCP=(scp -o StrictHostKeyChecking=accept-new)
@@ -44,7 +44,7 @@ fi
 # A list for the download page to read. The website is sandboxed to /srv/nail
 # and cannot see the release directory, so the list is written where it can.
 #
-# This is for people, not for hammer. Hammer names a version in a URL and that
+# This is for people, not for the launcher. It names a version in a URL and that
 # is the whole protocol: if it ever started reading a list, the list would
 # become something that has to stay correct forever, which is exactly what was
 # avoided by not having one.
@@ -79,8 +79,8 @@ $RELEASE_DOMAIN {
 		file_server
 	}
 
-	handle_path /hammer/* {
-		root * $SRV/hammer
+	handle_path /nail/* {
+		root * $SRV/nail
 		file_server
 	}
 
@@ -107,14 +107,14 @@ EOF
 
 # Regenerate the download page's list and the routes, without republishing.
 if [[ "${1:-}" == "--refresh" ]]; then
-	# hammer is version independent, so it can be replaced without republishing
-	# a release. This is also what stops `curl | sudo sh` handing someone an
-	# older hammer than the one that is current.
-	if [[ -x target/release/hammer ]]; then
-		"${SSH[@]}" "$HOST" "mkdir -p $SRV/hammer"
-		"${SCP[@]}" target/release/hammer "$HOST:$SRV/hammer/.incoming"
-		"${SSH[@]}" "$HOST" "chmod 755 $SRV/hammer/.incoming && mv $SRV/hammer/.incoming $SRV/hammer/x86_64-linux"
-		echo "uploaded hammer"
+	# The launcher is version independent, so it can be replaced without
+	# republishing a release. This is also what stops `curl | sudo sh` handing
+	# someone an older launcher than the one that is current.
+	if [[ -x target/release/nail-launcher ]]; then
+		"${SSH[@]}" "$HOST" "mkdir -p $SRV/nail"
+		"${SCP[@]}" target/release/nail-launcher "$HOST:$SRV/nail/.incoming"
+		"${SSH[@]}" "$HOST" "chmod 755 $SRV/nail/.incoming && mv $SRV/nail/.incoming $SRV/nail/x86_64-linux"
+		echo "uploaded the launcher"
 	fi
 	"${SSH[@]}" "$HOST" "mkdir -p $SRV/desktop"
 	for file in nail.desktop nail.xml nail.svg; do
@@ -143,26 +143,26 @@ VERSION="$(basename "$TARBALL" | sed -n 's/^nail-\(.*\)-linux-x86_64\.tar\.xz$/\
 
 echo "== publishing $VERSION ($(du -h "$TARBALL" | cut -f1)) =="
 
-"${SSH[@]}" "$HOST" "mkdir -p $SRV/versions/$VERSION $SRV/hammer"
+"${SSH[@]}" "$HOST" "mkdir -p $SRV/versions/$VERSION $SRV/nail"
 
-# Upload beside the final name and move it into place, so a hammer that asks
+# Upload beside the final name and move it into place, so a launcher that asks
 # mid-upload gets a 404 rather than half a bundle.
 "${SCP[@]}" "$TARBALL" "$HOST:$SRV/versions/$VERSION/.incoming"
 "${SSH[@]}" "$HOST" "mv $SRV/versions/$VERSION/.incoming $SRV/versions/$VERSION/x86_64-linux"
 
 # The desktop files the installer fetches: what makes a .nail file get an icon
 # and an "Open with Nail" entry. Small, and served from the same place as
-# hammer so the web installer needs nothing but this host.
+# the launcher, so the web installer needs nothing but this host.
 "${SSH[@]}" "$HOST" "mkdir -p $SRV/desktop"
 for file in nail.desktop nail.xml nail.svg; do
 	"${SCP[@]}" "bundle/desktop/$file" "$HOST:$SRV/desktop/$file"
 done
 echo "uploaded desktop integration"
 
-if [[ -x target/release/hammer ]]; then
-	"${SCP[@]}" target/release/hammer "$HOST:$SRV/hammer/.incoming"
-	"${SSH[@]}" "$HOST" "chmod 755 $SRV/hammer/.incoming && mv $SRV/hammer/.incoming $SRV/hammer/x86_64-linux"
-	echo "uploaded hammer"
+if [[ -x target/release/nail-launcher ]]; then
+	"${SCP[@]}" target/release/nail-launcher "$HOST:$SRV/nail/.incoming"
+	"${SSH[@]}" "$HOST" "chmod 755 $SRV/nail/.incoming && mv $SRV/nail/.incoming $SRV/nail/x86_64-linux"
+	echo "uploaded the launcher"
 fi
 
 "${SSH[@]}" "$HOST" "printf '%s\n' '$VERSION' > $SRV/versions/latest"
@@ -175,4 +175,4 @@ echo
 echo "published:"
 echo "  https://$RELEASE_DOMAIN/versions/latest"
 echo "  https://$RELEASE_DOMAIN/versions/$VERSION/x86_64-linux"
-echo "  https://$RELEASE_DOMAIN/hammer/x86_64-linux"
+echo "  https://$RELEASE_DOMAIN/nail/x86_64-linux"

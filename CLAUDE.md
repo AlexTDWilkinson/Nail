@@ -37,7 +37,7 @@ A clean run currently reports 164/164 lexer/parser, 164/164 type checker and
 passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
-`./test_hammer.sh` reports 19 checks passing. `./test_error_messages.sh`
+`./test_launcher.sh` reports 34 checks passing. `./test_error_messages.sh`
 currently reports 22 passed, 3 failed. Those three predate this baseline and are
 not a regression.
 
@@ -122,10 +122,11 @@ HTML entities like `&lt;` are unaffected - this rule is about prose punctuation 
 - **`./test_all_stages.sh --with-rust`** - DO NOT USE UNLESS EXPLICITLY ASKED - Also runs Rust compilation tests (EXTREMELY SLOW)
 
 **Other suites** (not part of the standard pre-commit run):
-- **`./test_hammer.sh`** - Exercises every hammer subcommand against a throwaway
-  store. Nothing else runs them, so a broken subcommand otherwise reaches users
-  untouched (`hammer run` once shipped passing a flag nailc had never heard of).
-  Run it after touching `src/bin/hammer.rs` or `src/version_line.rs`
+- **`./test_launcher.sh`** - Exercises every `nail` subcommand against a
+  throwaway store. Nothing else runs them, so a broken subcommand otherwise
+  reaches users untouched (`nail run` once shipped passing a flag nailc had
+  never heard of). Run it after touching `src/bin/nail_launcher.rs` or
+  `src/version_line.rs`
 - **`./test_e2e.sh`** - End-to-end runs of compiled Nail programs
 - **`./test_error_messages.sh`** - Checks runtime error message wording against goldens
 - **`./check_all_features.sh`** - Verifies every feature-gated combination still compiles

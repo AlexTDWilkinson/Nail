@@ -1,8 +1,8 @@
 //! The version version line: the one line of a Nail file that says which compiler
 //! wrote it.
 //!
-//! This module is the frozen contract between a source file and Hammer. Its
-//! grammar can never change, because a Hammer built today has to read a file
+//! This module is the frozen contract between a source file and the launcher. Its
+//! grammar can never change, because a launcher built today has to read a file
 //! written in ten years, and a compiler from ten years ago has to read a file
 //! written today:
 //!
@@ -48,7 +48,7 @@ pub struct Version {
     pub major: u32,
     pub minor: u32,
     pub patch: u32,
-    /// A `-dev` style suffix marks a build that was never published. Hammer
+    /// A `-dev` style suffix marks a build that was never published. The launcher
     /// refuses to fetch one, so these only ever name a locally built compiler.
     pub prerelease: Option<String>,
 }
@@ -58,7 +58,7 @@ impl Version {
         Version { major, minor, patch, prerelease: None }
     }
 
-    /// A prerelease was built locally and was never published, so Hammer must
+    /// A prerelease was built locally and was never published, so the launcher must
     /// not try to download it.
     pub fn is_prerelease(&self) -> bool {
         return self.prerelease.is_some();

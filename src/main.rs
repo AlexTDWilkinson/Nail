@@ -49,7 +49,7 @@ use crate::utils::ProfileData;
 
 use crate::common::CodeSpan;
 use ratatui::crossterm::{
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -99,6 +99,10 @@ struct Tab {
     cursor_x: usize,
     cursor_y: usize,
     scroll_position: u16,
+    // The first column on screen. Lines wider than the window used to run off
+    // the right edge and take the cursor with them, so the view now slides
+    // sideways to keep the cursor in sight.
+    h_scroll: u16,
     modified: bool,
     // Selection fields
     selection_start: Option<(usize, usize)>,
@@ -123,6 +127,7 @@ impl Tab {
             cursor_x: 0,
             cursor_y: 0,
             scroll_position: 0,
+            h_scroll: 0,
             modified: false,
             selection_start: None,
             selection_end: None,
@@ -246,6 +251,30 @@ impl Tab {
         }
         self.last_char_insert_time = None;
     }
+
+    /// Slides the view until the cursor is inside it, both down the file and
+    /// across it. Only the drawing knows how big the window is, so this is
+    /// called from there, and only when the cursor has actually moved: scroll
+    /// keys and the wheel are allowed to leave the cursor behind, and snapping
+    /// back every frame would make them do nothing at all.
+    fn follow_cursor(&mut self, width: usize, height: usize) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        let top = self.scroll_position as usize;
+        if self.cursor_y < top {
+            self.scroll_position = self.cursor_y as u16;
+        } else if self.cursor_y >= top + height {
+            self.scroll_position = (self.cursor_y - height + 1) as u16;
+        }
+
+        let left = self.h_scroll as usize;
+        if self.cursor_x < left {
+            self.h_scroll = self.cursor_x as u16;
+        } else if self.cursor_x >= left + width {
+            self.h_scroll = (self.cursor_x - width + 1) as u16;
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -268,6 +297,12 @@ struct StdLibFunction {
 struct Editor {
     debug_mode: bool,
     theme: &'static ColorScheme,
+    keymap: nail::keymap::Keymap,
+    // The half-typed chord an emacs user is in the middle of, which decides
+    // what the next key means
+    pending_prefix: Option<nail::keymap::Prefix>,
+    mark_active: bool,
+    settings_row: usize,
     // Tab system
     tabs: Vec<Tab>,
     tab_index: usize,
@@ -285,12 +320,31 @@ struct Editor {
     // Dialog system
     dialog_mode: DialogMode,
     goto_line_input: String,
+    // Command palette: which commands survive the filter, and which of those
+    // is picked. The commands themselves live in the keymap, beside the keys
+    // that also reach them.
+    palette_filter: String,
+    palette_matches: Vec<usize>,
+    palette_index: usize,
+    // Go to symbol, built from the parsed file when it parses and read off
+    // the text when it does not
+    symbol_filter: String,
+    symbol_entries: Vec<FileSymbol>,
+    symbol_matches: Vec<usize>,
+    symbol_index: usize,
     // Find/Replace system (shared across tabs)
     search_query: String,
     replace_text: String,
     search_results: Vec<(usize, usize, usize)>, // (line, start, end)
     current_match_index: usize,
     case_sensitive: bool,
+    // A pattern can be asked to match whole words only, or to be read as a
+    // regular expression. A regular expression that does not compile is not
+    // an error the user has to dismiss, it is simply a search with no matches
+    // yet, so the message goes in the dialog and typing continues.
+    whole_word: bool,
+    use_regex: bool,
+    search_error: Option<String>,
     search_direction_forward: bool, // For F3/Shift+F3 navigation
     replace_field_active: bool, // true if replace field is active, false if find field is active
     // File dialog system
@@ -313,6 +367,21 @@ struct Editor {
     show_minimap: bool,
     // Bracket matching state
     matching_bracket_pos: Option<(usize, usize)>,
+    // Where the draw thread last put things. A mouse reports a row and a
+    // column of the terminal, and only the drawing knows which line of which
+    // file that lands on, so it leaves the answer here for the key thread.
+    view: ViewLayout,
+    // Whether the terminal is reporting mouse events to us at all. Capture is
+    // worth turning off, because while we hold it the terminal's own click to
+    // select and copy stops working, and that is sometimes the thing the user
+    // actually wants.
+    mouse_enabled: bool,
+    // Set while a drag is in progress, so a release outside the text area
+    // still ends the selection it started.
+    mouse_dragging: bool,
+    // Selections that expanding grew out of, newest last, so shrinking can
+    // walk back exactly the way it came.
+    expand_stack: Vec<((usize, usize), (usize, usize))>,
     // Latest per-function timings from a running instrumented program,
     // updated by the profile watcher thread and read by the draw thread
     profile_data: Option<ProfileData>,
@@ -326,6 +395,22 @@ struct Editor {
     // a percentage in the status line.
     compile_started: Option<std::time::Instant>,
     compile_estimate: Option<std::time::Duration>,
+}
+
+/// The parts of the screen a mouse click can land in, as the draw thread last
+/// laid them out. `text` is the area inside the editor's border, so a click at
+/// its top left is the first visible character rather than the frame around it.
+#[derive(Clone, Copy, Debug, Default)]
+struct ViewLayout {
+    tabs: ratatui::layout::Rect,
+    text: ratatui::layout::Rect,
+}
+
+/// A named thing in the open file and the line it is declared on.
+#[derive(Clone, Debug)]
+struct FileSymbol {
+    label: String,
+    line: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -368,6 +453,9 @@ enum DialogMode {
     Replace,
     OpenFile,
     StdLibBrowser,
+    Settings,
+    CommandPalette,
+    SymbolPicker,
 }
 
 impl Editor {
@@ -400,7 +488,11 @@ impl Editor {
         
         Editor {
             debug_mode: debug,
-            theme: &DARK_THEME,
+            theme: stored_theme(),
+            keymap: stored_keymap().unwrap_or_else(nail::keymap::detect),
+            pending_prefix: None,
+            mark_active: false,
+            settings_row: 0,
             tabs: vec![welcome_tab],
             tab_index: 0,
             build_status: BuildStatus::Idle,
@@ -414,11 +506,21 @@ impl Editor {
             completion_prefix: String::new(),
             dialog_mode: DialogMode::None,
             goto_line_input: String::new(),
+            palette_filter: String::new(),
+            palette_matches: Vec::new(),
+            palette_index: 0,
+            symbol_filter: String::new(),
+            symbol_entries: Vec::new(),
+            symbol_matches: Vec::new(),
+            symbol_index: 0,
             search_query: String::new(),
             replace_text: String::new(),
             search_results: Vec::new(),
             current_match_index: 0,
             case_sensitive: false,
+            whole_word: false,
+            use_regex: false,
+            search_error: None,
             search_direction_forward: true,
             replace_field_active: false,
             file_entries: Vec::new(),
@@ -433,15 +535,22 @@ impl Editor {
             stdlib_filter: String::new(),
             stdlib_index: 0,
             stdlib_category_filter: None,
-            // Visual enhancement settings - enabled by default
-            show_line_numbers: true,
-            highlight_current_line: true,
-            highlight_matching_brackets: true,
-            show_whitespace: false,
-            show_indentation_guides: false,
-            show_minimap: false, // Disabled by default as it takes screen space
+            // Visual enhancement settings, as the settings screen last left
+            // them, or the defaults for anyone who has never opened it
+            show_line_numbers: stored_flag("line_numbers", true),
+            highlight_current_line: stored_flag("current_line", true),
+            highlight_matching_brackets: stored_flag("brackets", true),
+            show_whitespace: stored_flag("whitespace", false),
+            show_indentation_guides: stored_flag("indent_guides", false),
+            show_minimap: stored_flag("minimap", false), // Disabled by default as it takes screen space
             // Bracket matching state
             matching_bracket_pos: None,
+            view: ViewLayout::default(),
+            // On, because a click landing where the user pointed is what
+            // everyone expects, and F4 is there for the times it is not.
+            mouse_enabled: true,
+            mouse_dragging: false,
+            expand_stack: Vec::new(),
             profile_data: None,
             profile_dumps: std::collections::HashMap::new(),
             compile_started: None,
@@ -499,8 +608,9 @@ impl Editor {
             self.recent_files.insert(0, filename);
             self.recent_files.truncate(10); // Keep only 10 recent files
         }
-        
+
         // Clear search results and update syntax highlighting is now handled automatically
+        self.save_session();
         Ok(())
     }
     
@@ -527,8 +637,9 @@ impl Editor {
         } else if self.tab_index > tab_index {
             self.tab_index -= 1;
         }
-        
+
         // Clear search results and update syntax highlighting is now handled automatically
+        self.save_session();
         true
     }
     
@@ -1104,19 +1215,25 @@ impl Editor {
         }
     }
     
+    /// Removes as many characters as the given text has, starting at the
+    /// cursor and working forward. Undo and redo both place the cursor where
+    /// an edit began and then take back what it put there, so this deletes
+    /// ahead of the cursor: deleting behind it would eat the text before the
+    /// edit instead of the edit itself.
     fn delete_text_at_position(&mut self, text: &str) {
         let current_tab = self.get_current_tab_mut();
         let char_count = text.chars().count();
         for _ in 0..char_count {
-            if current_tab.cursor_x > 0 {
-                let byte_pos = Self::char_to_byte_index(&current_tab.content[current_tab.cursor_y], current_tab.cursor_x - 1);
+            if current_tab.cursor_y >= current_tab.content.len() {
+                return;
+            }
+            let line_width = current_tab.content[current_tab.cursor_y].chars().count();
+            if current_tab.cursor_x < line_width {
+                let byte_pos = Self::char_to_byte_index(&current_tab.content[current_tab.cursor_y], current_tab.cursor_x);
                 current_tab.content[current_tab.cursor_y].remove(byte_pos);
-                current_tab.cursor_x -= 1;
-            } else if current_tab.cursor_y > 0 {
-                let current_line = current_tab.content.remove(current_tab.cursor_y);
-                current_tab.cursor_y -= 1;
-                current_tab.cursor_x = current_tab.content[current_tab.cursor_y].len();
-                current_tab.content[current_tab.cursor_y].push_str(&current_line);
+            } else if current_tab.cursor_y + 1 < current_tab.content.len() {
+                let next_line = current_tab.content.remove(current_tab.cursor_y + 1);
+                current_tab.content[current_tab.cursor_y].push_str(&next_line);
             }
         }
     }
@@ -1169,6 +1286,16 @@ impl Editor {
                 self.get_current_tab().cursor_x, self.get_current_tab().cursor_y);
         }
         
+        // A bracket or a quote typed over a selection wraps it, because
+        // replacing a selection with a single bracket is never what the person
+        // holding the keyboard meant.
+        if let Some(closing) = Self::surround_pair(c) {
+            if self.has_selection() {
+                self.surround_selection(c, closing);
+                return;
+            }
+        }
+
         // If there's a selection, delete it first
         {
             let current_tab = self.get_current_tab_mut();
@@ -1179,7 +1306,7 @@ impl Editor {
                 current_tab.delete_selected_text();
             }
         }
-        
+
         // Handle smart dedent for closing braces
         if c == '}' {
             let should_dedent = {
@@ -1755,37 +1882,36 @@ impl Editor {
     fn find_all_matches(&mut self) {
         self.search_results.clear();
         self.current_match_index = 0;
-        
+        self.search_error = None;
+
         if self.search_query.is_empty() {
             return;
         }
-        
-        let query = if self.case_sensitive {
-            self.search_query.clone()
-        } else {
-            self.search_query.to_lowercase()
+
+        let pattern = match self.search_pattern() {
+            Ok(pattern) => pattern,
+            Err(message) => {
+                self.search_error = Some(message);
+                return;
+            }
         };
-        
+
         let content = {
             let current_tab = self.get_current_tab();
             current_tab.content.clone()
         };
-        
+
         for (line_idx, line) in content.iter().enumerate() {
-            let search_line = if self.case_sensitive {
-                line.clone()
-            } else {
-                line.to_lowercase()
-            };
-            
-            let mut start_pos = 0;
-            while let Some(pos) = search_line[start_pos..].find(&query) {
-                let actual_pos = start_pos + pos;
-                self.search_results.push((line_idx, actual_pos, actual_pos + query.len()));
-                start_pos = actual_pos + 1; // Find overlapping matches
+            for found in pattern.find_iter(line) {
+                // A pattern can match nothing at all, and highlighting a match
+                // of no characters would be highlighting nothing at all.
+                if found.start() == found.end() {
+                    continue;
+                }
+                self.search_results.push((line_idx, found.start(), found.end()));
             }
         }
-        
+
         // If we have results, navigate to the first one that's at or after current cursor
         if !self.search_results.is_empty() {
             self.find_next_from_cursor();
@@ -2962,7 +3088,136 @@ impl Editor {
         crate::utils::write_config_values(&[("theme", theme.to_string())]);
         Ok(())
     }
-    
+
+    /// True when the user has never chosen, which is what makes the settings
+    /// screen open by itself the first time.
+    pub fn has_never_chosen_a_keymap(&self) -> bool {
+        return stored_keymap().is_none();
+    }
+
+    pub fn open_settings(&mut self) {
+        self.dialog_mode = DialogMode::Settings;
+        self.settings_row = 0;
+    }
+
+    /// Leaving the screen is what commits it, so there is no separate save
+    /// key to hunt for or forget.
+    pub fn close_settings(&mut self) {
+        self.dialog_mode = DialogMode::None;
+        self.save_settings();
+    }
+
+    pub fn settings_row_count(&self) -> usize {
+        return 8;
+    }
+
+    pub fn settings_next_row(&mut self) {
+        self.settings_row = (self.settings_row + 1) % self.settings_row_count();
+    }
+
+    pub fn settings_previous_row(&mut self) {
+        let count = self.settings_row_count();
+        self.settings_row = (self.settings_row + count - 1) % count;
+    }
+
+    pub fn settings_cycle_value(&mut self, forward: bool) {
+        match self.settings_row {
+            // Vim is somewhere detection can leave the user, never somewhere
+            // cycling can put them, because there is no vim key table yet.
+            0 => {
+                self.keymap = match (self.keymap, forward) {
+                    (nail::keymap::Keymap::Cua, _) => nail::keymap::Keymap::Emacs,
+                    (nail::keymap::Keymap::Emacs, _) => nail::keymap::Keymap::Cua,
+                    (nail::keymap::Keymap::Vim, true) => nail::keymap::Keymap::Cua,
+                    (nail::keymap::Keymap::Vim, false) => nail::keymap::Keymap::Emacs,
+                };
+            }
+            1 => self.toggle_theme(),
+            _ => {
+                let value = match self.settings_row {
+                    2 => &mut self.show_line_numbers,
+                    3 => &mut self.highlight_current_line,
+                    4 => &mut self.highlight_matching_brackets,
+                    5 => &mut self.show_whitespace,
+                    6 => &mut self.show_indentation_guides,
+                    7 => &mut self.show_minimap,
+                    _ => return,
+                };
+                *value = !*value;
+                // A highlight that is off must not leave its last match lit
+                if !self.highlight_matching_brackets {
+                    self.matching_bracket_pos = None;
+                }
+            }
+        }
+    }
+
+    pub fn settings_rows(&self) -> Vec<(String, String)> {
+        let keys = match self.keymap {
+            // Detection can land here, so the row says which bindings are
+            // actually answering keys rather than only which one was detected.
+            nail::keymap::Keymap::Vim => "vim (falls back to cua)".to_string(),
+            other => keymap_name(other).to_string(),
+        };
+        return vec![
+            ("Keys".to_string(), keys),
+            ("Theme".to_string(), self.theme_name().to_string()),
+            ("Line numbers".to_string(), flag_name(self.show_line_numbers)),
+            ("Current line".to_string(), flag_name(self.highlight_current_line)),
+            ("Brackets".to_string(), flag_name(self.highlight_matching_brackets)),
+            ("Whitespace".to_string(), flag_name(self.show_whitespace)),
+            ("Indent guides".to_string(), flag_name(self.show_indentation_guides)),
+            ("Minimap".to_string(), flag_name(self.show_minimap)),
+        ];
+    }
+
+    fn theme_name(&self) -> &'static str {
+        return if *self.theme == *LIGHT_THEME { "light" } else { "dark" };
+    }
+
+    /// One call rather than eight, because each one rewrites the whole config
+    /// file and eight of those would be eight chances to be interrupted
+    /// halfway through a single screen's worth of changes.
+    fn save_settings(&self) {
+        crate::utils::write_config_values(&[
+            ("keymap", keymap_name(self.keymap).to_string()),
+            ("theme", self.theme_name().to_string()),
+            ("line_numbers", flag_name(self.show_line_numbers)),
+            ("current_line", flag_name(self.highlight_current_line)),
+            ("brackets", flag_name(self.highlight_matching_brackets)),
+            ("whitespace", flag_name(self.show_whitespace)),
+            ("indent_guides", flag_name(self.show_indentation_guides)),
+            ("minimap", flag_name(self.show_minimap)),
+        ]);
+    }
+
+    /// Emacs sets a mark, moves, and calls everything in between the region.
+    /// That is this editor's selection with the anchor dropped first, so the
+    /// mark rides on the selection rather than beside it.
+    pub fn set_mark(&mut self) {
+        self.mark_active = true;
+        self.start_selection();
+    }
+
+    pub fn clear_mark(&mut self) {
+        self.mark_active = false;
+        self.clear_selection();
+    }
+
+    /// From the middle of a line this takes the rest of it. From the end it
+    /// takes the newline instead, which is how emacs empties a line and then
+    /// closes the gap in two presses of the same key.
+    pub fn kill_to_line_end(&mut self) {
+        self.start_selection();
+        self.move_to_line_end_with_selection(true);
+        if self.has_selection() {
+            self.delete_selected_text();
+            return;
+        }
+        self.clear_selection();
+        self.delete_forward();
+    }
+
     fn save_file(&mut self) -> Result<(), String> {
         let current_tab = self.get_current_tab_mut();
         if current_tab.filename.is_none() {
@@ -3021,6 +3276,7 @@ impl Editor {
         std::fs::write(&filename, content)
             .map_err(|e| format!("Failed to save file: {}", e))?;
         current_tab.modified = false;
+        self.save_session();
         Ok(())
     }
     
@@ -3090,10 +3346,12 @@ fn main() -> Result<(), io::Error> {
     // The sender stays bound so the watcher's channel lives until main exits
     let (_tx_profile, rx_profile) = channel::<EditorMessage>();
 
-    // Set up terminal
+    // Set up terminal. Mouse reporting is asked for here and can be handed
+    // back at any time with F4, because while we hold it the terminal's own
+    // click to select stops working.
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     
     // Create terminal
     let backend = CrosstermBackend::new(stdout);
@@ -3108,16 +3366,28 @@ fn main() -> Result<(), io::Error> {
         .cloned();
     
     let mut editor = Editor::new_with_debug(debug_mode);
-    
+
     // Open the file if specified
-    if let Some(filename) = file_to_open {
-        if let Err(e) = editor.open_file_path(&filename) {
-            log::error!("Failed to open file '{}': {}", filename, e);
-        } else {
-            log::info!("Opened file: {}", filename);
+    match file_to_open {
+        Some(filename) => {
+            if let Err(e) = editor.open_file_path(&filename) {
+                log::error!("Failed to open file '{}': {}", filename, e);
+            } else {
+                log::info!("Opened file: {}", filename);
+            }
         }
+        // Nobody named a file, so put back the ones that were open here last
+        // time, each at the line its cursor was on.
+        None => editor.restore_session(),
     }
     
+    // Nobody has ever been asked which keys they want, so ask now rather than
+    // guessing quietly. Detection has already filled in the answer it thinks
+    // is right, and closing the screen accepts it.
+    if editor.has_never_chosen_a_keymap() {
+        editor.open_settings();
+    }
+
     let shared_editor = Arc::new(Mutex::new(editor));
 
     // Thread communication setup
@@ -3163,8 +3433,8 @@ fn main() -> Result<(), io::Error> {
     
     // Clean up terminal on exit
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
-    
+    execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
+
     Ok(())
 }
 
@@ -3175,8 +3445,50 @@ enum CompletionContext {
     FunctionCall(String),       // Inside function call, show parameter hints
 }
 
-fn load_config() -> String {
-    return crate::utils::read_config_value("theme").unwrap_or_else(|| "dark".to_string());
+// Anything unreadable or unrecognized falls back to dark, so a hand-edited
+// config can never leave the editor without colors
+fn stored_theme() -> &'static ColorScheme {
+    return match crate::utils::read_config_value("theme").as_deref() {
+        Some("light") => &LIGHT_THEME,
+        _ => &DARK_THEME,
+    };
+}
+
+/// The keymap the user picked, or None if they have never been asked. A value
+/// nobody recognizes counts as never asked, so a hand-edited config puts the
+/// question back rather than quietly picking an answer.
+fn stored_keymap() -> Option<nail::keymap::Keymap> {
+    return match crate::utils::read_config_value("keymap").as_deref() {
+        Some("cua") => Some(nail::keymap::Keymap::Cua),
+        Some("vim") => Some(nail::keymap::Keymap::Vim),
+        Some("emacs") => Some(nail::keymap::Keymap::Emacs),
+        _ => None,
+    };
+}
+
+/// How a keymap is spelled in the config file.
+fn keymap_name(keymap: nail::keymap::Keymap) -> &'static str {
+    return match keymap {
+        nail::keymap::Keymap::Cua => "cua",
+        nail::keymap::Keymap::Vim => "vim",
+        nail::keymap::Keymap::Emacs => "emacs",
+    };
+}
+
+/// How a yes or no setting is spelled, both in the config file and on the
+/// settings screen, so the two can never disagree.
+fn flag_name(on: bool) -> String {
+    return if on { "on".to_string() } else { "off".to_string() };
+}
+
+/// Reads back what `flag_name` wrote. Anything else is treated as absent,
+/// which lands on the default rather than on off.
+fn stored_flag(key: &str, default: bool) -> bool {
+    return match crate::utils::read_config_value(key).as_deref() {
+        Some("on") => true,
+        Some("off") => false,
+        _ => default,
+    };
 }
 
 impl Editor {
@@ -4004,6 +4316,770 @@ impl Editor {
         
         symbols
     }
+}
+
+/// The commands that were missing next to the ones this editor already had:
+/// the mouse, a sideways view, the two fuzzy pickers, the word sized edits,
+/// and remembering which files were open. They share a block because they
+/// share a subject, which is the editor as a whole rather than the letters in
+/// one buffer.
+impl Editor {
+    /// A position in the file as a single offset into its text, and back
+    /// again. Scanning outward for a bracket or a word is a one dimensional
+    /// problem, and solving it in one dimension is what keeps it short.
+    fn offset_of(&self, position: (usize, usize)) -> usize {
+        let content = &self.get_current_tab().content;
+        let mut offset = 0;
+        for line in content.iter().take(position.1) {
+            offset += line.chars().count() + 1;
+        }
+        let width = content.get(position.1).map_or(0, |line| line.chars().count());
+        return offset + position.0.min(width);
+    }
+
+    fn position_of(&self, offset: usize) -> (usize, usize) {
+        let content = &self.get_current_tab().content;
+        let mut remaining = offset;
+        for (index, line) in content.iter().enumerate() {
+            let width = line.chars().count();
+            if remaining <= width {
+                return (remaining, index);
+            }
+            remaining -= width + 1;
+        }
+        let last = content.len().saturating_sub(1);
+        return (content.get(last).map_or(0, |line| line.chars().count()), last);
+    }
+
+    fn flat_text(&self) -> Vec<char> {
+        return self.get_current_tab().content.join("\n").chars().collect();
+    }
+
+    /// The text between two positions, without disturbing what is selected.
+    fn text_in_span(&mut self, start: (usize, usize), end: (usize, usize)) -> String {
+        let previous = {
+            let tab = self.get_current_tab();
+            (tab.selection_start, tab.selection_end, tab.selection_mode)
+        };
+        {
+            let tab = self.get_current_tab_mut();
+            tab.selection_start = Some(start);
+            tab.selection_end = Some(end);
+            tab.selection_mode = true;
+        }
+        let text = self.get_selected_text();
+        let tab = self.get_current_tab_mut();
+        tab.selection_start = previous.0;
+        tab.selection_end = previous.1;
+        tab.selection_mode = previous.2;
+        return text;
+    }
+
+    /// Swaps one span of the file for some other text as a single edit, so one
+    /// undo takes back one command however many lines it touched.
+    fn replace_span(&mut self, start: (usize, usize), end: (usize, usize), new_text: &str) {
+        let old_text = self.text_in_span(start, end);
+        if old_text == new_text {
+            return;
+        }
+        {
+            let tab = self.get_current_tab_mut();
+            tab.selection_start = Some(start);
+            tab.selection_end = Some(end);
+            tab.selection_mode = true;
+            // The tab's own delete keeps no undo entry, which is what this
+            // wants: the one entry recorded below covers the whole swap.
+            tab.delete_selected_text();
+        }
+        self.insert_text_at_cursor(new_text);
+        let tab = self.get_current_tab_mut();
+        tab.modified = true;
+        tab.record_operation(EditOperation::ReplaceText { position: start, old_text, new_text: new_text.to_string() });
+    }
+
+    /// Deletes everything between two positions and records it as one edit.
+    fn delete_span(&mut self, start: (usize, usize), end: (usize, usize)) {
+        if start == end {
+            return;
+        }
+        {
+            let tab = self.get_current_tab_mut();
+            tab.selection_start = Some(start);
+            tab.selection_end = Some(end);
+            tab.selection_mode = true;
+        }
+        self.delete_selected_text();
+    }
+
+    fn cursor_position(&self) -> (usize, usize) {
+        let tab = self.get_current_tab();
+        return (tab.cursor_x, tab.cursor_y);
+    }
+
+    fn delete_word_left(&mut self) {
+        if self.has_selection() {
+            self.delete_selected_text();
+            return;
+        }
+        let target = self.find_prev_word_boundary();
+        let cursor = self.cursor_position();
+        self.delete_span(target, cursor);
+    }
+
+    fn delete_word_right(&mut self) {
+        if self.has_selection() {
+            self.delete_selected_text();
+            return;
+        }
+        let cursor = self.cursor_position();
+        let target = self.find_next_word_boundary();
+        self.delete_span(cursor, target);
+    }
+
+    /// Emacs' kill line: what is left of the line, or the line break itself
+    /// when there is nothing left of the line to take.
+    fn kill_to_line_end(&mut self) {
+        let (cursor_x, cursor_y) = self.cursor_position();
+        let width = {
+            let tab = self.get_current_tab();
+            tab.content.get(cursor_y).map_or(0, |line| line.chars().count())
+        };
+        if cursor_x < width {
+            self.delete_span((cursor_x, cursor_y), (width, cursor_y));
+        } else {
+            let has_next_line = cursor_y + 1 < self.get_current_tab().content.len();
+            if has_next_line {
+                self.delete_span((cursor_x, cursor_y), (0, cursor_y + 1));
+            }
+        }
+    }
+
+    /// Joins the line below into this one, or every line of a selection into
+    /// one, the way a paragraph gets un-wrapped.
+    fn join_lines(&mut self) {
+        let (first, last) = self.selected_line_range();
+        let last = if last > first { last } else { first + 1 };
+        let line_count = self.get_current_tab().content.len();
+        if last >= line_count {
+            return;
+        }
+        let joined = {
+            let tab = self.get_current_tab();
+            let mut joined = tab.content[first].trim_end().to_string();
+            for line in &tab.content[first + 1..=last] {
+                let piece = line.trim();
+                if piece.is_empty() {
+                    continue;
+                }
+                if !joined.is_empty() {
+                    joined.push(' ');
+                }
+                joined.push_str(piece);
+            }
+            joined
+        };
+        let end_column = self.get_current_tab().content[last].chars().count();
+        self.replace_span((0, first), (end_column, last), &joined);
+        self.clear_selection();
+    }
+
+    /// Sorts the selected lines. Without a selection there is no obvious
+    /// answer to "which lines", so nothing happens rather than the whole file
+    /// being rearranged by a stray key.
+    fn sort_lines(&mut self) {
+        if !self.has_selection() {
+            return;
+        }
+        let (first, last) = self.selected_line_range();
+        if last <= first {
+            return;
+        }
+        let sorted = {
+            let tab = self.get_current_tab();
+            let mut lines: Vec<String> = tab.content[first..=last].to_vec();
+            lines.sort();
+            lines.join("\n")
+        };
+        let end_column = self.get_current_tab().content[last].chars().count();
+        self.replace_span((0, first), (end_column, last), &sorted);
+        self.clear_selection();
+    }
+
+    /// The lines a command that works on whole lines should work on: the
+    /// selected ones, or the cursor's own when nothing is selected.
+    fn selected_line_range(&self) -> (usize, usize) {
+        let tab = self.get_current_tab();
+        if tab.has_selection() {
+            let (start, end) = tab.get_normalized_selection();
+            // A selection that stops at the very start of a line has not
+            // really reached that line, and joining or sorting it would
+            // surprise whoever made the selection by dragging.
+            let last = if end.0 == 0 && end.1 > start.1 { end.1 - 1 } else { end.1 };
+            return (start.1, last);
+        }
+        return (tab.cursor_y, tab.cursor_y);
+    }
+
+    /// Typing a bracket or a quote with something selected wraps the
+    /// selection instead of replacing it, which is the only thing anyone
+    /// means by it.
+    fn surround_pair(c: char) -> Option<char> {
+        return match c {
+            '(' => Some(')'),
+            '[' => Some(']'),
+            '{' => Some('}'),
+            '`' => Some('`'),
+            '\'' => Some('\''),
+            '"' => Some('"'),
+            _ => None,
+        };
+    }
+
+    fn surround_selection(&mut self, opening: char, closing: char) {
+        let (start, end) = {
+            let tab = self.get_current_tab();
+            tab.get_normalized_selection()
+        };
+        let inner = self.text_in_span(start, end);
+        let wrapped = format!("{}{}{}", opening, inner, closing);
+        self.replace_span(start, end, &wrapped);
+        // Keep the selection around what was wrapped, so wrapping twice in a
+        // row nests rather than starting over.
+        let tab = self.get_current_tab_mut();
+        let new_end = if start.1 == end.1 { (end.0 + 2, end.1) } else { (end.0 + 1, end.1) };
+        tab.selection_start = Some(start);
+        tab.selection_end = Some(new_end);
+        tab.selection_mode = true;
+        tab.cursor_x = new_end.0;
+        tab.cursor_y = new_end.1;
+    }
+
+    /// Grows the selection by one step: the word, then what encloses it, then
+    /// the line, then the file.
+    fn expand_selection(&mut self) {
+        let text = self.flat_text();
+        let (start_position, end_position) = {
+            let tab = self.get_current_tab();
+            if tab.has_selection() {
+                tab.get_normalized_selection()
+            } else {
+                ((tab.cursor_x, tab.cursor_y), (tab.cursor_x, tab.cursor_y))
+            }
+        };
+        let start = self.offset_of(start_position);
+        let end = self.offset_of(end_position);
+        let wider = match wider_span(&text, start, end) {
+            Some(wider) => wider,
+            None => return,
+        };
+        self.expand_stack.push((start_position, end_position));
+        let new_start = self.position_of(wider.0);
+        let new_end = self.position_of(wider.1);
+        let tab = self.get_current_tab_mut();
+        tab.selection_start = Some(new_start);
+        tab.selection_end = Some(new_end);
+        tab.selection_mode = true;
+        tab.cursor_x = new_end.0;
+        tab.cursor_y = new_end.1;
+    }
+
+    /// Takes back one expansion. Anything else that changes the selection
+    /// leaves the trail behind, so shrinking after that does nothing rather
+    /// than jumping somewhere the user has not been.
+    fn shrink_selection(&mut self) {
+        let previous = match self.expand_stack.pop() {
+            Some(previous) => previous,
+            None => return,
+        };
+        let tab = self.get_current_tab_mut();
+        tab.cursor_x = previous.1 .0;
+        tab.cursor_y = previous.1 .1;
+        if previous.0 == previous.1 {
+            tab.selection_start = None;
+            tab.selection_end = None;
+            tab.selection_mode = false;
+        } else {
+            tab.selection_start = Some(previous.0);
+            tab.selection_end = Some(previous.1);
+            tab.selection_mode = true;
+        }
+    }
+
+    /// The lines the checker complained about, in order and without repeats.
+    /// A span of line zero is a message with no place in the file, such as
+    /// which example was just loaded, and is not somewhere to jump to.
+    fn error_lines(&self) -> Vec<usize> {
+        let mut lines: Vec<usize> = self.code_errors.iter().map(|error| error.code_span.start_line).filter(|line| *line > 0).collect();
+        lines.sort_unstable();
+        lines.dedup();
+        return lines;
+    }
+
+    fn go_to_error(&mut self, forward: bool) {
+        let lines = self.error_lines();
+        if lines.is_empty() {
+            return;
+        }
+        let current = self.get_current_tab().cursor_y + 1;
+        let target = if forward {
+            lines.iter().copied().find(|line| *line > current).unwrap_or(lines[0])
+        } else {
+            lines.iter().rev().copied().find(|line| *line < current).unwrap_or_else(|| *lines.last().expect("checked non-empty above"))
+        };
+        self.go_to_line(target);
+    }
+
+    /// Puts the cursor on a line counted from one. The view catches up on the
+    /// next frame, which is the only place that knows how tall it is.
+    fn go_to_line(&mut self, line_number: usize) {
+        self.clear_selection();
+        let tab = self.get_current_tab_mut();
+        let last = tab.content.len().saturating_sub(1);
+        tab.cursor_y = line_number.saturating_sub(1).min(last);
+        tab.cursor_x = 0;
+    }
+
+    fn scroll_by(&mut self, delta: i32) {
+        let tab = self.get_current_tab_mut();
+        let furthest = tab.content.len().saturating_sub(1) as u16;
+        tab.scroll_position = if delta < 0 { tab.scroll_position.saturating_sub(delta.unsigned_abs() as u16) } else { (tab.scroll_position + delta as u16).min(furthest) };
+    }
+
+    /// Letters in order, not letters in a row: typing "dupl" or "dl" both
+    /// reach "Duplicate line", which is the whole point of typing a command's
+    /// name instead of hunting for its key.
+    fn fuzzy_matches(haystack: &str, needle: &str) -> bool {
+        let mut remaining = haystack.chars();
+        return needle.chars().all(|wanted| remaining.any(|candidate| candidate == wanted));
+    }
+
+    fn open_command_palette(&mut self) {
+        self.dialog_mode = DialogMode::CommandPalette;
+        self.palette_filter.clear();
+        self.filter_palette();
+    }
+
+    fn filter_palette(&mut self) {
+        let needle = self.palette_filter.to_lowercase();
+        self.palette_matches = nail::keymap::COMMANDS
+            .iter()
+            .enumerate()
+            .filter(|(_, command)| Self::fuzzy_matches(&command.name.to_lowercase(), &needle))
+            .map(|(index, _)| index)
+            .collect();
+        self.palette_index = 0;
+    }
+
+    fn palette_input(&mut self, c: char) {
+        self.palette_filter.push(c);
+        self.filter_palette();
+    }
+
+    fn palette_backspace(&mut self) {
+        self.palette_filter.pop();
+        self.filter_palette();
+    }
+
+    fn palette_move(&mut self, forward: bool) {
+        if self.palette_matches.is_empty() {
+            return;
+        }
+        let count = self.palette_matches.len();
+        self.palette_index = if forward { (self.palette_index + 1) % count } else { (self.palette_index + count - 1) % count };
+    }
+
+    /// The command the palette is sitting on, which the key thread runs the
+    /// same way it runs a key: some commands need its channels, and a command
+    /// is not a different thing for having been picked from a list.
+    fn palette_choice(&self) -> Option<nail::keymap::Action> {
+        let index = *self.palette_matches.get(self.palette_index)?;
+        return Some(nail::keymap::COMMANDS[index].action);
+    }
+
+    /// The declarations in the open file, read off the text rather than out of
+    /// the parse tree. A file being edited is a file that does not parse half
+    /// the time, and a list of what is in it is least useful exactly then, so
+    /// this takes the reading that always works.
+    fn collect_file_symbols(&self) -> Vec<FileSymbol> {
+        let mut symbols = Vec::new();
+        for (index, line) in self.get_current_tab().content.iter().enumerate() {
+            let label = declaration_label(line);
+            if let Some(label) = label {
+                symbols.push(FileSymbol { label, line: index + 1 });
+            }
+        }
+        return symbols;
+    }
+
+    fn open_symbol_picker(&mut self) {
+        self.dialog_mode = DialogMode::SymbolPicker;
+        self.symbol_entries = self.collect_file_symbols();
+        self.symbol_filter.clear();
+        self.filter_symbols();
+    }
+
+    fn filter_symbols(&mut self) {
+        let needle = self.symbol_filter.to_lowercase();
+        self.symbol_matches = self
+            .symbol_entries
+            .iter()
+            .enumerate()
+            .filter(|(_, symbol)| Self::fuzzy_matches(&symbol.label.to_lowercase(), &needle))
+            .map(|(index, _)| index)
+            .collect();
+        self.symbol_index = 0;
+    }
+
+    fn symbol_input(&mut self, c: char) {
+        self.symbol_filter.push(c);
+        self.filter_symbols();
+    }
+
+    fn symbol_backspace(&mut self) {
+        self.symbol_filter.pop();
+        self.filter_symbols();
+    }
+
+    fn symbol_move(&mut self, forward: bool) {
+        if self.symbol_matches.is_empty() {
+            return;
+        }
+        let count = self.symbol_matches.len();
+        self.symbol_index = if forward { (self.symbol_index + 1) % count } else { (self.symbol_index + count - 1) % count };
+    }
+
+    fn symbol_choose(&mut self) {
+        let line = match self.symbol_matches.get(self.symbol_index).and_then(|index| self.symbol_entries.get(*index)) {
+            Some(symbol) => symbol.line,
+            None => return,
+        };
+        self.go_to_line(line);
+        self.dialog_mode = DialogMode::None;
+    }
+
+    fn toggle_whole_word(&mut self) {
+        self.whole_word = !self.whole_word;
+        self.find_all_matches();
+    }
+
+    fn toggle_regex(&mut self) {
+        self.use_regex = !self.use_regex;
+        self.find_all_matches();
+    }
+
+    /// The find box's three switches all come out as one regular expression:
+    /// plain text is escaped so its punctuation means itself, whole word adds
+    /// the boundaries, and ignoring case is a flag on the front.
+    fn search_pattern(&self) -> Result<regex::Regex, String> {
+        let body = if self.use_regex { self.search_query.clone() } else { regex::escape(&self.search_query) };
+        let body = if self.whole_word { format!(r"\b(?:{})\b", body) } else { body };
+        let source = if self.case_sensitive { body } else { format!("(?i){}", body) };
+        return regex::Regex::new(&source).map_err(|error| error.to_string());
+    }
+
+    /// What the find box says under the pattern: how many matches, or why
+    /// there are none.
+    fn search_status_line(&self) -> String {
+        if let Some(message) = &self.search_error {
+            return format!("Not a pattern yet: {}", message);
+        }
+        return self.get_search_status();
+    }
+
+    /// Which titles the tab bar is showing. The draw thread paints them and a
+    /// click has to work out which one it landed on, so both ask here.
+    fn tab_titles(&self) -> Vec<String> {
+        return self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                let mut title = match &tab.filename {
+                    Some(filename) => std::path::Path::new(filename).file_name().unwrap_or_default().to_string_lossy().to_string(),
+                    None => format!("Untitled {}", index + 1),
+                };
+                if tab.modified {
+                    title.push('*');
+                }
+                title
+            })
+            .collect();
+    }
+
+    /// Which tab a click at this column landed on. The arithmetic mirrors how
+    /// the tab bar is drawn: a border, then each title with a space either
+    /// side, with a divider between neighbours.
+    fn tab_at_column(&self, column: u16) -> Option<usize> {
+        let mut left = self.view.tabs.x + 1;
+        for (index, title) in self.tab_titles().iter().enumerate() {
+            let width = title.chars().count() as u16 + 2;
+            if column >= left && column < left + width {
+                return Some(index);
+            }
+            left += width + 1;
+        }
+        return None;
+    }
+
+    /// Which position in the file a click at this row and column points at,
+    /// when it points into the text at all.
+    fn text_position_at(&self, column: u16, row: u16) -> Option<(usize, usize)> {
+        let text = self.view.text;
+        if text.width == 0 || text.height == 0 || !point_in_rect(column, row, text) {
+            return None;
+        }
+        let tab = self.get_current_tab();
+        let line = ((row - text.y) as usize + tab.scroll_position as usize).min(tab.content.len().saturating_sub(1));
+        let width = tab.content.get(line).map_or(0, |text| text.chars().count());
+        let offset = ((column - text.x) as usize + tab.h_scroll as usize).min(width);
+        return Some((offset, line));
+    }
+
+    fn mouse_press(&mut self, column: u16, row: u16) {
+        if point_in_rect(column, row, self.view.tabs) {
+            if let Some(index) = self.tab_at_column(column) {
+                self.switch_to_tab(index);
+            }
+            return;
+        }
+        let position = match self.text_position_at(column, row) {
+            Some(position) => position,
+            None => return,
+        };
+        self.clear_selection();
+        self.expand_stack.clear();
+        {
+            let tab = self.get_current_tab_mut();
+            tab.cursor_x = position.0;
+            tab.cursor_y = position.1;
+        }
+        self.mouse_dragging = true;
+        self.start_selection();
+        self.update_bracket_matching();
+    }
+
+    /// A drag that leaves the text area keeps selecting: the pointer is
+    /// clamped back to the nearest edge rather than the drag being dropped,
+    /// because someone dragging past the bottom means "keep going".
+    fn mouse_drag(&mut self, column: u16, row: u16) {
+        if !self.mouse_dragging {
+            return;
+        }
+        let text = self.view.text;
+        if text.width == 0 || text.height == 0 {
+            return;
+        }
+        let column = column.clamp(text.x, text.x + text.width - 1);
+        let row = row.clamp(text.y, text.y + text.height - 1);
+        let position = match self.text_position_at(column, row) {
+            Some(position) => position,
+            None => return,
+        };
+        {
+            let tab = self.get_current_tab_mut();
+            tab.cursor_x = position.0;
+            tab.cursor_y = position.1;
+        }
+        self.extend_selection();
+    }
+
+    fn mouse_release(&mut self) {
+        self.mouse_dragging = false;
+        // A click that never moved leaves an empty selection behind, which
+        // would otherwise make the next typed character look like a replace.
+        if !self.has_selection() {
+            self.clear_selection();
+        }
+    }
+
+    /// What the IDE opens with next time it is started here: the files that
+    /// were open, where the cursor was in each, and which one was in front.
+    /// A file that has moved away since is simply skipped on the way back in.
+    fn save_session(&self) {
+        let open_files: Vec<String> = self.tabs.iter().filter_map(|tab| tab.filename.as_ref().map(|filename| format!("{}:{}:{}", filename, tab.cursor_y + 1, tab.cursor_x))).collect();
+        let active = self.tabs.get(self.tab_index).and_then(|tab| tab.filename.clone()).unwrap_or_default();
+        crate::utils::write_config_values(&[("open_files", open_files.join(",")), ("active_file", active), ("recent_files", self.recent_files.join(","))]);
+    }
+
+    fn restore_session(&mut self) {
+        if let Some(recent) = crate::utils::read_config_value("recent_files") {
+            self.recent_files = recent.split(',').filter(|entry| !entry.is_empty()).map(String::from).collect();
+        }
+        let open_files = match crate::utils::read_config_value("open_files") {
+            Some(open_files) => open_files,
+            None => return,
+        };
+        let active = crate::utils::read_config_value("active_file").unwrap_or_default();
+        let opened_before = self.tabs.len();
+        for entry in open_files.split(',').filter(|entry| !entry.is_empty()) {
+            // Split from the right, because a path may contain a colon and the
+            // line and column never do.
+            let mut pieces = entry.rsplitn(3, ':');
+            let column = pieces.next().and_then(|piece| piece.parse::<usize>().ok());
+            let line = pieces.next().and_then(|piece| piece.parse::<usize>().ok());
+            let path = match pieces.next() {
+                Some(path) => path,
+                None => continue,
+            };
+            if !std::path::Path::new(path).exists() || self.open_file_in_tab(path.to_string()).is_err() {
+                continue;
+            }
+            if let (Some(line), Some(column)) = (line, column) {
+                let tab = self.get_current_tab_mut();
+                tab.cursor_y = line.saturating_sub(1).min(tab.content.len().saturating_sub(1));
+                let width = tab.content[tab.cursor_y].chars().count();
+                tab.cursor_x = column.min(width);
+            }
+        }
+        if self.tabs.len() > opened_before {
+            self.drop_welcome_tab();
+        }
+        if let Some(index) = self.tabs.iter().position(|tab| tab.filename.as_deref() == Some(active.as_str())) {
+            self.tab_index = index;
+        }
+    }
+
+    /// The greeting is there for someone with nothing open. Once real files
+    /// are back it is just a tab in the way.
+    fn drop_welcome_tab(&mut self) {
+        let welcome_is_untouched = self.tabs.first().map_or(false, |tab| tab.filename.is_none() && !tab.modified);
+        if welcome_is_untouched && self.tabs.len() > 1 {
+            self.tabs.remove(0);
+            self.tab_index = self.tab_index.saturating_sub(1);
+        }
+    }
+}
+
+/// The declaration a line of Nail starts, if it starts one. Functions,
+/// structs and enums announce themselves with a keyword, and a binding at the
+/// left margin is the file's own data rather than a local inside something
+/// else.
+fn declaration_label(line: &str) -> Option<String> {
+    let text = line.trim_start();
+    let indented = text.len() != line.len();
+    if let Some(rest) = text.strip_prefix("f ") {
+        return Some(format!("f {}", name_until(rest, &['(', ':', ' '])));
+    }
+    if let Some(rest) = text.strip_prefix("struct ") {
+        return Some(format!("struct {}", name_until(rest, &['{', ' '])));
+    }
+    if let Some(rest) = text.strip_prefix("enum ") {
+        return Some(format!("enum {}", name_until(rest, &['{', ' '])));
+    }
+    if indented || !text.contains('=') {
+        return None;
+    }
+    let name = name_until(text, &[':']);
+    let is_binding = !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') && text[name.len()..].starts_with(':');
+    if is_binding {
+        return Some(name.to_string());
+    }
+    return None;
+}
+
+fn name_until<'a>(text: &'a str, stops: &[char]) -> &'a str {
+    let end = text.find(|c| stops.contains(&c)).unwrap_or(text.len());
+    return text[..end].trim();
+}
+
+/// The next selection outward from the one given: the word under a bare
+/// cursor, then whatever brackets enclose it, then the whole line, then the
+/// whole file. Returns nothing once the selection is the file, which is where
+/// expanding runs out of room.
+fn wider_span(text: &[char], start: usize, end: usize) -> Option<(usize, usize)> {
+    if start == end {
+        if let Some(word) = word_span(text, start) {
+            if word != (start, end) {
+                return Some(word);
+            }
+        }
+    }
+    if let Some((open, close)) = enclosing_bracket_span(text, start, end) {
+        if (open + 1, close) != (start, end) {
+            return Some((open + 1, close));
+        }
+        return Some((open, close + 1));
+    }
+    let line = line_span(text, start, end);
+    if line != (start, end) {
+        return Some(line);
+    }
+    if (start, end) != (0, text.len()) {
+        return Some((0, text.len()));
+    }
+    return None;
+}
+
+fn word_span(text: &[char], at: usize) -> Option<(usize, usize)> {
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut start = at;
+    while start > 0 && is_word(text[start - 1]) {
+        start -= 1;
+    }
+    let mut end = at;
+    while end < text.len() && is_word(text[end]) {
+        end += 1;
+    }
+    if start == end {
+        return None;
+    }
+    return Some((start, end));
+}
+
+fn line_span(text: &[char], start: usize, end: usize) -> (usize, usize) {
+    let mut line_start = start;
+    while line_start > 0 && text[line_start - 1] != '\n' {
+        line_start -= 1;
+    }
+    let mut line_end = end;
+    while line_end < text.len() && text[line_end] != '\n' {
+        line_end += 1;
+    }
+    return (line_start, line_end);
+}
+
+/// The innermost bracket pair that contains the whole span, found by counting
+/// depth outward from each end.
+fn enclosing_bracket_span(text: &[char], start: usize, end: usize) -> Option<(usize, usize)> {
+    let opening = |c: char| matches!(c, '(' | '[' | '{');
+    let closing = |c: char| matches!(c, ')' | ']' | '}');
+    let partner = |c: char| match c {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        _ => c,
+    };
+
+    let mut depth = 0;
+    let mut open = None;
+    for index in (0..start).rev() {
+        let c = text[index];
+        if closing(c) {
+            depth += 1;
+        } else if opening(c) {
+            if depth == 0 {
+                open = Some(index);
+                break;
+            }
+            depth -= 1;
+        }
+    }
+    let open = open?;
+    let wanted = partner(text[open]);
+
+    let mut depth = 0;
+    for index in end..text.len() {
+        let c = text[index];
+        if c == text[open] {
+            depth += 1;
+        } else if c == wanted {
+            if depth == 0 {
+                return Some((open, index));
+            }
+            depth -= 1;
+        }
+    }
+    return None;
 }
 
 fn format_type(data_type: &lexer::NailDataTypeDescriptor) -> String {

@@ -360,7 +360,7 @@ pub fn lexer_without_imports(input: &str) -> Vec<Token> {
 fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>, included_files: &mut HashSet<PathBuf>, import_mode: ImportMode) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
 
-    // The version version line and any shebang above it are addressed to Hammer, not
+    // The version version line and any shebang above it are addressed to the launcher, not
     // to the language, so they never become tokens. Skipping them here rather
     // than in each caller means an imported file may carry one too. The line
     // count moves with the skip, so every span that follows still names the

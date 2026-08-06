@@ -337,8 +337,8 @@ f generate_get_started():s {
 # Opens the file in Nail's own IDE
 nail hello.nail</pre></div>
         <p>
-            That installs <strong>Hammer</strong>, which is the only thing that goes on your PATH.
-            Open a Nail file with it and it reads which version of Nail the file was written for,
+            That installs <strong>nail</strong>, the only command there is and the only thing on
+            your PATH. Open a Nail file with it and it reads which version the file was written for,
             downloads exactly that version if you do not have it, and hands
             the file over. The compiler, the editor, a pinned Rust toolchain and every library
             already built come down in one piece, so the first program compiles in seconds and
@@ -605,7 +605,7 @@ f generate_versioning():s {
     <div class="philosophy-content">
         <p>
             Every Nail file records the compiler it was written for, on its first line. The IDE
-            stamps it on save, so you never type it. Hammer reads it, fetches exactly that version
+            stamps it on save, so you never type it. nail reads it, fetches exactly that version
             if the machine does not have it, and hands the file over. Old code keeps working
             because nothing drags it forward.
         </p>
@@ -629,17 +629,17 @@ f generate_versioning():s {
             that compiles against whatever happens to be newest is precisely the drift being
             prevented, and an implicit fallback here would be the same shape as a null, which
             this language does not have either. You never type it: the editor writes it when you
-            save, and <span class="inline-code">hammer new</span> starts a file with it already
+            save, and <span class="inline-code">nail new</span> creates a file with it already
             in place.
         </p>
         <p>
-            Migration is a choice and never a requirement. <strong>hammer update</strong> compiles
+            Migration is a choice and never a requirement. <strong>nail update</strong> compiles
             each file against the newer version first and only moves the ones that pass. Anything
             that would break keeps its old pin and keeps working, for as long as you like.
         </p>
-        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Shell</span><pre>hammer which report.nail    # which compiler runs, and why
-hammer fetch .              # grab every version this project pins, then go offline
-hammer update . --yes       # move the files that still compile, leave the rest</pre></div>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Shell</span><pre>nail which report       # which compiler runs, and why
+nail fetch .            # grab every version this project pins, then go offline
+nail update . --yes     # move the files that still compile, leave the rest</pre></div>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
             A release is one file on one box, served over HTTPS, and a version number names
             exactly one of them. There is no index to go stale, no package registry to resolve
@@ -1089,20 +1089,21 @@ f generate_downloads_page(releases_tsv:s, nav_html:s):s {
     section:s = danger(template_render(html`<section class="philosophy">
     <div class="section-header">
         <h2>Downloads</h2>
-        <p>You do not normally need this page. Hammer fetches the version a file asks for, by itself</p>
+        <p>You do not normally need this page. nail fetches the version a file asks for, by itself</p>
     </div>
     <div class="philosophy-content">
         <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh</pre></div>
         <p>
-            That installs Hammer, and Hammer is all you need. Open any Nail file with it and it
+            That installs nail, and nail is all you need. Open any Nail file with it and it
             reads the version on the file's first line, downloads exactly that version if this
             machine does not have it, and hands the file over. You never pick a version by hand.
         </p>
-        <div class="code-example"><span class="code-label">Shell</span><pre>hammer new hello.nail     # a file, stamped and ready
-hammer run hello.nail     # compile and run it
-hammer list               # what is installed, how big, last used
-hammer install 0.1.0      # a specific version, on purpose
-hammer gc                 # reclaim disk from versions you stopped using</pre></div>
+        <div class="code-example"><span class="code-label">Shell</span><pre>nail new hello        # create a file, ready to compile
+nail hello            # open it in the editor
+nail run hello        # compile it and run it
+nail list             # what is installed, how big, last used
+nail install 0.1.0    # a specific version, on purpose
+nail gc               # reclaim disk from versions you stopped using</pre></div>
         <h3>Every release</h3>
         <p>
             Each of these is a complete toolchain: the compiler, the editor, a pinned Rust

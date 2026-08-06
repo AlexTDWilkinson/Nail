@@ -47,12 +47,47 @@ fn main() {
         eprintln!("                 functions needing an operating system (files, servers, etc.)");
         eprintln!("  --stamp=<v>    Rewrite the file's version line to <v> or to `latest`, but");
         eprintln!("                 only if it still type checks. This is the half of");
-        eprintln!("                 `hammer update` that a release has to do, because deciding");
+        eprintln!("                 `nail update` that a release has to do, because deciding");
         eprintln!("                 whether a file survives a migration means compiling it.");
         process::exit(1);
     }
 
     let nail_path = args.iter().find_map(|arg| arg.strip_prefix("--nail-path=")).unwrap_or("..").to_string();
+
+    // Looking a function up needs no input file either: the registry is the
+    // whole answer, and it is the registry this compiler was built with, so
+    // the answer always matches the compiler that will run the code.
+    if let Some(query) = args.iter().find_map(|arg| arg.strip_prefix("--docs=")) {
+        let functions = nail::parser::std_lib::stdlib::functions();
+        let needle = query.to_lowercase();
+
+        if let Some(exact) = functions.iter().find(|function| function.name == query) {
+            println!("{}", exact.signature);
+            println!("  {}", exact.description);
+            if !exact.example.is_empty() {
+                println!();
+                for line in exact.example.lines() {
+                    println!("  {}", line);
+                }
+            }
+            println!("\n  {} library", exact.module);
+            return;
+        }
+
+        let matches: Vec<&nail::parser::std_lib::stdlib::STDLIB_Function> =
+            functions.iter().filter(|function| function.name.to_lowercase().contains(&needle) || function.description.to_lowercase().contains(&needle)).collect();
+        if matches.is_empty() {
+            eprintln!("Nothing in the standard library matches '{}'", query);
+            process::exit(1);
+        }
+        for function in matches.iter().take(40) {
+            println!("{}", function.signature);
+        }
+        if matches.len() > 40 {
+            println!("... and {} more", matches.len() - 40);
+        }
+        return;
+    }
 
     // Superset manifest needs no input file - it is derived from the registry alone
     if args[1] == "--cargo-toml-superset" {
@@ -74,6 +109,9 @@ fn main() {
     }
     if args.iter().any(|arg| arg == "--run") {
         mode = "--run";
+    }
+    if args.iter().any(|arg| arg == "--build") {
+        mode = "--build";
     }
 
     // Stamping is its own mode: check the file, and rewrite line one only if
@@ -99,7 +137,7 @@ fn main() {
     }
 
     // Machine-readable modes must not print pipeline banners to stdout
-    let quiet = matches!(mode, "--transpile" | "--transpile-skip-check" | "--deps-only" | "--cargo-toml" | "--stamp" | "--run");
+    let quiet = matches!(mode, "--transpile" | "--transpile-skip-check" | "--deps-only" | "--cargo-toml" | "--stamp" | "--run" | "--build");
     
     // Read the input file
     let input = match fs::read_to_string(filename) {
@@ -118,7 +156,7 @@ fn main() {
     //
     // Only the entry file needs one. Imported files inherit it, because one
     // compiler compiles everything it reaches and only the entry decides which.
-    // Hammer stays deliberately permissive here and falls back to the newest
+    // The launcher stays deliberately permissive here and falls back to the newest
     // installed version: refusing to launch a file is a far worse failure than
     // compiling it, and by the time this runs the right compiler was chosen.
     if stamp_to.is_none() && nail::version_line::scan_header(input.as_bytes()).pin.is_none() {
@@ -289,11 +327,12 @@ fn main() {
         return;
     }
 
-    // Compile the program and run it, which is what `hammer run` asks for.
+    // Compile the program, and run it unless only the binary was asked for.
+    // `nail run` and `nail build` are the same work up to the last step.
     // Same steps the IDE performs for F7: write the generated Rust and its
     // manifest into a build directory beside the source, build with the
     // bundled cargo when there is one, then hand over to the result.
-    if mode == "--run" {
+    if mode == "--run" || mode == "--build" {
         let package_name = "nail_transpilation";
         let build_dir = Path::new(filename).parent().unwrap_or(Path::new(".")).join(".nail-build");
         if let Err(error) = fs::create_dir_all(build_dir.join("src")) {
@@ -349,6 +388,18 @@ fn main() {
             Some(bundle) => bundle.built_binary_path(package_name),
             None => build_dir.join("target/release").join(package_name),
         };
+        if mode == "--build" {
+            // Beside the source, named after it, so what was produced is
+            // obvious and it is not buried in a build directory.
+            let destination = Path::new(filename).with_extension("");
+            if let Err(error) = fs::copy(&binary, &destination) {
+                eprintln!("Cannot write {}: {}", destination.display(), error);
+                process::exit(1);
+            }
+            println!("{}", destination.display());
+            return;
+        }
+
         // Arguments after the file are the program's, not ours.
         let program_args: Vec<&String> = args.iter().skip(2).filter(|arg| !arg.starts_with("--")).collect();
         let error = std::os::unix::process::CommandExt::exec(process::Command::new(&binary).args(program_args));

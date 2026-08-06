@@ -52,18 +52,18 @@ if ! file "$BINARY" | grep -q "static"; then
 fi
 
 # The other half of the promise: a file that pins this version must reach this
-# version's compiler through hammer, with no network involved.
-if [ -x /opt/nail/bin/hammer ]; then
+# version's compiler through the launcher, with no network involved.
+if [ -x /opt/nail/bin/nail ]; then
     VERSION="$(basename "$ROOT")"
     printf 'nail %s\n' "$VERSION" > "$WORK/pinned.nail"
     cat "$(dirname "$0")/hello.nail" >> "$WORK/pinned.nail"
-    RESOLVED="$(/opt/nail/bin/hammer which "$WORK/pinned.nail")"
+    RESOLVED="$(/opt/nail/bin/nail which "$WORK/pinned.nail")"
     case "$RESOLVED" in
-        *"pins $VERSION"*) echo "hammer resolves the version line to $VERSION" ;;
-        *) echo "FAIL: hammer did not resolve the version line: $RESOLVED" >&2; exit 1 ;;
+        *"pins $VERSION"*) echo "nail resolves the version line to $VERSION" ;;
+        *) echo "FAIL: nail did not resolve the version line: $RESOLVED" >&2; exit 1 ;;
     esac
 else
-    echo "note: no hammer installed, skipped the resolution check"
+    echo "note: no launcher installed, skipped the resolution check"
 fi
 
 echo "PASS: offline build + run OK"

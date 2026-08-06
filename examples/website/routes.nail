@@ -48,7 +48,7 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
         },
         request.path == `/install` -> {
             // The bootstrap one-liner: curl this into sh and it installs
-            // Hammer. Served as plain text so a browser shows the script
+            // nail. Served as plain text so a browser shows the script
             // rather than downloading it, since reading it first is the
             // sensible thing to do with anything you are about to run as root.
             r HTTP_Response {

@@ -64,12 +64,12 @@ fi
 echo "toolchain: $("$ROOT/toolchain/bin/rustc" --version)"
 
 # --- 2. IDE + nailc binaries (host target, bundled toolchain) -------------
-# Hammer is built here too but does NOT go in the bundle: it is version
+# The launcher is built here too but does NOT go in the bundle: it is version
 # independent, one copy serves every release, and it is published on its own.
 # --locked: build exactly what Cargo.lock says or fail. A release must be one
 # set of bytes, so a bundle build is never allowed to quietly resolve a newer
 # dependency than the one that was tested.
-(cd "$REPO" && PATH="$ROOT/toolchain/bin:$PATH" "$ROOT/toolchain/bin/cargo" build --locked --release --bin nail --bin nailc --bin hammer)
+(cd "$REPO" && PATH="$ROOT/toolchain/bin:$PATH" "$ROOT/toolchain/bin/cargo" build --locked --release --bin nail --bin nailc --bin nail-launcher)
 cp "$REPO/target/release/nail" "$REPO/target/release/nailc" "$ROOT/bin/"
 
 # --- 3. nail crate source (generated programs depend on it by path) -------
@@ -139,7 +139,7 @@ warm_build "$ROOT/warmup/minimal"
 rm -rf "$ROOT/warmup"
 
 # The archive holds one directory named for the version, which is exactly what
-# Hammer unpacks into /opt/nail/versions.
+# the launcher unpacks into /opt/nail/versions.
 #
 # -9e is the strongest xz preset and -T0 spreads it over every core, so the
 # extra ratio costs build-machine time rather than wall clock. Users pay the

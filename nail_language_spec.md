@@ -990,9 +990,9 @@ that compiled once compiles forever. There are no dependency mismatches, no
 "works on my machine", and no bit rot from language changes. Old code never
 needs migration to keep working: migration is a choice, not a requirement.
 
-The tool that does this is **Hammer**. It reads which version a file asks for,
-makes sure that version is on the machine, checks that it really came from us,
-and hands the file to it. Nothing else.
+The tool that does this is `nail` itself. It reads which version a file asks
+for, makes sure that version is on the machine, and hands the file to it.
+Nothing else. It is the only command, and the only thing on `PATH`.
 
 ### Why a version number is enough
 
@@ -1042,10 +1042,10 @@ Three scoping rules keep the requirement from being a burden:
   since its version was never published and pinning to it would produce a file
   nobody else could open. A file that already has a line is never rewritten,
   including a `latest` one, because re-stamping would silently migrate code
-  somebody pinned on purpose. `hammer new` starts a file already stamped.
+  somebody pinned on purpose. `nail new` creates a file already stamped.
 
-**Hammer stays permissive where the compiler is strict.** A missing or garbled
-first line makes Hammer fall back to the newest installed version and say so on
+**The launcher stays permissive where the compiler is strict.** A missing or garbled
+first line makes the launcher fall back to the newest installed version and say so on
 stderr, rather than refuse. Refusing to launch is a far worse failure than
 compiling, the garbled line might be legitimate syntax from a release that does
 not exist yet, and by the time `nailc` runs the correct compiler has already
@@ -1053,7 +1053,7 @@ been chosen. Strictness belongs where it can be acted on.
 
 ### The grammar, which can never change
 
-Hammer built today has to read a file written in ten years, and a compiler from
+A `nail` built today has to read a file written in ten years, and a compiler from
 ten years ago has to read a file written today. So this grammar is frozen:
 
 ```text
@@ -1081,9 +1081,9 @@ exist yet, still resolves and launches. A malformed first line reads as
 unpinned rather than as an error, for the same reason.
 
 A prerelease suffix (`0.4.0-dev`) marks a locally built compiler that was never
-published. Hammer refuses to fetch one and says why.
+published. the launcher refuses to fetch one and says why.
 
-The implementation is `src/version line.rs`, shared by the compiler and by Hammer.
+The implementation is `src/version line.rs`, shared by the compiler and by the launcher.
 
 ### Resolution
 
@@ -1097,18 +1097,18 @@ The **entry file decides the whole program**. One compiler compiles every
 source it reaches, so an imported file pinned to something older must not drag
 the entry file's compiler backwards with it.
 
-### What Hammer owns, and what it forwards
+### What the launcher owns, and what it forwards
 
-Hammer is a multiplexer. It owns only the commands that are about the *set* of
+`nail` is a multiplexer. It owns only the commands that are about the *set* of
 installed versions, because no single version can answer those. Everything else
 is forwarded to the resolved version's `nailc`:
 
 ```
-hammer fmt old.nail     runs the formatter that shipped with old.nail's compiler
+nail fmt old.nail     runs the formatter that shipped with old.nail's compiler
 ```
 
 So `fmt`, `test`, `build` and anything invented in ten years work through a
-Hammer built today, without Hammer ever being taught about them. Forwarding is
+`nail` built today, without it ever being taught about them. Forwarding is
 also better than calling `nailc` directly, because the file's own version does
 the work rather than the newest one.
 
@@ -1123,12 +1123,12 @@ future `nailc` wants for itself.
 | `update <path>` | migrate files that still compile |
 | `export` / `import` | move a release to a machine with no network |
 | `doctor` | check the install over |
-| `self-update` | the only thing that rewrites Hammer |
+| `self-update` | the only thing that rewrites the launcher |
 | `config` | warn and gc thresholds |
 | `run` `open` | explicit forms of the default |
 | `--` | escape hatch, forwards something that collides with the above |
 
-`hammer update` splits across the same line. Hammer walks the tree and makes
+`nail update` splits across the same line. the launcher walks the tree and makes
 sure the target version is present, and that version's `nailc --stamp=<v>` type
 checks each file and rewrites line one **only if it passes**. A file that no
 longer compiles keeps its old version line and keeps working, which is what makes
@@ -1164,8 +1164,8 @@ Design decisions and why:
 - **Full copy per version.** No layer sharing between versions. A pinned
   version must never meet a rustc it was not built against, and paying the full
   download size per version is the correct price for that.
-- **Versions are never on `PATH`.** Only Hammer is. A version on `PATH` would
-  shadow Hammer and the version line would stop deciding which compiler runs, which
+- **Versions are never on `PATH`.** Only the launcher is. A version on `PATH` would
+  shadow the launcher and the version line would stop deciding which compiler runs, which
   is the entire point.
 - **Static musl output.** User programs target `x86_64-unknown-linux-musl`,
   linked by the bundled `rust-lld` with `link-self-contained=yes`. Linking
@@ -1190,12 +1190,12 @@ Design decisions and why:
 
 ### Where releases come from
 
-Hammer bakes in **one origin, forever**, and asks it for a version by name:
+`nail` bakes in **one origin, forever**, and asks it for a version by name:
 
 ```
 GET  {origin}/versions/latest            the newest published version
 GET  {origin}/versions/<v>/x86_64-linux  the bundle
-GET  {origin}/hammer/x86_64-linux        hammer itself, for self-update
+GET  {origin}/nail/x86_64-linux          the launcher itself, for self-update
 ```
 
 The origin serves those files itself, off disk, through the reverse proxy. What
@@ -1219,13 +1219,13 @@ installed but is not.
 
 A version is gigabytes, and the largest part of it, the build cache, is
 reconstructible. So reclaiming disk is tiered rather than all-or-nothing:
-`hammer gc --caches` drops stale caches (minutes to rebuild, nothing lost),
-and `hammer gc` also uninstalls versions abandoned for much longer. Both are
+`nail gc --caches` drops stale caches (minutes to rebuild, nothing lost),
+and `nail gc` also uninstalls versions abandoned for much longer. Both are
 dry runs until `--yes`. The newest installed version and anything used inside
 the keep window are never touched.
 
-Hammer warns when there is enough to reclaim to be worth mentioning, and
-deletes nothing on its own unless `hammer config auto` says otherwise. Users
+the launcher warns when there is enough to reclaim to be worth mentioning, and
+deletes nothing on its own unless `nail config auto` says otherwise. Users
 will not run `gc` and disks will fill, but deleting gigabytes that cost a long
 download to restore is worse than nagging.
 
@@ -1233,7 +1233,7 @@ download to restore is worse than nagging.
 
 `bundle/build_bundle.sh` assembles and warms a bundle (the only step needing
 network and a musl C compiler, a build-machine concern), `bundle/install.sh` is
-the one-time bootstrap that installs Hammer and hands `/opt/nail` to the user,
+the one-time bootstrap that installs the launcher and hands `/opt/nail` to the user,
 and `bundle/test_bundle.sh` is the release gate: on a machine with no Rust, no
 cc and no network, compile and run a Nail program using only the bundle. A
 release that fails the gate does not ship. `deploy/releases.sh` uploads a built

@@ -16,13 +16,14 @@ path = "src/bin/nailc.rs"
 name = "nail-website"
 path = "src/bin/nail-website.rs"
 
-# Hammer: the launcher. It resolves a file's version pragma, installs that
-# exact release if it is missing, and hands the file to it. Deliberately
-# separate from the compiler and deliberately small, because it is the one
-# piece that can never be replaced by a newer Nail.
+# The launcher. It resolves a file's version line, installs that exact release
+# if it is missing, and hands the file over. It is installed as `nail`, the
+# only name anyone types. It cannot be called `nail` here, because that name
+# belongs to the IDE above and the two live at different paths: the launcher at
+# /opt/nail/bin/nail, the IDE it launches at /opt/nail/versions/<v>/bin/nail.
 [[bin]]
-name = "hammer"
-path = "src/bin/hammer.rs"
+name = "nail-launcher"
+path = "src/bin/nail_launcher.rs"
 
 
 [lib]

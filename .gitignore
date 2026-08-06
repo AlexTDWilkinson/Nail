@@ -50,3 +50,6 @@ nail_website_server/src/main.rs
 .nail_profile.json
 .nail_profile.json.tmp
 wasm_demos
+
+# Build directory nail run/build/test creates beside a source file
+.nail-build/

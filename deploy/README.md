@@ -76,7 +76,7 @@ website, add its path there or the deployed site panics on startup.
 
 ## Publishing a Nail release
 
-Hammer fetches compilers from this box, and the box serves them itself. Caddy
+`nail` fetches compilers from this box, and the box serves them itself. Caddy
 reads the file straight off disk, so the bytes never pass through the website
 process and its 192M limit is irrelevant. A bundle is roughly one to two
 gigabytes against ~10GB of droplet disk and 500GB/month of transfer, which is
@@ -92,8 +92,8 @@ drift apart immediately.
 ```
 
 `releases.sh` uploads the bundle beside its final name and renames it into
-place, so a hammer that asks mid-upload gets a 404 rather than half a file. It
-also uploads `target/release/hammer` for `hammer self-update`, writes
+place, so a launcher that asks mid-upload gets a 404 rather than half a file.
+It also uploads the launcher for `nail self-update`, writes
 `/versions/latest`, and installs the Caddy fragment.
 
 That fragment is `/etc/caddy/sites.d/nail.caddy`, **replacing** the one
@@ -109,7 +109,7 @@ Unpublishing an alpha, which is allowed before 1.0:
 
 Releases are **not signed**. Being able to write to this box is the credential:
 anyone who can publish here is already part of the project. Set `RELEASE_DOMAIN`
-in `.env` to the hostname Hammer fetches from.
+in `.env` to the hostname `nail` fetches releases from.
 
 ## Port 8080
 

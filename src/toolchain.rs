@@ -3,7 +3,7 @@
 //! A Nail release installs as one immutable bundle at
 //! /opt/nail/versions/<version> containing the IDE, a pinned Rust toolchain,
 //! vendored crate sources, the nail crate source, and a pre-warmed build
-//! cache. Hammer installs and launches them. When the bundle is present, builds
+//! cache. The launcher installs and runs them. When the bundle is present, builds
 //! use its cargo with a scrubbed environment so nothing on the user's machine
 //! (rustup, RUSTFLAGS, crates.io) can affect or break compilation. Without a
 //! bundle (development checkouts), builds fall back to the system cargo.
@@ -23,7 +23,7 @@ use std::process::Command;
 /// toolchain's own musl libc and rust-lld, so linking needs zero system files.
 pub const BUNDLE_TARGET: &str = "x86_64-unknown-linux-musl";
 
-/// Where Hammer keeps installed versions. Each one lives at
+/// Where the launcher keeps installed versions. Each one lives at
 /// `<VERSION_STORE>/<version>` and is built at exactly that path, because
 /// cargo's fingerprints embed absolute paths and a bundle's pre-warmed cache
 /// is only valid at the path it was warmed at. The version is known when the

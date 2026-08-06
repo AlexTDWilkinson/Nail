@@ -49,7 +49,7 @@ f read_no_releases(err:e):s {
 // Served at /install, so the one-liner on the get-started section works. It is
 // the same script that lives in the repository, not a copy that can drift, and
 // anyone who would rather read it before running it is reading exactly what
-// runs. It installs Hammer only: versions of Nail come down later, when a file
+// runs. It installs the launcher only: versions of Nail come down later, when a file
 // asks for one.
 install_script:s = safe(fs_read(`bundle/install.sh`), read_fallback);
 
@@ -57,7 +57,7 @@ install_script:s = safe(fs_read(`bundle/install.sh`), read_fallback);
 // website is sandboxed away from the release directory and cannot list it
 // itself. One line per version, tab separated: version, bytes, date.
 //
-// This is read by people on the downloads page. Hammer never reads it. Hammer
+// This is read by people on the downloads page. nail never reads it. It
 // names a version in a URL and that is the whole protocol, and a list it
 // depended on would be one more thing that has to stay correct forever.
 releases_tsv:s = safe(fs_read(`releases.tsv`), read_no_releases);

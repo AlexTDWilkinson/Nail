@@ -1,14 +1,14 @@
 #!/bin/sh
 # One-time bootstrap. This is the only step that ever needs root.
 #
-#   sudo ./install.sh                                  # fetch hammer, set up /opt/nail
+#   sudo ./install.sh                                  # fetch nail, set up /opt/nail
 #   sudo ./install.sh nail-<version>-linux-x86_64.tar.xz   # also install that release offline
 #
-# After this, hammer installs, removes and updates versions of Nail with no
+# After this, nail installs, removes and updates versions of itself with no
 # privileges at all, because /opt/nail belongs to the user who ran this.
 #
-# Only hammer goes on PATH. Installed versions deliberately do NOT: if one were
-# on PATH it would shadow hammer, and a file's version line would stop
+# Only the launcher goes on PATH, as `nail`. Installed versions deliberately do
+# NOT: one on PATH would shadow it, and a file's version line would stop
 # deciding which compiler runs, which is the entire point.
 # POSIX sh, deliberately. This is fetched with `curl | sudo sh`, and piping
 # into an interpreter ignores the shebang, so on Debian and Ubuntu the script
@@ -33,42 +33,106 @@ fi
 
 OWNER="${SUDO_USER:-root}"
 
-cat <<'BANNER'
+# Named ANSI colours rather than hex, so they follow whatever palette the
+# terminal already uses and look right in a light theme as well as a dark one.
+# Nothing is coloured when stdout is not a terminal, so piping this stays clean,
+# and NO_COLOR is honoured because people who set it mean it.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+	bold=$(printf '\033[1m')
+	dim=$(printf '\033[2m')
+	amber=$(printf '\033[1;33m')
+	green=$(printf '\033[1;32m')
+	off=$(printf '\033[0m')
+	# 24-bit colour is what the rainbow needs. Terminals that have it say so.
+	case "${COLORTERM:-}" in
+	truecolor | 24bit) truecolor=yes ;;
+	*) truecolor='' ;;
+	esac
+else
+	bold=''
+	dim=''
+	amber=''
+	green=''
+	off=''
+	truecolor=''
+fi
 
+step() {
+	printf '  %s✓%s %s\n' "$green" "$off" "$1"
+}
+
+# The banner sweeps through a rainbow when the terminal can do 24-bit colour,
+# and sits still in amber when it cannot. Redrawn in place with a cursor-up, so
+# it animates without scrolling the screen. About a second, once, on the one
+# occasion a person installs this.
+banner() {
+	if [ -n "$truecolor" ]; then
+		awk 'BEGIN {
+			art[1] = "  ███╗   ██╗ █████╗ ██╗██╗";
+			art[2] = "  ████╗  ██║██╔══██╗██║██║";
+			art[3] = "  ██╔██╗ ██║███████║██║██║";
+			art[4] = "  ██║╚██╗██║██╔══██║██║██║";
+			art[5] = "  ██║ ╚████║██║  ██║██║███████╗";
+			art[6] = "  ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝╚══════╝";
+			frames = 28;
+			for (f = 0; f < frames; f++) {
+				for (i = 1; i <= 6; i++) {
+					t = (i + f) * 0.45;
+					r = int(sin(t) * 110 + 140);
+					g = int(sin(t + 2.09) * 110 + 140);
+					b = int(sin(t + 4.19) * 110 + 140);
+					printf "\033[38;2;%d;%d;%dm%s\033[0m\n", r, g, b, art[i];
+				}
+				if (f < frames - 1) {
+					printf "\033[6A";
+					system("sleep 0.045");
+				}
+			}
+		}'
+	else
+		printf '%s' "$amber"
+		cat <<'BANNER'
   ███╗   ██╗ █████╗ ██╗██╗
   ████╗  ██║██╔══██╗██║██║
   ██╔██╗ ██║███████║██║██║
   ██║╚██╗██║██╔══██║██║██║
   ██║ ╚████║██║  ██║██║███████╗
   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝╚══════╝
-
-  🔨  Program it once. Run it forever.
-
 BANNER
+		printf '%s' "$off"
+	fi
+}
+
+printf '\n'
+banner
+printf '  🔨  %sProgram it once. Run it forever.%s\n\n' "$dim" "$off"
 
 mkdir -p "$ROOT/bin" "$ROOT/versions"
 
-# hammer comes from the release machine's build if this is a source checkout,
-# and from the web otherwise.
-if [ -n "$HERE" ] && [ -x "$HERE/../target/release/hammer" ]; then
-	cp "$HERE/../target/release/hammer" "$ROOT/bin/hammer"
+# The launcher comes from the release machine's build if this is a source
+# checkout, and from the web otherwise.
+if [ -n "$HERE" ] && [ -x "$HERE/../target/release/nail-launcher" ]; then
+	cp "$HERE/../target/release/nail-launcher" "$ROOT/bin/nail"
 else
-	echo "fetching hammer"
-	curl -fL --proto '=https' "$ORIGIN/hammer/x86_64-linux" -o "$ROOT/bin/hammer"
+	printf '  %sdownloading%s\n' "$dim" "$off"
+	curl -fsSL --proto '=https' "$ORIGIN/nail/x86_64-linux" -o "$ROOT/bin/nail"
 fi
-chmod 755 "$ROOT/bin/hammer"
+chmod 755 "$ROOT/bin/nail"
+step "nail installed to ${bold}$ROOT/bin/nail$off"
 
-# The user owns the store, so hammer never needs sudo again: not to install a
+# The user owns the store, so nail never needs sudo again: not to install a
 # version a file asks for, not to reclaim disk, not to update itself.
 chown -R "$OWNER" "$ROOT"
 
-# One binary, three names. argv[0] tells hammer which to be, so `nailc` in a
-# Makefile and `#!/usr/bin/env nail` in a script both keep working while only
-# one thing is on PATH. The symlinks are root-owned and never change again -
-# `hammer self-update` rewrites the target, not these.
-for name in hammer nail nailc; do
-	ln -sf "$ROOT/bin/hammer" "/usr/local/bin/$name"
-done
+# One name. The symlink is root-owned and never changes again, because
+# `nail self-update` rewrites what it points at rather than the link.
+ln -sf "$ROOT/bin/nail" /usr/local/bin/nail
+
+# Earlier builds put the launcher on PATH three times, as hammer, nail and
+# nailc. One command is the whole interface now, so the other two go, and so
+# does the binary they pointed at.
+rm -f /usr/local/bin/hammer /usr/local/bin/nailc "$ROOT/bin/hammer"
+step "linked ${bold}/usr/local/bin/nail$off"
 
 # Desktop integration: what makes a .nail file look like a Nail file. Without
 # this the desktop treats them as unknown text, so they get no icon, no "Open
@@ -100,35 +164,27 @@ if [ -f "$DESKTOP_SRC/nail.desktop" ]; then
 	if [ "$OWNER" != root ] && command -v xdg-mime >/dev/null; then
 		sudo -u "$OWNER" xdg-mime default nail.desktop text/x-nail 2>/dev/null || true
 	fi
-	echo "registered .nail files with the desktop"
+	step ".nail files open with nail, and have an icon"
 fi
 
 # An offline install: unpack a release the user already has, rather than
-# making hammer fetch one.
+# making nail fetch one.
 if [ -n "${1:-}" ]; then
 	echo "installing $1"
 	sudo -u "$OWNER" tar -xf "$1" -C "$ROOT/versions"
 fi
 
-# `nail` and `hammer` are the same binary under different names, which is
-# convenient and confusing in equal measure, so say which one is for what
-# rather than naming one and leaving the other a mystery.
-cat <<DONE
-
-Installed. Two names, one program:
-
-  nail hello.nail       open a file in the editor
-  nail                  open the editor with nothing in it
-
-  hammer new hi.nail    start a file, ready to compile
-  hammer run hi.nail    compile it and run it
-  hammer list           which versions of Nail are on this machine
-  hammer help           everything else
-
-You will mostly type nail. hammer is for the versions underneath: it reads the
-line at the top of a file, fetches exactly the Nail that wrote it if this
-machine does not have it, and hands the file over. Double-clicking a .nail file
-does the same thing.
-
-Nothing is downloaded until you open a file, so the first one takes a while.
-DONE
+printf '\n  %sEverything is one command%s\n\n' "$bold" "$off"
+printf '    %snail new hello%s      create a new file, ready to compile\n' "$amber" "$off"
+printf '    %snail hello%s          open it in the editor\n' "$amber" "$off"
+printf '    %snail run hello%s      compile it and run it\n' "$amber" "$off"
+printf '    %snail list%s           which versions are on this machine\n' "$amber" "$off"
+printf '    %snail help%s           everything else\n' "$amber" "$off"
+printf '\n  %sThe .nail extension is optional: "nail new hello" and\n' "$dim"
+printf '  "nail new hello.nail" do the same thing.%s\n' "$off"
+printf '\n  Every Nail file records the version that wrote it. %snail%s reads that line,\n' "$amber" "$off"
+printf '  and fetches that exact version if this machine does not have it, so a\n'
+printf '  program that compiled once compiles forever. Double-clicking a .nail\n'
+printf '  file does the same.\n'
+printf '\n  %sNothing is downloaded until you open a file, so the first one takes a\n' "$dim"
+printf '  while.%s\n\n' "$off"

@@ -1,11 +1,11 @@
-//! Hammer: the thing you use to open Nail files.
+//! `nail`: the thing you use to open Nail files.
 //!
 //! It does four things and nothing else. It reads which version of Nail a file
 //! was written for, makes sure that exact version is on the machine, checks
 //! that it really came from us, and hands the file to it. Everything else a
-//! Nail toolchain does belongs to a release, not to Hammer.
+//! Nail toolchain does belongs to a release, not to The launcher.
 //!
-//! That restraint is the whole design. Hammer is the one piece that can never
+//! That restraint is the whole design. This is the one piece that can never
 //! be replaced by a newer Nail, because it is what launches Nail in the first
 //! place. So the things it promises have to hold forever:
 //!
@@ -13,17 +13,17 @@
 //!   * the URL shape it fetches from
 //!   * the small set of subcommands it owns
 //!
-//! Everything else is forwarded. `hammer fmt old.nail` runs the formatter that
+//! Everything else is forwarded. `nail fmt old.nail` runs the formatter that
 //! shipped with `old.nail`'s own compiler, not today's, so commands invented in
-//! ten years work through a Hammer built today without it ever being taught
+//! ten years work through a The launcher built today without it ever being taught
 //! about them. Only commands that are about the *set* of installed versions,
-//! which no single version can answer, belong to Hammer itself.
+//! which no single version can answer, belong to The launcher itself.
 //!
 //! The version line parser is shared with the compiler by including its source
-//! directly rather than by depending on the nail library, so Hammer stays a
+//! directly rather than by depending on the nail library, so The launcher stays a
 //! small self-contained binary that links none of the language.
 
-// Hammer only reads version lines. Writing them is the compiler's half of the same
+// The launcher only reads version lines. Writing them is the compiler's half of the same
 // module, so those functions are dead code here and live code there.
 #[allow(dead_code)]
 #[path = "../version_line.rs"]
@@ -49,13 +49,16 @@ use std::time::{Duration, SystemTime};
 /// bundle's pre-warmed cache is only valid at the path it was warmed at.
 const STORE: &str = "/opt/nail";
 
-/// The one URL Hammer knows, forever. Overridable for testing a release
+/// The one URL The launcher knows, forever. Overridable for testing a release
 /// before it is announced.
 const DEFAULT_ORIGIN: &str = "https://nail.alex-wilkinson.ca";
 
 /// The only target that exists today. It is in the URL anyway, so adding
 /// others later does not change the shape of a request already in the wild.
 const TARGET: &str = "x86_64-linux";
+
+/// Where the source lives, for `nail github`.
+const REPOSITORY: &str = "https://github.com/AlexTDWilkinson/Nail";
 
 /// Size cap on what is read looking for a version line. The version line is in the first
 /// two lines, and a file's body may not even be text.
@@ -80,7 +83,7 @@ fn main() -> ExitCode {
     match run(&arguments) {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("hammer: {}", message);
+            eprintln!("nail: {}", message);
             ExitCode::FAILURE
         }
     }
@@ -89,17 +92,7 @@ fn main() -> ExitCode {
 fn run(arguments: &[String]) -> Fallible<ExitCode> {
     let store = Store::new();
 
-    // Called as `nail` or `nailc` rather than as `hammer`: the same binary
-    // under three names, so muscle memory, `#!/usr/bin/env nail` shebangs and
-    // Makefiles that call `nailc` all keep working while only one thing is
-    // ever on PATH.
-    let called_as = Path::new(&arguments[0]).file_name().and_then(|name| name.to_str()).unwrap_or("hammer");
     let rest = &arguments[1..];
-    match called_as {
-        "nail" => return launch(&store, Binary::Ide, rest),
-        "nailc" => return launch(&store, Binary::Compiler, rest),
-        _ => {}
-    }
 
     let command = match rest.first() {
         Some(first) => first.as_str(),
@@ -107,7 +100,7 @@ fn run(arguments: &[String]) -> Fallible<ExitCode> {
     };
     let tail = &rest[1..];
 
-    // Hammer owns exactly the commands that are about the set of installed
+    // The launcher owns exactly the commands that are about the set of installed
     // versions. That list is frozen: growing it later would shadow a
     // subcommand some future nailc wants for itself.
     match command {
@@ -124,59 +117,108 @@ fn run(arguments: &[String]) -> Fallible<ExitCode> {
         "self-update" => command_self_update(&store),
         "config" => command_config(tail),
         "new" => command_new(&store, tail),
-        "run" => launch(&store, Binary::Compiler, &append(tail, "--run")),
-        "open" => launch(&store, Binary::Ide, tail),
+        "website" => command_website(&store, tail),
+        // Bare `docs` opens the website. `docs <name>` is a question about the
+        // standard library, and the answer depends on which version is
+        // running, so that one goes to the compiler.
+        "docs" if tail.is_empty() => command_website(&store, tail),
+        "docs" => launch(&store, Binary::Compiler, &[format!("--docs={}", tail[0])]),
+        "test" => command_test(&store, tail),
+        "github" | "source" => open_url(REPOSITORY),
+        "run" => launch(&store, Binary::Compiler, &append(&resolve_names(tail), "--run")),
+        "build" => launch(&store, Binary::Compiler, &append(&resolve_names(tail), "--build")),
+        "check" => launch(&store, Binary::Compiler, &append(&resolve_names(tail), "--check-only")),
+        "version" => launch(&store, Binary::Compiler, &["--version".to_string()]),
+        "open" => launch(&store, Binary::Ide, &resolve_names(tail)),
         "help" | "--help" | "-h" => {
             print!("{}", usage());
             Ok(ExitCode::SUCCESS)
         }
         "--version" => {
-            println!("hammer {}", env!("CARGO_PKG_VERSION"));
+            println!("nail {}", env!("CARGO_PKG_VERSION"));
             Ok(ExitCode::SUCCESS)
         }
         // The escape hatch, for forwarding something that collides with a
         // reserved word above.
         "--" => launch(&store, Binary::Compiler, tail),
-        // A bare file opens in the IDE. Anything else is a subcommand Hammer
-        // has never heard of, which is the normal case, not an error: it
-        // belongs to a release and is forwarded to one.
+        // A bare file opens in the editor, spelled with the extension or
+        // without it. The without-it case has to look at the disk, because
+        // that is the only thing separating a file name from a subcommand this
+        // launcher has never heard of.
         _ if looks_like_nail_file(command) => launch(&store, Binary::Ide, rest),
+        _ if with_extension(command).is_file() => launch(&store, Binary::Ide, &resolve_names(rest)),
+        // Anything else belongs to a release, and is forwarded to one.
         _ => launch(&store, Binary::Compiler, rest),
     }
 }
 
 fn usage() -> String {
     return concat!(
-        "hammer - opens Nail files with the version of Nail they were written for\n",
+        "nail - the Nail language. Opens each file with the version that wrote it\n",
         "\n",
-        "  hammer <file.nail>          open it in the IDE that wrote it\n",
-        "  hammer run <file.nail>      compile and run it\n",
-        "  hammer <anything else>      forwarded to the resolved version's nailc\n",
+        "  nail <file>              open a file in the editor\n",
+        "  nail new <file>          create a new file, ready to compile\n",
+        "  nail run <file>          compile a file and run it\n",
+        "  nail build <file>        compile a file, leaving the binary beside it\n",
+        "  nail check <file>        type check a file without building it\n",
+        "  nail test [pattern]      run every file in tests/, or those matching\n",
+        "  nail docs <name>         what the standard library says about a function\n",
+        "  nail <anything else>     forwarded to the compiler for that file\n",
+        "\n",
+        "The .nail extension is optional everywhere: `nail new hello` and\n",
+        "`nail new hello.nail` do the same thing.\n",
         "\n",
         "Managing installed versions:\n",
-        "  install <version|latest>    download a release\n",
-        "  remove <version>            delete one\n",
-        "  list [--available]          what is installed, how big, last used\n",
-        "  gc [--caches] [--yes]       reclaim disk, dry run unless --yes\n",
-        "  which <file.nail>           print the resolved version and why\n",
-        "  fetch <path>                install every version the tree pins\n",
-        "  update <path> [--to <v>]    migrate files that still compile\n",
-        "  export <version> <file>     save a release for an offline machine\n",
-        "  import <file>               install one from that file\n",
-        "  doctor                      check the install over\n",
-        "  self-update                 replace hammer itself\n",
-        "  config <key> [value]        warn, auto, auto-at, keep-days\n",
-        "  new <file.nail> [--latest]  start a file, stamped and ready to compile\n"
+        "  list [--available]       which versions are installed, how big, last used\n",
+        "  install <version>        download one, or `latest` for the newest\n",
+        "  remove <version>         delete one\n",
+        "  gc [--caches] [--yes]    reclaim disk, dry run unless --yes\n",
+        "  which <file>             print the version that will run, and why\n",
+        "  fetch <path>             install every version a tree of files pins\n",
+        "  update <path> [--to <v>] move files to a newer version, if they still compile\n",
+        "  export <version> <file>  save a version for a machine with no network\n",
+        "  import <file>            install one from that file\n",
+        "  doctor                   check the install over\n",
+        "  self-update              replace this launcher\n",
+        "  config <key> [value]     warn, auto, auto-at, keep-days\n",
+        "  website [stdlib]         open the Nail website, or its library listing\n",
+        "  github                   open the source\n"
     )
     .to_string();
 }
 
-/// nailc takes the file first and the mode after it, so a flag Hammer adds
-/// goes on the end.
+/// Fills in a missing .nail extension on arguments that name a file, leaving
+/// flags and anything that already exists on disk alone.
+fn resolve_names(arguments: &[String]) -> Vec<String> {
+    return arguments
+        .iter()
+        .map(|argument| {
+            if argument.starts_with('-') || Path::new(argument).exists() {
+                return argument.clone();
+            }
+            let guess = with_extension(argument);
+            if guess.exists() {
+                guess.display().to_string()
+            } else {
+                argument.clone()
+            }
+        })
+        .collect();
+}
+
 fn append(rest: &[String], last: &str) -> Vec<String> {
     let mut all = rest.to_vec();
     all.push(last.to_string());
     return all;
+}
+
+/// `hello` and `hello.nail` name the same file. The extension is how the
+/// desktop recognises the file, not something a person should have to type.
+fn with_extension(name: &str) -> PathBuf {
+    if name.ends_with(".nail") {
+        return PathBuf::from(name);
+    }
+    return PathBuf::from(format!("{}.nail", name));
 }
 
 fn looks_like_nail_file(argument: &str) -> bool {
@@ -361,14 +403,14 @@ fn track_latest(store: &Store) -> Fallible<Version> {
     match published_latest_within(store, Duration::from_secs(5)) {
         Ok(published) => {
             if !store.is_installed(&published) {
-                eprintln!("hammer: Nail {} is out, fetching it (this file tracks latest)", published);
+                eprintln!("nail: {} is out, fetching it (this file tracks latest)", published);
                 install(store, &published)?;
             }
             Ok(published)
         }
         Err(_) => match store.newest_installed() {
             Some(installed) => {
-                eprintln!("hammer: cannot reach {} to check for a newer Nail, using {}", store.origin, installed);
+                eprintln!("nail: cannot reach {} to check for a newer Nail, using {}", store.origin, installed);
                 Ok(installed)
             }
             None => fail(format!("this file tracks latest, nothing is installed, and {} cannot be reached", store.origin)),
@@ -383,7 +425,7 @@ fn newest_or_install(store: &Store) -> Fallible<Version> {
     if let Some(version) = store.newest_installed() {
         return Ok(version);
     }
-    eprintln!("hammer: no version of Nail installed yet, fetching the newest");
+    eprintln!("nail: no version installed yet, fetching the newest");
     let version = published_latest(store)?;
     install(store, &version)?;
     return Ok(version);
@@ -396,11 +438,11 @@ fn ensure_installed(store: &Store, version: &Version) -> Fallible<()> {
     if version.is_prerelease() {
         return fail(format!(
             "this file pins {}, which is a local build that was never published\n\
-             hammer cannot fetch it. Build it, or restamp the file with `hammer update`",
+             nail cannot fetch it. Build it, or restamp the file with `nail update`",
             version
         ));
     }
-    eprintln!("hammer: {} is not installed, fetching it", version);
+    eprintln!("nail: {} is not installed, fetching it", version);
     return install(store, version);
 }
 
@@ -415,21 +457,21 @@ fn launch(store: &Store, binary: Binary, arguments: &[String]) -> Fallible<ExitC
     if matches!(resolved.reason, Reason::Unpinned(_)) {
         // Silence here is how the no-rot promise quietly dies: the file will
         // compile with a different compiler next year and nobody was told.
-        eprintln!("hammer: {}", resolved.reason.describe(&resolved.version));
+        eprintln!("nail: {}", resolved.reason.describe(&resolved.version));
     }
 
     maybe_nag(store);
 
     let program = store.version_dir(&resolved.version).join("bin").join(binary.file_name());
     if !program.is_file() {
-        return fail(format!("{} is installed but has no {}. Run `hammer doctor`", resolved.version, binary.file_name()));
+        return fail(format!("{} is installed but has no {}. Run `nail doctor`", resolved.version, binary.file_name()));
     }
 
-    // Arguments meant for Hammer are not passed on.
+    // Arguments meant for The launcher are not passed on.
     let forwarded: Vec<&String> = arguments.iter().filter(|argument| !argument.starts_with("--nail-version=")).collect();
 
     // exec rather than spawn, so signals, the exit code and the terminal all
-    // belong to the compiler. Hammer is not in the picture once it has chosen.
+    // belong to the compiler. The launcher is not in the picture once it has chosen.
     let error = Command::new(&program).args(forwarded).exec();
     return fail(format!("cannot run {}: {}", program.display(), error));
 }
@@ -449,7 +491,7 @@ fn get(url: &str) -> Fallible<reqwest::blocking::Response> {
 fn get_within(url: &str, timeout: Duration) -> Fallible<reqwest::blocking::Response> {
     let client = reqwest::blocking::Client::builder()
         .timeout(timeout)
-        .user_agent(concat!("hammer/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("nail/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|error| format!("cannot start a download: {}", error))?;
     let response = client.get(url).send().map_err(|error| format!("cannot reach {}: {}", url, error))?;
@@ -594,7 +636,7 @@ fn require_tar() -> Fallible<()> {
     if found {
         Ok(())
     } else {
-        fail("`tar` is not installed, and hammer needs it to unpack releases")
+        fail("`tar` is not installed, and nail needs it to unpack releases")
     }
 }
 
@@ -684,7 +726,7 @@ fn days_since(time: Option<SystemTime>) -> Option<u64> {
 // Config
 // ---------------------------------------------------------------------------
 
-/// What `gc` does on its own, if anything. Written by `hammer config` so
+/// What `gc` does on its own, if anything. Written by `nail config` so
 /// nobody hand-edits it, and kept under the user's config directory so that
 /// wiping the store does not lose the preference.
 struct Config {
@@ -714,7 +756,7 @@ fn config_path() -> Option<PathBuf> {
         Some(value) => PathBuf::from(value),
         None => PathBuf::from(std::env::var_os("HOME")?).join(".config"),
     };
-    return Some(base.join("nail/hammer.toml"));
+    return Some(base.join("nail/config.toml"));
 }
 
 fn load_config() -> Config {
@@ -769,7 +811,7 @@ fn command_config(arguments: &[String]) -> Fallible<ExitCode> {
 
     let value = match arguments.get(1) {
         Some(value) => value.clone(),
-        None => return fail(format!("`hammer config {}` needs a value", key)),
+        None => return fail(format!("`nail config {}` needs a value", key)),
     };
 
     // Validate before writing, so a typo cannot silently turn a setting off.
@@ -806,7 +848,7 @@ fn command_config(arguments: &[String]) -> Fallible<ExitCode> {
     settings.insert("keep-days".to_string(), config.keep_days.to_string());
     settings.insert(key.to_string(), value.clone());
 
-    let mut text = String::from("# Written by `hammer config`.\n");
+    let mut text = String::from("# Written by `nail config`.\n");
     for (name, setting) in &settings {
         let _ = writeln!(text, "{} = \"{}\"", name, setting);
     }
@@ -830,7 +872,7 @@ fn command_install(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
 }
 
 fn command_remove(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
-    let wanted = arguments.first().ok_or("usage: hammer remove <version>")?;
+    let wanted = arguments.first().ok_or("usage: nail remove <version>")?;
     let version: Version = wanted.parse().map_err(|_| format!("`{}` is not a version like 0.3.1", wanted))?;
     if !store.is_installed(&version) {
         return fail(format!("{} is not installed", version));
@@ -845,13 +887,13 @@ fn command_list(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
     if arguments.iter().any(|argument| argument == "--available") {
         let latest = published_latest(store)?;
         println!("newest published: {}", latest);
-        println!("(hammer install <version> fetches any release, published ones are not listed)");
+        println!("(nail install <version> fetches any release, published ones are not listed)");
         return Ok(ExitCode::SUCCESS);
     }
 
     let installed = store.installed();
     if installed.is_empty() {
-        println!("no versions installed. `hammer install latest` fetches one");
+        println!("no versions installed. `nail install latest` fetches one");
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -873,7 +915,8 @@ fn command_list(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
 }
 
 fn command_which(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
-    let path = entry_file(arguments).ok_or("usage: hammer which <file.nail>")?;
+    let named = arguments.iter().find(|argument| !argument.starts_with("--")).ok_or("usage: nail which <file>")?;
+    let path = with_extension(named);
     let pin = read_pin(&path)?;
     let installed = store.installed();
 
@@ -923,7 +966,7 @@ fn command_fetch(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
     return Ok(ExitCode::SUCCESS);
 }
 
-/// Migration. Hammer finds the files and makes sure the target compiler is
+/// Migration. The launcher finds the files and makes sure the target compiler is
 /// present, then that compiler decides file by file whether the move is safe.
 /// A file that no longer compiles keeps its old version line and keeps working,
 /// because migration is a choice and never a requirement.
@@ -991,10 +1034,10 @@ fn command_update(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
 
 /// Starts a file that already compiles. The compiler requires a version line,
 /// so a file created by hand outside the IDE would otherwise be refused before
-/// it ever ran. Hammer is the one thing that knows which versions exist, so
+/// it ever ran. The launcher is the one thing that knows which versions exist, so
 /// writing that line is its job.
 fn command_new(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
-    let path = arguments.first().map(PathBuf::from).ok_or("usage: hammer new <file.nail>")?;
+    let path = with_extension(arguments.first().ok_or("usage: nail new <file>")?);
     if path.exists() {
         return fail(format!("{} already exists", path.display()));
     }
@@ -1014,8 +1057,109 @@ fn command_new(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
     return Ok(ExitCode::SUCCESS);
 }
 
+/// Opens the website. The whole reference lives there, including the standard
+/// library listing, which the compiler prints rather than anyone maintaining
+/// it by hand.
+fn command_website(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
+    let url = match arguments.first().map(|argument| argument.as_str()) {
+        Some("library") | Some("stdlib") => format!("{}/stdlib", store.origin),
+        Some("downloads") => format!("{}/downloads", store.origin),
+        _ => store.origin.clone(),
+    };
+    return open_url(&url);
+}
+
+/// Hands a URL to the desktop, and prints it either way. Over ssh or on a
+/// server there is no browser to hand it to, and xdg-open can report success
+/// while doing nothing at all, so printing is what makes this never a mystery.
+fn open_url(url: &str) -> Fallible<ExitCode> {
+    println!("{}", url);
+    let _ = Command::new("xdg-open").arg(url).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    return Ok(ExitCode::SUCCESS);
+}
+
+/// Runs every Nail file under `tests/`. A test is an ordinary program: assert
+/// and the test_* functions panic, so a non-zero exit is a failure and there is
+/// no convention to learn beyond where the file lives.
+///
+/// Output is quiet for a passing test and complete for a failing one, because
+/// the output of eighteen passing programs is what buries the two that failed.
+fn command_test(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
+    let pattern = arguments.iter().find(|argument| !argument.starts_with("--"));
+    let root = PathBuf::from("tests");
+    if !root.is_dir() {
+        return fail("no tests/ directory here. A test is any Nail file in it");
+    }
+
+    let files: Vec<PathBuf> = nail_files(&root)
+        .into_iter()
+        .filter(|file| match pattern {
+            Some(pattern) => file.to_string_lossy().contains(pattern.as_str()),
+            None => true,
+        })
+        .collect();
+
+    if files.is_empty() {
+        match pattern {
+            Some(pattern) => return fail(format!("no test in tests/ matches '{}'", pattern)),
+            None => return fail("tests/ has no Nail files in it"),
+        }
+    }
+
+    let resolved = resolve(store, &[files[0].to_string_lossy().to_string()])?;
+    let nailc = store.version_dir(&resolved.version).join("bin/nailc");
+
+    println!("running {} test(s) with Nail {}", files.len(), resolved.version);
+    let mut failed = Vec::new();
+    for file in &files {
+        let output = Command::new(&nailc).arg(file).arg("--run").output();
+        let name = file.strip_prefix(&root).unwrap_or(file).display().to_string();
+        match output {
+            Ok(output) if output.status.success() => println!("  ok    {}", name),
+            Ok(output) => {
+                println!("  FAIL  {}", name);
+                failed.push((name, String::from_utf8_lossy(&output.stderr).to_string()));
+            }
+            Err(error) => {
+                println!("  FAIL  {}", name);
+                failed.push((name, error.to_string()));
+            }
+        }
+    }
+
+    if failed.is_empty() {
+        println!("\n{} passed", files.len());
+        return Ok(ExitCode::SUCCESS);
+    }
+    for (name, message) in &failed {
+        println!("\n--- {} ---", name);
+        println!("{}", failure_reason(message));
+    }
+    println!("\n{} passed, {} failed", files.len() - failed.len(), failed.len());
+    return Ok(ExitCode::FAILURE);
+}
+
+/// The part of a failed run worth reading. A test fails either because it did
+/// not compile or because it panicked, and in both cases everything cargo said
+/// about crates on the way there is noise.
+fn failure_reason(output: &str) -> String {
+    let lines: Vec<&str> = output.lines().collect();
+
+    if let Some(panic_at) = lines.iter().position(|line| line.contains("panicked at")) {
+        // The message sits under the location, and the backtrace note under
+        // that is advice nobody asked for.
+        return lines[panic_at..].iter().filter(|line| !line.starts_with("note: run with")).take(4).cloned().collect::<Vec<_>>().join("\n");
+    }
+
+    if let Some(first_error) = lines.iter().position(|line| line.starts_with("error")) {
+        return lines[first_error..].iter().take(10).cloned().collect::<Vec<_>>().join("\n");
+    }
+
+    return lines.iter().rev().take(5).cloned().collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+}
+
 fn command_export(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
-    let wanted = arguments.first().ok_or("usage: hammer export <version> <file.tar>")?;
+    let wanted = arguments.first().ok_or("usage: nail export <version> <file.tar>")?;
     let version: Version = wanted.parse().map_err(|_| format!("`{}` is not a version like 0.3.1", wanted))?;
     if !store.is_installed(&version) {
         return fail(format!("{} is not installed", version));
@@ -1039,12 +1183,12 @@ fn command_export(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
 }
 
 fn command_import(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
-    let source = arguments.first().map(PathBuf::from).ok_or("usage: hammer import <file.tar>")?;
+    let source = arguments.first().map(PathBuf::from).ok_or("usage: nail import <file.tar>")?;
     require_tar()?;
     let versions = store.versions_dir();
     fs::create_dir_all(&versions).map_err(|error| format!("cannot create {}: {}", versions.display(), error))?;
     unpack(&source, &versions)?;
-    println!("imported. `hammer list` to see what arrived");
+    println!("imported. `nail list` to see what arrived");
     return Ok(ExitCode::SUCCESS);
 }
 
@@ -1092,10 +1236,10 @@ fn command_doctor(store: &Store) -> Fallible<ExitCode> {
 }
 
 fn command_self_update(store: &Store) -> Fallible<ExitCode> {
-    let url = format!("{}/hammer/{}", store.origin, TARGET);
+    let url = format!("{}/nail/{}", store.origin, TARGET);
     let current = std::env::current_exe().map_err(|error| format!("cannot find my own path: {}", error))?;
 
-    println!("downloading a new hammer");
+    println!("downloading a new nail");
     let staging = current.with_extension("incoming");
     let bytes = download(&url, &staging)?;
     let _guard = FileCleanup(staging.clone());
@@ -1106,14 +1250,14 @@ fn command_self_update(store: &Store) -> Fallible<ExitCode> {
     fs::rename(&staging, &current).map_err(|error| {
         format!(
             "cannot replace {}: {}\n\
-             hammer lives in the store so it can update itself without root. If it was \
+             nail lives in the store so it can update itself without root. If it was \
              installed somewhere else, move it back or re-run the installer.",
             current.display(),
             error
         )
     })?;
     std::mem::forget(_guard);
-    println!("hammer updated");
+    println!("nail updated");
     return Ok(ExitCode::SUCCESS);
 }
 
@@ -1236,11 +1380,11 @@ fn maybe_nag(store: &Store) {
     }
 
     if config.auto != Auto::Off && reclaimable >= config.auto_at {
-        // Detached, because Hammer is about to replace itself with the
+        // Detached, because The launcher is about to replace itself with the
         // compiler and cannot clean up afterwards. Nothing here touches the
         // version being launched or the newest one.
-        let _ = Command::new(std::env::current_exe().unwrap_or_else(|_| PathBuf::from("hammer"))).arg("gc").arg("--yes").stdout(Stdio::null()).stderr(Stdio::null()).spawn();
-        eprintln!("hammer: reclaiming {} in the background (hammer config auto off)", human(reclaimable));
+        let _ = Command::new(std::env::current_exe().unwrap_or_else(|_| PathBuf::from("nail"))).arg("gc").arg("--yes").stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+        eprintln!("nail: reclaiming {} in the background (nail config auto off)", human(reclaimable));
         return;
     }
 
@@ -1248,7 +1392,7 @@ fn maybe_nag(store: &Store) {
         let caches: u64 = plan.trim.iter().map(|(_, size)| size).sum();
         let versions: u64 = plan.remove.iter().map(|(_, size)| size).sum();
         eprintln!("nail: {} reclaimable ({} stale build caches, {} unused versions)", human(reclaimable), human(caches), human(versions));
-        eprintln!("      run `hammer gc`");
+        eprintln!("      run `nail gc`");
     }
 }
 
