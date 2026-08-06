@@ -123,10 +123,11 @@ fn run(arguments: &[String]) -> Fallible<ExitCode> {
         "config" => command_config(tail),
         "new" => command_new(&store, tail),
         "website" => command_website(&store, tail),
-        // Bare `docs` opens the website. `docs <name>` is a question about the
-        // standard library, and the answer depends on which version is
-        // running, so that one goes to the compiler.
-        "docs" if tail.is_empty() => command_website(&store, tail),
+        // Both forms are questions about the standard library, and the answer
+        // depends on which version is running, so both go to that compiler.
+        // Bare `docs` is the whole library, which is the honest answer to
+        // "what can this do".
+        "docs" if tail.is_empty() => launch(&store, Binary::Compiler, &["--docs=".to_string()]),
         "docs" => launch(&store, Binary::Compiler, &[format!("--docs={}", tail[0])]),
         "test" => command_test(&store, tail),
         "github" | "source" => open_url(REPOSITORY),
@@ -169,7 +170,8 @@ fn usage() -> String {
         "  nail build <file>           compile a file, leaving the binary beside it\n",
         "  nail check <file>           type check a file without building it\n",
         "  nail test [pattern]         run every file in tests/, or those matching\n",
-        "  nail docs <name>            what the standard library says about a function\n",
+        "  nail docs                   every function in the standard library\n",
+        "  nail docs <name>            what the library says about one of them\n",
         "\n",
         "The .nail extension is optional everywhere. `nail new hello` and\n",
         "`nail new hello.nail` do the same thing.\n",

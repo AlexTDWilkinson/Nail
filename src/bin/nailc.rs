@@ -61,6 +61,26 @@ fn main() {
         let functions = nail::parser::std_lib::stdlib::functions();
         let needle = query.to_lowercase();
 
+        // No name asked about means the whole library, grouped the way the
+        // namespaces group it. It is long on purpose: it is the answer to
+        // "what can this thing do", and it pipes into grep and less.
+        if query.is_empty() {
+            let mut current_module = "";
+            for function in &functions {
+                if function.module != current_module {
+                    if !current_module.is_empty() {
+                        println!();
+                    }
+                    println!("{}", function.module);
+                    current_module = &function.module;
+                }
+                println!("  {}", function.signature);
+            }
+            let modules = nail::parser::std_lib::stdlib::modules();
+            println!("\n{} functions in {} libraries. `nail docs <name>` for one of them.", functions.len(), modules.len());
+            return;
+        }
+
         if let Some(exact) = functions.iter().find(|function| function.name == query) {
             println!("{}", exact.signature);
             println!("  {}", exact.description);
