@@ -19,7 +19,7 @@ use std::sync::{
     mpsc::{Receiver, Sender},
     Arc, Mutex,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use std::process::Command;
 
@@ -36,7 +36,7 @@ use std::io::Write;
 use std::sync::MutexGuard;
 use std::thread;
 
-use crate::colorizer::{colorize_code, ColorScheme};
+use crate::colorizer::ColorizeCache;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
@@ -158,10 +158,11 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
         eprintln!("DRAW THREAD PANICKED: {:?}", panic_info);
     }));
 
-    // Cache of the last full-file colorization, keyed by (content hash, theme).
-    // An unchanged file costs zero colorize work per frame; only the visible
-    // window is cloned out of the cache for cursor/selection overlays.
-    let mut colorize_cache: Option<(u64, ColorScheme, Vec<Line<'static>>)> = None;
+    // The colored copy of the file, kept between frames. An unchanged file
+    // costs one pass of string comparisons and an edited one costs the lines
+    // it edited; only the visible window is cloned out of it for the
+    // cursor and selection overlays.
+    let mut colorize_cache = ColorizeCache::new();
 
     // Buffer fingerprint and function declaration lines for timing
     // annotations, keyed by content hash. Rebuilt only when the buffer
@@ -343,23 +344,18 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             let visible_lines = text_area.height as usize;
             let first_column = editor.get_current_tab().h_scroll as usize;
 
-            // Colorize the entire content to properly handle multi-line constructs,
-            // reusing the cached result when neither content nor theme changed.
+            // Colorize the content, which is done for the whole file because a
+            // string can run across several lines, but only for the lines that
+            // changed since the last frame. A keystroke that leaves the rest of
+            // the file alone costs one line of coloring, and the key thread is
+            // waiting on this lock while it happens.
             let current_tab = editor.get_current_tab();
-            let mut hasher = DefaultHasher::new();
-            current_tab.content.hash(&mut hasher);
-            let content_hash = hasher.finish();
-            let cache_is_valid = colorize_cache.as_ref().map_or(false, |(cached_hash, cached_theme, _)| *cached_hash == content_hash && *cached_theme == *editor.theme);
-            if !cache_is_valid {
-                let all_content_lines: Vec<Line> =
-                    current_tab.content.iter().map(|line| Line::from(vec![Span::raw(line.clone())])).collect();
-                let colorized = colorize_code(all_content_lines, &editor.theme);
-                colorize_cache = Some((content_hash, *editor.theme, colorized));
-            }
-            let all_colorized = &colorize_cache.as_ref().expect("colorize cache populated above").2;
+            colorize_cache.colorize(&current_tab.content, &editor.theme);
 
             // Then extract the visible portion and apply cursor and selection highlighting
-            let mut visible_content: Vec<Line> = all_colorized.iter().skip(current_tab.scroll_position as usize).take(visible_lines).cloned().collect();
+            let first_line = current_tab.scroll_position as usize;
+            let mut visible_content: Vec<Line> =
+                (first_line..first_line + visible_lines).filter_map(|index| colorize_cache.line(index)).cloned().collect();
             
             // Apply selection highlighting first, then cursor highlighting
             for (visible_line_idx, line) in visible_content.iter_mut().enumerate() {
@@ -631,6 +627,9 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             // End-of-line annotations: function timings from the last run,
             // then errors, and an error always wins its line
             if editor.profile_data.is_some() || !editor.profile_dumps.is_empty() {
+                let mut hasher = DefaultHasher::new();
+                editor.get_current_tab().content.hash(&mut hasher);
+                let content_hash = hasher.finish();
                 let cache_outdated = profile_line_cache.as_ref().map_or(true, |(cached_hash, _, _)| *cached_hash != content_hash);
                 if cache_outdated {
                     let current_tab = editor.get_current_tab();
@@ -1811,15 +1810,30 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
     f.render_widget(dialog_paragraph, dialog_area);
 }
 
+/// How long a completion list waits before it is built. Building one reads the
+/// standard library and the symbols in scope, and doing that between one
+/// keystroke and the next is what a fast typist felt as lag. The clock starts
+/// at the first key that asks for a list and is not put back by the keys after
+/// it, so a burst of typing costs one list rather than one per letter, and the
+/// list is never more than this far behind the word it belongs to.
+const COMPLETION_DELAY: Duration = Duration::from_millis(120);
+
+/// How long to wait for a key when nothing is owed. Short enough that shutdown
+/// is prompt, long enough that an idle editor is asleep.
+const IDLE_POLL: Duration = Duration::from_millis(100);
+
 pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>, tx: Sender<EditorMessage>, tx_build: Sender<EditorMessage>) {
     log::info!("Key thread started");
-    
+
     // Set up panic handler for this thread
     std::panic::set_hook(Box::new(|panic_info| {
         log::error!("KEY THREAD PANICKED: {:?}", panic_info);
         eprintln!("KEY THREAD PANICKED: {:?}", panic_info);
     }));
-    
+
+    // When the oldest completion list still owed was asked for.
+    let mut asked_for_a_list: Option<Instant> = None;
+
     loop {
         // Check for messages
         match rx.try_recv() {
@@ -1830,13 +1844,30 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
             _ => {}
         }
 
-        // Check for key input
-        match event::poll(Duration::from_millis(100)) {
+        // Build the list that was asked for, once the typing has had its
+        // moment. Anything that reads the list sooner than this builds it
+        // itself, so waiting can only ever cost a redraw.
+        if let Some(asked) = asked_for_a_list {
+            if asked.elapsed() >= COMPLETION_DELAY {
+                if let Some(mut editor) = try_lock_with_timeout(&editor_arc, 100) {
+                    editor.flush_completion_request();
+                    asked_for_a_list = None;
+                }
+            }
+        }
+
+        // Check for key input. A list that is owed shortens the wait, so it
+        // arrives on time rather than at the end of the next idle poll.
+        let wait = match asked_for_a_list {
+            Some(asked) => COMPLETION_DELAY.saturating_sub(asked.elapsed()).max(Duration::from_millis(1)),
+            None => IDLE_POLL,
+        };
+        match event::poll(wait) {
             Ok(true) => {
                 log::debug!("Event available from poll");
                 match event::read() {
                     Ok(Event::Key(key)) => {
-                        log::warn!("==> KEY EVENT: {:?}", key);
+                        log::debug!("==> KEY EVENT: {:?}", key);
                         // Use timeout-based lock to prevent deadlocks
                         let mut editor = match try_lock_with_timeout(&editor_arc, 500) {
                             Some(editor) => editor,
@@ -1947,7 +1978,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     && !key.modifiers.contains(KeyModifiers::CONTROL.union(KeyModifiers::ALT)) => {}
                             Resolution::Unbound => match key.code {
                                 KeyCode::Char(c) => {
-                                    log::warn!("Received KeyCode::Char('{}'), dialog_mode: {:?}", c, editor.dialog_mode);
+                                    log::debug!("Received KeyCode::Char('{}'), dialog_mode: {:?}", c, editor.dialog_mode);
                                     // Check if we're in a dialog mode
                                     match editor.dialog_mode {
                                         crate::DialogMode::GoToLine => {
@@ -1967,18 +1998,22 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                         },
                                         crate::DialogMode::Settings | crate::DialogMode::ConfirmQuit | crate::DialogMode::CommandPalette | crate::DialogMode::SymbolPicker => {},
                                         crate::DialogMode::None => {
-                                            log::warn!("Calling insert_char('{}') in normal mode", c);
+                                            log::debug!("Calling insert_char('{}') in normal mode", c);
                                             editor.insert_char(c);
-                                            log::warn!("After insert_char, current line: '{}'", editor.get_current_tab().content[editor.get_current_tab().cursor_y]);
                                             // Only update completions for single character input
                                             // to avoid overwhelming the system during paste operations
                                             if !key.modifiers.contains(KeyModifiers::SHIFT) {
-                                                editor.update_completions();
+                                                editor.request_completions();
                                             }
                                         }
                                     }
                                 },
                                 KeyCode::Tab => {
+                                    // Whether this key takes a completion or
+                                    // indents depends on there being a list,
+                                    // so any list still owed is built now
+                                    // rather than waited for.
+                                    editor.flush_completion_request();
                                     if editor.dialog_mode == crate::DialogMode::Replace {
                                         // In replace mode, Tab switches between find and replace fields
                                         editor.switch_replace_field();
@@ -2015,6 +2050,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     }
                                 },
                                 KeyCode::BackTab => {
+                                    editor.flush_completion_request();
                                     // An open completion list owns this key
                                     // exactly as it owns tab, whether or not
                                     // the documentation is showing: shift asks
@@ -2057,13 +2093,13 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                         crate::DialogMode::Settings | crate::DialogMode::ConfirmQuit | crate::DialogMode::CommandPalette | crate::DialogMode::SymbolPicker => {},
                                         crate::DialogMode::None => {
                                             editor.delete_char();
-                                            editor.refresh_open_completions();
+                                            editor.request_completion_refresh();
                                         }
                                     }
                                 },
                                 KeyCode::Delete => {
                                     editor.delete_forward();
-                                    editor.refresh_open_completions();
+                                    editor.request_completion_refresh();
                                 },
                                 KeyCode::Enter => {
                                     match editor.dialog_mode {
@@ -2103,6 +2139,11 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                         },
                                         crate::DialogMode::Settings | crate::DialogMode::ConfirmQuit | crate::DialogMode::CommandPalette | crate::DialogMode::SymbolPicker => {},
                                         crate::DialogMode::None => {
+                                            // Enter either takes what the list
+                                            // is offering or breaks the line,
+                                            // so a list still owed decides
+                                            // which, and is built first.
+                                            editor.flush_completion_request();
                                             if editor.show_completions {
                                                 editor.accept_completion();
                                             } else {
@@ -2112,6 +2153,10 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     }
                                 },
                                 KeyCode::Esc => {
+                                    // A list that was asked for and never
+                                    // shown is one of the things this key
+                                    // dismisses.
+                                    editor.cancel_completion_request();
                                     if editor.dialog_mode != crate::DialogMode::None {
                                         // Close any open dialog
                                         editor.close_dialog();
@@ -2157,6 +2202,16 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                         if editor.edit_marker() != before_the_key && !editor.search_results.is_empty() && editor.dialog_mode == crate::DialogMode::None {
                             editor.clear_search_highlight();
                         }
+
+                        // Start the clock at the first key that asks for a
+                        // list, and leave it running while the rest arrive:
+                        // the list is then built once, within
+                        // `COMPLETION_DELAY` of being asked for, however fast
+                        // the typing is.
+                        asked_for_a_list = match editor.completion_request.is_some() {
+                            true => asked_for_a_list.or_else(|| Some(Instant::now())),
+                            false => None,
+                        };
                     }
                     Ok(Event::Paste(data)) => {
                         // Handle paste event - insert text as single operation
@@ -2419,6 +2474,7 @@ fn apply_action(editor: &mut Editor, action: Action) {
         Action::DeleteLine => editor.delete_line(),
         Action::JumpToMatchingBracket => editor.jump_to_matching_bracket(),
         Action::ToggleCompletionDetail => {
+            editor.flush_completion_request();
             if editor.show_completions && !editor.completions.is_empty() {
                 editor.show_detail_view = !editor.show_detail_view;
             }
@@ -2439,8 +2495,11 @@ fn apply_action(editor: &mut Editor, action: Action) {
             }
         }
         // An open completion list owns the up and down keys, because picking
-        // from it is what the user is in the middle of doing.
+        // from it is what the user is in the middle of doing. A list that was
+        // asked for a moment ago counts as open, so these keys build it rather
+        // than moving the cursor out from under it.
         Action::CursorUp { extend } => {
+            editor.flush_completion_request();
             if editor.show_completions {
                 editor.previous_completion();
             } else {
@@ -2448,6 +2507,7 @@ fn apply_action(editor: &mut Editor, action: Action) {
             }
         }
         Action::CursorDown { extend } => {
+            editor.flush_completion_request();
             if editor.show_completions {
                 editor.next_completion();
             } else {
@@ -2473,7 +2533,7 @@ fn apply_action(editor: &mut Editor, action: Action) {
         Action::KillToLineEnd => editor.kill_to_line_end(),
         Action::DeleteForward => {
             editor.delete_forward();
-            editor.refresh_open_completions();
+            editor.request_completion_refresh();
         }
         Action::OpenSettings => editor.open_settings(),
         // Editing a word at a time is only ever meant for the buffer, so a
@@ -2481,13 +2541,13 @@ fn apply_action(editor: &mut Editor, action: Action) {
         Action::DeleteWordLeft => {
             if editor.dialog_mode == crate::DialogMode::None {
                 editor.delete_word_left();
-                editor.refresh_open_completions();
+                editor.request_completion_refresh();
             }
         }
         Action::DeleteWordRight => {
             if editor.dialog_mode == crate::DialogMode::None {
                 editor.delete_word_right();
-                editor.refresh_open_completions();
+                editor.request_completion_refresh();
             }
         }
         Action::NextError => editor.go_to_error(true),
@@ -3069,10 +3129,13 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         // Run the lexer on the content
         let tokens = lexer::lexer(&content);
 
+        // Copied before the lock is taken rather than under it: a long file is
+        // ten thousand tokens, and the key thread is queued behind this.
+        let tokens_for_the_tab = tokens.clone();
         {
             let mut editor = lock(&editor_arc);
             let current_tab = editor.get_current_tab_mut();
-            current_tab.tokens = tokens.clone();
+            current_tab.tokens = tokens_for_the_tab;
         }
 
         // Check for error tokens (collect_lexer_errors also finds errors nested

@@ -356,6 +356,9 @@ struct Editor {
     show_completions: bool,
     show_detail_view: bool,  // Show detailed documentation for selected completion
     completion_prefix: String,
+    /// A list the keyboard has asked for and that has not been built yet.
+    /// See `request_completions`.
+    completion_request: Option<CompletionRequest>,
     // Dialog system
     dialog_mode: DialogMode,
     goto_line_input: String,
@@ -580,6 +583,7 @@ impl Editor {
             completions: Vec::new(),
             completion_index: 0,
             show_completions: false,
+            completion_request: None,
             show_detail_view: false,
             completion_prefix: String::new(),
             dialog_mode: DialogMode::None,
@@ -3941,6 +3945,16 @@ enum CompletionContext {
     FunctionCall(String),       // Inside function call, show parameter hints
 }
 
+/// What a key asked the completion list to do, held until the typing pauses.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CompletionRequest {
+    /// A character was typed, so a list may be owed.
+    Open,
+    /// Something was deleted, which narrows a list that is open and never
+    /// opens one.
+    Narrow,
+}
+
 // Anything unreadable or unrecognized falls back to dark, so a hand-edited
 // config can never leave the editor without colors
 fn stored_theme() -> &'static ColorScheme {
@@ -4007,8 +4021,11 @@ impl Editor {
         // Check if we're inside a function call by looking for opening parenthesis
         let mut paren_depth = 0;
         let mut in_function_call = false;
-        let mut function_name = String::new();
-        
+        // Borrowed rather than copied: this walks every token in the file
+        // ahead of the cursor, and copying each name out cost a fresh string
+        // per identifier per keystroke.
+        let mut function_name: &str = "";
+
         for token in &current_tab.tokens {
             // Check if token is before cursor
             if token.code_span.end_line < cursor_line || 
@@ -4016,7 +4033,7 @@ impl Editor {
                 match &token.token_type {
                     lexer::TokenType::Identifier(name) => {
                         // Store potential function name
-                        function_name = name.clone();
+                        function_name = name;
                     }
                     lexer::TokenType::ParenthesisOpen => {
                         paren_depth += 1;
@@ -4026,7 +4043,7 @@ impl Editor {
                         paren_depth -= 1;
                         if paren_depth == 0 {
                             in_function_call = false;
-                            function_name.clear();
+                            function_name = "";
                         }
                     }
                     _ => {}
@@ -4038,7 +4055,7 @@ impl Editor {
         }
         
         if in_function_call && !function_name.is_empty() {
-            return CompletionContext::FunctionCall(function_name);
+            return CompletionContext::FunctionCall(function_name.to_string());
         }
         
         // Check if we're typing an identifier
@@ -4102,36 +4119,30 @@ impl Editor {
                     return;
                 }
                 
-                // Get stdlib functions
-                use crate::stdlib_registry::STDLIB_FUNCTIONS;
+                // Get stdlib functions. The registry is asked for the names a
+                // prefix reaches rather than read from end to end, so what
+                // this costs is the length of the answer.
                 let mut completions = Vec::new();
-                
-                for (name, func) in STDLIB_FUNCTIONS.iter() {
-                    // Use ASCII case-insensitive comparison for better performance
-                    if name.len() >= prefix.len() && name[..prefix.len()].eq_ignore_ascii_case(&prefix) {
-                        // Build function signature
-                        let params: Vec<String> = func.parameters.iter()
-                            .map(|p| format!("{}:{}", p.name, p.param_type))
-                            .collect();
-                        
-                        // For debugging - log the function info
-                        log::debug!("Function {}: {} params, return type: {:?}", 
-                            name, func.parameters.len(), func.return_type);
-                        
-                        let signature = if params.is_empty() {
-                            format!("{}():{}", name, func.return_type)
-                        } else {
-                            format!("{}({}):{}", name, params.join(", "), func.return_type)
-                        };
-                        
-                        completions.push(CompletionItem {
-                            label: name.to_string(),
-                            detail: signature,
-                            description: func.description.to_string(),
-                            example: func.example.to_string(),
-                            kind: CompletionKind::Function,
-                        });
-                    }
+
+                for (name, func) in crate::stdlib_registry::functions_starting_with(&prefix) {
+                    // Build function signature
+                    let params: Vec<String> = func.parameters.iter()
+                        .map(|p| format!("{}:{}", p.name, p.param_type))
+                        .collect();
+
+                    let signature = if params.is_empty() {
+                        format!("{}():{}", name, func.return_type)
+                    } else {
+                        format!("{}({}):{}", name, params.join(", "), func.return_type)
+                    };
+
+                    completions.push(CompletionItem {
+                        label: name.to_string(),
+                        detail: signature,
+                        description: func.description.to_string(),
+                        example: func.example.to_string(),
+                        kind: CompletionKind::Function,
+                    });
                 }
                 
                 // Add symbols from scope (variables, structs, enums)
@@ -4200,6 +4211,36 @@ impl Editor {
         }
     }
 
+    /// A character was typed. Building the list reads the standard library
+    /// and the symbols in scope, which is work the person typing should not
+    /// wait on, so it is noted here and done once the keys stop coming. The
+    /// key loop carries the clock: see `COMPLETION_DELAY`.
+    fn request_completions(&mut self) {
+        self.completion_request = Some(CompletionRequest::Open);
+    }
+
+    /// The same, for a deletion, which only ever narrows a list that is open.
+    fn request_completion_refresh(&mut self) {
+        self.completion_request = Some(CompletionRequest::Narrow);
+    }
+
+    /// Builds whatever list was asked for, if one was. Anything that reads the
+    /// list rather than typing into it calls this first, so that the keys that
+    /// pick from it are never a moment behind the word they belong to.
+    fn flush_completion_request(&mut self) {
+        match self.completion_request.take() {
+            Some(CompletionRequest::Open) => self.update_completions(),
+            Some(CompletionRequest::Narrow) => self.refresh_open_completions(),
+            None => {}
+        }
+    }
+
+    /// Drops a list that was asked for and never shown, which is what Escape
+    /// means when the request is still in flight.
+    fn cancel_completion_request(&mut self) {
+        self.completion_request = None;
+    }
+
     fn accept_completion(&mut self) {
         self.accept_completion_with(ExampleForm::Example);
     }
@@ -4211,6 +4252,10 @@ impl Editor {
     }
 
     fn accept_completion_with(&mut self, form: ExampleForm) {
+        // What goes in is whatever the list is offering, so the list has to be
+        // the one for the word actually typed rather than the one from a
+        // keystroke ago.
+        self.flush_completion_request();
         if !self.show_completions || self.completions.is_empty() {
             return;
         }
@@ -4283,12 +4328,14 @@ impl Editor {
     }
     
     fn next_completion(&mut self) {
+        self.flush_completion_request();
         if !self.completions.is_empty() {
             self.completion_index = (self.completion_index + 1) % self.completions.len();
         }
     }
-    
+
     fn previous_completion(&mut self) {
+        self.flush_completion_request();
         if !self.completions.is_empty() {
             self.completion_index = if self.completion_index == 0 {
                 self.completions.len() - 1
@@ -6763,6 +6810,61 @@ mod tests {
 
         editor.get_current_tab_mut().cursor_x = 5;
         assert_eq!(editor.completion_prefix_at_cursor(), "print");
+    }
+
+    /// Typing asks for a list rather than building one. Building it reads the
+    /// standard library, and a burst of typing asks many times over, so the
+    /// asking has to be the cheap half.
+    #[test]
+    fn typing_asks_for_a_list_and_does_not_build_one() {
+        let mut editor = editor_with(&[""]);
+        for character in "array_su".chars() {
+            editor.insert_char(character);
+            editor.request_completions();
+        }
+        assert!(!editor.show_completions);
+        assert!(editor.completions.is_empty());
+
+        editor.flush_completion_request();
+        assert!(editor.show_completions);
+        assert!(editor.completions.iter().any(|completion| completion.label == "array_sum"));
+        // One list per burst: the request is spent by building it.
+        assert!(editor.completion_request.is_none());
+    }
+
+    /// The keys that pick from the list build it first, so a list asked for a
+    /// moment ago can never hand back the word from before it.
+    #[test]
+    fn taking_a_completion_builds_the_list_that_was_still_owed() {
+        let mut editor = editor_with(&[""]);
+        for character in "array_su".chars() {
+            editor.insert_char(character);
+            editor.request_completions();
+        }
+        assert!(!editor.show_completions);
+
+        editor.accept_completion();
+        assert_eq!(editor.get_current_tab().content, vec!["array_sum(numbers)"]);
+    }
+
+    /// A deletion that was never built into a list is still a deletion: it
+    /// narrows a list that is open, and opens nothing when none is.
+    #[test]
+    fn a_pending_deletion_narrows_rather_than_opens() {
+        let mut editor = editor_with(&["array_sum"]);
+        editor.get_current_tab_mut().cursor_x = 9;
+        editor.delete_char();
+        editor.request_completion_refresh();
+        editor.flush_completion_request();
+        assert!(!editor.show_completions);
+
+        editor.update_completions();
+        assert!(editor.show_completions);
+        editor.delete_char();
+        editor.request_completion_refresh();
+        editor.flush_completion_request();
+        assert!(editor.show_completions);
+        assert_eq!(editor.completion_prefix, "array_s");
     }
 
     /// Typing still opens the list, and backspacing through what was typed

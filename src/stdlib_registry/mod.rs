@@ -605,6 +605,32 @@ pub fn get_stdlib_function(name: &str) -> Option<&'static StdlibFunction> {
     STDLIB_FUNCTIONS.get(name)
 }
 
+lazy_static! {
+    /// Every registered name, in order, so a prefix can be looked up by where
+    /// it sorts instead of by reading the whole library.
+    static ref NAMES_IN_ORDER: Vec<&'static str> = {
+        let mut names: Vec<&'static str> = STDLIB_FUNCTIONS.keys().copied().collect();
+        names.sort_unstable();
+        names
+    };
+}
+
+/// The functions whose names begin with `prefix`, ignoring case, in name
+/// order. The editor asks for these while someone is typing, so the cost is
+/// the length of the answer rather than the size of the library.
+///
+/// Every registered name is lower case ASCII, which is what lets the sorted
+/// list be cut at both ends by a lower cased prefix.
+pub fn functions_starting_with(prefix: &str) -> Vec<(&'static str, &'static StdlibFunction)> {
+    let prefix = prefix.to_ascii_lowercase();
+    let first = NAMES_IN_ORDER.partition_point(|name| *name < prefix.as_str());
+    return NAMES_IN_ORDER[first..]
+        .iter()
+        .take_while(|name| name.starts_with(&prefix))
+        .filter_map(|name| get_stdlib_function(name).map(|function| (*name, function)))
+        .collect();
+}
+
 /// The one line of an example that actually calls the function, pulled out of
 /// the whole program around it.
 ///
@@ -2054,6 +2080,40 @@ mod stdlib_types_drift_tests {
         let covered = ["CONVERT_FuelEconomy", "CONVERT_Unit", "CSV_Trim", "DRAW_Anchor", "HTTP_Method", "HTTP_SameSite", "IMAGE_Mirror", "IMAGE_Turn", "LOG_Level", "ML_Objective", "TERM_Color", "TIME_Format", "TIME_Nth", "TIME_Weekday", "VALIDATE_Country"];
         for enum_name in STDLIB_ENUMS.keys() {
             assert!(covered.contains(enum_name), "STDLIB_ENUMS entry '{}' has no drift test", enum_name);
+        }
+    }
+
+    /// The index the editor types against has to answer exactly what reading
+    /// the whole library would answer, including for a prefix nothing starts
+    /// with and for one typed in the wrong case.
+    #[test]
+    fn a_prefix_finds_the_same_names_a_full_reading_would() {
+        for prefix in ["a", "array_s", "http", "ARRAY_", "zzz", "print"] {
+            let mut by_reading: Vec<&str> = STDLIB_FUNCTIONS
+                .keys()
+                .filter(|name| name.len() >= prefix.len() && name[..prefix.len()].eq_ignore_ascii_case(prefix))
+                .copied()
+                .collect();
+            by_reading.sort_unstable();
+
+            let by_index: Vec<&str> = functions_starting_with(prefix).into_iter().map(|(name, _)| name).collect();
+            assert_eq!(by_index, by_reading, "prefix '{}'", prefix);
+        }
+    }
+
+    /// Nothing typed yet reaches everything, which is what makes the empty
+    /// prefix safe to ask for rather than a case the caller has to remember.
+    #[test]
+    fn an_empty_prefix_reaches_every_function() {
+        assert_eq!(functions_starting_with("").len(), STDLIB_FUNCTIONS.len());
+    }
+
+    /// The index is a sorted list of names cut at both ends, and the cut only
+    /// works because every registered name is lower case ASCII.
+    #[test]
+    fn every_registered_name_is_lower_case_ascii() {
+        for name in STDLIB_FUNCTIONS.keys() {
+            assert!(name.is_ascii() && **name == name.to_ascii_lowercase(), "'{}' is not lower case ASCII", name);
         }
     }
 

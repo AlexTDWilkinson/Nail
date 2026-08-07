@@ -330,14 +330,120 @@ fn colorize_line(line: Line, line_idx: usize, string_states: &[Option<StringCont
 
     let text = line.spans.iter().map(|span| span.content.as_ref()).collect::<Vec<_>>().join("");
     let mut state = string_states.get(line_idx).cloned().flatten();
+    return colorize_one_line(&text, &mut state, theme);
+}
+
+/// Colors one line and leaves `state` as the next line will find it. This is
+/// the whole of the work: a line's colors depend on its text, the state it
+/// starts in and the theme, and on nothing else in the file.
+fn colorize_one_line(text: &str, state: &mut Option<StringContext>, theme: &ColorScheme) -> Line<'static> {
     let mut colored_spans: Vec<Span<'static>> = Vec::new();
-    advance_line_state(&text, &mut state, Some((&mut colored_spans, theme)));
+    advance_line_state(text, state, Some((&mut colored_spans, theme)));
 
     if colored_spans.is_empty() {
-        colored_spans.push(Span::raw(text));
+        colored_spans.push(Span::raw(text.to_string()));
     }
 
-    Line::from(colored_spans)
+    return Line::from(colored_spans);
+}
+
+/// A colored copy of a file that recolors only the lines that changed.
+///
+/// Because a line's colors depend on that line and the state it starts in,
+/// a line whose text and starting state are both what they were last time is
+/// reused as it stands. Typing one character used to recolor the whole file,
+/// twenty times a second, which is what every keystroke in a long file was
+/// waiting on.
+pub struct ColorizeCache {
+    theme: Option<ColorScheme>,
+    lines: Vec<CachedLine>,
+    recolored: usize,
+}
+
+struct CachedLine {
+    text: String,
+    /// The state this line starts in, kept so a reuse can be checked, and the
+    /// state it leaves behind, kept so the line after it can be checked
+    /// without recoloring this one.
+    start: Option<StringContext>,
+    end: Option<StringContext>,
+    colored: Line<'static>,
+}
+
+impl ColorizeCache {
+    pub fn new() -> Self {
+        return ColorizeCache { theme: None, lines: Vec::new(), recolored: 0 };
+    }
+
+    /// Brings the cache up to date with `content`. An edit is nearly always
+    /// one line with an untouched run above it and another below, so that is
+    /// what this looks for: the lines shared with last time at the top, the
+    /// lines shared at the bottom, and the handful in between that have to be
+    /// colored again.
+    pub fn colorize(&mut self, content: &[String], theme: &ColorScheme) {
+        if self.theme != Some(*theme) {
+            self.theme = Some(*theme);
+            self.lines.clear();
+        }
+
+        let head = content.iter().zip(self.lines.iter()).take_while(|(line, cached)| **line == cached.text).count();
+
+        // Lines shared at the bottom, counted from the end and stopped before
+        // it can meet the head: a line may only be claimed by one of the two.
+        let room = content.len().min(self.lines.len()) - head;
+        let tail = content
+            .iter()
+            .rev()
+            .zip(self.lines.iter().rev())
+            .take(room)
+            .take_while(|(line, cached)| **line == cached.text)
+            .count();
+
+        let mut previous = std::mem::take(&mut self.lines);
+        let tail_entries = previous.split_off(previous.len() - tail);
+        previous.truncate(head);
+        let mut rebuilt = previous;
+        self.recolored = 0;
+
+        let mut state = rebuilt.last().and_then(|cached| cached.end.clone());
+        for text in &content[head..content.len() - tail] {
+            rebuilt.push(self.color(text, &mut state, theme));
+        }
+
+        // The tail is only what it was if it still starts where it started.
+        // A string opened above it repaints everything under it, which is
+        // exactly what the screen then has to show.
+        match tail_entries.first() {
+            Some(first) if first.start == state => rebuilt.extend(tail_entries),
+            _ => {
+                for text in &content[content.len() - tail..] {
+                    rebuilt.push(self.color(text, &mut state, theme));
+                }
+            }
+        }
+
+        self.lines = rebuilt;
+    }
+
+    fn color(&mut self, text: &str, state: &mut Option<StringContext>, theme: &ColorScheme) -> CachedLine {
+        self.recolored += 1;
+        let start = state.clone();
+        let colored = colorize_one_line(text, state, theme);
+        return CachedLine { text: text.to_string(), start, end: state.clone(), colored };
+    }
+
+    /// One colored line, or nothing if the file does not go that far.
+    pub fn line(&self, index: usize) -> Option<&Line<'static>> {
+        return self.lines.get(index).map(|cached| &cached.colored);
+    }
+
+    /// How many lines the last call had to color. Nothing reads this but the
+    /// tests, which is where it matters that an edit is cheap rather than
+    /// merely correct.
+    #[cfg(test)]
+    fn colored_last_time(&self) -> usize {
+        return self.recolored;
+    }
 }
 
 fn tokenize_code(content: &str) -> Vec<String> {
@@ -1149,5 +1255,111 @@ mod tests {
         let content4 = "if { x != 0 -> { print(`ok`); } }";
         let tokens4 = tokenize_code(content4);
         assert!(tokens4.contains(&"!=".to_string()), "!= should be a single token, got: {:?}", tokens4);
+    }
+
+    fn lines_of(content: &[&str]) -> Vec<String> {
+        return content.iter().map(|line| line.to_string()).collect();
+    }
+
+    /// What the whole file looks like colored from scratch, which is what the
+    /// cache has to agree with after any edit at all.
+    fn colored_from_scratch(content: &[String], theme: &ColorScheme) -> Vec<Line<'static>> {
+        let lines: Vec<Line> = content.iter().map(|line| Line::from(vec![Span::raw(line.clone())])).collect();
+        return colorize_code(lines, theme);
+    }
+
+    fn cached_lines(cache: &ColorizeCache, count: usize) -> Vec<Line<'static>> {
+        return (0..count).map(|index| cache.line(index).expect("the cache holds every line").clone()).collect();
+    }
+
+    /// The point of the cache: a character typed into one line is one line of
+    /// coloring, not a file's worth.
+    #[test]
+    fn typing_into_a_line_colors_that_line_and_no_other() {
+        let theme = test_theme();
+        let mut cache = ColorizeCache::new();
+        let before = lines_of(&["f main():v {", "    x:i = 1;", "    print(`hi`);", "}"]);
+        cache.colorize(&before, &theme);
+        assert_eq!(cache.colored_last_time(), 4);
+
+        let after = lines_of(&["f main():v {", "    xy:i = 1;", "    print(`hi`);", "}"]);
+        cache.colorize(&after, &theme);
+        assert_eq!(cache.colored_last_time(), 1);
+        assert_eq!(cached_lines(&cache, after.len()), colored_from_scratch(&after, &theme));
+    }
+
+    /// A new line pushes everything under it down, and the lines it pushed are
+    /// still the lines they were.
+    #[test]
+    fn inserting_a_line_reuses_the_lines_it_pushed_down() {
+        let theme = test_theme();
+        let mut cache = ColorizeCache::new();
+        let before = lines_of(&["f main():v {", "    print(`hi`);", "}"]);
+        cache.colorize(&before, &theme);
+
+        let after = lines_of(&["f main():v {", "    x:i = 1;", "    print(`hi`);", "}"]);
+        cache.colorize(&after, &theme);
+        assert_eq!(cache.colored_last_time(), 1);
+        assert_eq!(cached_lines(&cache, after.len()), colored_from_scratch(&after, &theme));
+    }
+
+    /// Opening a string changes what every line under it means, so those lines
+    /// are colored again however well they match what they were.
+    #[test]
+    fn opening_a_string_recolors_what_is_under_it() {
+        let theme = test_theme();
+        let mut cache = ColorizeCache::new();
+        let before = lines_of(&["x:i = 1;", "y:i = 2;", "z:i = 3;"]);
+        cache.colorize(&before, &theme);
+
+        let after = lines_of(&["x:s = `open", "y:i = 2;", "z:i = 3;"]);
+        cache.colorize(&after, &theme);
+        assert_eq!(cache.colored_last_time(), 3);
+        assert_eq!(cached_lines(&cache, after.len()), colored_from_scratch(&after, &theme));
+
+        // And closing it again puts them back.
+        let closed = lines_of(&["x:s = `open`;", "y:i = 2;", "z:i = 3;"]);
+        cache.colorize(&closed, &theme);
+        assert_eq!(cached_lines(&cache, closed.len()), colored_from_scratch(&closed, &theme));
+    }
+
+    /// Every shape of edit, against the answer computed from nothing.
+    #[test]
+    fn the_cache_agrees_with_a_fresh_colorization_after_any_edit() {
+        let theme = test_theme();
+        let mut cache = ColorizeCache::new();
+        let edits = vec![
+            lines_of(&["f main():v {", "    print(`hi`);", "}"]),
+            // A line deleted from the middle
+            lines_of(&["f main():v {", "}"]),
+            // A multi-line string opened and closed
+            lines_of(&["page:s = html`<p>", "  <b>hi</b>", "</p>`;", "f main():v {", "}"]),
+            // The line that opened it edited
+            lines_of(&["page:s = html`<div>", "  <b>hi</b>", "</p>`;", "f main():v {", "}"]),
+            // Everything replaced
+            lines_of(&["// nothing but a comment"]),
+            // Back to an empty file
+            lines_of(&[""]),
+        ];
+
+        for content in &edits {
+            cache.colorize(content, &theme);
+            assert_eq!(cached_lines(&cache, content.len()), colored_from_scratch(content, &theme), "content: {:?}", content);
+        }
+    }
+
+    /// A theme is a different answer for every line, so switching one throws
+    /// the whole cache away rather than half of it.
+    #[test]
+    fn switching_the_theme_colors_the_file_again() {
+        let mut cache = ColorizeCache::new();
+        let content = lines_of(&["x:i = 1;", "y:i = 2;"]);
+        cache.colorize(&content, &test_theme());
+        assert_eq!(cache.colored_last_time(), 2);
+
+        let other = ColorScheme { identifier: Color::LightRed, ..test_theme() };
+        cache.colorize(&content, &other);
+        assert_eq!(cache.colored_last_time(), 2);
+        assert_eq!(cached_lines(&cache, content.len()), colored_from_scratch(&content, &other));
     }
 }

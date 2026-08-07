@@ -34,8 +34,8 @@ This is non-negotiable to maintain language stability and prevent regressions.
 A clean run currently reports 570/570 lexer/parser, 569/569 type checker and
 550/550 transpiler, with zero failures. Those counts are every `.nail` file in
 the repository, from the one shared list in `test_nail_files.sh`, rather than
-the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1314 passing
-(1329 with `--features "game audio"`), `cargo test --bin nail` reports 1317
+the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1322 passing
+(1340 with `--features "game audio"`), `cargo test --bin nail` reports 1328
 (the library's tests plus the editor's own), and `./test_e2e.sh` reports 376
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
