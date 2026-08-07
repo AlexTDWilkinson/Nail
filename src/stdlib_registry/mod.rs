@@ -1771,6 +1771,7 @@ lazy_static! {
         );
         m.insert("DRAW_Anchor", vec!["Start", "Middle", "End"]);
         m.insert("HTTP_Method", vec!["Get", "Post", "Put", "Delete", "Patch"]);
+        m.insert("IMAGE_Mirror", vec!["LeftRight", "TopBottom"]);
         m.insert("IMAGE_Turn", vec!["Clockwise", "UpsideDown", "CounterClockwise"]);
         m.insert("HTTP_SameSite", vec!["Strict", "Lax", "None"]);
         m.insert("LOG_Level", vec!["Debug", "Info", "Warn", "Error"]);
@@ -1940,13 +1941,15 @@ mod stdlib_types_drift_tests {
         assert_enum_matches_registry::<crate::parser::std_lib::time::TIME_Weekday>("TIME_Weekday");
         #[cfg(feature = "image")]
         assert_enum_matches_registry::<crate::parser::std_lib::image::IMAGE_Turn>("IMAGE_Turn");
+        #[cfg(feature = "image")]
+        assert_enum_matches_registry::<crate::parser::std_lib::image::IMAGE_Mirror>("IMAGE_Mirror");
         assert_enum_matches_registry::<crate::parser::std_lib::ml::ML_Objective>("ML_Objective");
         assert_enum_matches_registry::<crate::parser::std_lib::validate::VALIDATE_Country>("VALIDATE_Country");
     }
 
     #[test]
     fn all_stdlib_enums_are_drift_tested() {
-        let covered = ["CONVERT_FuelEconomy", "CONVERT_Unit", "CSV_Trim", "DRAW_Anchor", "HTTP_Method", "HTTP_SameSite", "IMAGE_Turn", "LOG_Level", "ML_Objective", "TERM_Color", "TIME_Format", "TIME_Nth", "TIME_Weekday", "VALIDATE_Country"];
+        let covered = ["CONVERT_FuelEconomy", "CONVERT_Unit", "CSV_Trim", "DRAW_Anchor", "HTTP_Method", "HTTP_SameSite", "IMAGE_Mirror", "IMAGE_Turn", "LOG_Level", "ML_Objective", "TERM_Color", "TIME_Format", "TIME_Nth", "TIME_Weekday", "VALIDATE_Country"];
         for enum_name in STDLIB_ENUMS.keys() {
             assert!(covered.contains(enum_name), "STDLIB_ENUMS entry '{}' has no drift test", enum_name);
         }

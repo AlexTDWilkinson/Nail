@@ -119,6 +119,31 @@ pub async fn rotate(from_path: String, to_path: String, turn: IMAGE_Turn) -> Res
     return turned.save(&to_path).map_err(|failure| format!("image_rotate: could not write '{}': {}", to_path, failure));
 }
 
+/// Which way to flip a picture over. A mirror is not a turn: turning a
+/// photograph keeps what it shows and changes where the top is, mirroring
+/// changes which hand somebody is waving with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum IMAGE_Mirror {
+    LeftRight,
+    TopBottom,
+}
+
+/// Writes the picture flipped over, left for right or top for bottom. What a
+/// selfie needs (a front camera hands back the mirror image a person expects to
+/// see, which is backwards for everybody else), what a scan fed in face down
+/// needs, and what a sprite sheet needs when a character walks the other way.
+///
+/// Both directions are exact: every pixel moves to another whole position, so
+/// nothing is resampled and nothing is lost.
+pub async fn mirror(from_path: String, to_path: String, mirror: IMAGE_Mirror) -> Result<(), String> {
+    let picture = open(&from_path, "image_mirror")?;
+    let flipped = match mirror {
+        IMAGE_Mirror::LeftRight => picture.fliph(),
+        IMAGE_Mirror::TopBottom => picture.flipv(),
+    };
+    return flipped.save(&to_path).map_err(|failure| format!("image_mirror: could not write '{}': {}", to_path, failure));
+}
+
 /// Writes a square thumbnail of the given size, filled edge to edge: the
 /// picture is scaled until it covers the square and the overhanging sides are
 /// cut off, so a grid of these lines up whatever shape the pictures were.
@@ -410,6 +435,31 @@ mod cropping_turning_and_filtering_tests {
         assert!(blur(source.clone(), beside("nail_image_never.png"), 200.0).await.unwrap_err().contains("outside the 0 to 100"));
 
         for file in [source, grey, blurred] {
+            let _ = std::fs::remove_file(file);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mirror_swaps_the_sides_it_is_told_to_and_keeps_the_size() {
+        let source = a_picture("mirrored", 40, 20);
+
+        let sideways = beside("nail_image_mirror_lr.png");
+        mirror(source.clone(), sideways.clone(), IMAGE_Mirror::LeftRight).await.expect("a readable picture");
+        assert_eq!(width(sideways.clone()).await.expect("a readable picture"), 40, "a mirror never changes the size");
+        assert_eq!(pixel_at(&sideways, 0, 0), pixel_at(&source, 39, 0), "the left edge is the old right edge");
+        assert_eq!(pixel_at(&sideways, 0, 5), pixel_at(&source, 39, 5), "and the rows stay where they were");
+
+        let upended = beside("nail_image_mirror_tb.png");
+        mirror(source.clone(), upended.clone(), IMAGE_Mirror::TopBottom).await.expect("a readable picture");
+        assert_eq!(pixel_at(&upended, 0, 0), pixel_at(&source, 0, 19), "the top row is the old bottom row");
+        assert_eq!(pixel_at(&upended, 7, 0), pixel_at(&source, 7, 19), "and the columns stay where they were");
+
+        // Mirroring twice is the picture again, which is what exact means.
+        let back = beside("nail_image_mirror_back.png");
+        mirror(sideways.clone(), back.clone(), IMAGE_Mirror::LeftRight).await.expect("a readable picture");
+        assert_eq!(pixel_at(&back, 12, 8), pixel_at(&source, 12, 8));
+
+        for file in [source, sideways, upended, back] {
             let _ = std::fs::remove_file(file);
         }
     }

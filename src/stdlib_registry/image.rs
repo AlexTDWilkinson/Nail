@@ -57,4 +57,21 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         description: "Writes the picture turned a quarter, a half or three quarters round, for a photograph that came off a phone on its side. Only the quarter turns exist: any other angle leaves empty corners nothing can fill sensibly.",
         example: "danger(image_rotate(`scan.jpg`, `upright.jpg`, IMAGE_Turn::Clockwise));",
     });
+
+    m.insert("image_mirror", StdlibFunction {
+        rust_path: "std_lib::image::mirror".to_string(),
+        crate_deps: vec![CrateDependency::Image, CrateDependency::Tokio, CrateDependency::Serde],
+        struct_derives: vec![],
+        custom_type_imports: vec![("IMAGE_Mirror", "nail::std_lib::image")],
+        module: StdlibModule::Image,
+        parameters: vec![
+            nail_param!(from_path: s),
+            nail_param!(to_path: s),
+            StdlibParameter { name: "mirror".to_string(), param_type: NailDataTypeDescriptor::Enum("IMAGE_Mirror".to_string()), pass_by_reference: false },
+        ],
+        return_type: nail_type!((v!e)),
+        diverging: false,
+        description: "Writes the picture flipped over, left for right or top for bottom. What a selfie from a front camera needs, what a scan fed in face down needs, and what a sprite needs to walk the other way. A mirror is not a turn: it changes which hand somebody is waving with.",
+        example: "danger(image_mirror(`selfie.jpg`, `as_others_see_it.jpg`, IMAGE_Mirror::LeftRight));",
+    });
 }
