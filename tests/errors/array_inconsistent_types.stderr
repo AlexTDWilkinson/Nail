@@ -1,6 +1,6 @@
 error: All elements of an array must have the same type: this array starts with an integer (i), but a later element is a string (s)
-  --> tests/errors/array_inconsistent_types.nail:2:11
+  --> tests/errors/array_inconsistent_types.nail:3:11
    |
- 2 | mixed:a:i = [1, 2, `three`];
+ 3 | mixed:a:i = [1, 2, `three`];
    |           ^
 1 error found

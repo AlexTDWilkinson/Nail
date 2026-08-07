@@ -1,6 +1,6 @@
 error: There is no variable named 'numbrs' in this scope
-  --> tests/errors/map_over_undefined_variable.nail:3:26
+  --> tests/errors/map_over_undefined_variable.nail:4:26
    |
- 3 | doubled:a:i = map num in numbrs {
+ 4 | doubled:a:i = map num in numbrs {
    |                          ^^^^^^
 1 error found

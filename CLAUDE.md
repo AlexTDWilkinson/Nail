@@ -38,12 +38,8 @@ A clean run currently reports 165/165 lexer/parser, 165/165 type checker and
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
-`./test_launcher.sh` reports 41 checks passing. `./test_error_messages.sh`
-currently reports 0 passed, 25 failed: every golden in `tests/errors/` predates
-the block-arrow syntax migration and the version line, so each one differs from
-today's output by `=>` against `->` and by one line number. The messages
-themselves are right. Regenerate the lot with `./test_error_messages.sh --bless`
-before trusting that suite again.
+`./test_launcher.sh` reports 41 checks passing, and
+`./test_error_messages.sh` reports 25 passed, 0 failed.
 
 ## CRITICAL: Never Use Workarounds
 

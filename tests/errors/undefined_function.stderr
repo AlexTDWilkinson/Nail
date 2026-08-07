@@ -1,7 +1,7 @@
 error: There is no function named 'math_sqrtt'
-  --> tests/errors/undefined_function.nail:2:26
+  --> tests/errors/undefined_function.nail:3:26
    |
- 2 | result:f = math_sqrtt(4.0);
+ 3 | result:f = math_sqrtt(4.0);
    |                          ^
 help: did you mean 'math_sqrt'?
 1 error found

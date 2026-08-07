@@ -1,6 +1,6 @@
 error: Expected '}' but the file ended first
-  --> tests/errors/parse_unclosed_block.nail:3:16
+  --> tests/errors/parse_unclosed_block.nail:4:16
    |
- 3 |     r value * 2;
+ 4 |     r value * 2;
    |                ^
 help: a block opened earlier is never closed — add the missing '}'

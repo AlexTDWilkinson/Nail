@@ -1,6 +1,6 @@
 error: If expression used as value must have an else branch to ensure all cases return a value
-  --> tests/errors/if_missing_else.nail:5:2
+  --> tests/errors/if_missing_else.nail:6:2
    |
- 5 | };
+ 6 | };
    |  ^
 1 error found

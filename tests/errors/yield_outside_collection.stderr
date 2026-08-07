@@ -1,13 +1,13 @@
 error: 'y' (yield) cannot be used here — it is only valid inside collection operation blocks (map, filter, reduce, ...)
-  --> tests/errors/yield_outside_collection.nail:4:22
+  --> tests/errors/yield_outside_collection.nail:5:22
    |
- 4 |         flag => { y 1; },
+ 5 |         flag -> { y 1; },
    |                      ^
 help: use 'r' (return) to produce a value from this block
 error: 'y' (yield) cannot be used here — it is only valid inside collection operation blocks (map, filter, reduce, ...)
-  --> tests/errors/yield_outside_collection.nail:5:22
+  --> tests/errors/yield_outside_collection.nail:6:22
    |
- 5 |         else => { y 2; }
+ 6 |         else -> { y 2; }
    |                      ^
 help: use 'r' (return) to produce a value from this block
 2 errors found

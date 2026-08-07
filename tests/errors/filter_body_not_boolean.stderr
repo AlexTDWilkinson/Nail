@@ -1,6 +1,6 @@
 error: The body of 'filter' must return a boolean (whether to keep each item), but it returns an integer (i)
-  --> tests/errors/filter_body_not_boolean.nail:4:14
+  --> tests/errors/filter_body_not_boolean.nail:5:14
    |
- 4 |     y num * 2;
+ 5 |     y num * 2;
    |              ^
 1 error found

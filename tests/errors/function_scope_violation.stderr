@@ -1,6 +1,6 @@
 error: Cannot access variable 'outer_value' from outside function scope. Functions can only use parameters and local variables.
-  --> tests/errors/function_scope_violation.nail:5:16
+  --> tests/errors/function_scope_violation.nail:6:16
    |
- 5 |     r amount + outer_value;
+ 6 |     r amount + outer_value;
    |                ^^^^^^^^^^^
 1 error found

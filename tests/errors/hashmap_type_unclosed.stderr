@@ -1,5 +1,5 @@
 error: Expected '>' to close the type ':h<s,s'
-  --> tests/errors/hashmap_type_unclosed.nail:2:16
+  --> tests/errors/hashmap_type_unclosed.nail:3:16
    |
- 2 | f lookup(config:h<s,s):s {
+ 3 | f lookup(config:h<s,s):s {
    |                ^^^^^^

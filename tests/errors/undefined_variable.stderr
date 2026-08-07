@@ -1,7 +1,7 @@
 error: There is no variable named 'total_cont' in this scope
-  --> tests/errors/undefined_variable.nail:3:12
+  --> tests/errors/undefined_variable.nail:4:12
    |
- 3 | result:i = total_cont + 1;
+ 4 | result:i = total_cont + 1;
    |            ^^^^^^^^^^
 help: did you mean 'total_count'?
 1 error found
