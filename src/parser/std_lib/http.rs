@@ -546,10 +546,13 @@ pub fn http_path_matches(pattern: String, path: String) -> bool {
 }
 
 /// The `:name` segments a pattern binds, e.g. `/dictionary/:word` against
-/// `/dictionary/cat` yields `{word: cat}`. Empty when the pattern does not
-/// match, so callers check with http_path_matches first.
-pub fn http_path_params(pattern: String, path: String) -> DashMap<String, String> {
-    match_path(&pattern, &path).unwrap_or_default()
+/// `/dictionary/cat` yields `{word: cat}`. A pattern that does not match the
+/// path is an error rather than an empty map, because a pattern with no `:name`
+/// segments matches and binds nothing, and those two cannot both be the empty
+/// map: asking a route for its parameters when the route is not the one that
+/// matched is a bug, not an answer.
+pub fn http_path_params(pattern: String, path: String) -> Result<DashMap<String, String>, String> {
+    return match_path(&pattern, &path).ok_or_else(|| format!("http_path_params: the path `{}` does not match the route `{}`", path, pattern));
 }
 
 // THE ONE AND ONLY HTTP SERVER FUNCTION

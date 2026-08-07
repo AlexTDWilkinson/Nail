@@ -44,7 +44,7 @@ m.insert("db_sqlite_execute", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_Result".to_string()))),
         diverging: false,
         description: "Execute SQL statement",
-        example: "result:DB_Result = danger(db_sqlite_execute(db, `CREATE TABLE t (id INTEGER)`));",
+        example: "db:DB_SQLite = danger(db_sqlite_open(`app.db`));\nresult:DB_Result = danger(db_sqlite_execute(db, `CREATE TABLE people (name TEXT, age INTEGER)`));",
     });
 
 m.insert("db_sqlite_execute_params", StdlibFunction {
@@ -61,7 +61,7 @@ m.insert("db_sqlite_execute_params", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_Result".to_string()))),
         diverging: false,
         description: "Execute SQL with ? placeholders bound to values, so untrusted input never becomes part of the statement",
-        example: "result:DB_Result = danger(db_sqlite_execute_params(db, `INSERT INTO people (name) VALUES (?)`, [name]));",
+        example: "db:DB_SQLite = danger(db_sqlite_open(`app.db`));\nname:s = `Ada`;\nresult:DB_Result = danger(db_sqlite_execute_params(db, `INSERT INTO people (name) VALUES (?)`, [name]));",
     });
 
 m.insert("db_sqlite_query", StdlibFunction {
@@ -77,7 +77,7 @@ m.insert("db_sqlite_query", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))))),
         diverging: false,
         description: "Query database and return results as typed structs",
-        example: "rows:a:Person = danger(db_sqlite_query(db, `SELECT name, age FROM people`));",
+        example: "struct Person { name:s, age:i }\n\ndb:DB_SQLite = danger(db_sqlite_open(`app.db`));\nrows:a:Person = danger(db_sqlite_query(db, `SELECT name, age FROM people`));",
     });
 
 m.insert("db_sqlite_query_single", StdlibFunction {
@@ -93,7 +93,7 @@ m.insert("db_sqlite_query_single", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))),
         diverging: false,
         description: "Query database and return single result as typed struct",
-        example: "person:Person = danger(db_sqlite_query_single(db, `SELECT name, age FROM people LIMIT 1`));",
+        example: "struct Person { name:s, age:i }\n\ndb:DB_SQLite = danger(db_sqlite_open(`app.db`));\nperson:Person = danger(db_sqlite_query_single(db, `SELECT name, age FROM people LIMIT 1`));",
     });
 
 m.insert("db_sqlite_query_params", StdlibFunction {
@@ -110,7 +110,7 @@ m.insert("db_sqlite_query_params", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))))),
         diverging: false,
         description: "Query with ? placeholders bound to values and return the rows as typed structs",
-        example: "rows:a:Person = danger(db_sqlite_query_params(db, `SELECT name, age FROM people WHERE name = ?`, [name]));",
+        example: "struct Person { name:s, age:i }\n\ndb:DB_SQLite = danger(db_sqlite_open(`app.db`));\nname:s = `Ada`;\nrows:a:Person = danger(db_sqlite_query_params(db, `SELECT name, age FROM people WHERE name = ?`, [name]));",
     });
 
 m.insert("db_sqlite_query_single_params", StdlibFunction {
@@ -127,7 +127,7 @@ m.insert("db_sqlite_query_single_params", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))),
         diverging: false,
         description: "Query with ? placeholders bound to values and return the first row as a typed struct",
-        example: "person:Person = danger(db_sqlite_query_single_params(db, `SELECT name, age FROM people WHERE id = ?`, [id]));",
+        example: "struct Person { name:s, age:i }\n\ndb:DB_SQLite = danger(db_sqlite_open(`app.db`));\nwanted_id:s = `1`;\nperson:Person = danger(db_sqlite_query_single_params(db, `SELECT name, age FROM people WHERE id = ?`, [wanted_id]));",
     });
 
 m.insert("db_sqlite_close", StdlibFunction {
@@ -142,7 +142,7 @@ m.insert("db_sqlite_close", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Close database connection",
-        example: "danger(db_sqlite_close(db));",
+        example: "db:DB_SQLite = danger(db_sqlite_open(`app.db`));\ndanger(db_sqlite_close(db));",
     });
 
 m.insert("db_sqlite_begin", StdlibFunction {
@@ -157,7 +157,7 @@ m.insert("db_sqlite_begin", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Begin transaction (prefer db_sqlite_execute_batch for safer transactions)",
-        example: "danger(db_sqlite_begin(db));",
+        example: "db:DB_SQLite = danger(db_sqlite_open(`app.db`));\ndanger(db_sqlite_begin(db));",
     });
 
 m.insert("db_sqlite_commit", StdlibFunction {
@@ -172,7 +172,7 @@ m.insert("db_sqlite_commit", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Commit transaction (prefer db_sqlite_execute_batch for safer transactions)",
-        example: "danger(db_sqlite_commit(db));",
+        example: "db:DB_SQLite = danger(db_sqlite_open(`app.db`));\ndanger(db_sqlite_begin(db));\ndanger(db_sqlite_commit(db));",
     });
 
 m.insert("db_sqlite_rollback", StdlibFunction {
@@ -187,7 +187,7 @@ m.insert("db_sqlite_rollback", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Rollback transaction (prefer db_sqlite_execute_batch for safer transactions)",
-        example: "danger(db_sqlite_rollback(db));",
+        example: "db:DB_SQLite = danger(db_sqlite_open(`app.db`));\ndanger(db_sqlite_begin(db));\ndanger(db_sqlite_rollback(db));",
     });
 
 m.insert("db_sqlite_execute_batch", StdlibFunction {
@@ -203,6 +203,6 @@ m.insert("db_sqlite_execute_batch", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_Result".to_string()))),
         diverging: false,
         description: "Execute multiple SQL statements in a single transaction (all succeed or all fail)",
-        example: "result:DB_Result = danger(db_sqlite_execute_batch(db, statements));",
+        example: "db:DB_SQLite = danger(db_sqlite_open(`app.db`));\nstatements:a:s = [`CREATE TABLE people (name TEXT, age INTEGER)`, `CREATE INDEX people_name ON people (name)`];\nresult:DB_Result = danger(db_sqlite_execute_batch(db, statements));",
     });
 }

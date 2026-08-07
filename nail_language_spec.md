@@ -75,7 +75,7 @@ calculate_total
 
 Single-line comments only, preceded by `//`:
 
-```js
+```nail
 // This is a comment
 some_number:i = 5; // This is an inline comment
 ```
@@ -161,18 +161,18 @@ Arithmetic is for numbers only; text is joined with `string_concat`.
 #### 4.5.4 Range Functions
 Nail provides range functions for creating sequences in for loops:
 
-```js
+```nail-fragment
 // Range function creates arrays for iteration
 numbers:a:i = array_range(1, 5);  // Creates [1, 2, 3, 4] (end not included)
 
 // Use in for loops
-for idx in array_range(0, 5) {
-    print(string_from(idx));  // Prints 0, 1, 2, 3, 4
+for index in array_range(0, 5) {
+    print(string_from(index));  // Prints 0, 1, 2, 3, 4
 }
 
 // Common patterns
-for idx in array_range(0, array_length(my_array)) {
-    item:T = danger(array_get(my_array, idx));
+for index in array_range(0, array_length(numbers)) {
+    item:i = danger(array_get(numbers, index));
     print(item);
 }
 ```
@@ -198,7 +198,7 @@ Nail uses a prefix-based type system:
 
 Constants must include type and initialization:
 
-```js
+```nail
 // Everything in nail is const.
 age:i = 30;
 name:s = `Grug`;
@@ -209,7 +209,7 @@ is_developer:b = true;
 
 Strict type checking is enforced:
 
-```js
+```nail-refused
 count:i = 5;  // Valid
 count:i = 6.0;  // Error: Can't assign float to integer
 count:f = 6.0;  // Valid
@@ -227,7 +227,7 @@ count:f = safe(to_float(5), handle_float_error);  // Valid, handles error safely
 
 Homogeneous, non-nested collections:
 
-```js
+```nail
 names:a:s = [`Alice`, `Bob`, `Charlie`];
 ```
 
@@ -235,7 +235,7 @@ names:a:s = [`Alice`, `Bob`, `Charlie`];
 
 Custom data types with named fields:
 
-```js
+```nail
 struct Point {
     x_pos:i,
     y_pos:i
@@ -246,7 +246,7 @@ struct Point {
 
 Key-value collections with type-safe keys and values. Both keys and values must be concrete types (cannot be void or error types):
 
-```js
+```nail
 // Create a new hashmap with string keys and integer values
 user_scores:h<s,i> = hashmap_new();
 
@@ -277,7 +277,7 @@ hashmap_set(id_to_struct, 1, origin);
 
 Fixed set of possible values (no associated data):
 
-```js
+```nail
 enum TrafficLight {
     Red,
     Yellow,
@@ -293,7 +293,7 @@ current_light:TrafficLight = TrafficLight::Red;
 
 Nail uses a unique match-like syntax for if statements. Traditional if-else syntax is NOT supported.
 
-```js
+```nail-fragment
 // Basic if statement syntax
 status:i = get_http_status_code(response);
 
@@ -320,7 +320,7 @@ Nail provides explicit collection operation keywords that are more readable and 
 
 Map transforms each element in a collection into a new element:
 
-```js
+```nail
 numbers:a:i = [1, 2, 3, 4, 5];
 
 // Basic map - transform each element
@@ -342,7 +342,7 @@ indexed_values:a:s = map num idx in numbers {
 
 Filter selects elements from a collection based on a condition:
 
-```js
+```nail-fragment
 // Filter even numbers
 evens:a:i = filter num in numbers {
     y num % 2 == 0;
@@ -358,15 +358,16 @@ first_three:a:i = filter num idx in numbers {
 
 Reduce accumulates values from a collection into a single result:
 
-```js
+```nail-fragment
 // Sum all numbers
 sum:i = reduce acc num in numbers from 0 {
     y acc + num;
 };
 
-// Find maximum (with index access)
-max_val:i = reduce acc num idx in numbers from danger(array_get(numbers, 0)) {
-    y if { num > acc -> { num }, else -> { acc } };
+// Find maximum: the yielded value is the whole if expression, and each
+// branch returns from the branch with r
+max_val:i = reduce acc num in numbers from danger(array_get(numbers, 0)) {
+    y if { num > acc -> { r num; }, else -> { r acc; } };
 };
 
 // Build string ('+' adds numbers only, so text is joined with string_concat)
@@ -380,7 +381,7 @@ concatenated:s = reduce acc word in [`hello`, ` `, `world`] from `` {
 Scan is a reduce that keeps its work: the accumulator's value after every
 element, so the result is an array as long as the one it scanned.
 
-```js
+```nail-fragment
 // Running total: [1, 3, 6, 10, 15]
 running:a:i = scan acc num in numbers from 0 {
     y acc + num;
@@ -401,7 +402,7 @@ starts at - and for `map` when each element stands alone.
 
 Each performs side effects without collecting values:
 
-```js
+```nail-fragment
 // Print each element (statement form, no assignment)
 each num in numbers {
     print(array_join([`Number: `, danger(string_from(num))], ``));
@@ -422,7 +423,7 @@ each_result:v = each num in numbers {
 
 Find returns the first element matching a condition:
 
-```js
+```nail-fragment
 // Find first even number
 first_even:i = danger(find num in numbers {
     y num % 2 == 0;
@@ -438,7 +439,7 @@ third_element:i = danger(find num idx in numbers {
 
 Check if all or any elements match a condition:
 
-```js
+```nail-fragment
 // Check if all positive
 all_positive:b = all num in numbers {
     y num > 0;
@@ -454,7 +455,7 @@ has_negative:b = any num idx in numbers {
 
 Standard library provides array functions for common operations:
 
-```js
+```nail-fragment
 numbers:a:i = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 // Take and skip operations
@@ -485,7 +486,7 @@ evens:a:i = array_filter(numbers, is_even);
 
 For loops iterate over arrays or function-generated ranges:
 
-```js
+```nail
 // Range iteration - iterator can be any valid name
 for index in array_range(0, 5) {
     print(string_from(index)); // Prints 0, 1, 2, 3, 4
@@ -513,22 +514,25 @@ for position in array_range(0, array_length(numbers)) {
 
 While loops with safety features to prevent infinite loops:
 
-```js
-// While loop with max iterations (required for safety)
-factorial:i = while n > 1 from (acc = 1, n = 5) max 10 {
-    r (acc * n, n - 1);
-};
-
-// The 'from' clause provides initial state
-// The 'max' clause prevents infinite loops
-// Returns the final accumulator value
+```nail-fragment
+// A while loop always carries a max: it is the promise that the loop ends
+countdown:i = 3;
+while countdown > 0 max 10 {
+    print(countdown);
+    countdown = countdown - 1;
+}
 ```
+
+The `max` clause is required, and it is a count of iterations, not a
+suggestion: reaching it ends the loop. A while loop is a statement rather than
+an expression, so it produces no value. Building one up as you go is what
+`reduce` and `scan` are for.
 
 #### Loop (Infinite Loops)
 
 Loop construct for explicit infinite loops with `break` and `continue` support:
 
-```js
+```nail-fragment
 // Basic infinite loop with break
 loop {
     print(`Looping...`);
@@ -541,7 +545,7 @@ loop index {
     if {
         index >= 10 -> { break; },     // Exits the loop
         index == 5 -> { continue; },   // Skips to next iteration (index becomes 6)
-        else -> { /* keep looping */ }
+        else -> { }                    // keeps looping
     }
 }
 
@@ -556,7 +560,7 @@ loop index {
 
 Spawn blocks run asynchronously in the background:
 
-```js
+```nail-fragment
 // Spawn a background task
 spawn {
     print(`Background task started`);
@@ -716,7 +720,7 @@ Nail uses two different keywords for different contexts - this is a critical dis
 - **Behavior**: Immediately exits the entire function
 - **Required**: All non-void functions must have explicit return statements
 
-```js
+```nail
 f add(num_a:i, num_b:i):i {
     r num_a + num_b;  // Exits function, returns result to caller
 }
@@ -735,7 +739,7 @@ f process_data(data:s):s!e {
 - **Behavior**: Provides value for current iteration, continues to next iteration
 - **Required**: All collection operation blocks must yield a value
 
-```js
+```nail-fragment
 // Map: yield transforms each element
 doubled:a:i = map num in numbers {
     y num * 2;  // Yields doubled value for THIS iteration, continues to next
@@ -758,7 +762,7 @@ sum:i = reduce acc num in numbers from 0 {
 3. **Collection operations are NOT functions**: They're language constructs that use yield
 4. **Functions always use return**: Even when called inside collection operations
 
-```js
+```nail-fragment
 // CORRECT: Function uses r, collection operation uses y
 f double_value(num:i):i {
     r num * 2;  // Function returns value
@@ -778,7 +782,7 @@ bad_example:a:i = map num in numbers {
 
 Functions must use `r` for return statements. Functions that can fail must return a result type (using the `!e` syntax).
 
-```js
+```nail-fragment
 f calculate_monthly_payment(principal:i, annual_rate:i, years:i):f!e {
     if {
         annual_rate == 0 -> { 
@@ -811,7 +815,7 @@ f calculate_monthly_payment(principal:i, annual_rate:i, years:i):f!e {
 
 Errors must be explicitly handled:
 
-```js
+```nail-refused
 user_input:s!e = lib_io_readline();
 user_input:s = danger(lib_io_readline());
 
@@ -1249,7 +1253,7 @@ A Nail program has one flat name space and no import list, so every standard
 library name carries the namespace of the library it belongs to. Functions wear
 it in lower case and types in upper case:
 
-```nail
+```nail-fragment
 reader:CSV_Reader = danger(csv_open(`big.csv`, csv_default_options()));
 config:HTTP_Config = HTTP_Config { static_mounts = [], max_body_bytes = 0, timeout_seconds = 0, state = state };
 stamp:s = danger(time_format(time_now(), TIME_Format::ISO8601));
@@ -1376,7 +1380,7 @@ Editing an array means building the new one, since arrays are immutable:
 Where the interesting part of an element is one field of it, the key comes from a
 function the program has already named - which is not a closure, and needs none:
 
-```nail
+```nail-fragment
 struct Book { title:s, author:s, year:i }
 f book_year(book:Book):i    { r book.year; }
 f book_author(book:Book):s  { r book.author; }
@@ -1397,7 +1401,7 @@ per_author:h<s,i>      = array_count_by(books, book_author);
 The key may be `i`, `s` or `b`. A `b` key is how an array is split in two,
 which other languages call partition:
 
-```nail
+```nail-fragment
 f is_paid(invoice:Invoice):b { r invoice.paid_on > 0; }
 
 split:h<b,a:Invoice> = array_group_by(invoices, is_paid);
@@ -1421,7 +1425,7 @@ program sort on more than one key with no two-key sort function existing: sort
 by the least important key first and the most important key last, and each pass
 leaves the previous order standing wherever its own keys tie.
 
-```nail
+```nail-fragment
 // By author, and within an author the newest first.
 newest_per_author:a:Post = array_sort_by(array_sort_by_descending(posts, post_day), post_author);
 ```
@@ -1446,7 +1450,7 @@ The same named-function idea pairs two arrays up:
 
 - `array_zip_with(first:a:A, second:a:B, combine:f(A,B):C):a:C!e` - What the function makes of each pair, in order
 
-```nail
+```nail-fragment
 f line_total(price:f, quantity:f):f { r price * quantity; }
 
 totals:a:f = danger(array_zip_with(prices, quantities, line_total));
@@ -1835,7 +1839,7 @@ boundary belongs to the body, so `http_request_multipart` sets `Content-Type`
 itself and rejects one passed in `headers` rather than sending a body no server
 can parse.
 
-```nail
+```nail-fragment
 parts:a:HTTP_Part = [
     http_part_text(`purpose`, `avatar`),
     http_part_file(`file`, `portrait.png`),
@@ -1855,7 +1859,7 @@ The request is sent again exactly as it was, so an API that must not act twice
 on the same call - a payment, an order - wants an idempotency key in the
 headers, which is the same thing its own documentation asks for.
 
-```nail
+```nail-fragment
 settings:HTTP_Retry = HTTP_Retry {
     attempts = 4,
     initial_delay_ms = 200,
@@ -1873,7 +1877,7 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
     headers:h<s,s> = hashmap_new();
     if {
         http_path_matches(`/dictionary/:word`, request.path) -> {
-            params:h<s,s> = http_path_params(`/dictionary/:word`, request.path);
+            params:h<s,s> = danger(http_path_params(`/dictionary/:word`, request.path));
             word:s = danger(hashmap_get(params, `word`));
             r HTTP_Response { status = 200, body = word, content_type = `text/html`, headers = headers };
         },
@@ -1895,7 +1899,11 @@ config:HTTP_Config = HTTP_Config {
     ],
     max_body_bytes = 0,
     timeout_seconds = 0,
-    state = hashmap_new()
+    state = hashmap_new(),
+    cors_origins = [],
+    security_headers = true,
+    rate_limit_per_minute = 0,
+    rate_limit_message = ``
 };
 http_server(8080, config);
 ```
@@ -1910,8 +1918,12 @@ travels in through `config`.
 `headers:h<s,s>`; set `location` in its headers with status 301 to redirect.
 
 `HTTP_Config` fields: `static_mounts` (directories served as static files,
-including binary ones; an empty array serves none), `max_body_bytes` (0 means 8 MiB; larger bodies get 413), `timeout_seconds`
-(0 means 30; a handler that overruns gives the client 504), and `state`.
+including binary ones, an empty array serves none), `max_body_bytes` (0 means 8 MiB, larger bodies get 413), `timeout_seconds`
+(0 means 30, a handler that overruns gives the client 504), `state`,
+`cors_origins` (the origins allowed to call this server, empty allows none),
+`security_headers` (the usual hardening headers on every response),
+`rate_limit_per_minute` (0 means no limit) and `rate_limit_message` (what a
+limited client is told).
 
 Each `HTTP_Static` pairs a URL `prefix` with the `directory` on disk behind
 it. It is a list because a real site serves several trees - `/images`,
@@ -1940,7 +1952,7 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
     kind:s = danger(image_format(request.body_path));   // what it really is
     danger(image_resize_within(request.body_path, `public/avatars/small.png`, 200, 200));
     danger(fs_remove_file(request.body_path));
-    r ok_response(`saved`);
+    r HTTP_Response { status = 200, body = `saved`, content_type = `text/plain`, headers = hashmap_new() };
 }
 ```
 
@@ -1958,7 +1970,7 @@ A browser form with a file in it sends `multipart/form-data`, which is several
 parts in one body. `http_multipart_extract(body_path, content_type, into_directory)`
 takes it apart, reading in blocks and writing each file part as it finds it:
 
-```nail
+```nail-fragment
 content_type:s = danger(hashmap_get(request.headers, `content-type`));
 fields:h<s,s> = danger(http_multipart_extract(request.body_path, content_type, `uploads`));
 
@@ -2068,7 +2080,7 @@ again, so the loop and its error handling stay in the program.
 
 ### Cryptography Operations (`crypto_*`)
 - `crypto_hash_password(password:s):s!e` - Store a password. Argon2id with a fresh random salt
-- `crypto_verify_password(password:s, stored_hash:s):b` - Check a password against a stored hash
+- `crypto_verify_password(password:s, stored_hash:s):b!e` - Check a password against a stored hash. False for a wrong password, an error for a stored value that is not a hash
 - `crypto_hash_sha256(s:s):s` / `crypto_hash_sha512(s:s):s` - Digests, as hex
 - `crypto_hash_md5(s:s):s` - MD5, for checksums, not security
 - `crypto_hmac_sha256(key:s, message:s):s` - HMAC-SHA256 under a secret key, as hex
@@ -2348,13 +2360,18 @@ Values filled into text, escaped on the way in, so no call site has to remember
 to escape anything:
 - `template_render(template:s, values:h<s,s>):s!e` - Fill in one set of values
 - `template_render_rows(template:s, rows:a:h<s,s>):s!e` - Render once per row, for a table body
+- `template_render_or(template:s, values:h<s,s>, fallback:s):s!e` - Fill a missing name with the fallback instead of failing
 - `template_names_used(template:s):a:s!e` - The names a template asks for
+- `template_has(template:s, name:s):b!e` - Whether the template mentions that name
 
 The syntax is `{{name}}` for an escaped value, `{{{name}}}` for raw markup,
 `{{#if name}}...{{else}}...{{/if}}`, `{{#unless name}}...{{/unless}}`, and
 `{{! a comment }}`. There is no loop tag: a loop belongs in the program, where
 Nail's own `map` already does it better. A name the values do not hold is an
-error rather than a blank, because a blank in a page is a bug every time.
+error rather than a blank, because a blank in a page is a bug every time. Where
+a gap really is acceptable, `template_render_or` fills it with text you choose,
+and still refuses a template it cannot read: a missing value is data, an
+unclosed tag is a bug.
 
 ### Charts (`chart_*`)
 Each returns a whole SVG document, which is a string like any other - written to
@@ -2599,7 +2616,7 @@ digit := "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
 
 ### EBNF
 
-```js
+```ebnf
 expression :=
     literal                   // A constant value (e.g., numbers, strings)
     function_call             // Invoking a function (e.g., `foo(a, b)`)
@@ -2628,7 +2645,7 @@ declaration :=
 
 ### EBNF
 
-```js
+```ebnf
 struct_decl := "struct" pascal_identifier "{" struct_field "," struct_field "}"
 struct_field := snake_identifier ":" struct_field_type
 struct_field_type = primitive_type | enum_type | array_type
@@ -2637,7 +2654,7 @@ struct_field_type = primitive_type | enum_type | array_type
 
 ### Nail:
 
-```js
+```nail
 struct Point {
     x_coord:i,
     y_coord:i
@@ -2646,10 +2663,10 @@ struct Point {
 
 ### Transpilation
     
-```js
+```nail
 struct Point {
-    x_coord:i32,
-    y_coord:i32,
+    x_coord:i,
+    y_coord:i
 }
 ```
 
@@ -2659,7 +2676,7 @@ struct Point {
 
 ### EBNF
 
-```js
+```ebnf
 enum_decl := "enum" identifier "{" enum_variant {"," enum_variant} "}"
 enum_variant := identifier
 identifier := letter {letter | digit | "_"}
@@ -2673,7 +2690,7 @@ digit := "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
 
 ### Usage in Nail
 
-```js
+```nail
 enum TrafficLight {
     Red,
     Yellow,
@@ -2756,7 +2773,7 @@ if_branch :=
 
 In Nail, if expressions are used similarly to other languages, but they offer concise syntax that ensures every condition leads to a valid block of code. The branches in an if statement are separated by commas, allowing for clean and readable code.
 
-```js
+```nail-fragment
 // Basic if statement in Nail
 if {
     today == DaysOfWeek::Monday -> {
@@ -2794,7 +2811,7 @@ if today == DaysOfWeek::Monday {
 
 In Nail, when using an if statement with an enum, you must ensure that all possible cases are handled unless an `else` branch is provided. If all cases are handled explicitly, it guarantees exhaustive matching of enum variants, preventing potential bugs from unhandled cases.
 
-```js
+```nail-fragment
 if {
     current_light == TrafficLight::Red -> {
         print(`Stop!`);
@@ -2826,7 +2843,7 @@ In this example, all enum variants of `TrafficLight` are covered. If an enum var
 
 One important aspect of if expressions in Nail is that all branches must return the same type. This ensures consistency, especially when the result of the if expression is used in a larger context (e.g., assigned to a constant or returned from a function).
 
-```js
+```nail-fragment
 // Example where all branches return the same type (in this case, a string)
 message:s = if {
     today == DaysOfWeek::Monday -> { r `Start of the week`; },
@@ -2839,7 +2856,7 @@ message:s = if {
 
 However, if branches return different types, Nail will produce an error:
 
-```js
+```nail-fragment
 // Example where branches return different types (this will cause an error)
 message:s = if {
     today == DaysOfWeek::Monday -> { r `Start of the week`; },  // String
@@ -2879,7 +2896,7 @@ In Nail, all values are constants by default. There are no mutable variables.
 
 Const declarations are written as:
 
-```js
+```nail
 pi:f = 3.14159;
 max_users:i = 100;
 greeting:s = `Hello, World!`;
@@ -2892,7 +2909,7 @@ Key points about const declarations:
 
 Example of shadowing:
 
-```js
+```nail
 user_count:i = 5;
 // Later in the code
 user_count:i = 6;  // This shadows the previous declaration
@@ -2902,7 +2919,7 @@ user_count:i = 6;  // This shadows the previous declaration
 
 Const with shadowing:
 
-```js
+```nail
 max_attempts:i = 3;
 max_attempts:i = 5;  // Shadowing the previous declaration
 max_attempts:s = `Three`; // Shadows can even change the type (like Rust)
@@ -2918,7 +2935,7 @@ max_attempts:s = `Three`; // Shadows can even change the type (like Rust)
 
 In Nail, function declarations are similar to Rust. The basic syntax is:
 
-```js
+```nail-fragment
 f function_name(param_name:Type, another_param:Type):Type {
     // Function body
 }
@@ -2926,7 +2943,7 @@ f function_name(param_name:Type, another_param:Type):Type {
 
 Example:
 
-```js
+```nail
 f add(num_a:i, num_b:i):i {
    r num_a + num_b;
 }
@@ -2936,7 +2953,7 @@ f add(num_a:i, num_b:i):i {
 
 Functions in Nail can return values of any type, or they can be void functions that return nothing:
 
-```js
+```nail
 // Function with return type
 f calculate(x:i, y:i):i {
     r x + y;
@@ -2958,7 +2975,7 @@ f divide(a:i, b:i):i!e {
 
 **Important Rule**: Void functions cannot be assigned to variables. Since they don't return a value, attempting to capture their "result" is a type error:
 
-```js
+```nail-fragment
 // This is INVALID - compile error
 result:s = print(`Hello`);  // ERROR: Cannot assign void to variable
 
@@ -2973,7 +2990,7 @@ sum:i = calculate(5, 3);  // OK - returns an integer
 
 In Nail, function parameters must always be named, unless the name of the constant being passed is an exact match to the parameter name. This encourages clear and self-documenting function calls.
 
-```js
+```nail-refused
 f greet(name:s) {
     print(`Hello, ` + name + `!`);
 }
@@ -2987,7 +3004,7 @@ greet(user_name);        // Allowed because constant name matches parameter name
 
 Nail provides collection operations for iteration and data processing. Since variables are immutable, traditional imperative loops are replaced with functional operations:
 
-```js
+```nail
 numbers:a:i = [1, 2, 3, 4, 5];
 
 // Transform each element using map
@@ -3018,7 +3035,7 @@ Nail's parallel blocks allow you to execute multiple operations concurrently, au
 
 ### Syntax
 
-```js
+```nail-fragment
 p
     // Each statement runs concurrently
     task1:s = expensive_operation();
@@ -3038,7 +3055,7 @@ p
 
 ### Realistic Examples:
 
-```js
+```nail-fragment
 // Example 1: Parallel API calls for a dashboard
 p
     user_profile:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://api.example.com/user/123`, headers, ``));
@@ -3066,7 +3083,7 @@ all_content:s = array_join([content1, content2, content3], `\n`);
 ## Structs
 
 
-```js
+```nail
 struct UserInput {
     full_name:s,
     email:s,
@@ -3082,14 +3099,14 @@ struct UserRecord {
 }
 
 f convert_user_input_to_record(input:UserInput, id:i):UserRecord {
-   name_parts:a:s = split(input.full_name, ` `);
+    name_parts:a:s = string_split(input.full_name, ` `);
     r UserRecord {
-        id:id,
-        first_name: danger(get_index(name_parts, 0)), // This could error but we're just going to danger it.
-        last_name: danger(get_index(name_parts, 1)), // Use danger or define a handler function for safe
-        email:input.email,
-        age:input.age
-    }
+        id = id,
+        first_name = danger(array_get(name_parts, 0)), // This could error, and danger says so out loud
+        last_name = danger(array_get(name_parts, 1)),  // Use danger, or safe with a handler function
+        email = input.email,
+        age = input.age
+    };
 }
 
 // Usage
@@ -3101,7 +3118,7 @@ record:UserRecord = convert_user_input_to_record(input, 1);
 
 Nail provides built-in functions for serializing structs to JSON and deserializing JSON to structs:
 
-```js
+```nail-fragment
 // Serialization - converts structs, enums, arrays to pretty JSON
 user:User = User { name = `Bob`, age = 25, email = `bob@example.com` };
 json_str:s = danger(json_serialize(user));  // Returns pretty-formatted JSON
@@ -3125,7 +3142,7 @@ Note: These functions return Result types, use `danger()` to unwrap or handle er
 
 Nail provides built-in SQLite database support with type-safe struct-based queries:
 
-```js
+```nail-fragment
 // Define a struct that matches your database table
 struct Employee {
     id:i,
@@ -3197,7 +3214,7 @@ Nail provides several ways to handle errors:
 
 The `safe` function allows you to handle potential errors with a handler function:
 
-```js
+```nail-fragment
 f handle_error(err:e):i {
     print(`An error occurred: ` + err);
     r -1;  // Return a default value or handle the error appropriately
@@ -3210,7 +3227,7 @@ result:i = safe(potentially_failing_function(), handle_error);
 
 The `danger` function allows you to assert that a function will not fail, and if it does, it will return the error to start it propogating up the stack. The difference between `danger` and `expect` is that `danger` is used when the programmer acknowledges this should and can be made safe, and it should be made safe. This way you can easily find all dangerous parts of a program, and make them safe.
 
-```js
+```nail-fragment
 result:i = danger(potentially_failing_function());
 ```
 
@@ -3223,7 +3240,7 @@ The `expect` function is identical to danger, but with a different semantic mean
 
 **Important**: Error handling functions used with `safe()` must accept a parameter of type `:e` (error), not `:s` (string). The type checker enforces this requirement.
 
-```js
+```nail
 // ✓ Correct - error handler accepts :e type
 f handle_error(err:e):i {
     print(`Error: `, err);
@@ -3260,7 +3277,7 @@ Found: 'x'
 Suggestion: Use descriptive name like 'x_value' or 'x_coordinate'
 ```
 **Solution**: All variable names must be descriptive. Use snake_case with meaningful names:
-```js
+```nail-refused
 // Wrong
 x:i = 5;
 
@@ -3274,7 +3291,7 @@ user_age:i = 25;
 Error: Expected BlockOpen, found Identifier
 ```
 **Solution**: Nail only supports match-like if syntax:
-```js
+```nail-refused
 // Wrong
 if count > 0 {
     print(`Positive`);
@@ -3292,7 +3309,7 @@ if {
 Error: Cannot use 'r' (return) in collection operation
 ```
 **Solution**: Use `y` (yield) in collection operations, `r` (return) in functions:
-```js
+```nail-fragment
 // Wrong
 doubled:a:i = map num in numbers {
     r num * 2;  // ERROR
@@ -3309,7 +3326,7 @@ doubled:a:i = map num in numbers {
 Error: Cannot assign void to variable
 ```
 **Solution**: Void functions cannot be assigned to variables:
-```js
+```nail
 // Wrong
 result:v = print(`Hello`);  // ERROR
 
@@ -3322,7 +3339,7 @@ print(`Hello`);  // Just call the function
 Error: Void type cannot be used as hashmap value
 ```
 **Solution**: HashMap values must be concrete types:
-```js
+```nail-refused
 // Wrong
 map:h<s,v> = hashmap_new();  // ERROR
 
@@ -3334,7 +3351,7 @@ map:h<s,i> = hashmap_new();  // Use concrete types
 
 #### Error Propagation
 When a function returns an error type, it must be explicitly handled:
-```js
+```nail
 // This will panic if the function fails
 result:i = danger(int_from(`abc`));
 
@@ -3345,7 +3362,7 @@ result:i = safe(int_from(`123`), handle_parse_error);
 
 #### Infinite Loops
 Remember that `loop` and `loop index` are infinite by default:
-```js
+```nail-refused
 // This will run forever - BAD
 loop {
     print(`Forever`);

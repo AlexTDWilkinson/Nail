@@ -1,4 +1,5 @@
 nail latest
+// This is not a standalone program: examples/nail_website.nail imports it.
 // Site configuration, the files this server reads at startup, and the demo
 // values it computes at startup by really running the code the page displays.
 

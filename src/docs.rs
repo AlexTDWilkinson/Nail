@@ -84,3 +84,145 @@ mod tests {
         assert!(section("zzzznotatopic").is_none());
     }
 }
+
+/// The Nail in the documentation, compiled.
+///
+/// The specification and the README teach the language by showing it, and
+/// `nail docs <topic>` prints those same blocks in the terminal. Nobody was
+/// checking them, so a block could teach a syntax the language never had and
+/// nothing would notice. What a fenced block claims about itself decides how
+/// hard it is checked:
+///
+///   ```nail            a whole program: lexes, parses and type checks
+///   ```nail-fragment   a piece of one: lexes and parses, its context is prose
+///   ```nail-refused    code the compiler must refuse, shown to say why
+///
+/// Any other fence (js, ebnf, bash, plain) is not Nail and is not checked.
+/// The point of three names rather than one is that each says what it wants
+/// to be true, so nothing is skipped by omission.
+#[cfg(test)]
+mod documentation_code_tests {
+    /// Read rather than embedded: the README is documentation for people
+    /// reading the repository, and nothing at runtime wants it. Embedding it
+    /// would make it a file every user build has to be shipped.
+    fn readme() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/README.md");
+        return std::fs::read_to_string(path).expect("the README is beside Cargo.toml");
+    }
+
+    /// The directory an example's `import` is resolved against. A block that
+    /// imports `math_helpers.nail` is showing what a reader's own project
+    /// looks like, so the file it names has to exist somewhere: these are in
+    /// tests/docs_imports/, and they are ordinary Nail checked like any other.
+    const IMPORT_BASE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/docs_imports/block.nail");
+
+    struct Fence {
+        source: String,
+        language: String,
+        document: &'static str,
+        line: usize,
+    }
+
+    /// Every fenced block in a markdown document, with the line it starts on
+    /// so a failure can be found by eye.
+    fn fences(document: &'static str, text: &str) -> Vec<Fence> {
+        let mut found = Vec::new();
+        let mut lines = text.lines().enumerate();
+        while let Some((index, line)) = lines.next() {
+            let language = match line.strip_prefix("```") {
+                Some(language) if !language.is_empty() => language.trim().to_string(),
+                _ => continue,
+            };
+            let mut body = String::new();
+            for (_, line) in lines.by_ref() {
+                if line.starts_with("```") {
+                    break;
+                }
+                body.push_str(line);
+                body.push('\n');
+            }
+            found.push(Fence { source: body, language, document, line: index + 1 });
+        }
+        return found;
+    }
+
+    /// Documentation shows the code without the version line most of the time,
+    /// because the line is noise once it has been explained. The compiler
+    /// still wants it.
+    fn as_a_file(source: &str) -> String {
+        let first = source.lines().next().unwrap_or("").trim();
+        let already_pinned = first.starts_with("nail ") && first.split_whitespace().count() == 2;
+        if already_pinned {
+            return source.to_string();
+        }
+        return format!("nail latest\n{}", source);
+    }
+
+    fn all_fences() -> Vec<Fence> {
+        let mut all = fences("nail_language_spec.md", super::SPECIFICATION);
+        all.extend(fences("README.md", &readme()));
+        return all;
+    }
+
+    #[test]
+    fn every_nail_block_in_the_documentation_is_a_whole_program() {
+        let mut broken: Vec<String> = Vec::new();
+        for fence in all_fences().iter().filter(|fence| fence.language == "nail") {
+            let source = as_a_file(&fence.source);
+            let tokens = crate::lexer::lexer_with_context(&source, Some(std::path::Path::new(IMPORT_BASE)));
+            let mut ast = match crate::parser::parse(tokens) {
+                Ok(ast) => ast,
+                Err(error) => {
+                    broken.push(format!("  {}:{} does not parse: {}", fence.document, fence.line, error.message.lines().next().unwrap_or("").trim()));
+                    continue;
+                }
+            };
+            if let Err(errors) = crate::checker::checker(&mut ast) {
+                let first = errors.first().map(|error| error.message.lines().next().unwrap_or("").trim().to_string()).unwrap_or_default();
+                broken.push(format!("  {}:{} does not type check: {}", fence.document, fence.line, first));
+            }
+        }
+        broken.sort();
+        assert!(
+            broken.is_empty(),
+            "a ```nail block is a program someone can copy whole. Mark it ```nail-fragment if it needs context, or ```nail-refused if the compiler is meant to reject it:\n{}",
+            broken.join("\n")
+        );
+    }
+
+    #[test]
+    fn every_nail_fragment_in_the_documentation_is_nail() {
+        let mut broken: Vec<String> = Vec::new();
+        for fence in all_fences().iter().filter(|fence| fence.language == "nail-fragment") {
+            let source = as_a_file(&fence.source);
+            let tokens = crate::lexer::lexer_with_context(&source, Some(std::path::Path::new(IMPORT_BASE)));
+            if let Err(error) = crate::parser::parse(tokens) {
+                broken.push(format!("  {}:{} does not parse: {}", fence.document, fence.line, error.message.lines().next().unwrap_or("").trim()));
+            }
+        }
+        broken.sort();
+        assert!(broken.is_empty(), "a fragment still has to be Nail, whatever context it is missing:\n{}", broken.join("\n"));
+    }
+
+    #[test]
+    fn every_refused_block_in_the_documentation_is_still_refused() {
+        let mut accepted: Vec<String> = Vec::new();
+        for fence in all_fences().iter().filter(|fence| fence.language == "nail-refused") {
+            let source = as_a_file(&fence.source);
+            let tokens = crate::lexer::lexer_with_context(&source, Some(std::path::Path::new(IMPORT_BASE)));
+            let refused = match crate::parser::parse(tokens) {
+                Ok(mut ast) => crate::checker::checker(&mut ast).is_err(),
+                Err(_) => true,
+            };
+            if !refused {
+                accepted.push(format!("  {}:{}", fence.document, fence.line));
+            }
+        }
+        accepted.sort();
+        assert!(
+            accepted.is_empty(),
+            "these blocks are shown as code the compiler rejects, and it now accepts them, so either the text or the compiler is wrong:\n{}",
+            accepted.join("\n")
+        );
+    }
+}

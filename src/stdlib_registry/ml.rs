@@ -57,13 +57,13 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Ml:
         "ml_normalize" => "std_lib::ml::normalize", (values: [f]) -> ([f]!e),
             "Rescales values so the smallest becomes 0.0 and the largest 1.0. Do this before any model that measures distance, so a column in millions does not drown out one in single digits.",
-            "scaled:a:f = danger(ml_normalize(prices));";
+            "prices:a:f = [210.0, 240.0, 600.0];\nscaled:a:f = danger(ml_normalize(prices));";
         "ml_standardize" => "std_lib::ml::standardize", (values: [f]) -> ([f]!e),
             "Rescales values to sit around zero with a spread of one. The other way of putting columns on the same footing, and the one to use when outliers matter.",
-            "scaled:a:f = danger(ml_standardize(prices));";
+            "prices:a:f = [210.0, 240.0, 600.0];\nscaled:a:f = danger(ml_standardize(prices));";
         "ml_knn_predict" => "std_lib::ml::knn_predict", (features: [[f]], labels: [i], query: [f], k: i) -> (i!e),
             "Predicts a label by asking the k nearest rows what they are. No fitting happens - the data is the model - so this is what to reach for when there is very little of it.",
-            "label:i = danger(ml_knn_predict(rows, labels, query, 3));";
+            "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nlabels:a:i = [0, 0, 1, 1];\nquery:a:f = [2.5, 2.5];\nlabel:i = danger(ml_knn_predict(rows, labels, query, 3));";
     }
 
     m.insert(
@@ -74,7 +74,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             vec![nail_param!(row: [f])],
             nail_type!((f!e)),
             "What a fitted line says about one row.",
-            "guess:f = danger(ml_linear_predict(model, row));",
+            "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\ntargets:a:f = [10.0, 12.0, 30.0, 32.0];\nmodel:ML_Linear = danger(ml_linear_fit(rows, targets));\nrow:a:f = [2.5, 2.5];\nguess:f = danger(ml_linear_predict(model, row));",
         ),
     );
 
@@ -86,7 +86,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             vec![nail_param!(row: [f])],
             nail_type!((i!e)),
             "What a fitted tree says about one row.",
-            "label:i = danger(ml_tree_predict(tree, row));",
+            "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nlabels:a:i = [0, 0, 1, 1];\ntree:ML_Tree = danger(ml_tree_fit(rows, labels, 4));\nrow:a:f = [2.5, 2.5];\nlabel:i = danger(ml_tree_predict(tree, row));",
         ),
     );
 
@@ -98,7 +98,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             vec![nail_param!(feature_names: [s])],
             nail_type!((s!e)),
             "Writes a tree out as the rules it actually applies - the reason to reach for a tree over something more accurate. Pass an empty array to see the columns numbered.",
-            "rules:s = danger(ml_tree_explain(tree, [`size`, `weight`]));",
+            "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nlabels:a:i = [0, 0, 1, 1];\ntree:ML_Tree = danger(ml_tree_fit(rows, labels, 4));\nrules:s = danger(ml_tree_explain(tree, [`size`, `weight`]));",
         ),
     );
 
@@ -110,7 +110,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             vec![nail_param!(row: [f])],
             nail_type!((f!e)),
             "What a boosted model says about one row: the starting average plus every tree's correction.",
-            "estimate:f = danger(ml_boost_predict(model, row));",
+            "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nprices:a:f = [210.0, 240.0, 600.0, 640.0];\nconfig:ML_BoostConfig = ml_boost_default_config();\nmodel:ML_Boost = danger(ml_boost_fit(rows, prices, config));\nrow:a:f = [2.5, 2.5];\nestimate:f = danger(ml_boost_predict(model, row));",
         ),
     );
 
@@ -122,7 +122,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             vec![],
             nail_type!(([f]!e)),
             "How much each column contributed, as a share of the total gain, in the original column order. A column near zero is one the model ignored, and dropping it costs nothing.",
-            "shares:a:f = danger(ml_boost_importance(model));",
+            "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nprices:a:f = [210.0, 240.0, 600.0, 640.0];\nconfig:ML_BoostConfig = ml_boost_default_config();\nmodel:ML_Boost = danger(ml_boost_fit(rows, prices, config));\nshares:a:f = danger(ml_boost_importance(model));",
         ),
     );
 
@@ -136,7 +136,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Split"),
         diverging: false,
         description: "Cuts a dataset into a part to learn from and a part to be judged on, shuffling first so an ordering in the file does not become an ordering in the split. The seed makes the cut reproducible.",
-        example: "split:ML_Split = danger(ml_split_train_test(rows, labels, 0.8, 42));",
+        example: "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nlabels:a:i = [0, 0, 1, 1];\nsplit:ML_Split = danger(ml_split_train_test(rows, labels, 0.8, 42));",
     });
 
     m.insert("ml_linear_fit", StdlibFunction {
@@ -149,7 +149,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Linear"),
         diverging: false,
         description: "Fits the straight line closest to the data, exactly rather than iteratively - no learning rate to tune. Errors when two columns say the same thing, because then no single line fits best.",
-        example: "model:ML_Linear = danger(ml_linear_fit(rows, targets));",
+        example: "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\ntargets:a:f = [10.0, 12.0, 30.0, 32.0];\nmodel:ML_Linear = danger(ml_linear_fit(rows, targets));",
     });
 
     m.insert("ml_tree_fit", StdlibFunction {
@@ -162,7 +162,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Tree"),
         diverging: false,
         description: "Fits a decision tree by repeatedly splitting on whichever column separates the classes best. The maximum depth is what stands between a useful model and one that has memorised the training set - three to five is a sensible start.",
-        example: "tree:ML_Tree = danger(ml_tree_fit(rows, labels, 4));",
+        example: "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nlabels:a:i = [0, 0, 1, 1];\ntree:ML_Tree = danger(ml_tree_fit(rows, labels, 4));",
     });
 
     m.insert("ml_kmeans", StdlibFunction {
@@ -175,7 +175,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Clusters"),
         diverging: false,
         description: "Groups points by nearness into k groups. The starting points come from the seed and the answer depends on them, which is why the seed is an argument rather than a hidden decision.",
-        example: "clusters:ML_Clusters = danger(ml_kmeans(points, 3, 42, 20));",
+        example: "points:a:a:f = [[1.0, 1.0], [1.2, 0.9], [8.0, 8.2], [7.8, 8.1], [4.0, 4.0]];\nclusters:ML_Clusters = danger(ml_kmeans(points, 3, 42, 20));",
     });
 
     m.insert("ml_score", StdlibFunction {
@@ -188,7 +188,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Scores"),
         diverging: false,
         description: "Counts how a set of predictions did, treating the label 1 as positive. All four numbers come back together because accuracy alone flatters a model that never says yes.",
-        example: "scores:ML_Scores = danger(ml_score(predicted, actual));",
+        example: "predicted:a:i = [0, 1, 1, 0];\nactual:a:i = [0, 1, 0, 0];\nscores:ML_Scores = danger(ml_score(predicted, actual));",
     });
 
     m.insert("ml_boost_default_config", StdlibFunction {
@@ -214,7 +214,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Boost"),
         diverging: false,
         description: "Fits a gradient boosting model - many small trees, each trained on what the ones before it still get wrong. Nail's own implementation of the technique LightGBM and XGBoost made famous - the method that wins on ordinary tabular data. Predicts a number. For yes-or-no questions fit against 0 and 1.",
-        example: "model:ML_Boost = danger(ml_boost_fit(rows, prices, config));",
+        example: "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nprices:a:f = [210.0, 240.0, 600.0, 640.0];\nconfig:ML_BoostConfig = ml_boost_default_config();\nmodel:ML_Boost = danger(ml_boost_fit(rows, prices, config));",
     });
 
     m.insert("ml_regression_scores", StdlibFunction {
@@ -227,7 +227,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Regression"),
         diverging: false,
         description: "Judges predicted numbers against real ones several ways at once: r_squared, mae, rmse, mape, median_ape and within_ten_percent. Rows whose real value is zero are left out of the percentage measures rather than making them infinite.",
-        example: "scores:ML_Regression = danger(ml_regression_scores(predicted, actual));",
+        example: "predicted:a:f = [11.0, 29.0];\nactual:a:f = [10.0, 30.0];\nscores:ML_Regression = danger(ml_regression_scores(predicted, actual));",
     });
 
     m.insert(
@@ -238,7 +238,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             vec![nail_param!(row: [f])],
             nail_type!((f!e)),
             "What a model fitted with ML_Objective::Logistic says, as a probability from 0.0 to 1.0. Refuses a model fitted to predict a number.",
-            "chance:f = danger(ml_boost_predict_probability(model, row));",
+            "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\ntargets:a:f = [0.0, 0.0, 1.0, 1.0];\nconfig:ML_BoostConfig = ML_BoostConfig { trees = 100, learning_rate = 0.1, max_depth = 6, min_samples_leaf = 1, bins = 255, lambda_l2 = 1.0, objective = ML_Objective::Logistic, early_stopping_rounds = 10 };\nmodel:ML_Boost = danger(ml_boost_fit(rows, targets, config));\nrow:a:f = [2.5, 2.5];\nchance:f = danger(ml_boost_predict_probability(model, row));",
         ),
     );
 
@@ -250,7 +250,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             vec![nail_param!(row: [f])],
             nail_type!((i!e)),
             "What the forest says about one row: the answer most of its trees give.",
-            "label:i = danger(ml_forest_predict(forest, row));",
+            "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nlabels:a:i = [0, 0, 1, 1];\nforest:ML_Forest = danger(ml_forest_fit(rows, labels, 50, 6, 42));\nrow:a:f = [2.5, 2.5];\nlabel:i = danger(ml_forest_predict(forest, row));",
         ),
     );
 
@@ -270,7 +270,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Boost"),
         diverging: false,
         description: "Fits a boosted model while watching a held-out set, and stops once that set stops improving - the answer to the only hard question ml_boost_fit asks, which is how many trees. Trees grown after the best one are thrown away.",
-        example: "model:ML_Boost = danger(ml_boost_fit_validated(train_rows, train_prices, test_rows, test_prices, config));",
+        example: "train_rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0]];\ntrain_prices:a:f = [210.0, 240.0, 600.0];\ntest_rows:a:a:f = [[4.0, 3.0]];\ntest_prices:a:f = [640.0];\nconfig:ML_BoostConfig = ml_boost_default_config();\nmodel:ML_Boost = danger(ml_boost_fit_validated(train_rows, train_prices, test_rows, test_prices, config));",
     });
 
     m.insert("ml_cross_validate_boost", StdlibFunction {
@@ -283,7 +283,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Regression"),
         diverging: false,
         description: "Trains and scores a boosted model once per fold, holding out a different slice each time, and averages the held-out scores. One split on a small dataset says as much about which rows landed where as about the model. This does not.",
-        example: "scores:ML_Regression = danger(ml_cross_validate_boost(rows, prices, 5, config, 42));",
+        example: "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nprices:a:f = [210.0, 240.0, 600.0, 640.0];\nconfig:ML_BoostConfig = ml_boost_default_config();\nscores:ML_Regression = danger(ml_cross_validate_boost(rows, prices, 2, config, 42));",
     });
 
     m.insert("ml_forest_fit", StdlibFunction {
@@ -296,7 +296,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_Forest"),
         diverging: false,
         description: "Fits a forest of trees, each grown on a different random sample of the rows, that predict by voting. Far harder to get badly wrong than a single tree and far less sensitive to settings than boosting - reach for it when there is no time to tune anything.",
-        example: "forest:ML_Forest = danger(ml_forest_fit(rows, labels, 50, 6, 42));",
+        example: "rows:a:a:f = [[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]];\nlabels:a:i = [0, 0, 1, 1];\nforest:ML_Forest = danger(ml_forest_fit(rows, labels, 50, 6, 42));",
     });
 
     m.insert("ml_one_hot", StdlibFunction {
@@ -309,7 +309,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: returns("ML_OneHot"),
         diverging: false,
         description: "Turns a column of words into one column of 0s and 1s per distinct word, with the sorted vocabulary that did it. Keep the vocabulary - new data must be encoded against the same one or every column shifts along.",
-        example: "encoded:ML_OneHot = danger(ml_one_hot(colours));",
+        example: "colours:a:s = [`red`, `blue`, `red`];\nencoded:ML_OneHot = danger(ml_one_hot(colours));",
     });
 
     m.insert("ml_target_encode", StdlibFunction {
@@ -322,7 +322,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::Float)))),
         diverging: false,
         description: "Replaces each category with its average target, pulled towards the overall average according to how few rows it has. For columns where one-hot would add a thousand columns. Fit on training rows only - the smoothing is what stops a one-row category being encoded as its own answer.",
-        example: "encoding:h<s,f> = danger(ml_target_encode(postcodes, prices, 20.0));",
+        example: "postcodes:a:s = [`V6B`, `V6B`, `M5V`];\nprices:a:f = [820.0, 910.0, 1300.0];\nencoding:h<s,f> = danger(ml_target_encode(postcodes, prices, 20.0));",
     });
 
     m.insert("ml_one_hot_with", StdlibFunction {
@@ -335,7 +335,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!(([[f]]!e)),
         diverging: false,
         description: "Encodes a column against a vocabulary already decided, so new data lines up with what a model was trained on. A word that was not in the training data becomes all zeros.",
-        example: "rows:a:a:f = danger(ml_one_hot_with(colours, encoded.categories));",
+        example: "colours:a:s = [`red`, `blue`, `red`];\nencoded:ML_OneHot = danger(ml_one_hot(colours));\nrows:a:a:f = danger(ml_one_hot_with(colours, encoded.categories));",
     });
 
     m.insert("ml_encode_with", StdlibFunction {
@@ -352,6 +352,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!([f]),
         diverging: false,
         description: "Applies an encoding from ml_target_encode to a column. A category the encoding has never seen becomes the fallback, which should be the overall average of the training targets.",
-        example: "encoded:a:f = ml_encode_with(postcodes, encoding, average_price);",
+        example: "postcodes:a:s = [`V6B`, `V6B`, `M5V`];\nprices:a:f = [820.0, 910.0, 1300.0];\nencoding:h<s,f> = danger(ml_target_encode(postcodes, prices, 20.0));\naverage_price:f = 1010.0;\nencoded:a:f = ml_encode_with(postcodes, encoding, average_price);",
     });
 }

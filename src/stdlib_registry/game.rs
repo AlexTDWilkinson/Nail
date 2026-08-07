@@ -23,7 +23,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((T!e)),
         diverging: false,
         description: "Opens a window and runs a game until its view reports quit or the player closes the window, then returns the state it finished with. The program supplies two functions - view(state) returns a GAME_Frame and update(state, input) returns the next state. Input names keys as lowercase letters and digits plus Up, Down, Left, Right, Space, Enter, Esc, Shift, Ctrl, Alt, Tab and Backspace. A target_fps of 0 runs unpaced.",
-        example: "final_state:Pong = danger(game_run(GAME_Config { title = `Pong`, width = 800, height = 600, target_fps = 60, pixel_size = 1, physics_hz = 0 }, Pong { ball_x = 400.0, ball_y = 300.0 }));",
+        example: "struct Pong { ball_x:f, ball_y:f }\n\nf view(state:Pong):GAME_Frame {\n    ball:GAME_Shape = game_circle(state.ball_x, state.ball_y, 8.0, `#fdd835`);\n    r GAME_Frame { shapes = [ball], background = `#101018`, quit = false };\n}\n\nf update(state:Pong, input:GAME_Input):Pong {\n    r Pong { ball_x = state.ball_x + (0.2 * input.delta_ms), ball_y = state.ball_y };\n}\n\nfinal_state:Pong = danger(game_run(GAME_Config { title = `Pong`, width = 800, height = 600, target_fps = 60, pixel_size = 1, physics_hz = 0 }, Pong { ball_x = 400.0, ball_y = 300.0 }));",
     });
 
     m.insert("game_rect", StdlibFunction {
@@ -127,7 +127,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Struct("GAME_Shape".to_string()),
         diverging: false,
         description: "A loaded sprite drawn at its own size with its top left corner at x, y.",
-        example: "player:GAME_Shape = game_sprite(ship, 100.0, 200.0);",
+        example: "ship:i = danger(game_sprite_load(`assets/ship.png`));\nplayer:GAME_Shape = game_sprite(ship, 100.0, 200.0);",
     });
 
     m.insert("game_sprite_scaled", StdlibFunction {
@@ -140,6 +140,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Struct("GAME_Shape".to_string()),
         diverging: false,
         description: "A loaded sprite stretched to width by height at x, y.",
-        example: "boss:GAME_Shape = game_sprite_scaled(ship, 300.0, 100.0, 128.0, 128.0);",
+        example: "ship:i = danger(game_sprite_load(`assets/ship.png`));\nboss:GAME_Shape = game_sprite_scaled(ship, 300.0, 100.0, 128.0, 128.0);",
     });
 }

@@ -23,6 +23,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Sched:
         "sched_every" [Tokio] => "std_lib::sched::every", (name: s, seconds: i) -> (v!e),
             "Calls the program's handle_job(name:s):v function with the given name every so many seconds, forever. The wait is between finishes, not starts, so slow work never overlaps itself. Blocks forever, so it runs in a spawn block.",
-            "spawn { danger(sched_every(`heartbeat`, 60)); }";
+            "f handle_job(name:s):v {\n    print(name);\n}\n\nspawn { danger(sched_every(`heartbeat`, 60)); }";
     }
 }

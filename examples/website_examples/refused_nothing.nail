@@ -1,5 +1,6 @@
 nail latest
 // announce returns nothing, and this code tries to keep the nothing.
+// Nail should FAIL type checking here, which is the point of the page.
 f announce():v {
     print(`hello`);
 }

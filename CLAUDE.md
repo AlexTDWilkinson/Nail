@@ -31,15 +31,43 @@ Generated files to watch for and delete:
 
 This is non-negotiable to maintain language stability and prevent regressions.
 
-A clean run currently reports 165/165 lexer/parser, 165/165 type checker and
-149/149 transpiler, with zero failures. `cargo test --lib` reports 1276 passing
-(1294 with `--features "game audio"`), `cargo test --bin nail` reports 1257
-(the library's tests plus the editor's own), and `./test_e2e.sh` reports 375
+A clean run currently reports 570/570 lexer/parser, 569/569 type checker and
+550/550 transpiler, with zero failures. Those counts are every `.nail` file in
+the repository, from the one shared list in `test_nail_files.sh`, rather than
+the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1314 passing
+(1329 with `--features "game audio"`), `cargo test --bin nail` reports 1317
+(the library's tests plus the editor's own), and `./test_e2e.sh` reports 376
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
+The server tests in `parser::std_lib::net` and the watch tests in
+`parser::std_lib::fs` bind fixed ports and fixed `/tmp` paths, so two test runs
+at once will fail each other. Re-run those alone before believing a failure.
+
 `./test_launcher.sh` reports 41 checks passing, and
 `./test_error_messages.sh` reports 25 passed, 0 failed.
+
+`./test_doc_examples.sh` compiles all 1166 registry examples and runs the 1033
+that can run unattended. The rest are named, with the reason, in
+`tests/doc_examples_needing_the_world.txt`, which is checked both ways: an
+example listed there that starts passing is reported so the line can be
+deleted. Shrinking that list is real work, since an example that writes the
+file it then reads is one a reader can paste and run.
+
+## Nail in the documentation
+
+Every fenced block of Nail in `README.md` and `nail_language_spec.md` is
+compiled by `cargo test --lib docs`, and what the fence calls itself decides
+how hard:
+
+- ` ```nail ` - a whole program: it lexes, parses and type checks
+- ` ```nail-fragment ` - a piece of one: it lexes and parses, its context is
+  the prose around it
+- ` ```nail-refused ` - code the compiler must reject, shown to explain why
+
+Any other fence (`js`, `ebnf`, `bash`) is not Nail and is not checked. Blocks
+that import a file the reader is expected to have resolve it against
+`tests/docs_imports/`.
 
 ## CRITICAL: Never Use Workarounds
 
@@ -128,6 +156,15 @@ HTML entities like `&lt;` are unaffected - this rule is about prose punctuation 
   never heard of). Run it after touching `src/bin/nail_launcher.rs` or
   `src/version_line.rs`
 - **`./test_e2e.sh`** - End-to-end runs of compiled Nail programs
+- **`./test_doc_examples.sh`** - Transpiles, compiles and runs every
+  documentation example in the registry. The Rust tests prove the examples
+  parse and type check, which compares them against the registry's own
+  declaration of each function. Only rustc compares that declaration to the
+  Rust behind it, and only running them proves the example works. Two examples
+  were shipping uncompilable Rust and four more panicked when run before this
+  existed. Slow (it builds a thousand binaries), so it is not part of the
+  pre-commit run, but it is required after touching the registry or the
+  transpiler. `./test_doc_examples.sh array_` checks one module
 - **`./test_error_messages.sh`** - Checks runtime error message wording against goldens
 - **`./check_all_features.sh`** - Verifies every feature-gated combination still compiles
 

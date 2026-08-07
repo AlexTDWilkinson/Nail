@@ -25,4 +25,6 @@ print(danger(template_render_rows(`<li>{{name}}</li>`, rows)));
 f no_page(err:e):s { r `refused`; }
 print(safe(template_render(`{{nowhere}}`, values), no_page));
 print(safe(template_render(`{{#if admin}}text`, values), no_page));
+print(danger(template_render_or(`Hello, {{name}}, of {{company}}`, values, `somewhere`)));
+print(safe(template_render_or(`{{#if admin}}text`, values, `x`), no_page));
 print(danger(template_names_used(`{{title}} {{#if admin}}{{name}}{{/if}}`)));

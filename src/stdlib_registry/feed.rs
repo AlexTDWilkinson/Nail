@@ -13,7 +13,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("FEED_Feed".to_string()))),
         diverging: false,
         description: "Reads an RSS or Atom document into one shape, whichever it is: the feed's title and link, and its entries in the feed's own order. What a feed omits is empty rather than missing.",
-        example: "feed:FEED_Feed = danger(feed_parse(danger(http_request(HTTP_Method::Get, url, hashmap_new(), ``)).body));",
+        example: "document:s = `<rss version=\"2.0\"><channel><title>Nail news</title><link>https://nail-lang.org/</link><description>Releases</description></channel></rss>`;\nfeed:FEED_Feed = danger(feed_parse(document));",
     });
 
     m.insert("feed_rss", StdlibFunction {
@@ -29,7 +29,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
         diverging: false,
         description: "Builds an RSS 2.0 document from the same shapes feed_parse reads, so what one program publishes another parses straight back. Every value is XML-escaped, dates are written the RFC 2822 way RSS wants, a zero timestamp leaves the date off, and a feed with no title or no link is an error rather than a feed nothing can follow.",
-        example: "rss:s = danger(feed_rss(feed, entries));",
+        example: "entries:a:FEED_Entry = [\n    FEED_Entry { id = `1`, title = `Nail 0.4`, link = `https://nail-lang.org/news/0-4`, summary = `What changed.`, published = 1750000000 },\n];\nfeed:FEED_Feed = FEED_Feed { title = `Nail news`, link = `https://nail-lang.org/`, description = `Releases and notes.`, entries = entries };\nrss:s = danger(feed_rss(feed, entries));",
     });
 
     m.insert("feed_atom", StdlibFunction {
@@ -45,7 +45,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
         diverging: false,
         description: "Builds an Atom 1.0 document from the same shapes feed_parse reads, the twin of feed_rss for the other format. Dates are RFC 3339, each entry is identified by its id or by its link when it has none, and a feed with no title or no link is an error rather than a feed nothing can follow.",
-        example: "atom:s = danger(feed_atom(feed, entries));",
+        example: "entries:a:FEED_Entry = [\n    FEED_Entry { id = `1`, title = `Nail 0.4`, link = `https://nail-lang.org/news/0-4`, summary = `What changed.`, published = 1750000000 },\n];\nfeed:FEED_Feed = FEED_Feed { title = `Nail news`, link = `https://nail-lang.org/`, description = `Releases and notes.`, entries = entries };\natom:s = danger(feed_atom(feed, entries));",
     });
 
     simple_fns! { m, Feed:

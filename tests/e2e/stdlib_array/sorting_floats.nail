@@ -1,0 +1,25 @@
+nail latest
+// E2E: sorting floats, and what happens when one of them is not a number.
+//
+// Sorting an array of floats used to type check here and then fail to compile
+// in the generated Rust, because the sort asked for Rust's `Ord` and no float
+// implements it. The sorts now order through a total order that floats do have.
+scores:a:f = [3.5, 1.25, 2.0, 1.25];
+print(array_sort(scores));
+print(array_sort_descending(scores));
+
+// A NaN is reachable: a fractional power of a negative number is not a number.
+not_a_number:f = math_pow(-27.0, 0.3333);
+print(math_is_nan(not_a_number));
+
+// The old comparison called a NaN equal to every number it met, which is not
+// an order at all, and a sort given that returns an arbitrary arrangement. Now
+// a NaN sorts to one end and every other value keeps its place.
+with_nan:a:f = [3.0, not_a_number, 1.0, 2.0];
+sorted:a:f = array_sort(with_nan);
+numbers_only:a:f = filter value in sorted { y math_is_finite(value); };
+print(numbers_only);
+
+// Ordinary ints and text are unchanged by any of this.
+print(array_sort([3, 1, 2]));
+print(array_sort([`pear`, `apple`, `fig`]));

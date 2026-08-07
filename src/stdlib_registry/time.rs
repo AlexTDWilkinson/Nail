@@ -36,25 +36,25 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "now_us:i = time_now_micros();";
         "time_add_seconds" => "std_lib::time::add_seconds", (timestamp: i, seconds: i) -> i,
             "Returns the timestamp shifted by the given number of seconds (negative to subtract).",
-            "later:i = time_add_seconds(now, 3600);";
+            "now:i = time_now();\nlater:i = time_add_seconds(now, 3600);";
         "time_add_minutes" => "std_lib::time::add_minutes", (timestamp: i, minutes: i) -> i,
             "Returns the timestamp shifted by the given number of minutes (negative to subtract).",
-            "later:i = time_add_minutes(now, 90);";
+            "now:i = time_now();\nlater:i = time_add_minutes(now, 90);";
         "time_add_hours" => "std_lib::time::add_hours", (timestamp: i, hours: i) -> i,
             "Returns the timestamp shifted by the given number of hours (negative to subtract).",
-            "later:i = time_add_hours(now, 24);";
+            "now:i = time_now();\nlater:i = time_add_hours(now, 24);";
         "time_add_days" => "std_lib::time::add_days", (timestamp: i, days: i) -> i,
             "Returns the timestamp shifted by the given number of days (negative to subtract).",
-            "tomorrow:i = time_add_days(now, 1);";
+            "now:i = time_now();\ntomorrow:i = time_add_days(now, 1);";
         "time_add_months" [Chrono] => "std_lib::time::add_months", (timestamp: i, months: i) -> (i!e),
             "Returns the timestamp a number of months away, keeping the day of the month where it can - the 31st moved into a shorter month lands on that month's last day.",
-            "renewal:i = danger(time_add_months(signed_up, 1));";
+            "signed_up:i = time_now();\nrenewal:i = danger(time_add_months(signed_up, 1));";
         "time_diff" => "std_lib::time::diff", (timestamp1: i, timestamp2: i) -> i,
             "Returns the absolute difference between two timestamps in seconds.",
-            "elapsed:i = time_diff(finish, start);";
+            "start:i = time_now();\nfinish:i = time_add_seconds(start, 45);\nelapsed:i = time_diff(finish, start);";
         "time_add_weeks" => "std_lib::time::add_weeks", (timestamp: i, weeks: i) -> i,
             "Returns the timestamp shifted by the given number of weeks (negative to subtract).",
-            "next_week:i = time_add_weeks(now, 1);";
+            "now:i = time_now();\nnext_week:i = time_add_weeks(now, 1);";
         "time_end_of_day" [Chrono] => "std_lib::time::end_of_day", (timestamp: i) -> (i!e),
             "Returns 23:59:59 UTC on the day the timestamp falls in - the other end of time_start_of_day.",
             "last_second:i = danger(time_end_of_day(time_now()));";
@@ -66,7 +66,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "days:i = danger(time_days_in_month(2024, 2));";
         "time_ago" => "std_lib::time::ago", (timestamp: i, now: i) -> s,
             "Writes how long ago a moment was the way a page shows it: just now, 5 minutes ago, 3 days ago, or in 2 hours for something still to come. Both moments are given so the same inputs always read the same.",
-            "posted:s = time_ago(created_at, time_now());";
+            "created_at:i = time_add_hours(time_now(), -3);\nposted:s = time_ago(created_at, time_now());";
         "time_start_of_day" [Chrono] => "std_lib::time::start_of_day", (timestamp: i) -> (i!e),
             "Returns midnight UTC at the start of the day the timestamp falls in - the building block for everything that happened today.",
             "today:i = danger(time_start_of_day(time_now()));";
@@ -81,7 +81,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "moment:i = danger(time_parse_custom(`2009-02-13`, `%Y-%m-%d`));";
         "time_format_duration" [Chrono] => "std_lib::time::format_duration", (seconds: i) -> s,
             "Writes a length of time the way a person says it: 2d 3h, 1h 5m, 45s.",
-            "elapsed:s = time_format_duration(time_diff(finish, start));";
+            "start:i = time_now();\nfinish:i = time_add_seconds(start, 4500);\nelapsed:s = time_format_duration(time_diff(finish, start));";
         "time_from_parts" [Chrono] => "std_lib::time::from_parts", (year: i, month: i, day: i, hour: i, minute: i, second: i) -> (i!e),
             "Builds a moment from the parts of a UTC date. A day that is not on the calendar is an error rather than the day it would spill into.",
             "moment:i = danger(time_from_parts(2009, 2, 13, 23, 31, 30));";
@@ -110,7 +110,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((s!e)),
         diverging: false,
         description: "Writes a Unix timestamp out in one of the standard spellings named by TIME_Format.",
-        example: "text:s = danger(time_format(now, TIME_Format::ISO8601));",
+        example: "now:i = time_now();\ntext:s = danger(time_format(now, TIME_Format::ISO8601));",
     });
 
     m.insert("time_parse", StdlibFunction {
@@ -132,7 +132,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Time:
         "time_cron_valid" [Chrono] => "std_lib::time::cron_valid", (expression: (&s)) -> b,
             "Whether the text is a five-field cron expression this understands, for checking a schedule from a configuration file before relying on it.",
-            "usable:b = time_cron_valid(schedule);";
+            "schedule:s = `0 3 * * *`;\nusable:b = time_cron_valid(schedule);";
         "time_cron_matches" [Chrono] => "std_lib::time::cron_matches", (expression: s, timestamp: i) -> (b!e),
             "Whether a cron expression matches a moment, to the minute.",
             "due:b = danger(time_cron_matches(`*/15 * * * *`, time_now()));";
@@ -159,7 +159,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "offset:i = danger(time_zone_offset(time_now(), `Asia/Tokyo`));";
         "time_zone_valid" [ChronoTz] => "std_lib::time::zone_valid", (zone: s) -> b,
             "Whether a zone name is in the IANA database.",
-            "known:b = time_zone_valid(user_zone);";
+            "user_zone:s = `America/Vancouver`;\nknown:b = time_zone_valid(user_zone);";
         "time_list_zones" [ChronoTz] => "std_lib::time::list_zones", () -> [s],
             "Every zone name the database knows, for picking lists.",
             "zones:a:s = time_list_zones();";
@@ -198,22 +198,22 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "due:i = danger(time_add_workdays(time_now(), 3));";
         "time_workdays_between" [Chrono] => "std_lib::time::workdays_between", (start: i, end: i) -> (i!e),
             "Counts the weekday dates after the start's date, up to and including the end's date: Monday to the same week's Friday is 4, Friday to the following Monday is 1, and a same-day pair is 0 - the start's own date is never counted. An end before the start is an error.",
-            "billable:i = danger(time_workdays_between(kickoff, deadline));";
+            "kickoff:i = time_now();\ndeadline:i = time_add_days(kickoff, 30);\nbillable:i = danger(time_workdays_between(kickoff, deadline));";
         "time_days_between" [Chrono] => "std_lib::time::days_between", (start: i, end: i) -> (i!e),
             "Returns the whole days between the calendar dates of two moments, signed - negative when the end is earlier. The clock is ignored: 23:00 to 01:00 the next morning is 1, because the date changed once.",
-            "days_left:i = danger(time_days_between(time_now(), deadline));";
+            "deadline:i = time_add_days(time_now(), 30);\ndays_left:i = danger(time_days_between(time_now(), deadline));";
         "time_months_between" [Chrono] => "std_lib::time::months_between", (start: i, end: i) -> (i!e),
             "Returns the whole calendar months between two moments, signed. A month counts only once the same day of the month has been reached: the 15th of January to the 14th of March is 1, to the 15th is 2.",
-            "paid_for:i = danger(time_months_between(signed_up, time_now()));";
+            "signed_up:i = time_add_days(time_now(), -90);\npaid_for:i = danger(time_months_between(signed_up, time_now()));";
         "time_same_day" [Chrono] => "std_lib::time::same_day", (first: i, second: i) -> (b!e),
             "Whether two moments fall on the same calendar date, in UTC - the same date, not within twenty-four hours of each other.",
-            "today:b = danger(time_same_day(created_at, time_now()));";
+            "created_at:i = time_now();\ntoday:b = danger(time_same_day(created_at, time_now()));";
         "time_is_first_of_month" [Chrono] => "std_lib::time::is_first_of_month", (timestamp: i) -> (b!e),
             "Whether the moment falls on the first day of its month, in UTC - the day the monthly jobs run.",
             "run_billing:b = danger(time_is_first_of_month(time_now()));";
         "time_age_years" [Chrono] => "std_lib::time::age_years", (born: i, at: i) -> (i!e),
             "Returns the age in whole years at a moment, counted the way a person counts it: it goes up on the birthday, not at New Year. A moment before the birth is an error.",
-            "age:i = danger(time_age_years(birthday, time_now()));";
+            "birthday:i = danger(time_parse(`1985-06-14T00:00:00Z`, TIME_Format::ISO8601));\nage:i = danger(time_age_years(birthday, time_now()));";
     }
 
     // time_next_weekday takes the TIME_Weekday enum, which needs a custom

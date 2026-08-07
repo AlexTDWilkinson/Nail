@@ -23,6 +23,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Serves the declared tools as an MCP server over stdin and stdout, the protocol AI assistants use to call outside tools. Each call is passed to the program's handle_tool(name:s, arguments_json:s):s!e function, whose Ok text becomes the tool result and whose error becomes a tool error the model can read. Stdout belongs to the protocol while serving, so anything for a person goes through the log functions, which write to stderr. Blocks until the client hangs up. The error case is a tool list that is empty or carries a schema that is not JSON.",
-        example: "danger(mcp_serve(`weather`, `1.0.0`, tools));",
+        example: "f handle_tool(name:s, arguments_json:s):s!e {\n    r `12C and raining`;\n}\n\ntools:a:MCP_Tool = [\n    MCP_Tool { name = `weather`, description = `Current weather for a city`, input_schema = `{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}` },\n];\ndanger(mcp_serve(`weather`, `1.0.0`, tools));",
     });
 }

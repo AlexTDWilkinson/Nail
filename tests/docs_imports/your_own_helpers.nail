@@ -1,0 +1,6 @@
+nail latest
+// Stands in for a file of your own, imported by an example in
+// nail_language_spec.md.
+f shout(message:s):s {
+    r string_to_uppercase(message);
+}

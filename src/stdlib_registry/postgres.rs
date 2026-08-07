@@ -41,7 +41,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Closes a connection and forgets its handle. Statements on it afterwards are an error rather than a hang.",
-        example: "danger(db_postgres_close(db));",
+        example: "db:DB_Postgres = danger(db_postgres_connect(`postgres://localhost/app`));\ndanger(db_postgres_close(db));",
     });
 
     m.insert("db_postgres_execute", StdlibFunction {
@@ -54,7 +54,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_PostgresResult".to_string()))),
         diverging: false,
         description: "Runs a statement that changes data, binding the values to $1, $2 and so on rather than putting them in the SQL text, and returns how many rows changed.",
-        example: "result:DB_PostgresResult = danger(db_postgres_execute(db, `INSERT INTO people (name) VALUES ($1)`, [name]));",
+        example: "db:DB_Postgres = danger(db_postgres_connect(`postgres://localhost/app`));\nname:s = `Ada`;\nresult:DB_PostgresResult = danger(db_postgres_execute(db, `INSERT INTO people (name) VALUES ($1)`, [name]));",
     });
 
     m.insert("db_postgres_execute_batch", StdlibFunction {
@@ -67,7 +67,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Runs several statements in one round trip, for a schema created on startup. Nothing is bound, so nothing from outside the program belongs in the text.",
-        example: "danger(db_postgres_execute_batch(db, schema));",
+        example: "db:DB_Postgres = danger(db_postgres_connect(`postgres://localhost/app`));\nschema:s = `CREATE TABLE people (id SERIAL, name TEXT, age INT)`;\ndanger(db_postgres_execute_batch(db, schema));",
     });
 
     m.insert("db_postgres_query", StdlibFunction {
@@ -80,7 +80,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!(([T]!e)),
         diverging: false,
         description: "Returns every row of a query as the struct the assignment asks for, binding the values to $1, $2 and so on.",
-        example: "people:a:Person = danger(db_postgres_query(db, `SELECT id, name FROM people WHERE age > $1`, [minimum]));",
+        example: "struct Person { id:i, name:s }\n\ndb:DB_Postgres = danger(db_postgres_connect(`postgres://localhost/app`));\nminimum:s = `18`;\npeople:a:Person = danger(db_postgres_query(db, `SELECT id, name FROM people WHERE age > $1`, [minimum]));",
     });
 
     m.insert("db_postgres_query_single", StdlibFunction {
@@ -93,6 +93,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((T!e)),
         diverging: false,
         description: "Returns the one row a query returns. No rows or several rows are both errors, which makes this right for a lookup by key and wrong for a search.",
-        example: "person:Person = danger(db_postgres_query_single(db, `SELECT id, name FROM people WHERE id = $1`, [id]));",
+        example: "struct Person { id:i, name:s }\n\ndb:DB_Postgres = danger(db_postgres_connect(`postgres://localhost/app`));\nwanted_id:s = `1`;\nperson:Person = danger(db_postgres_query_single(db, `SELECT id, name FROM people WHERE id = $1`, [wanted_id]));",
     });
 }

@@ -52,6 +52,14 @@ test_assert_equal_string(missing, `refused`, `a name the values do not have`);
 unclosed:s = safe(template_render(`{{#if admin}}text`, values), no_page);
 test_assert_equal_string(unclosed, `refused`, `and a tag that is never closed`);
 
+// Where a gap really is acceptable, the fallback fills it and the rest of the
+// page still renders.
+drafted:s = danger(template_render_or(`Hello, {{name}}, of {{company}}`, values, `somewhere`));
+test_assert_equal_string(drafted, `Hello, Alex, of somewhere`, `a missing name takes the fallback`);
+// A tag that is never closed is a bug no fallback repairs, so it still fails.
+still_broken:s = safe(template_render_or(`{{#if admin}}text`, values, `x`), no_page);
+test_assert_equal_string(still_broken, `refused`, `and a broken template is still an error`);
+
 needed:a:s = danger(template_names_used(`{{title}} {{#if admin}}{{name}}{{/if}}`));
 test_assert_equal_int(array_length(needed), 3, `the names a template asks for`);
 test_assert(array_contains(needed, `title`), `including the plain ones`);

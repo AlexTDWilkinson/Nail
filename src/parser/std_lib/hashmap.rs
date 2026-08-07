@@ -1,3 +1,4 @@
+use crate::parser::std_lib::order::NailOrd;
 use dashmap::DashMap;
 use std::hash::Hash;
 
@@ -136,9 +137,9 @@ pub fn sorted_keys<K: Hash + Eq + Clone + Ord, V: Clone>(map: &DashMap<K, V>) ->
 /// The keys ordered by the value each one holds, smallest first. Keys holding
 /// equal values come back in their own order, so the answer is the same on
 /// every run.
-pub fn keys_by_value<K: Hash + Eq + Clone + Ord, V: Clone + PartialOrd>(map: &DashMap<K, V>) -> Vec<K> {
+pub fn keys_by_value<K: Hash + Eq + Clone + Ord, V: Clone + NailOrd>(map: &DashMap<K, V>) -> Vec<K> {
     let mut pairs: Vec<(K, V)> = to_vec(map);
-    pairs.sort_by(|left, right| left.1.partial_cmp(&right.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| left.0.cmp(&right.0)));
+    pairs.sort_by(|left, right| left.1.nail_cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
     return pairs.into_iter().map(|(key, _)| key).collect();
 }
 
@@ -146,22 +147,22 @@ pub fn keys_by_value<K: Hash + Eq + Clone + Ord, V: Clone + PartialOrd>(map: &Da
 /// `array_take` is the top ten: count into a hashmap with `hashmap_increment`,
 /// order it here, take the front. Keys holding equal values still come back in
 /// their own order.
-pub fn keys_by_value_descending<K: Hash + Eq + Clone + Ord, V: Clone + PartialOrd>(map: &DashMap<K, V>) -> Vec<K> {
+pub fn keys_by_value_descending<K: Hash + Eq + Clone + Ord, V: Clone + NailOrd>(map: &DashMap<K, V>) -> Vec<K> {
     let mut pairs: Vec<(K, V)> = to_vec(map);
-    pairs.sort_by(|left, right| right.1.partial_cmp(&left.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| left.0.cmp(&right.0)));
+    pairs.sort_by(|left, right| right.1.nail_cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     return pairs.into_iter().map(|(key, _)| key).collect();
 }
 
 /// The key holding the largest value, or an error when the hashmap is empty.
 /// With several keys tied for largest, the first in the keys' own order wins,
 /// so the answer does not move between runs.
-pub fn max_by_value<K: Hash + Eq + Clone + Ord, V: Clone + PartialOrd>(map: &DashMap<K, V>) -> Result<K, String> {
+pub fn max_by_value<K: Hash + Eq + Clone + Ord, V: Clone + NailOrd>(map: &DashMap<K, V>) -> Result<K, String> {
     return keys_by_value_descending(map).into_iter().next().ok_or_else(|| "hashmap_max_by_value: the hashmap is empty, so no key holds the largest value".to_string());
 }
 
 /// The key holding the smallest value, or an error when the hashmap is empty.
 /// With several keys tied for smallest, the first in the keys' own order wins.
-pub fn min_by_value<K: Hash + Eq + Clone + Ord, V: Clone + PartialOrd>(map: &DashMap<K, V>) -> Result<K, String> {
+pub fn min_by_value<K: Hash + Eq + Clone + Ord, V: Clone + NailOrd>(map: &DashMap<K, V>) -> Result<K, String> {
     return keys_by_value(map).into_iter().next().ok_or_else(|| "hashmap_min_by_value: the hashmap is empty, so no key holds the smallest value".to_string());
 }
 

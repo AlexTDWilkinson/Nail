@@ -1,4 +1,5 @@
 nail latest
 // Reading a file can fail, and this code pretends it cannot.
+// Nail should FAIL type checking here, which is the point of the page.
 content:s = fs_read(`config.txt`);
 print(content);

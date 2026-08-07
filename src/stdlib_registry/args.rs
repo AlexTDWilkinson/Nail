@@ -53,7 +53,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("ARGS_Parsed".to_string()))),
         diverging: false,
         description: "Reads and checks the whole command line against the program's description of it, and returns it as data: the subcommand, the positional arguments, the values and the flags. Errors on an unknown flag, a missing value, a value given to a flag that takes none, or a missing required option.",
-        example: "parsed:ARGS_Parsed = danger(args_parse(options));",
+        example: "options:a:ARGS_Option = [\n    ARGS_Option { name = `output`, short = `o`, description = `where to write the result`, takes_value = true, required = false },\n    ARGS_Option { name = `quiet`, short = `q`, description = `say less while working`, takes_value = false, required = false },\n];\nparsed:ARGS_Parsed = danger(args_parse(options));",
     });
 
     m.insert("args_help_text", StdlibFunction {
@@ -66,6 +66,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!(s),
         diverging: false,
         description: "Builds the --help page from the program's own description of its options, so the page cannot drift from what the program accepts.",
-        example: "print(args_help_text(`mytool`, `Does a thing.`, options));",
+        example: "options:a:ARGS_Option = [\n    ARGS_Option { name = `output`, short = `o`, description = `where to write the result`, takes_value = true, required = false },\n    ARGS_Option { name = `quiet`, short = `q`, description = `say less while working`, takes_value = false, required = false },\n];\nprint(args_help_text(`mytool`, `Does a thing.`, options));",
     });
 }

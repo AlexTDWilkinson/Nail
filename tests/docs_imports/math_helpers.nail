@@ -1,0 +1,9 @@
+nail latest
+// The helper file the include example in nail_language_spec.md names.
+f add(first:i, second:i):i {
+    r first + second;
+}
+
+f multiply(first:i, second:i):i {
+    r first * second;
+}

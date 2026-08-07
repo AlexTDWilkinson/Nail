@@ -4,6 +4,10 @@
 echo "Testing Type Checker"
 echo "===================="
 
+# Every .nail file in the repository, from one shared list, so no directory
+# is tested by nothing (see test_nail_files.sh).
+source "$(dirname "$0")/test_nail_files.sh"
+
 cargo build --bin nailc 2>/dev/null || { echo "FATAL: nailc failed to build"; exit 1; }
 NAILC=./target/debug/nailc
 
@@ -43,12 +47,12 @@ run_one() {
 export -f run_one
 export NAILC RESULTS_DIR
 
-printf '%s\0' tests/*.nail examples/*.nail | xargs -0 -P "$(nproc)" -I{} bash -c 'run_one "$@"' _ {}
+nail_test_files | tr '\n' '\0' | xargs -0 -P "$(nproc)" -I{} bash -c 'run_one "$@"' _ {}
 
 PASSED=0
 FAILED=0
 FAILED_FILES=""
-for file in tests/*.nail examples/*.nail; do
+for file in $(nail_test_files); do
     [[ -f "$file" ]] || continue
     result=$(cat "$RESULTS_DIR/$(echo "$file" | tr '/' '_').result" 2>/dev/null || echo "FAIL (no result)")
     [[ "$result" == "SKIP" ]] && continue

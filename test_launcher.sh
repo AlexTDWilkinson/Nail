@@ -112,6 +112,10 @@ check "bare docs offers the language topics too" "The language itself" "$("$LAUN
 check "docs finds a function exactly" "string_split(input:s, delimiter:s):a:s" "$("$LAUNCHER" docs string_split 2>&1)"
 check "docs searches when there is no exact match" "stats_percentile" "$("$LAUNCHER" docs percentile 2>&1)"
 check "docs says so when nothing matches" "Nothing in the standard library" "$("$LAUNCHER" docs zzzznotathing 2>&1)"
+# `website` and `github` hand a URL to the desktop only when a person is
+# watching. Output here is captured, so these check the printed address and no
+# browser opens. That guard is in open_url, and it is the reason running this
+# suite no longer leaves two tabs behind.
 check "website prints the address" "$NAIL_ORIGIN" "$("$LAUNCHER" website 2>&1)"
 check "github prints the repository" "github.com" "$("$LAUNCHER" github 2>&1)"
 check "test needs a tests directory" "no tests/ directory" "$("$LAUNCHER" test 2>&1)"

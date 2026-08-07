@@ -15,10 +15,10 @@ print(danger(fs_read(scratch)));
 danger(fs_write(scratch, `id,name`));
 print(danger(fs_read(scratch)));
 
-print(fs_is_executable(scratch));
+print(danger(fs_is_executable(scratch)));
 danger(fs_set_executable(scratch, true));
-print(fs_is_executable(scratch));
+print(danger(fs_is_executable(scratch)));
 danger(fs_set_executable(scratch, false));
-print(fs_is_executable(scratch));
-print(fs_is_executable(`/nowhere/at/all`));
+print(danger(fs_is_executable(scratch)));
+print(danger(fs_is_executable(`/nowhere/at/all`)));
 danger(fs_remove_file(scratch));

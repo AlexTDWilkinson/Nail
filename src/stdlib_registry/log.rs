@@ -53,6 +53,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!(v),
         diverging: false,
         description: "Writes a message with named values beside it, which is what makes a log line searchable rather than just readable.",
-        example: "log_with_fields(LOG_Level::Info, `request served`, fields);",
+        example: "fields:h<s,s> = hashmap_new();\nhashmap_set(fields, `path`, `/pricing`);\nhashmap_set(fields, `status`, `200`);\nlog_with_fields(LOG_Level::Info, `request served`, fields);",
     });
 }

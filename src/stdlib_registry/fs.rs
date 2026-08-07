@@ -9,7 +9,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "content:s = danger(fs_read(`notes.txt`));";
         "fs_write" [Tokio] => "std_lib::fs::write_file", (path: s, content: s) -> (v!e),
             "Writes a string to a file, creating or truncating it.",
-            "danger(fs_write(`notes.txt`, content));";
+            "content:s = `remember the milk`;\ndanger(fs_write(`notes.txt`, content));";
         "fs_create_dir" [Tokio] => "std_lib::fs::create_dir", (path: s) -> (v!e),
             "Creates a directory and any missing parent directories.",
             "danger(fs_create_dir(`output/reports`));";
@@ -24,7 +24,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "danger(fs_move(`old.txt`, `new.txt`));";
         "fs_append" [Tokio] => "std_lib::fs::append_file", (path: s, content: s) -> (v!e),
             "Adds to the end of a file, creating it if it is not there yet. Unlike fs_write, it keeps what the file already holds.",
-            "danger(fs_append(`events.log`, line));";
+            "line:s = `deploy finished`;\ndanger(fs_append(`events.log`, line));";
         "fs_read_lines" [Tokio] => "std_lib::fs::read_lines", (path: s) -> ([s]!e),
             "Reads a file and returns its lines with the line endings removed.",
             "lines:a:s = danger(fs_read_lines(`notes.txt`));";
@@ -52,24 +52,24 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "fs_modified" [Tokio] => "std_lib::fs::modified", (path: s) -> (i!e),
             "Returns when a file was last changed, as a Unix timestamp in seconds to compare with time_now.",
             "changed:i = danger(fs_modified(`notes.txt`));";
-        "fs_is_dir" [Tokio] => "std_lib::fs::is_dir", (path: s) -> b,
-            "Returns whether the path names a directory. False for a file and false for a path that is not there.",
-            "folder:b = fs_is_dir(`reports`);";
-        "fs_is_file" [Tokio] => "std_lib::fs::is_file", (path: s) -> b,
-            "Returns whether the path names a file. False for a directory and false for a path that is not there.",
-            "regular:b = fs_is_file(`notes.txt`);";
+        "fs_is_dir" [Tokio] => "std_lib::fs::is_dir", (path: s) -> (b!e),
+            "Returns whether the path names a directory. False for a file and false for a path that is not there. A path that cannot be looked at, such as one inside a directory you may not read, is an error rather than false.",
+            "folder:b = danger(fs_is_dir(`reports`));";
+        "fs_is_file" [Tokio] => "std_lib::fs::is_file", (path: s) -> (b!e),
+            "Returns whether the path names a file. False for a directory and false for a path that is not there. A path that cannot be looked at is an error rather than false.",
+            "regular:b = danger(fs_is_file(`notes.txt`));";
         "fs_write_atomic" [Tokio] => "std_lib::fs::write_atomic", (path: s, content: s) -> (v!e),
             "Writes a file by writing beside it and renaming into place, so a reader never sees a half-written file and a crash leaves the old one intact. The way to write a config, cache or state file.",
-            "danger(fs_write_atomic(`state.json`, encoded));";
+            "encoded:s = `{\"page\":2}`;\ndanger(fs_write_atomic(`state.json`, encoded));";
         "fs_temp_file" [Tokio] => "std_lib::fs::temp_file", (prefix: s, extension: s) -> (s!e),
             "Creates a new empty file nobody else has in the temporary directory and returns its path, carrying the prefix and extension given.",
             "scratch:s = danger(fs_temp_file(`export_`, `csv`));";
         "fs_set_executable" [Tokio] => "std_lib::fs::set_executable", (path: s, executable: b) -> (v!e),
             "Turns the executable bit on or off for a file - the step a program that writes a script has to take before it can run it.",
             "danger(fs_set_executable(`build.sh`, true));";
-        "fs_is_executable" [Tokio] => "std_lib::fs::is_executable", (path: s) -> b,
-            "Whether a file can be run as a program. False for a directory or a missing file.",
-            "runnable:b = fs_is_executable(`build.sh`);";
+        "fs_is_executable" [Tokio] => "std_lib::fs::is_executable", (path: s) -> (b!e),
+            "Whether a file can be run as a program. False for a directory or a missing file. A path that cannot be looked at is an error rather than false.",
+            "runnable:b = danger(fs_is_executable(`build.sh`));";
         "fs_temp_dir" [Tokio] => "std_lib::fs::temp_dir", () -> s,
             "Returns the directory this machine keeps temporary files in. Nothing is created - join a name onto it with path_join.",
             "scratch:s = fs_temp_dir();";
@@ -81,7 +81,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "encoded:s = danger(fs_read_base64(`logo.png`));";
         "fs_write_base64" [Tokio, Base64] => "std_lib::fs::write_base64", (path: s, data: s) -> (v!e),
             "Writes base64 text back out as the bytes it stands for. Text that is not base64 is an error rather than a file full of nonsense.",
-            "danger(fs_write_base64(`logo.png`, encoded));";
+            "encoded:s = base64_encode(`a tiny file`);\ndanger(fs_write_base64(`logo.png`, encoded));";
         "fs_append_file" [Tokio] => "std_lib::fs::append_from_file", (from_path: s, to_path: s) -> (v!e),
             "Adds one file to the end of another, copying in blocks so neither has to fit in memory. How the pieces of a resumable upload are put back together.",
             "danger(fs_append_file(`part_2.bin`, `whole.bin`));";
@@ -119,7 +119,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!(([s]!e)),
         diverging: false,
         description: "The next lines from an open reader, without their line endings - at most count of them, and fewer at the end. An empty array means the file is finished and the reader has closed itself.",
-        example: "lines:a:s = danger(fs_next_lines(reader, 1000));",
+        example: "reader:FS_Reader = danger(fs_open(`app.log`));\nlines:a:s = danger(fs_next_lines(reader, 1000));",
     });
 
     m.insert("fs_close", StdlibFunction {
@@ -132,7 +132,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Closes a reader. Closing one that already reached the end is not an error.",
-        example: "danger(fs_close(reader));",
+        example: "reader:FS_Reader = danger(fs_open(`app.log`));\ndanger(fs_close(reader));",
     });
 
     m.insert("fs_reduce_lines", StdlibFunction {
@@ -156,7 +156,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((A!e)),
         diverging: false,
         description: "Reads a file a line at a time and folds it into one value, the way reduce folds an array - so a file larger than memory can be counted, summed or searched. The step function takes what has been accumulated so far and the next line, and may read files or make requests itself.",
-        example: "errors:i = danger(fs_reduce_lines(`app.log`, 0, count_errors));",
+        example: "f count_errors(seen:i, line:s):i {\n    r if {\n        string_contains(line, `ERROR`) -> { r seen + 1; },\n        else -> { r seen; }\n    };\n}\n\nerrors:i = danger(fs_reduce_lines(`app.log`, 0, count_errors));",
     });
 
     let watcher_parameter = || StdlibParameter { name: "watcher".to_string(), param_type: NailDataTypeDescriptor::Struct("FS_Watcher".to_string()), pass_by_reference: true };
@@ -185,7 +185,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!(([s]!e)),
         diverging: false,
         description: "The paths that changed since the last call, waiting up to the timeout for the first change. An empty array means the time passed quietly.",
-        example: "changed:a:s = danger(fs_watch_next(watcher, 5000));",
+        example: "watcher:FS_Watcher = danger(fs_watch_start(`src`));\nchanged:a:s = danger(fs_watch_next(watcher, 5000));",
     });
 
     m.insert("fs_watch_stop", StdlibFunction {
@@ -198,7 +198,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Ends a watch and forgets its handle. Stopping one twice is not an error.",
-        example: "danger(fs_watch_stop(watcher));",
+        example: "watcher:FS_Watcher = danger(fs_watch_start(`src`));\ndanger(fs_watch_stop(watcher));",
     });
 
     simple_fns! { m, Fs:

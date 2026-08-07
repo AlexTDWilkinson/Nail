@@ -17,7 +17,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((s!e)),
         diverging: false,
         description: "Writes a struct, hashmap or array out as TOML - the format a person edits a configuration file in.",
-        example: "text:s = danger(toml_serialize(settings));",
+        example: "struct Settings { host:s, port:i }\n\nsettings:Settings = Settings { host = `localhost`, port = 8080 };\ntext:s = danger(toml_serialize(settings));",
     });
 
     m.insert("toml_deserialize", StdlibFunction {
@@ -30,6 +30,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((T!e)),
         diverging: false,
         description: "Reads TOML into a value. The type on the left of the assignment says what to read it as, and a document that does not match names the field that did not fit.",
-        example: "settings:Settings = danger(toml_deserialize(text));",
+        example: "struct Settings { host:s, port:i }\n\ntext:s = `host = \"localhost\"\\nport = 8080`;\nsettings:Settings = danger(toml_deserialize(text));",
     });
 }

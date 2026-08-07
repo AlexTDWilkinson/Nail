@@ -119,17 +119,13 @@ pub async fn dns_lookup(hostname: String) -> Result<Vec<String>, String> {
 /// program would be a piece of global state this module does not otherwise
 /// have.
 #[cfg(feature = "dns")]
-fn resolver() -> hickory_resolver::TokioAsyncResolver {
-    return match hickory_resolver::TokioAsyncResolver::tokio_from_system_conf() {
-        Ok(resolver) => resolver,
-        // A machine with no resolver configuration of its own still has the
-        // public servers, which is better than refusing to look anything up.
-        Err(_) => {
-            let mut options = hickory_resolver::config::ResolverOpts::default();
-            options.timeout = Duration::from_secs(5);
-            hickory_resolver::TokioAsyncResolver::tokio(hickory_resolver::config::ResolverConfig::default(), options)
-        }
-    };
+fn resolver(function: &str) -> Result<hickory_resolver::TokioAsyncResolver, String> {
+    // Quietly falling back to the public servers would send every lookup
+    // somewhere the machine did not choose, which on a split-horizon network
+    // answers differently and on any network tells a third party what is being
+    // looked up. Saying so is the honest answer.
+    return hickory_resolver::TokioAsyncResolver::tokio_from_system_conf()
+        .map_err(|failure| format!("{}: this machine has no DNS resolver configuration of its own to look names up with: {}", function, failure));
 }
 
 /// The mail hosts a domain names, in the order mail should be tried: the lowest
@@ -141,7 +137,7 @@ fn resolver() -> hickory_resolver::TokioAsyncResolver {
 /// that is the answer that means something: nothing accepts mail there.
 #[cfg(feature = "dns")]
 pub async fn dns_mx(domain: String) -> Result<Vec<String>, String> {
-    let lookup = resolver().mx_lookup(domain.clone()).await.map_err(|failure| format!("net_dns_mx: could not look up the mail hosts for '{}': {}", domain, failure))?;
+    let lookup = resolver("net_dns_mx")?.mx_lookup(domain.clone()).await.map_err(|failure| format!("net_dns_mx: could not look up the mail hosts for '{}': {}", domain, failure))?;
 
     let mut hosts: Vec<(u16, String)> = lookup.iter().map(|record| (record.preference(), record.exchange().to_utf8().trim_end_matches('.').to_string())).collect();
     hosts.sort_by(|first, second| first.0.cmp(&second.0).then_with(|| first.1.cmp(&second.1)));
@@ -160,7 +156,7 @@ pub async fn dns_mx(domain: String) -> Result<Vec<String>, String> {
 /// every reader of these is supposed to treat it.
 #[cfg(feature = "dns")]
 pub async fn dns_txt(name: String) -> Result<Vec<String>, String> {
-    let lookup = resolver().txt_lookup(name.clone()).await.map_err(|failure| format!("net_dns_txt: could not look up the text records for '{}': {}", name, failure))?;
+    let lookup = resolver("net_dns_txt")?.txt_lookup(name.clone()).await.map_err(|failure| format!("net_dns_txt: could not look up the text records for '{}': {}", name, failure))?;
 
     let records: Vec<String> = lookup
         .iter()
@@ -181,7 +177,7 @@ pub async fn dns_txt(name: String) -> Result<Vec<String>, String> {
 #[cfg(feature = "dns")]
 pub async fn dns_reverse(ip: String) -> Result<Vec<String>, String> {
     let address: std::net::IpAddr = ip.parse().map_err(|_| format!("net_dns_reverse: '{}' is not an IP address", ip))?;
-    let lookup = resolver().reverse_lookup(address).await.map_err(|failure| format!("net_dns_reverse: could not look up the name for '{}': {}", ip, failure))?;
+    let lookup = resolver("net_dns_reverse")?.reverse_lookup(address).await.map_err(|failure| format!("net_dns_reverse: could not look up the name for '{}': {}", ip, failure))?;
 
     let names: Vec<String> = lookup.iter().map(|name| name.to_utf8().trim_end_matches('.').to_string()).collect();
     if names.is_empty() {

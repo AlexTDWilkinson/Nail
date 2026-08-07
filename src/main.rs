@@ -37,6 +37,7 @@ use std::fs::File;
 use std::io;
 use std::io::Write;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -50,9 +51,12 @@ use crate::utils::ProfileData;
 
 use crate::common::CodeSpan;
 use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, supports_keyboard_enhancement, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -73,7 +77,6 @@ pub struct CodeError {
 enum EditOperation {
     InsertChar { position: (usize, usize), char: char },
     DeleteChar { position: (usize, usize), char: char },
-    InsertNewline { position: (usize, usize) },
     DeleteNewline { position: (usize, usize), merged_content: String },
     InsertText { position: (usize, usize), text: String },
     DeleteText { position: (usize, usize), text: String },
@@ -118,6 +121,22 @@ struct Tab {
     ast: Option<parser::ASTNode>,
     scope_symbols: Vec<SymbolInfo>,
     tokens: Vec<lexer::Token>,
+}
+
+/// How many columns a line has. A column is a character, because that is what
+/// the cursor steps over and what a selection counts. A line's byte length is
+/// a different number the moment anyone types an accent, and using it as a
+/// column puts the cursor past the end of the line it is on.
+fn columns_in(line: &str) -> usize {
+    return line.chars().count();
+}
+
+/// The byte a column begins at, or the end of the line for a column past it.
+/// Every slice taken at a cursor or a selection edge goes through here: a line
+/// indexed by a column directly is right only until the line stops being all
+/// ASCII, and then it panics in the middle of a character.
+fn byte_of_column(line: &str, column: usize) -> usize {
+    return line.char_indices().nth(column).map(|(byte, _)| byte).unwrap_or(line.len());
 }
 
 impl Tab {
@@ -167,26 +186,30 @@ impl Tab {
         }
     }
     
-    fn delete_selected_text(&mut self) {
+    /// Removes the selection and writes nothing to the undo stack, so the
+    /// caller owes it an entry. Every command that replaces a selection
+    /// records the removal and what went in its place as one edit, and this is
+    /// the half of that which touches the text.
+    fn delete_selected_text_unrecorded(&mut self) {
         if !self.has_selection() {
             return;
         }
-        
+
         let (start_pos, end_pos) = self.get_normalized_selection();
         
         if start_pos.1 == end_pos.1 {
             // Single line selection
             let line = &mut self.content[start_pos.1];
-            let before = line[..start_pos.0].to_string();
-            let after = line[end_pos.0..].to_string();
+            let before = line[..byte_of_column(line, start_pos.0)].to_string();
+            let after = line[byte_of_column(line, end_pos.0)..].to_string();
             *line = format!("{}{}", before, after);
         } else {
             // Multi-line selection
             let start_line = &self.content[start_pos.1];
             let end_line = &self.content[end_pos.1];
-            
-            let before = start_line[..start_pos.0].to_string();
-            let after = end_line[end_pos.0..].to_string();
+
+            let before = start_line[..byte_of_column(start_line, start_pos.0)].to_string();
+            let after = end_line[byte_of_column(end_line, end_pos.0)..].to_string();
             let new_line = format!("{}{}", before, after);
             
             // Remove lines between start and end
@@ -203,6 +226,18 @@ impl Tab {
         self.modified = true;
     }
     
+    /// Puts the cursor back inside the file. Nothing is supposed to leave it
+    /// outside, but an edit begins by reading the line the cursor is on, and a
+    /// cursor that had left would take the editor down rather than miss.
+    fn settle_cursor(&mut self) {
+        if self.content.is_empty() {
+            self.content.push(String::new());
+        }
+        if self.cursor_y >= self.content.len() {
+            self.cursor_y = self.content.len() - 1;
+        }
+    }
+
     fn record_operation(&mut self, op: EditOperation) {
         // Group consecutive character insertions for better user experience
         if let EditOperation::InsertChar { .. } = &op {
@@ -299,9 +334,12 @@ struct Editor {
     debug_mode: bool,
     theme: &'static ColorScheme,
     keymap: nail::keymap::Keymap,
-    // The half-typed chord an emacs user is in the middle of, which decides
-    // what the next key means
+    // The half-typed chord an emacs user is in the middle of, or the operator
+    // a vim user has started, which decides what the next key means
     pending_prefix: Option<nail::keymap::Prefix>,
+    // Which vim mode is on. It means nothing under the other two keymaps, and
+    // starts at normal because that is where vim starts.
+    vim_mode: nail::keymap::VimMode,
     mark_active: bool,
     settings_row: usize,
     // Tab system
@@ -476,6 +514,16 @@ enum CompletionKind {
     Keyword,
 }
 
+/// Which of the two forms of a documented example to put in the file. The
+/// names are the ones the documentation panel shows: the example is the
+/// single line that calls the function, the full example is the whole
+/// runnable program around it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ExampleForm {
+    Example,
+    FullExample,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum DialogMode {
     None,
@@ -493,10 +541,7 @@ enum DialogMode {
 impl Editor {
     // Helper function to convert character index to byte index for string operations
     fn char_to_byte_index(s: &str, char_index: usize) -> usize {
-        s.char_indices()
-            .nth(char_index)
-            .map(|(byte_index, _)| byte_index)
-            .unwrap_or(s.len())
+        return byte_of_column(s, char_index);
     }
     
     // Helper function to get the byte length of the character at the given character index
@@ -523,6 +568,7 @@ impl Editor {
             theme: stored_theme(),
             keymap: stored_keymap().unwrap_or_else(nail::keymap::detect),
             pending_prefix: None,
+            vim_mode: nail::keymap::VimMode::Normal,
             mark_active: false,
             settings_row: 0,
             tabs: vec![welcome_tab],
@@ -888,9 +934,9 @@ impl Editor {
             let mut signature = format!("{}(", name);
             for (i, param) in func.parameters.iter().enumerate() {
                 if i > 0 { signature.push_str(", "); }
-                signature.push_str(&format!("{}: {}", param.name, format_type(&param.param_type)));
+                signature.push_str(&format!("{}:{}", param.name, param.param_type));
             }
-            signature.push_str(&format!(") -> {}", format_type(&func.return_type)));
+            signature.push_str(&format!("):{}", func.return_type));
             
             self.stdlib_functions.push(StdLibFunction {
                 name: name.to_string(),
@@ -1009,25 +1055,60 @@ impl Editor {
         self.dialog_mode = DialogMode::None;
     }
     
+    /// Puts a piece of Nail into the file exactly as written, however many
+    /// lines it runs to, and leaves the cursor at the end of it. Whatever the
+    /// cursor was sitting in front of stays in front of it.
+    fn insert_lines_at_cursor(&mut self, text: &str) {
+        let tab = self.get_current_tab_mut();
+        if tab.cursor_y >= tab.content.len() {
+            tab.content.push(String::new());
+            tab.cursor_y = tab.content.len() - 1;
+        }
+        let width = tab.content[tab.cursor_y].chars().count();
+        if tab.cursor_x > width {
+            tab.cursor_x = width;
+        }
+
+        let split = Self::char_to_byte_index(&tab.content[tab.cursor_y], tab.cursor_x);
+        let tail = tab.content[tab.cursor_y][split..].to_string();
+        tab.content[tab.cursor_y].truncate(split);
+
+        let mut pieces = text.split('\n');
+        let first = pieces.next().unwrap_or("");
+        tab.content[tab.cursor_y].push_str(first);
+        let rest: Vec<String> = pieces.map(|piece| piece.to_string()).collect();
+        for (offset, extra) in rest.iter().enumerate() {
+            tab.content.insert(tab.cursor_y + 1 + offset, extra.clone());
+        }
+
+        tab.cursor_y += rest.len();
+        tab.cursor_x = tab.content[tab.cursor_y].chars().count();
+        let landing = tab.cursor_y;
+        tab.content[landing].push_str(&tail);
+        tab.modified = true;
+    }
+
+    /// The library browser hands over the function's worked example, because
+    /// a name and a pair of parentheses is the part you already knew.
+    ///
+    /// An example is a whole program rather than a word, so it starts on a
+    /// line of its own. Landing it against whatever the cursor was sitting
+    /// after would join two statements into one line.
     fn insert_stdlib_function(&mut self, func_name: &str) {
-        let current_tab = self.get_current_tab_mut();
-        let insert_text = format!("{}()", func_name);
-        
-        // Insert at cursor position
-        if current_tab.cursor_y >= current_tab.content.len() {
-            current_tab.content.push(String::new());
-            current_tab.cursor_y = current_tab.content.len() - 1;
-        }
-        
-        let line = &mut current_tab.content[current_tab.cursor_y];
-        if current_tab.cursor_x > line.chars().count() {
-            current_tab.cursor_x = line.chars().count();
-        }
-        
-        let byte_pos = Self::char_to_byte_index(line, current_tab.cursor_x);
-        line.insert_str(byte_pos, &insert_text);
-        current_tab.cursor_x += func_name.len() + 1; // Position cursor between parentheses
-        current_tab.modified = true;
+        let example = crate::stdlib_registry::get_stdlib_function(func_name)
+            .map(|function| function.example.to_string())
+            .filter(|example| !example.is_empty())
+            .unwrap_or_else(|| format!("{}()", func_name));
+
+        let needs_its_own_line = {
+            let tab = self.get_current_tab();
+            tab.content
+                .get(tab.cursor_y)
+                .map(|line| line.chars().take(tab.cursor_x).any(|character| !character.is_whitespace()))
+                .unwrap_or(false)
+        };
+        let text = if needs_its_own_line { format!("\n{}", example) } else { example };
+        self.insert_lines_at_cursor(&text);
     }
 
     // Undo/Redo management methods
@@ -1040,7 +1121,35 @@ impl Editor {
         let current_tab = self.get_current_tab_mut();
         current_tab.flush_char_group();
     }
-    
+
+    /// Takes the selection out of the file and hands back the edit that would
+    /// put it back. Typing, pasting or pressing Enter over a selection all
+    /// begin by clearing it, and the text they cleared belongs on the undo
+    /// stack rather than gone: without this, one keystroke over a selected
+    /// block is unrecoverable however many times Ctrl+Z is pressed.
+    fn take_selection_for_replacement(&mut self) -> Option<EditOperation> {
+        if !self.has_selection() {
+            return None;
+        }
+        let text = self.get_selected_text();
+        let (start, _) = {
+            let current_tab = self.get_current_tab();
+            current_tab.get_normalized_selection()
+        };
+        self.get_current_tab_mut().delete_selected_text_unrecorded();
+        return Some(EditOperation::DeleteText { position: start, text });
+    }
+
+    /// Records an edit that replaced a selection as one entry, so a single
+    /// undo takes back both the removal and what was put in its place.
+    fn record_replacing_selection(&mut self, removed: Option<EditOperation>, operation: EditOperation) {
+        let current_tab = self.get_current_tab_mut();
+        match removed {
+            Some(removal) => current_tab.record_operation(EditOperation::BatchOperation { operations: vec![removal, operation] }),
+            None => current_tab.record_operation(operation),
+        }
+    }
+
     fn undo(&mut self) -> bool {
         // Flush any pending character group first
         self.flush_char_group();
@@ -1143,35 +1252,15 @@ impl Editor {
                     }
                 }
             }
-            EditOperation::InsertNewline { position } => {
-                if reverse {
-                    // Undo: merge lines back
-                    current_tab.cursor_x = position.0;
-                    current_tab.cursor_y = position.1;
-                    if current_tab.cursor_y + 1 < current_tab.content.len() {
-                        let next_line = current_tab.content.remove(current_tab.cursor_y + 1);
-                        current_tab.content[current_tab.cursor_y].push_str(&next_line);
-                    }
-                } else {
-                    // Redo: split line
-                    current_tab.cursor_x = position.0;
-                    current_tab.cursor_y = position.1;
-                    if current_tab.cursor_y < current_tab.content.len() {
-                        let remaining = current_tab.content[current_tab.cursor_y].split_off(current_tab.cursor_x);
-                        current_tab.content.insert(current_tab.cursor_y + 1, remaining);
-                        current_tab.cursor_y += 1;
-                        current_tab.cursor_x = 0;
-                    }
-                }
-            }
             EditOperation::DeleteNewline { position, merged_content } => {
                 if reverse {
                     // Undo: split the line back
                     current_tab.cursor_x = position.0;
                     current_tab.cursor_y = position.1;
                     if current_tab.cursor_y < current_tab.content.len() {
-                        let remaining = current_tab.content[current_tab.cursor_y].split_off(current_tab.cursor_x);
-                        current_tab.content.insert(current_tab.cursor_y + 1, remaining);
+                        let split = byte_of_column(&current_tab.content[current_tab.cursor_y], current_tab.cursor_x);
+                        current_tab.content[current_tab.cursor_y].truncate(split);
+                        current_tab.content.insert(current_tab.cursor_y + 1, merged_content.clone());
                         current_tab.cursor_y += 1;
                         current_tab.cursor_x = 0;
                     }
@@ -1246,7 +1335,8 @@ impl Editor {
         let current_tab = self.get_current_tab_mut();
         for c in text.chars() {
             if c == '\n' {
-                let remaining = current_tab.content[current_tab.cursor_y].split_off(current_tab.cursor_x);
+                let split = byte_of_column(&current_tab.content[current_tab.cursor_y], current_tab.cursor_x);
+                let remaining = current_tab.content[current_tab.cursor_y].split_off(split);
                 current_tab.content.insert(current_tab.cursor_y + 1, remaining);
                 current_tab.cursor_y += 1;
                 current_tab.cursor_x = 0;
@@ -1290,6 +1380,7 @@ impl Editor {
     }
 
     fn delete_char(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         // If there's a selection, delete it instead of single character
         if self.has_selection() {
             self.delete_selected_text();
@@ -1314,9 +1405,7 @@ impl Editor {
             }
         } else if current_tab.cursor_y > 0 {
             let current_line = current_tab.content.remove(current_tab.cursor_y);
-            let old_cursor_x = current_tab.cursor_x;
-            let old_cursor_y = current_tab.cursor_y;
-            
+
             current_tab.cursor_y -= 1;
             current_tab.cursor_x = current_tab.content[current_tab.cursor_y].chars().count();
             current_tab.content[current_tab.cursor_y].push_str(&current_line);
@@ -1331,6 +1420,7 @@ impl Editor {
     }
 
     fn insert_char(&mut self, c: char) {
+        self.get_current_tab_mut().settle_cursor();
         let debug_mode = self.debug_mode;
         if debug_mode {
             log::info!("insert_char called with '{}' at cursor ({}, {})", c, 
@@ -1347,16 +1437,13 @@ impl Editor {
             }
         }
 
-        // If there's a selection, delete it first
-        {
-            let current_tab = self.get_current_tab_mut();
-            if current_tab.has_selection() {
-                if debug_mode {
-                    log::info!("Deleting selection before inserting char");
-                }
-                current_tab.delete_selected_text();
-            }
+        // A selection typed over is the first half of this edit rather than
+        // something that happened before it, so what it held is kept and
+        // recorded alongside the character below.
+        if debug_mode && self.has_selection() {
+            log::info!("Deleting selection before inserting char");
         }
+        let removed = self.take_selection_for_replacement();
 
         // Handle smart dedent for closing braces
         if c == '}' {
@@ -1365,6 +1452,11 @@ impl Editor {
                 self.should_smart_dedent(current_tab)
             };
             if should_dedent {
+                // Smart dedent records the line it rewrote, so a selection
+                // taken on the way here needs an entry of its own.
+                if let Some(removal) = removed {
+                    self.get_current_tab_mut().record_operation(removal);
+                }
                 // Get the current tab index and handle smart dedent directly
                 let current_tab_index = self.tab_index;
                 if let Some(tab) = self.tabs.get_mut(current_tab_index) {
@@ -1381,12 +1473,8 @@ impl Editor {
             let cursor_x = current_tab.cursor_x;
             self.get_auto_closing_char(c, line_ref, cursor_x)
         };
-        
-        let current_tab = self.get_current_tab_mut();
-        if current_tab.cursor_y >= current_tab.content.len() {
-            current_tab.content.push(String::new());
-        }
 
+        let current_tab = self.get_current_tab_mut();
         let line = &mut current_tab.content[current_tab.cursor_y];
         let line_char_count = line.chars().count();
         if current_tab.cursor_x > line_char_count {
@@ -1408,19 +1496,21 @@ impl Editor {
             let byte_pos = Self::char_to_byte_index(line, current_tab.cursor_x);
             line.insert(byte_pos, close_char);
         }
-        
+
         current_tab.modified = true;
-        current_tab.record_operation(operation);
+        self.record_replacing_selection(removed, operation);
     }
 
     fn delete_forward(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         // Delete key should delete selected text or character after cursor
-        let current_tab = self.get_current_tab_mut();
-        if current_tab.has_selection() {
-            current_tab.delete_selected_text();
+        if self.has_selection() {
+            self.delete_selected_text();
             return;
         }
-        
+
+        let current_tab = self.get_current_tab_mut();
+
         let cursor_x = current_tab.cursor_x;
         let cursor_y = current_tab.cursor_y;
         
@@ -1428,7 +1518,7 @@ impl Editor {
             return;
         }
         
-        let line_len = current_tab.content[cursor_y].len();
+        let line_len = columns_in(&current_tab.content[cursor_y]);
         
         if cursor_x < line_len {
             // Delete character after cursor - safely
@@ -1446,11 +1536,16 @@ impl Editor {
         } else if cursor_y < current_tab.content.len() - 1 {
             // At end of line, merge with next line
             let next_line = current_tab.content.remove(cursor_y + 1);
+            // The join happens at the end of the line, which is where undo has
+            // to split it again. A cursor sitting past the end of a short line
+            // would otherwise record a column the line does not have, and undo
+            // padded the gap with spaces on the way to it.
             let operation = EditOperation::DeleteNewline {
-                position: (cursor_x, cursor_y),
+                position: (line_len, cursor_y),
                 merged_content: next_line.clone(),
             };
-            
+
+
             current_tab.content[cursor_y].push_str(&next_line);
             current_tab.modified = true;
             current_tab.record_operation(operation);
@@ -1473,6 +1568,7 @@ impl Editor {
     }
     
     fn move_cursor_left_with_selection(&mut self, extend_selection: bool) {
+        self.get_current_tab_mut().settle_cursor();
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
@@ -1503,6 +1599,7 @@ impl Editor {
     }
     
     fn move_cursor_right_with_selection(&mut self, extend_selection: bool) {
+        self.get_current_tab_mut().settle_cursor();
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
@@ -1534,6 +1631,7 @@ impl Editor {
     }
     
     fn move_cursor_up_with_selection(&mut self, extend_selection: bool) {
+        self.get_current_tab_mut().settle_cursor();
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
@@ -1546,7 +1644,7 @@ impl Editor {
         let current_tab = self.get_current_tab_mut();
         if current_tab.cursor_y > 0 {
             current_tab.cursor_y -= 1;
-            let upper_line_len = current_tab.content[current_tab.cursor_y].len();
+            let upper_line_len = columns_in(&current_tab.content[current_tab.cursor_y]);
             current_tab.cursor_x = current_tab.cursor_x.min(upper_line_len);
         }
         
@@ -1563,6 +1661,7 @@ impl Editor {
     }
     
     fn move_cursor_down_with_selection(&mut self, extend_selection: bool) {
+        self.get_current_tab_mut().settle_cursor();
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
@@ -1575,7 +1674,7 @@ impl Editor {
         let current_tab = self.get_current_tab_mut();
         if current_tab.cursor_y < current_tab.content.len() - 1 {
             current_tab.cursor_y += 1;
-            let lower_line_len = current_tab.content[current_tab.cursor_y].len();
+            let lower_line_len = columns_in(&current_tab.content[current_tab.cursor_y]);
             current_tab.cursor_x = current_tab.cursor_x.min(lower_line_len);
         }
         
@@ -1593,6 +1692,7 @@ impl Editor {
     }
     
     fn move_to_line_start_with_selection(&mut self, extend_selection: bool) {
+        self.get_current_tab_mut().settle_cursor();
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
@@ -1615,6 +1715,7 @@ impl Editor {
     }
     
     fn move_to_line_end_with_selection(&mut self, extend_selection: bool) {
+        self.get_current_tab_mut().settle_cursor();
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
@@ -1626,7 +1727,7 @@ impl Editor {
         
         let current_tab = self.get_current_tab_mut();
         if current_tab.cursor_y < current_tab.content.len() {
-            current_tab.cursor_x = current_tab.content[current_tab.cursor_y].len();
+            current_tab.cursor_x = columns_in(&current_tab.content[current_tab.cursor_y]);
         }
         
         if extend_selection {
@@ -1675,7 +1776,7 @@ impl Editor {
         let current_tab = self.get_current_tab_mut();
         if !current_tab.content.is_empty() {
             current_tab.cursor_y = current_tab.content.len() - 1;
-            current_tab.cursor_x = current_tab.content[current_tab.cursor_y].len();
+            current_tab.cursor_x = columns_in(&current_tab.content[current_tab.cursor_y]);
         } else {
             current_tab.cursor_x = 0;
             current_tab.cursor_y = 0;
@@ -1706,7 +1807,7 @@ impl Editor {
             if y > 0 {
                 y -= 1;
                 if y < current_tab.content.len() {
-                    x = current_tab.content[y].len();
+                    x = columns_in(&current_tab.content[y]);
                 }
             }
             return (x, y);
@@ -1776,6 +1877,7 @@ impl Editor {
     }
     
     fn move_cursor_left_word_with_selection(&mut self, extend_selection: bool) {
+        self.get_current_tab_mut().settle_cursor();
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
@@ -1800,6 +1902,7 @@ impl Editor {
     }
     
     fn move_cursor_right_word_with_selection(&mut self, extend_selection: bool) {
+        self.get_current_tab_mut().settle_cursor();
         // Flush any pending character group when cursor moves
         self.flush_char_group();
         
@@ -1826,14 +1929,35 @@ impl Editor {
     }
     
     fn close_dialog(&mut self) {
-        // Clear search highlights when closing find/replace dialogs
         if matches!(self.dialog_mode, DialogMode::Find | DialogMode::Replace) {
-            self.search_results.clear();
+            // Vim leaves the matches lit after a search, because `n` is a key
+            // away and the point of the highlighting is to show where it will
+            // land. Ctrl+L is what puts them out. Every other keymap treats
+            // closing the box as the end of the search.
+            if self.keymap != nail::keymap::Keymap::Vim {
+                self.search_results.clear();
+            }
             self.clear_selection();
         }
-        
+
         self.dialog_mode = DialogMode::None;
         self.goto_line_input.clear();
+    }
+
+    /// Vim's `:nohlsearch`, on the Ctrl+L neovim puts it on. The phrase itself
+    /// is kept, so `n` can still find the next one after the lights go out.
+    pub fn clear_search_highlight(&mut self) {
+        self.search_results.clear();
+        self.current_match_index = 0;
+    }
+
+    /// A number that changes whenever the text does, and never otherwise. It
+    /// is only ever compared with an earlier reading of itself, which is why
+    /// counting the recorded edits is enough and what they were does not
+    /// matter.
+    pub fn edit_marker(&self) -> (usize, usize, usize) {
+        let tab = self.get_current_tab();
+        return (tab.undo_stack.len(), tab.char_insert_group.len(), tab.content.len());
     }
     
     fn handle_goto_line_input(&mut self, c: char) {
@@ -1979,7 +2103,14 @@ impl Editor {
                 if found.start() == found.end() {
                     continue;
                 }
-                self.search_results.push((line_idx, found.start(), found.end()));
+                // A match arrives measured in bytes and every other part of
+                // the editor counts columns, so it is converted once, here.
+                // Kept in bytes, a match after an accented character
+                // highlighted the wrong letters and put the cursor in the
+                // wrong place.
+                let start = columns_in(&line[..found.start()]);
+                let end = start + columns_in(found.as_str());
+                self.search_results.push((line_idx, start, end));
             }
         }
 
@@ -2032,6 +2163,44 @@ impl Editor {
         self.highlight_current_match();
     }
     
+    /// Searching again for whatever was searched for last. The matches are
+    /// dropped when the find dialog closes, so a repeat search that comes
+    /// later has to find them again before it can step through them. Without
+    /// this, F3 and vim's `n` both do nothing the moment the dialog is shut,
+    /// which is exactly when a user reaches for them.
+    fn find_again(&mut self, forward: bool) {
+        self.search_direction_forward = forward;
+        if !self.search_results.is_empty() {
+            if forward {
+                self.find_next();
+            } else {
+                self.find_previous();
+            }
+            return;
+        }
+        if self.search_query.is_empty() {
+            return;
+        }
+        // Where the cursor was before the search moved it, which is the last
+        // match it landed on.
+        let cursor = self.cursor_position();
+        self.find_all_matches();
+        if self.search_results.is_empty() {
+            return;
+        }
+        // Finding again lands on the match at or after the cursor, and after a
+        // previous search that is the match the cursor is already sitting on.
+        // Stepping over it is what makes this a search for the next one.
+        let (line, start, _) = self.search_results[self.current_match_index];
+        if !forward || (start, line) == cursor {
+            if forward {
+                self.find_next();
+            } else {
+                self.find_previous();
+            }
+        }
+    }
+
     fn find_previous(&mut self) {
         if self.search_results.is_empty() {
             return;
@@ -2082,21 +2251,22 @@ impl Editor {
         // Perform the replacement
         let replace_text = self.replace_text.clone();
         let current_tab = self.get_current_tab();
-        let old_text = current_tab.content[line][start..end].to_string();
+        let span = byte_of_column(&current_tab.content[line], start)..byte_of_column(&current_tab.content[line], end);
+        let old_text = current_tab.content[line][span.clone()].to_string();
         let operation = EditOperation::ReplaceText {
             position: (start, line),
             old_text: old_text,
             new_text: replace_text.clone(),
         };
-        
+
         // Replace the text
         let current_tab = self.get_current_tab_mut();
-        current_tab.content[line].replace_range(start..end, &replace_text);
+        current_tab.content[line].replace_range(span, &replace_text);
         current_tab.modified = true;
         current_tab.record_operation(operation);
-        
+
         // Update search results to account for the replacement
-        let length_diff = replace_text.len() as isize - (end - start) as isize;
+        let length_diff = columns_in(&replace_text) as isize - (end - start) as isize;
         
         // Remove the current match from results
         self.search_results.remove(self.current_match_index);
@@ -2147,7 +2317,8 @@ impl Editor {
         {
             let current_tab = self.get_current_tab();
             for (line, start, end) in sorted_results {
-                let old_text = current_tab.content[line][start..end].to_string();
+                let span = byte_of_column(&current_tab.content[line], start)..byte_of_column(&current_tab.content[line], end);
+                let old_text = current_tab.content[line][span].to_string();
                 let operation = EditOperation::ReplaceText {
                     position: (start, line),
                     old_text: old_text,
@@ -2160,7 +2331,8 @@ impl Editor {
         // Perform the replacements
         let current_tab = self.get_current_tab_mut();
         for (line, start, end) in sorted_results_for_replace {
-            current_tab.content[line].replace_range(start..end, &replace_text);
+            let span = byte_of_column(&current_tab.content[line], start)..byte_of_column(&current_tab.content[line], end);
+            current_tab.content[line].replace_range(span, &replace_text);
         }
         
         // Record all operations as a batch
@@ -2191,14 +2363,11 @@ impl Editor {
     }
 
     fn insert_newline(&mut self) {
-        // If there's a selection, delete it first
-        {
-            let current_tab = self.get_current_tab_mut();
-            if current_tab.has_selection() {
-                current_tab.delete_selected_text();
-            }
-        }
-        
+        self.get_current_tab_mut().settle_cursor();
+        // A selection is what this line break replaces, so it is recorded with
+        // the break rather than dropped on the way to it.
+        let removed = self.take_selection_for_replacement();
+
         // Calculate auto-indentation
         let (current_line, cursor_x) = {
             let current_tab = self.get_current_tab();
@@ -2209,18 +2378,24 @@ impl Editor {
         let indent = self.calculate_auto_indent(&current_line, cursor_x);
         
         let current_tab = self.get_current_tab_mut();
-        
-        let operation = EditOperation::InsertNewline {
+
+        // The break carries the new line's indentation with it, so the entry
+        // says so. Recorded as a bare newline, undo merged the two lines back
+        // together and left the indentation sitting in the middle of the
+        // line: pressing Enter and changing your mind added four spaces.
+        let operation = EditOperation::InsertText {
             position: (current_tab.cursor_x, current_tab.cursor_y),
+            text: format!("\n{}", indent),
         };
-        
-        let remaining = current_tab.content[current_tab.cursor_y].split_off(current_tab.cursor_x);
+
+        let split = byte_of_column(&current_tab.content[current_tab.cursor_y], current_tab.cursor_x);
+        let remaining = current_tab.content[current_tab.cursor_y].split_off(split);
         current_tab.cursor_y += 1;
         current_tab.content.insert(current_tab.cursor_y, format!("{}{}", indent, remaining));
-        current_tab.cursor_x = indent.len();
+        current_tab.cursor_x = columns_in(&indent);
         current_tab.modified = true;
-        
-        current_tab.record_operation(operation);
+
+        self.record_replacing_selection(removed, operation);
     }
 
     fn calculate_auto_indent(&self, current_line: &str, cursor_x: usize) -> String {
@@ -2235,7 +2410,7 @@ impl Editor {
         }
         
         // Check if we need to increase indentation after opening braces
-        let line_before_cursor = &current_line[..cursor_x.min(current_line.len())];
+        let line_before_cursor = &current_line[..byte_of_column(current_line, cursor_x)];
         let should_increase_indent = line_before_cursor.trim_end().ends_with('{') ||
                                    line_before_cursor.trim_end().ends_with('[') ||
                                    line_before_cursor.trim_end().ends_with('(');
@@ -2298,79 +2473,48 @@ impl Editor {
         }
         
         let line = &tab.content[tab.cursor_y];
-        let before_cursor = &line[..tab.cursor_x.min(line.len())];
+        let before_cursor = &line[..byte_of_column(line, tab.cursor_x)];
         
         // Only dedent if the line contains only whitespace before the cursor
         before_cursor.trim().is_empty()
-    }
-
-    fn smart_dedent(&mut self, tab: &mut Tab) {
-        if tab.cursor_y >= tab.content.len() {
-            return;
-        }
-        
-        let line = &mut tab.content[tab.cursor_y];
-        let before_cursor = line[..tab.cursor_x.min(line.len())].to_string();
-        
-        // Remove one level of indentation (4 spaces)
-        let dedented = if before_cursor.len() >= 4 && before_cursor.ends_with("    ") {
-            format!("{}{}{}", 
-                &before_cursor[..before_cursor.len() - 4], 
-                '}', 
-                &line[tab.cursor_x.min(line.len())..])
-        } else {
-            format!("{}{}{}", 
-                before_cursor, 
-                '}', 
-                &line[tab.cursor_x.min(line.len())..])
-        };
-        
-        let operation = EditOperation::ReplaceText {
-            position: (0, tab.cursor_y),
-            old_text: line.clone(),
-            new_text: dedented.clone(),
-        };
-        
-        *line = dedented;
-        tab.cursor_x = tab.cursor_x.saturating_sub(4).max(before_cursor.len() - 4 + 1);
-        tab.modified = true;
-        tab.record_operation(operation);
     }
 
     fn smart_dedent_tab(tab: &mut Tab) {
         if tab.cursor_y >= tab.content.len() {
             return;
         }
-        
+
         let line = &mut tab.content[tab.cursor_y];
-        let before_cursor = line[..tab.cursor_x.min(line.len())].to_string();
-        
-        // Remove one level of indentation (4 spaces)
-        let dedented = if before_cursor.len() >= 4 && before_cursor.ends_with("    ") {
-            format!("{}{}{}", 
-                &before_cursor[..before_cursor.len() - 4], 
-                '}', 
-                &line[tab.cursor_x.min(line.len())..])
-        } else {
-            format!("{}{}{}", 
-                before_cursor, 
-                '}', 
-                &line[tab.cursor_x.min(line.len())..])
+        let split = byte_of_column(line, tab.cursor_x);
+        let before_cursor = line[..split].to_string();
+
+        // Remove one level of indentation (4 spaces). A line with less than
+        // that in front of the cursor has no level to remove, so the brace
+        // simply goes in where it was typed.
+        let kept_indent = match before_cursor.ends_with("    ") {
+            true => &before_cursor[..before_cursor.len() - 4],
+            false => &before_cursor[..],
         };
-        
+        let dedented = format!("{}{}{}", kept_indent, '}', &line[split..]);
+
         let operation = EditOperation::ReplaceText {
             position: (0, tab.cursor_y),
             old_text: line.clone(),
             new_text: dedented.clone(),
         };
-        
+
         *line = dedented;
-        tab.cursor_x = tab.cursor_x.saturating_sub(4).max(before_cursor.len() - 4 + 1);
+        // The cursor follows the brace, which sits at the end of whatever
+        // indentation was kept. Working this out by subtracting four from
+        // where the cursor was used to underflow on a line indented less
+        // deeply than that, and take the editor down with it.
+        tab.cursor_x = kept_indent.chars().count() + 1;
         tab.modified = true;
         tab.record_operation(operation);
     }
 
     fn indent_selection(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         let current_tab = self.get_current_tab_mut();
         
         if !current_tab.has_selection() {
@@ -2418,6 +2562,7 @@ impl Editor {
     }
 
     fn dedent_selection(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         let current_tab = self.get_current_tab_mut();
         
         if !current_tab.has_selection() {
@@ -2523,6 +2668,7 @@ impl Editor {
     }
 
     fn toggle_comment(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         let has_selection = {
             let current_tab = self.get_current_tab();
             current_tab.has_selection()
@@ -2662,6 +2808,7 @@ impl Editor {
     }
 
     fn duplicate_line(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         let has_selection = {
             let current_tab = self.get_current_tab();
             current_tab.has_selection()
@@ -2724,6 +2871,7 @@ impl Editor {
     }
 
     fn move_line_up(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         let has_selection = {
             let current_tab = self.get_current_tab();
             current_tab.has_selection()
@@ -2737,6 +2885,7 @@ impl Editor {
     }
 
     fn move_line_down(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         let has_selection = {
             let current_tab = self.get_current_tab();
             current_tab.has_selection()
@@ -2868,6 +3017,7 @@ impl Editor {
     }
 
     fn delete_line(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         let has_selection = {
             let current_tab = self.get_current_tab();
             current_tab.has_selection()
@@ -2987,7 +3137,7 @@ impl Editor {
         }
         
         let line = &tab.content[tab.cursor_y];
-        if tab.cursor_x >= line.len() {
+        if tab.cursor_x >= columns_in(line) {
             return None;
         }
         
@@ -3059,7 +3209,7 @@ impl Editor {
                 break;
             }
             y -= 1;
-            x = tab.content[y].len();
+            x = columns_in(&tab.content[y]);
         }
         
         None
@@ -3110,7 +3260,7 @@ impl Editor {
             }
             // Ensure cursor_x is within bounds of the new line
             if current_tab.cursor_y < current_tab.content.len() {
-                let line_len = current_tab.content[current_tab.cursor_y].len();
+                let line_len = columns_in(&current_tab.content[current_tab.cursor_y]);
                 current_tab.cursor_x = current_tab.cursor_x.min(line_len);
             }
             current_tab.scroll_position
@@ -3140,7 +3290,7 @@ impl Editor {
             }
             // Ensure cursor_x is within bounds of the new line
             if current_tab.cursor_y < current_tab.content.len() {
-                let line_len = current_tab.content[current_tab.cursor_y].len();
+                let line_len = columns_in(&current_tab.content[current_tab.cursor_y]);
                 current_tab.cursor_x = current_tab.cursor_x.min(line_len);
             }
             current_tab.scroll_position
@@ -3205,15 +3355,20 @@ impl Editor {
 
     pub fn settings_cycle_value(&mut self, forward: bool) {
         match self.settings_row {
-            // Vim is somewhere detection can leave the user, never somewhere
-            // cycling can put them, because there is no vim key table yet.
+            // Leaving a keymap has to leave its half-finished state behind
+            // too, or the next keymap starts inside a chord nobody typed.
             0 => {
                 self.keymap = match (self.keymap, forward) {
-                    (nail::keymap::Keymap::Cua, _) => nail::keymap::Keymap::Emacs,
-                    (nail::keymap::Keymap::Emacs, _) => nail::keymap::Keymap::Cua,
-                    (nail::keymap::Keymap::Vim, true) => nail::keymap::Keymap::Cua,
-                    (nail::keymap::Keymap::Vim, false) => nail::keymap::Keymap::Emacs,
+                    (nail::keymap::Keymap::Cua, true) => nail::keymap::Keymap::Vim,
+                    (nail::keymap::Keymap::Vim, true) => nail::keymap::Keymap::Emacs,
+                    (nail::keymap::Keymap::Emacs, true) => nail::keymap::Keymap::Cua,
+                    (nail::keymap::Keymap::Cua, false) => nail::keymap::Keymap::Emacs,
+                    (nail::keymap::Keymap::Emacs, false) => nail::keymap::Keymap::Vim,
+                    (nail::keymap::Keymap::Vim, false) => nail::keymap::Keymap::Cua,
                 };
+                self.vim_mode = nail::keymap::VimMode::Normal;
+                self.pending_prefix = None;
+                self.clear_mark();
             }
             1 => self.toggle_theme(),
             _ => {
@@ -3236,11 +3391,13 @@ impl Editor {
     }
 
     pub fn settings_rows(&self) -> Vec<(String, String)> {
+        // Naming a keymap is not enough to pick one, so each says what it
+        // means. Vim and emacs are known by their keys, while the default is
+        // known by the editors that use it.
         let keys = match self.keymap {
-            // Detection can land here, so the row says which bindings are
-            // actually answering keys rather than only which one was detected.
-            nail::keymap::Keymap::Vim => "vim (falls back to cua)".to_string(),
-            other => keymap_name(other).to_string(),
+            nail::keymap::Keymap::Cua => "normal (VS Code, Atom)".to_string(),
+            nail::keymap::Keymap::Emacs => "emacs (ctrl+a, ctrl+k)".to_string(),
+            nail::keymap::Keymap::Vim => "vim (hjkl, modal)".to_string(),
         };
         return vec![
             ("Keys".to_string(), keys),
@@ -3291,6 +3448,7 @@ impl Editor {
     /// takes the newline instead, which is how emacs empties a line and then
     /// closes the gap in two presses of the same key.
     pub fn kill_to_line_end(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         self.start_selection();
         self.move_to_line_end_with_selection(true);
         if self.has_selection() {
@@ -3299,6 +3457,221 @@ impl Editor {
         }
         self.clear_selection();
         self.delete_forward();
+    }
+
+    /// The mirror of the one above, for vim's Ctrl+U in insert mode. Nothing
+    /// is deleted at the start of a line, rather than the line before being
+    /// pulled up, because a key that clears a line should not also join two.
+    pub fn kill_to_line_start(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
+        self.start_selection();
+        self.move_to_line_start_with_selection(true);
+        if self.has_selection() {
+            self.delete_selected_text();
+            return;
+        }
+        self.clear_selection();
+    }
+
+    /// Starts a line under this one and puts the cursor on it, indented to
+    /// match, which is vim's `o`. The indentation comes from `insert_newline`
+    /// rather than from here, so a line opened under a `{` opens indented.
+    pub fn open_line_below(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
+        self.move_to_line_end();
+        self.insert_newline();
+    }
+
+    /// Vim's `O`, written as opening a line under the one above rather than
+    /// above the one the cursor is on. That is the same line in the end, and
+    /// this way it inherits the indentation of the line it follows instead of
+    /// arriving at column zero.
+    pub fn open_line_above(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
+        // The first line of the file has nothing above it to follow, so the
+        // blank line goes in directly. Splitting the line at column zero
+        // instead would hand its indentation to both halves.
+        if self.get_current_tab().cursor_y == 0 {
+            self.flush_char_group();
+            let tab = self.get_current_tab_mut();
+            tab.content.insert(0, String::new());
+            tab.cursor_x = 0;
+            tab.record_operation(EditOperation::InsertText { position: (0, 0), text: "\n".to_string() });
+            tab.modified = true;
+            return;
+        }
+        self.move_cursor_up();
+        self.move_to_line_end();
+        self.insert_newline();
+    }
+
+    /// Vim's `x`. Deleting forward from the end of a line pulls the next one
+    /// up, which is what the Delete key is for and never what `x` means, so
+    /// the end of a line is where this stops.
+    pub fn delete_char_at_cursor(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
+        let tab = self.get_current_tab();
+        let line_length = match tab.content.get(tab.cursor_y) {
+            Some(line) => line.chars().count(),
+            None => return,
+        };
+        if tab.cursor_x >= line_length {
+            return;
+        }
+        self.delete_forward();
+    }
+
+    /// Empties the line and leaves the cursor where the typing goes, which is
+    /// vim's `cc`. The indentation stays, because a line being rewritten is
+    /// nearly always being rewritten at the same depth.
+    pub fn change_line(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
+        let tab = self.get_current_tab_mut();
+        let old_line = match tab.content.get(tab.cursor_y) {
+            Some(line) => line.clone(),
+            None => return,
+        };
+        let indent: String = old_line.chars().take_while(|c| c.is_whitespace()).collect();
+        tab.cursor_x = indent.chars().count();
+        if old_line == indent {
+            return;
+        }
+        let position = (0, tab.cursor_y);
+        tab.content[tab.cursor_y] = indent.clone();
+        tab.record_operation(EditOperation::ReplaceText { position, old_text: old_line, new_text: indent });
+        tab.modified = true;
+    }
+
+    /// A whole line is yanked with its newline still attached, because that is
+    /// what tells the paste it is a line rather than a fragment: it lands on a
+    /// line of its own instead of in the middle of the one the cursor is on.
+    pub fn yank_line(&mut self) {
+        let tab = self.get_current_tab();
+        let line = match tab.content.get(tab.cursor_y) {
+            Some(line) => line.clone(),
+            None => return,
+        };
+        self.set_clipboard(&(line + "\n"));
+    }
+
+    /// A line selection is yanked with a newline on the end, the same way a
+    /// whole line is, so that pasting it lays the lines back down rather than
+    /// dropping them into the middle of another one.
+    pub fn yank_selection_as_lines(&mut self) {
+        let text = self.get_selected_text();
+        if text.is_empty() {
+            return;
+        }
+        self.set_clipboard(&(text + "\n"));
+    }
+
+    /// Neovim's `Y`: the rest of the line from the cursor, not the whole line.
+    pub fn yank_to_line_end(&mut self) {
+        self.yank_over(|editor| editor.move_to_line_end_with_selection(true));
+    }
+
+    /// Vim's `yw`. The cursor is put back where it started, because yanking is
+    /// the one operator that leaves the file and the cursor alone.
+    pub fn yank_word(&mut self) {
+        self.yank_over(|editor| editor.move_cursor_right_word_with_selection(true));
+    }
+
+    /// Copies whatever the given motion covers and then undoes the motion, so
+    /// that a yank leaves the file, the cursor and the selection as it found
+    /// them. Every yank that takes a motion is this with a different one.
+    fn yank_over(&mut self, motion: impl Fn(&mut Editor)) {
+        let start = self.cursor_position();
+        self.start_selection();
+        motion(self);
+        let text = self.get_selected_text();
+        self.clear_selection();
+        let tab = self.get_current_tab_mut();
+        tab.cursor_x = start.0;
+        tab.cursor_y = start.1;
+        if !text.is_empty() {
+            self.set_clipboard(&text);
+        }
+    }
+
+    fn set_clipboard(&self, text: &str) {
+        use arboard::Clipboard;
+        // A machine with no clipboard is a machine where yanking quietly does
+        // nothing, which is the same answer copying already gives there.
+        if let Ok(mut clipboard) = Clipboard::new() {
+            let _ = clipboard.set_text(text.to_string());
+        }
+    }
+
+    /// Vim's `p` and `P`. Whether the paste lands on a line of its own or
+    /// inside the current one is decided by the trailing newline, which is the
+    /// same rule vim uses to tell a yanked line from a yanked word.
+    pub fn paste_around_cursor(&mut self, after: bool) {
+        use arboard::Clipboard;
+        let text = match Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
+            Ok(text) if !text.is_empty() => text,
+            _ => return,
+        };
+
+        if !text.ends_with('\n') {
+            if after {
+                let tab = self.get_current_tab();
+                let line_length = tab.content.get(tab.cursor_y).map(|line| line.chars().count()).unwrap_or(0);
+                if tab.cursor_x < line_length {
+                    self.move_cursor_right();
+                }
+            }
+            self.paste_text(&text);
+            return;
+        }
+
+        let (line, last_line) = {
+            let tab = self.get_current_tab();
+            (tab.cursor_y, tab.content.len().saturating_sub(1))
+        };
+        // Pasting after the last line has no line to push down, so the block
+        // is added to the end instead of being inserted before something.
+        if after && line >= last_line {
+            self.move_to_line_end();
+            let body = text.trim_end_matches('\n').to_string();
+            self.paste_text(&format!("\n{}", body));
+        } else {
+            let target = if after { line + 1 } else { line };
+            {
+                let tab = self.get_current_tab_mut();
+                tab.cursor_y = target;
+                tab.cursor_x = 0;
+            }
+            self.paste_text(&text);
+        }
+        // The cursor belongs on the first line of what was pasted, not after
+        // the last of it, which is where inserting the text leaves it.
+        let tab = self.get_current_tab_mut();
+        tab.cursor_y = (line + if after { 1 } else { 0 }).min(tab.content.len().saturating_sub(1));
+        tab.cursor_x = 0;
+    }
+
+    /// Grows the selection out to whole lines, which is the whole difference
+    /// between visual line mode and visual mode. It runs after every key while
+    /// that mode is on, because a motion moves one end of the selection and
+    /// this is what puts that end back on a line boundary.
+    pub fn snap_selection_to_lines(&mut self) {
+        let tab = self.get_current_tab_mut();
+        let (start, end) = match (tab.selection_start, tab.selection_end) {
+            (Some(start), Some(end)) => (start, end),
+            _ => return,
+        };
+        let width = |content: &[String], line: usize| content.get(line).map(|line| columns_in(line)).unwrap_or(0);
+        // The anchor is whichever end the selection started from, so which end
+        // gets the start of a line and which gets the end of one depends on
+        // which way the selection is facing.
+        if start.1 <= end.1 {
+            tab.selection_start = Some((0, start.1));
+            tab.selection_end = Some((width(&tab.content, end.1), end.1));
+        } else {
+            tab.selection_start = Some((width(&tab.content, start.1), start.1));
+            tab.selection_end = Some((0, end.1));
+        }
+        tab.selection_mode = true;
     }
 
     fn save_file(&mut self) -> Result<(), String> {
@@ -3416,6 +3789,11 @@ fn main() -> Result<(), io::Error> {
     }
 
     panic::set_hook(Box::new(|panic_info| {
+        // Hand the terminal back before anything else. A crash used to leave
+        // the shell in raw mode on the alternate screen, and now that we also
+        // ask for the keyboard protocol it would leave the shell reading
+        // escape sequences for every chord the user pressed afterwards.
+        restore_terminal();
         let backtrace = Backtrace::capture();
         error!("Panic occurred: {:?}", panic_info);
         error!("Backtrace:\n{:?}", backtrace);
@@ -3435,7 +3813,24 @@ fn main() -> Result<(), io::Error> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    
+
+    // Ask the terminal for the newer keyboard protocol, which is the only way
+    // a Ctrl+Shift chord ever arrives as one. Without it Ctrl+Shift+P is
+    // indistinguishable from Ctrl+P on the wire, and half the toggles in the
+    // keymap are keys nobody can press. The question is one round trip and it
+    // has to be asked before the key thread starts reading events, because
+    // the answer comes back as one. A terminal that does not know the
+    // protocol answers the device attributes query instead, which is a no,
+    // and everything keeps working on its plain chords.
+    let enhanced_keys = matches!(supports_keyboard_enhancement(), Ok(true));
+    if enhanced_keys {
+        execute!(stdout, PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES))?;
+        log::info!("Terminal speaks the progressive keyboard protocol, so Ctrl+Shift chords are readable");
+    } else {
+        log::info!("Terminal has no progressive keyboard protocol, so Ctrl+Shift chords arrive as plain Ctrl");
+    }
+    ENHANCED_KEYS.store(enhanced_keys, Ordering::Relaxed);
+
     // Create terminal
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -3515,10 +3910,28 @@ fn main() -> Result<(), io::Error> {
     draw_thread_logic(terminal.clone(), editor_for_draw, rx_draw);
     
     // Clean up terminal on exit
-    disable_raw_mode()?;
-    execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
+    restore_terminal();
 
     Ok(())
+}
+
+/// Whether the terminal agreed to the progressive keyboard protocol, so that
+/// the teardown knows whether there is a stack entry to pop. It is a static
+/// because the panic hook has to be able to read it, and a hook cannot borrow
+/// anything from main.
+static ENHANCED_KEYS: AtomicBool = AtomicBool::new(false);
+
+/// Puts the terminal back the way it was found: out of the keyboard protocol,
+/// out of mouse reporting, off the alternate screen, out of raw mode. Called
+/// on the way out and again from the panic hook, and safe to call twice,
+/// because a terminal that is already back where it started ignores being
+/// told so a second time.
+fn restore_terminal() {
+    if ENHANCED_KEYS.swap(false, Ordering::Relaxed) {
+        let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+    }
+    let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
 }
 
 #[derive(Debug, Clone)]
@@ -3542,7 +3955,7 @@ fn stored_theme() -> &'static ColorScheme {
 /// question back rather than quietly picking an answer.
 fn stored_keymap() -> Option<nail::keymap::Keymap> {
     return match crate::utils::read_config_value("keymap").as_deref() {
-        Some("cua") => Some(nail::keymap::Keymap::Cua),
+        Some("normal") | Some("cua") => Some(nail::keymap::Keymap::Cua),
         Some("vim") => Some(nail::keymap::Keymap::Vim),
         Some("emacs") => Some(nail::keymap::Keymap::Emacs),
         _ => None,
@@ -3552,7 +3965,7 @@ fn stored_keymap() -> Option<nail::keymap::Keymap> {
 /// How a keymap is spelled in the config file.
 fn keymap_name(keymap: nail::keymap::Keymap) -> &'static str {
     return match keymap {
-        nail::keymap::Keymap::Cua => "cua",
+        nail::keymap::Keymap::Cua => "normal",
         nail::keymap::Keymap::Vim => "vim",
         nail::keymap::Keymap::Emacs => "emacs",
     };
@@ -3583,7 +3996,7 @@ impl Editor {
         }
         
         let line = &current_tab.content[current_tab.cursor_y];
-        if current_tab.cursor_x > line.len() {
+        if current_tab.cursor_x > columns_in(line) {
             return CompletionContext::None;
         }
         
@@ -3629,9 +4042,9 @@ impl Editor {
         }
         
         // Check if we're typing an identifier
-        let current_word = self.get_current_word();
-        if !current_word.is_empty() {
-            return CompletionContext::Identifier(current_word);
+        let typed = self.completion_prefix_at_cursor();
+        if !typed.is_empty() {
+            return CompletionContext::Identifier(typed);
         }
         
         CompletionContext::None
@@ -3648,31 +4061,29 @@ impl Editor {
         pos + current_tab.cursor_x
     }
     
-    fn get_current_word(&self) -> String {
+    /// How much of a word has been typed at the cursor. Only what is to the
+    /// left of it counts: the rest of the word is already written, and reading
+    /// it as a prefix made the list offer to finish a name the cursor had
+    /// merely landed in front of.
+    fn completion_prefix_at_cursor(&self) -> String {
         let current_tab = self.get_current_tab();
         if current_tab.cursor_y >= current_tab.content.len() {
             return String::new();
         }
-        
-        let line = &current_tab.content[current_tab.cursor_y];
-        if current_tab.cursor_x > line.len() {
+
+        let characters: Vec<char> = current_tab.content[current_tab.cursor_y].chars().collect();
+        if current_tab.cursor_x > characters.len() {
             return String::new();
         }
-        
-        // Find word boundaries
+
         let mut start = current_tab.cursor_x;
-        while start > 0 && line.chars().nth(start - 1).map_or(false, |c| c.is_alphanumeric() || c == '_') {
+        while start > 0 && (characters[start - 1].is_alphanumeric() || characters[start - 1] == '_') {
             start -= 1;
         }
-        
-        let mut end = current_tab.cursor_x;
-        while end < line.len() && line.chars().nth(end).map_or(false, |c| c.is_alphanumeric() || c == '_') {
-            end += 1;
-        }
-        
-        line[start..end].to_string()
+
+        return characters[start..current_tab.cursor_x].iter().collect();
     }
-    
+
     fn update_completions(&mut self) {
         let context = self.get_completion_context();
         
@@ -3700,7 +4111,7 @@ impl Editor {
                     if name.len() >= prefix.len() && name[..prefix.len()].eq_ignore_ascii_case(&prefix) {
                         // Build function signature
                         let params: Vec<String> = func.parameters.iter()
-                            .map(|p| format!("{}:{}", p.name, format_type(&p.param_type)))
+                            .map(|p| format!("{}:{}", p.name, p.param_type))
                             .collect();
                         
                         // For debugging - log the function info
@@ -3708,9 +4119,9 @@ impl Editor {
                             name, func.parameters.len(), func.return_type);
                         
                         let signature = if params.is_empty() {
-                            format!("{}() -> {}", name, format_type(&func.return_type))
+                            format!("{}():{}", name, func.return_type)
                         } else {
-                            format!("{}({}) -> {}", name, params.join(", "), format_type(&func.return_type))
+                            format!("{}({}):{}", name, params.join(", "), func.return_type)
                         };
                         
                         completions.push(CompletionItem {
@@ -3757,12 +4168,12 @@ impl Editor {
                 
                 if let Some(func) = get_stdlib_function(&func_name) {
                     let params: Vec<String> = func.parameters.iter()
-                        .map(|p| format!("{}:{}", p.name, format_type(&p.param_type)))
+                        .map(|p| format!("{}:{}", p.name, p.param_type))
                         .collect();
                     
                     let hint = CompletionItem {
                         label: format!("{}({})", func_name, params.join(", ")),
-                        detail: format!("Returns: {}", format_type(&func.return_type)),
+                        detail: format!("Returns: {}", func.return_type),
                         description: func.description.to_string(),
                         example: func.example.to_string(),
                         kind: CompletionKind::Function,
@@ -3779,74 +4190,93 @@ impl Editor {
         }
     }
     
+    /// A deletion narrows a list that is already open and never opens one.
+    /// Backspace is how a line that was pushed down gets pulled back up, and
+    /// that should leave the screen as it was rather than start suggesting
+    /// names for a word nobody is typing.
+    fn refresh_open_completions(&mut self) {
+        if self.show_completions {
+            self.update_completions();
+        }
+    }
+
     fn accept_completion(&mut self) {
+        self.accept_completion_with(ExampleForm::Example);
+    }
+
+    /// Shift with the same key asks for the whole program rather than the one
+    /// line that calls the function.
+    fn accept_completion_full(&mut self) {
+        self.accept_completion_with(ExampleForm::FullExample);
+    }
+
+    fn accept_completion_with(&mut self, form: ExampleForm) {
         if !self.show_completions || self.completions.is_empty() {
             return;
         }
-        
+
         let completion = &self.completions[self.completion_index];
-        
+
         // Only complete if it's an identifier completion
         if let CompletionContext::Identifier(_) = self.get_completion_context() {
             // Generate insertion text based on completion kind (before any mutable borrows)
-            let insertion_text = self.generate_insertion_text(&completion);
-            
-            let current_tab = self.get_current_tab_mut();
-            let line = &mut current_tab.content[current_tab.cursor_y];
-            
-            // Find the start of the current word
-            let mut start = current_tab.cursor_x;
-            while start > 0 && line.chars().nth(start - 1).map_or(false, |c| c.is_alphanumeric() || c == '_') {
+            let insertion_text = self.generate_insertion_text(&completion, form);
+            let land_inside_parentheses = insertion_text.ends_with("()") && !insertion_text.contains('\n');
+
+            // Asking for the full example while the call is already half
+            // written wants its setup, not a second copy of the statement.
+            // The declarations go in above and the call is finished in place.
+            let split_around_the_statement = if form == ExampleForm::FullExample && insertion_text.contains('\n') {
+                crate::stdlib_registry::get_stdlib_function(&completion.label).filter(|func| !func.example.is_empty()).map(|func| {
+                    (
+                        crate::stdlib_registry::example_setup(&completion.label, func.example).to_string(),
+                        crate::stdlib_registry::example_snippet(&completion.label, func.example).to_string(),
+                    )
+                })
+            } else {
+                None
+            };
+
+            // Take out the half-typed word first, so that what goes in is
+            // simply what was generated, however many lines that turns out
+            // to be.
+            let tab = self.get_current_tab_mut();
+            if tab.cursor_y >= tab.content.len() {
+                tab.content.push(String::new());
+                tab.cursor_y = tab.content.len() - 1;
+                tab.cursor_x = 0;
+            }
+            let characters: Vec<char> = tab.content[tab.cursor_y].chars().collect();
+            let mut start = tab.cursor_x.min(characters.len());
+            while start > 0 && (characters[start - 1].is_alphanumeric() || characters[start - 1] == '_') {
                 start -= 1;
             }
-            
-            // Find the end of the current word
-            let mut end = current_tab.cursor_x;
-            while end < line.len() && line.chars().nth(end).map_or(false, |c| c.is_alphanumeric() || c == '_') {
+            let mut end = tab.cursor_x.min(characters.len());
+            while end < characters.len() && (characters[end].is_alphanumeric() || characters[end] == '_') {
                 end += 1;
             }
-            
-            // Handle multi-line insertions
-            let insertion_lines: Vec<&str> = insertion_text.split('\n').collect();
-            
-            if insertion_lines.len() == 1 {
-                // Single line insertion - simple replacement
-                let before = line[..start].to_string();
-                let after = line[end..].to_string();
-                *line = format!("{}{}{}", before, insertion_text, after);
-                current_tab.cursor_x = start + insertion_text.len();
-            } else {
-                // Multi-line insertion
-                let before = line[..start].to_string();
-                let after = line[end..].to_string();
-                
-                // Replace current line with first line
-                *line = format!("{}{}", before, insertion_lines[0]);
-                
-                // Insert additional lines
-                for (i, insertion_line) in insertion_lines[1..].iter().enumerate() {
-                    let new_line = if i == insertion_lines.len() - 2 {
-                        // Last line - add the remaining content from original line
-                        format!("{}{}", insertion_line, after)
-                    } else {
-                        insertion_line.to_string()
-                    };
-                    current_tab.content.insert(current_tab.cursor_y + 1 + i, new_line);
+            tab.content[tab.cursor_y] = characters[..start].iter().chain(characters[end..].iter()).collect();
+            tab.cursor_x = start;
+
+            let starts_the_line = characters[..start].iter().all(|character| character.is_whitespace());
+            match split_around_the_statement {
+                Some((setup, call)) if !starts_the_line && !setup.is_empty() => {
+                    let tab = self.get_current_tab_mut();
+                    for (offset, line) in setup.lines().enumerate() {
+                        tab.content.insert(tab.cursor_y + offset, line.to_string());
+                    }
+                    tab.cursor_y += setup.lines().count();
+                    self.insert_lines_at_cursor(&call);
                 }
-                
-                // Position cursor at end of last inserted line
-                current_tab.cursor_y += insertion_lines.len() - 1;
-                let last_line_addition = if insertion_lines.len() > 1 {
-                    insertion_lines[insertion_lines.len() - 1]
-                } else {
-                    ""
-                };
-                current_tab.cursor_x = last_line_addition.len() + if insertion_lines.len() > 1 { after.len() } else { 0 };
+                _ => self.insert_lines_at_cursor(&insertion_text),
             }
-            
-            current_tab.modified = true;
+
+            if land_inside_parentheses {
+                let tab = self.get_current_tab_mut();
+                tab.cursor_x = tab.cursor_x.saturating_sub(1);
+            }
         }
-        
+
         self.show_completions = false;
         self.show_detail_view = false;
         self.completions.clear();
@@ -3903,130 +4333,36 @@ impl Editor {
         }
     }
 
-    fn generate_parameter_placeholder(&self, param_type: &lexer::NailDataTypeDescriptor, param_name: &str) -> String {
-        match param_type {
-            lexer::NailDataTypeDescriptor::String => {
-                // Use backticks for string literals in Nail
-                match param_name {
-                    "url" => "`https://api.example.com`".to_string(),
-                    "method" => "`GET`".to_string(),
-                    "path" => "`/path/to/file`".to_string(),
-                    "content" | "data" | "body" => "`data`".to_string(),
-                    "key" => "`key`".to_string(),
-                    "name" => "`name`".to_string(),
-                    "host" => "`localhost`".to_string(),
-                    _ => "`value`".to_string(),
-                }
-            }
-            lexer::NailDataTypeDescriptor::Int => {
-                match param_name {
-                    "port" => "8080".to_string(),
-                    "timeout" => "5000".to_string(),
-                    "max_" if param_name.starts_with("max_") => "100".to_string(),
-                    "min_" if param_name.starts_with("min_") => "0".to_string(),
-                    name if name.contains("count") || name.contains("size") || name.contains("limit") => "10".to_string(),
-                    name if name.contains("id") => "1".to_string(),
-                    _ => "0".to_string(),
-                }
-            }
-            lexer::NailDataTypeDescriptor::Float => "0.0".to_string(),
-            lexer::NailDataTypeDescriptor::Boolean => {
-                match param_name {
-                    name if name.contains("enable") || name.contains("active") => "true".to_string(),
-                    name if name.contains("disable") || name.contains("hidden") => "false".to_string(),
-                    _ => "false".to_string(),
-                }
-            }
-            lexer::NailDataTypeDescriptor::Array(_) => "[]".to_string(),
-            lexer::NailDataTypeDescriptor::HashMap(_, _) => "hashmap_new()".to_string(),
-            lexer::NailDataTypeDescriptor::Result(_) => {
-                // For result types, provide meaningful defaults
-                match param_name {
-                    "url" => "`https://api.example.com`".to_string(),
-                    "method" => "`GET`".to_string(),
-                    "path" => "`/path/to/file`".to_string(),
-                    "content" | "data" | "body" => "`data`".to_string(),
-                    "key" => "`key`".to_string(),
-                    "name" => "`name`".to_string(),
-                    _ => "`value`".to_string(),
-                }
-            }
-            lexer::NailDataTypeDescriptor::Any => {
-                // Provide contextual defaults based on parameter name
-                match param_name {
-                    "url" => "`https://api.example.com`".to_string(),
-                    "method" => "`GET`".to_string(),
-                    "headers" => "hashmap_new()".to_string(),
-                    "body" | "data" | "content" => "`data`".to_string(),
-                    "path" => "`/path/to/file`".to_string(),
-                    "port" => "8080".to_string(),
-                    "host" => "`localhost`".to_string(),
-                    "timeout" => "5000".to_string(),
-                    "max_" if param_name.starts_with("max_") => "100".to_string(),
-                    "min_" if param_name.starts_with("min_") => "0".to_string(),
-                    name if name.contains("count") || name.contains("size") || name.contains("limit") => "10".to_string(),
-                    name if name.contains("name") || name.contains("key") || name.contains("id") => format!("`{}`", name),
-                    name if name.contains("enable") || name.contains("disable") || name.ends_with("ed") => "true".to_string(),
-                    _ => "`value`".to_string(),
-                }
-            }
-            lexer::NailDataTypeDescriptor::Struct(name) => format!("{} {{}}", name),
-            lexer::NailDataTypeDescriptor::Enum(name) => format!("{}::", name),
-            _ => format!("`{}`", param_name), // Fallback with backticks
-        }
-    }
-
-    fn generate_insertion_text(&self, completion: &CompletionItem) -> String {
+    /// What a completion puts in the file.
+    ///
+    /// Two answers, because there are two things a person can be short of.
+    /// Tab gives the call with real arguments in it, `array_sum(numbers)`,
+    /// which drops into a half-written statement and shows the argument
+    /// shape an empty pair of parentheses never did. Shift+Tab gives the
+    /// whole worked program: the inputs declared, any handed-over function
+    /// defined, the result named.
+    ///
+    /// Both mean the same thing wherever the completion list is showing, so
+    /// neither key changes meaning depending on whether the documentation is
+    /// open. Both come from the one curated example, so they cannot disagree.
+    ///
+    /// Guessing either shape from the signature is what this used to do, and
+    /// a signature does not know what a `fn` parameter or a type variable
+    /// looks like written down, so the guess taught a syntax the compiler
+    /// refuses.
+    fn generate_insertion_text(&self, completion: &CompletionItem, form: ExampleForm) -> String {
         match completion.kind {
             CompletionKind::Function => {
-                // Get function info from stdlib registry
-                use crate::stdlib_registry::get_stdlib_function;
+                use crate::stdlib_registry::{example_snippet, get_stdlib_function};
                 if let Some(func) = get_stdlib_function(&completion.label) {
-                    if func.parameters.is_empty() {
-                        format!("{}()", completion.label)
-                    } else {
-                        // Generate variable declarations and function call
-                        let mut lines = Vec::new();
-                        let mut param_names = Vec::new();
-                        
-                        for param in &func.parameters {
-                            let type_str = format_type(&param.param_type);
-                            let value_placeholder = self.generate_parameter_placeholder(&param.param_type, &param.name);
-                            // Ensure no extra spaces in type formatting
-                            let clean_type_str = type_str.replace(" ", "");
-                            lines.push(format!("{}:{} = {};", param.name, clean_type_str, value_placeholder));
-                            param_names.push(param.name.clone());
-                        }
-                        
-                        // For functions that return values, assign to a variable
-                        use crate::stdlib_registry::get_stdlib_function;
-                        if let Some(func) = get_stdlib_function(&completion.label) {
-                            match &func.return_type {
-                                lexer::NailDataTypeDescriptor::Void => {
-                                    // Void functions just call
-                                    lines.push(format!("{}({});", completion.label, param_names.join(", ")));
-                                }
-                                lexer::NailDataTypeDescriptor::Result(inner_type) => {
-                                    // Result types need danger() wrapper and inner type for assignment
-                                    let inner_type_str = format_type(inner_type);
-                                    lines.push(format!("result: {} = danger({}({}));", inner_type_str, completion.label, param_names.join(", ")));
-                                }
-                                _ => {
-                                    // Other functions that return values need assignment
-                                    let return_type_str = format_type(&func.return_type);
-                                    lines.push(format!("result: {} = {}({});", return_type_str, completion.label, param_names.join(", ")));
-                                }
-                            }
-                        } else {
-                            // Fallback for unknown functions
-                            lines.push(format!("{}({});", completion.label, param_names.join(", ")));
-                        }
-                        lines.join("\n")
+                    if !func.example.is_empty() {
+                        return match form {
+                            ExampleForm::Example => example_snippet(&completion.label, func.example).to_string(),
+                            ExampleForm::FullExample => func.example.to_string(),
+                        };
                     }
-                } else {
-                    // Fallback for unknown functions
-                    format!("{}()", completion.label)
                 }
+                format!("{}()", completion.label)
             }
             CompletionKind::Struct => {
                 // Find struct info from scope symbols
@@ -4136,8 +4472,8 @@ impl Editor {
             // Single line selection
             if start_pos.1 < current_tab.content.len() {
                 let line = &current_tab.content[start_pos.1];
-                let start_x = start_pos.0.min(line.len());
-                let end_x = end_pos.0.min(line.len());
+                let start_x = byte_of_column(line, start_pos.0);
+                let end_x = byte_of_column(line, end_pos.0).max(start_x);
                 return line[start_x..end_x].to_string();
             }
         } else {
@@ -4153,12 +4489,10 @@ impl Editor {
                 
                 if line_idx == start_pos.1 {
                     // First line - from start_x to end of line
-                    let start_x = start_pos.0.min(line.len());
-                    result.push_str(&line[start_x..]);
+                    result.push_str(&line[byte_of_column(line, start_pos.0)..]);
                 } else if line_idx == end_pos.1 {
                     // Last line - from beginning to end_x
-                    let end_x = end_pos.0.min(line.len());
-                    result.push_str(&line[..end_x]);
+                    result.push_str(&line[..byte_of_column(line, end_pos.0)]);
                 } else {
                     // Middle lines - entire line
                     result.push_str(line);
@@ -4211,22 +4545,20 @@ impl Editor {
             // Single line deletion
             if start_pos.1 < current_tab.content.len() {
                 let line = &mut current_tab.content[start_pos.1];
-                let start_x = start_pos.0.min(line.len());
-                let end_x = end_pos.0.min(line.len());
+                let start_x = byte_of_column(line, start_pos.0);
+                let end_x = byte_of_column(line, end_pos.0).max(start_x);
                 line.drain(start_x..end_x);
-                current_tab.cursor_x = start_x;
+                current_tab.cursor_x = start_pos.0;
                 current_tab.cursor_y = start_pos.1;
             }
         } else {
             // Multi-line deletion
             if start_pos.1 < current_tab.content.len() && end_pos.1 < current_tab.content.len() {
                 // Get the remaining parts of first and last lines
-                let first_line_start = current_tab.content[start_pos.1][..start_pos.0.min(current_tab.content[start_pos.1].len())].to_string();
-                let last_line_end = if end_pos.0 <= current_tab.content[end_pos.1].len() {
-                    current_tab.content[end_pos.1][end_pos.0..].to_string()
-                } else {
-                    String::new()
-                };
+                let first_line = &current_tab.content[start_pos.1];
+                let first_line_start = first_line[..byte_of_column(first_line, start_pos.0)].to_string();
+                let last_line = &current_tab.content[end_pos.1];
+                let last_line_end = last_line[byte_of_column(last_line, end_pos.0)..].to_string();
                 
                 // Remove all lines in between (and including the end line)
                 for _ in start_pos.1 + 1..=end_pos.1 {
@@ -4258,7 +4590,7 @@ impl Editor {
         
         current_tab.selection_start = Some((0, 0));
         let last_line_idx = current_tab.content.len() - 1;
-        let last_line_len = current_tab.content[last_line_idx].len();
+        let last_line_len = columns_in(&current_tab.content[last_line_idx]);
         current_tab.selection_end = Some((last_line_len, last_line_idx));
         current_tab.selection_mode = true;
     }
@@ -4292,52 +4624,65 @@ impl Editor {
     }
     
     fn paste_text(&mut self, text: &str) {
-        // If there's a selection, delete it first
-        let current_tab = self.get_current_tab_mut();
-        if current_tab.has_selection() {
-            current_tab.delete_selected_text();
+        self.get_current_tab_mut().settle_cursor();
+        // A selection pasted over belongs to the same edit as the paste, so
+        // what it held is carried to the undo entry below.
+        let removed = self.take_selection_for_replacement();
+
+        if text.is_empty() {
+            // Nothing arrives to record the removal alongside, so it stands as
+            // its own entry rather than being lost.
+            if let Some(removal) = removed {
+                self.get_current_tab_mut().record_operation(removal);
+            }
+            return;
         }
-        
-        if !text.is_empty() {
-            let operation = EditOperation::InsertText {
-                position: (current_tab.cursor_x, current_tab.cursor_y),
-                text: text.to_string(),
-            };
-            
-            // Insert the text character by character
-            for c in text.chars() {
-                if c == '\n' {
-                    let remaining = current_tab.content[current_tab.cursor_y].split_off(current_tab.cursor_x);
-                    current_tab.cursor_y += 1;
-                    current_tab.content.insert(current_tab.cursor_y, remaining);
-                    current_tab.cursor_x = 0;
-                } else if c == '\t' {
-                    // Insert 4 spaces for tab
-                    for _ in 0..4 {
-                        let line = &mut current_tab.content[current_tab.cursor_y];
-                        let line_char_count = line.chars().count();
-                        if current_tab.cursor_x > line_char_count {
-                            line.push_str(&" ".repeat(current_tab.cursor_x - line_char_count));
-                        }
-                        let byte_pos = Self::char_to_byte_index(line, current_tab.cursor_x);
-                        line.insert(byte_pos, ' ');
-                        current_tab.cursor_x += 1;
-                    }
-                } else if !c.is_control() {
+
+        let current_tab = self.get_current_tab_mut();
+        let position = (current_tab.cursor_x, current_tab.cursor_y);
+        // A tab arrives as four spaces and a control character not at all, so
+        // the entry holds what actually went into the file. Undo counts the
+        // characters it wrote, and would leave three spaces behind for every
+        // tab if it counted the ones that were pasted instead.
+        let mut inserted = String::new();
+
+        // Insert the text character by character
+        for c in text.chars() {
+            if c == '\n' {
+                let split = byte_of_column(&current_tab.content[current_tab.cursor_y], current_tab.cursor_x);
+                let remaining = current_tab.content[current_tab.cursor_y].split_off(split);
+                current_tab.cursor_y += 1;
+                current_tab.content.insert(current_tab.cursor_y, remaining);
+                current_tab.cursor_x = 0;
+                inserted.push('\n');
+            } else if c == '\t' {
+                // Insert 4 spaces for tab
+                for _ in 0..4 {
                     let line = &mut current_tab.content[current_tab.cursor_y];
                     let line_char_count = line.chars().count();
                     if current_tab.cursor_x > line_char_count {
                         line.push_str(&" ".repeat(current_tab.cursor_x - line_char_count));
                     }
                     let byte_pos = Self::char_to_byte_index(line, current_tab.cursor_x);
-                line.insert(byte_pos, c);
+                    line.insert(byte_pos, ' ');
                     current_tab.cursor_x += 1;
+                    inserted.push(' ');
                 }
+            } else if !c.is_control() {
+                let line = &mut current_tab.content[current_tab.cursor_y];
+                let line_char_count = line.chars().count();
+                if current_tab.cursor_x > line_char_count {
+                    line.push_str(&" ".repeat(current_tab.cursor_x - line_char_count));
+                }
+                let byte_pos = Self::char_to_byte_index(line, current_tab.cursor_x);
+                line.insert(byte_pos, c);
+                current_tab.cursor_x += 1;
+                inserted.push(c);
             }
-            
-            current_tab.modified = true;
-            current_tab.record_operation(operation);
         }
+
+        current_tab.modified = true;
+        self.record_replacing_selection(removed, EditOperation::InsertText { position, text: inserted });
     }
     
     fn extract_symbols_from_ast(&self, ast: &parser::ASTNode) -> Vec<SymbolInfo> {
@@ -4353,7 +4698,7 @@ impl Editor {
                 let struct_fields: Vec<(String, String)> = fields.iter()
                     .filter_map(|field| {
                         if let parser::ASTNode::StructDeclarationField { name: field_name, data_type, .. } = field {
-                            Some((field_name.clone(), format_type(data_type)))
+                            Some((field_name.clone(), data_type.to_string()))
                         } else {
                             None
                         }
@@ -4387,7 +4732,7 @@ impl Editor {
                 symbols.push(SymbolInfo {
                     name: name.clone(),
                     symbol_type: SymbolType::Variable,
-                    data_type: Some(format_type(data_type)),
+                    data_type: Some(data_type.to_string()),
                 });
             }
             // Recursively process nested nodes
@@ -4488,9 +4833,9 @@ impl Editor {
             tab.selection_start = Some(start);
             tab.selection_end = Some(end);
             tab.selection_mode = true;
-            // The tab's own delete keeps no undo entry, which is what this
-            // wants: the one entry recorded below covers the whole swap.
-            tab.delete_selected_text();
+            // The unrecorded delete is what this wants: the one entry recorded
+            // below covers the whole swap.
+            tab.delete_selected_text_unrecorded();
         }
         self.insert_text_at_cursor(new_text);
         let tab = self.get_current_tab_mut();
@@ -4540,6 +4885,7 @@ impl Editor {
     /// Joins the line below into this one, or every line of a selection into
     /// one, the way a paragraph gets un-wrapped.
     pub fn join_lines(&mut self) {
+        self.get_current_tab_mut().settle_cursor();
         let (first, last) = self.selected_line_range();
         let last = if last > first { last } else { first + 1 };
         let line_count = self.get_current_tab().content.len();
@@ -5363,6 +5709,9 @@ fn wider_span(text: &[char], start: usize, end: usize) -> Option<(usize, usize)>
 
 fn word_span(text: &[char], at: usize) -> Option<(usize, usize)> {
     let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    // A cursor sitting past the end of the line is still asking about the word
+    // at the end of it, not about a character the line does not have.
+    let at = at.min(text.len());
     let mut start = at;
     while start > 0 && is_word(text[start - 1]) {
         start -= 1;
@@ -5432,24 +5781,6 @@ fn enclosing_bracket_span(text: &[char], start: usize, end: usize) -> Option<(us
     }
     return None;
 }
-
-fn format_type(data_type: &lexer::NailDataTypeDescriptor) -> String {
-    match data_type {
-        lexer::NailDataTypeDescriptor::Int => "i".to_string(),
-        lexer::NailDataTypeDescriptor::Float => "f".to_string(),
-        lexer::NailDataTypeDescriptor::String => "s".to_string(),
-        lexer::NailDataTypeDescriptor::Boolean => "b".to_string(),
-        lexer::NailDataTypeDescriptor::Void => "void".to_string(),
-        lexer::NailDataTypeDescriptor::Array(inner) => format!("[{}]", format_type(inner)),
-        lexer::NailDataTypeDescriptor::HashMap(key, value) => format!("h<{},{}>", format_type(key), format_type(value)),
-        lexer::NailDataTypeDescriptor::Result(result_type) => format_type(result_type),
-        lexer::NailDataTypeDescriptor::Any => "any".to_string(),
-        lexer::NailDataTypeDescriptor::Struct(name) => name.clone(),
-        lexer::NailDataTypeDescriptor::Enum(name) => name.clone(),
-        _ => "?".to_string(),
-    }
-}
-
 
 /// The pieces of the editor that are plain functions over text, which is the
 /// half of it that can be checked without a terminal in front of it.
@@ -5530,6 +5861,480 @@ mod tests {
         assert_eq!(editor.get_current_tab().content, vec!["print(`greeting`);"]);
         assert!(editor.undo());
         assert_eq!(editor.get_current_tab().content, vec!["print(greeting);"]);
+    }
+
+    /// Every way of replacing a selection used to clear it through a delete
+    /// that wrote nothing to the undo stack, so one keystroke over a selected
+    /// block put that block out of reach of Ctrl+Z for good. Each of these
+    /// replacements is one edit, and one undo takes the whole thing back.
+    /// A closing brace on a line indented less than one level used to work out
+    /// where to put the cursor by subtracting a level from it, which underflows
+    /// and takes the editor with it.
+    #[test]
+    fn a_brace_on_a_shallow_line_dedents_what_there_is_of_it() {
+        let mut editor = editor_with(&["  "]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_x = 2;
+        }
+        editor.insert_char('}');
+        assert_eq!(editor.get_current_tab().content, vec!["  }"]);
+        assert_eq!(editor.get_current_tab().cursor_x, 3);
+
+        let mut editor = editor_with(&["        "]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_x = 8;
+        }
+        editor.insert_char('}');
+        assert_eq!(editor.get_current_tab().content, vec!["    }"]);
+        assert_eq!(editor.get_current_tab().cursor_x, 5);
+    }
+
+    /// The line commands, run over text that is not all ASCII. Each of these
+    /// used to work on bytes somewhere along the way, and bracket matching at
+    /// the end of such a line indexed off the end of the line and panicked.
+    #[test]
+    fn the_line_commands_all_survive_accented_text() {
+        let accented = ["caf\u{e9} au lait", "na\u{ef}ve r\u{e9}sum\u{e9}", "plain line"];
+        let at_end = |editor: &mut Editor, y: usize| {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_y = y;
+            tab.cursor_x = tab.content[y].chars().count();
+        };
+
+        let mut editor = editor_with(&accented);
+        at_end(&mut editor, 0);
+        editor.update_bracket_matching();
+
+        let mut editor = editor_with(&accented);
+        at_end(&mut editor, 0);
+        editor.toggle_comment();
+        assert_eq!(editor.get_current_tab().content[0], "// caf\u{e9} au lait");
+
+        let mut editor = editor_with(&accented);
+        at_end(&mut editor, 1);
+        editor.duplicate_line();
+        assert_eq!(editor.get_current_tab().content[2], "na\u{ef}ve r\u{e9}sum\u{e9}");
+
+        let mut editor = editor_with(&accented);
+        at_end(&mut editor, 0);
+        editor.delete_word_left();
+        assert_eq!(editor.get_current_tab().content[0], "caf\u{e9} au ");
+
+        let mut editor = editor_with(&accented);
+        editor.get_current_tab_mut().cursor_x = 0;
+        editor.move_cursor_right_word();
+        let accented_stop = editor.get_current_tab().cursor_x;
+        let mut editor = editor_with(&["cafe au lait"]);
+        editor.get_current_tab_mut().cursor_x = 0;
+        editor.move_cursor_right_word();
+        assert_eq!(accented_stop, editor.get_current_tab().cursor_x);
+
+        let mut editor = editor_with(&accented);
+        at_end(&mut editor, 0);
+        editor.kill_to_line_start();
+        assert_eq!(editor.get_current_tab().content[0], "");
+
+        let mut editor = editor_with(&accented);
+        editor.get_current_tab_mut().cursor_x = 4;
+        editor.kill_to_line_end();
+        assert_eq!(editor.get_current_tab().content[0], "caf\u{e9}");
+
+        let mut editor = editor_with(&accented);
+        editor.join_lines();
+        assert_eq!(editor.get_current_tab().content[0], "caf\u{e9} au lait na\u{ef}ve r\u{e9}sum\u{e9}");
+
+        let mut editor = editor_with(&accented);
+        select(&mut editor, (0, 0), (5, 1));
+        editor.indent_selection();
+        assert_eq!(editor.get_current_tab().content[0], "    caf\u{e9} au lait");
+        editor.dedent_selection();
+        assert_eq!(editor.get_current_tab().content[0], "caf\u{e9} au lait");
+
+        let mut editor = editor_with(&accented);
+        select(&mut editor, (0, 0), (4, 0));
+        editor.insert_char('(');
+        assert_eq!(editor.get_current_tab().content[0], "(caf\u{e9}) au lait");
+
+        let mut editor = editor_with(&accented);
+        at_end(&mut editor, 0);
+        editor.expand_selection();
+        editor.delete_line();
+        editor.move_line_down();
+        editor.sort_lines();
+    }
+
+    /// Every edit the editor can make, undone back to the file it started
+    /// from and redone forward to the file it made. An entry that describes
+    /// its edit loosely passes the eye and fails here: the line break used to
+    /// record itself without the indentation it carried, so undoing it left
+    /// the indentation behind in the middle of the joined line.
+    #[test]
+    fn every_edit_can_be_undone_and_redone_exactly() {
+        let start = ["f main():v {", "    print(`one`);", "    print(`two`);", "}"];
+        let commands: Vec<(&str, fn(&mut Editor))> = vec![
+            ("insert_char", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 4; e.insert_char('x'); }),
+            ("insert_newline", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 6; e.insert_newline(); }),
+            ("delete_char", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 6; e.delete_char(); }),
+            ("delete_char_join", |e| { e.get_current_tab_mut().cursor_y = 2; e.get_current_tab_mut().cursor_x = 0; e.delete_char(); }),
+            ("delete_forward", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 4; e.delete_forward(); }),
+            ("delete_forward_join", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 20; e.delete_forward(); }),
+            ("paste_text", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 4; e.paste_text("a\nb"); }),
+            ("duplicate_line", |e| { e.get_current_tab_mut().cursor_y = 1; e.duplicate_line(); }),
+            ("delete_line", |e| { e.get_current_tab_mut().cursor_y = 1; e.delete_line(); }),
+            ("move_line_up", |e| { e.get_current_tab_mut().cursor_y = 2; e.move_line_up(); }),
+            ("move_line_down", |e| { e.get_current_tab_mut().cursor_y = 1; e.move_line_down(); }),
+            ("toggle_comment", |e| { e.get_current_tab_mut().cursor_y = 1; e.toggle_comment(); }),
+            ("indent_selection", |e| { select(e, (0, 1), (5, 2)); e.indent_selection(); }),
+            ("dedent_selection", |e| { select(e, (0, 1), (5, 2)); e.dedent_selection(); }),
+            ("join_lines", |e| { e.get_current_tab_mut().cursor_y = 1; e.join_lines(); }),
+            ("sort_lines", |e| { select(e, (0, 0), (0, 2)); e.sort_lines(); }),
+            ("delete_word_left", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 9; e.delete_word_left(); }),
+            ("delete_word_right", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 4; e.delete_word_right(); }),
+            ("kill_to_line_end", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 6; e.kill_to_line_end(); }),
+            ("kill_to_line_start", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 6; e.kill_to_line_start(); }),
+            ("delete_selection", |e| { select(e, (2, 1), (6, 2)); e.delete_selected_text(); }),
+            ("type_over_selection", |e| { select(e, (2, 1), (6, 2)); e.insert_char('z'); }),
+            ("paste_over_selection", |e| { select(e, (2, 1), (6, 2)); e.paste_text("QQ"); }),
+            ("newline_over_selection", |e| { select(e, (2, 1), (6, 2)); e.insert_newline(); }),
+            ("open_line_below", |e| { e.get_current_tab_mut().cursor_y = 1; e.open_line_below(); }),
+            ("open_line_above", |e| { e.get_current_tab_mut().cursor_y = 1; e.open_line_above(); }),
+            ("change_line", |e| { e.get_current_tab_mut().cursor_y = 1; e.change_line(); }),
+            ("replace_current", |e| { e.search_query = "print".to_string(); e.find_all_matches(); e.replace_text = "log".to_string(); e.replace_current(); }),
+            ("replace_all", |e| { e.search_query = "print".to_string(); e.find_all_matches(); e.replace_text = "log".to_string(); e.replace_all(); }),
+            ("delete_char_at_cursor", |e| { e.get_current_tab_mut().cursor_y = 1; e.get_current_tab_mut().cursor_x = 4; e.delete_char_at_cursor(); }),
+        ];
+
+        let mut broken = Vec::new();
+        for (name, command) in commands {
+            let mut editor = editor_with(&start);
+            command(&mut editor);
+            let after: Vec<String> = editor.get_current_tab().content.clone();
+            if after == start.iter().map(|l| l.to_string()).collect::<Vec<_>>() {
+                broken.push(format!("{}: changed nothing", name));
+                continue;
+            }
+            let mut guard = 0;
+            while editor.undo() { guard += 1; if guard > 50 { break; } }
+            let undone: Vec<String> = editor.get_current_tab().content.clone();
+            if undone != start.iter().map(|l| l.to_string()).collect::<Vec<_>>() {
+                broken.push(format!("{}: undo gave {:?}", name, undone));
+                continue;
+            }
+            let mut guard = 0;
+            while editor.redo() { guard += 1; if guard > 50 { break; } }
+            let redone: Vec<String> = editor.get_current_tab().content.clone();
+            if redone != after {
+                broken.push(format!("{}: redo gave {:?}, wanted {:?}", name, redone, after));
+            }
+        }
+        assert!(broken.is_empty(), "\n{}", broken.join("\n"));
+    }
+
+    /// Every command against the buffers that have no middle: empty, one
+    /// line, the last column, and a cursor that has somehow ended up outside
+    /// the file. None of them may panic, and none may leave no buffer at all.
+    #[test]
+    fn no_command_falls_off_the_end_of_a_buffer() {
+        let commands: Vec<(&str, fn(&mut Editor))> = vec![
+            ("insert_char", |e| e.insert_char('x')),
+            ("insert_newline", |e| e.insert_newline()),
+            ("delete_char", |e| e.delete_char()),
+            ("delete_forward", |e| e.delete_forward()),
+            ("delete_char_at_cursor", |e| e.delete_char_at_cursor()),
+            ("paste_text", |e| e.paste_text("a\nb")),
+            ("duplicate_line", |e| e.duplicate_line()),
+            ("delete_line", |e| e.delete_line()),
+            ("move_line_up", |e| e.move_line_up()),
+            ("move_line_down", |e| e.move_line_down()),
+            ("toggle_comment", |e| e.toggle_comment()),
+            ("indent_selection", |e| e.indent_selection()),
+            ("dedent_selection", |e| e.dedent_selection()),
+            ("join_lines", |e| e.join_lines()),
+            ("sort_lines", |e| e.sort_lines()),
+            ("delete_word_left", |e| e.delete_word_left()),
+            ("delete_word_right", |e| e.delete_word_right()),
+            ("kill_to_line_end", |e| e.kill_to_line_end()),
+            ("kill_to_line_start", |e| e.kill_to_line_start()),
+            ("select_all", |e| e.select_all()),
+            ("expand_selection", |e| e.expand_selection()),
+            ("open_line_below", |e| e.open_line_below()),
+            ("open_line_above", |e| e.open_line_above()),
+            ("change_line", |e| e.change_line()),
+            ("move_to_line_end", |e| e.move_to_line_end()),
+            ("move_to_file_end", |e| e.move_to_file_end()),
+            ("move_cursor_right", |e| e.move_cursor_right()),
+            ("move_cursor_left", |e| e.move_cursor_left()),
+            ("move_cursor_up", |e| e.move_cursor_up()),
+            ("move_cursor_down", |e| e.move_cursor_down()),
+            ("move_cursor_right_word", |e| e.move_cursor_right_word()),
+            ("move_cursor_left_word", |e| e.move_cursor_left_word()),
+            ("update_bracket_matching", |e| e.update_bracket_matching()),
+            ("jump_to_matching_bracket", |e| e.jump_to_matching_bracket()),
+            ("undo", |e| { e.undo(); }),
+            ("redo", |e| { e.redo(); }),
+            ("scroll_down", |e| e.scroll_down()),
+            ("scroll_up", |e| e.scroll_up()),
+        ];
+
+        let buffers: Vec<(&str, Vec<&str>, (usize, usize))> = vec![
+            ("empty file", vec![""], (0, 0)),
+            ("one line, cursor at end", vec!["only"], (4, 0)),
+            ("last line last column", vec!["a", "bb"], (2, 1)),
+            ("cursor past the end of a line", vec!["a", "bb"], (9, 0)),
+            ("blank lines", vec!["", "", ""], (0, 1)),
+            ("one brace", vec!["{"], (0, 0)),
+            ("cursor past the last line", vec!["a", "b"], (0, 7)),
+            ("cursor past every column", vec!["short"], (99, 0)),
+        ];
+
+        for (buffer_name, lines, cursor) in buffers {
+            for (command_name, command) in commands.iter() {
+                let mut editor = editor_with(&lines);
+                {
+                    let tab = editor.get_current_tab_mut();
+                    tab.cursor_x = cursor.0;
+                    tab.cursor_y = cursor.1;
+                }
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| command(&mut editor)));
+                assert!(outcome.is_ok(), "{} panicked on {}", command_name, buffer_name);
+                assert!(!editor.get_current_tab().content.is_empty(), "{} emptied the buffer on {}", command_name, buffer_name);
+            }
+        }
+    }
+
+    /// Finding and replacing keeps a list of positions and then edits the
+    /// lines underneath it, so the positions have to be in the same units as
+    /// everything else. They were byte offsets, which put the highlight and
+    /// the cursor on the wrong characters once a line held an accent.
+    #[test]
+    fn finding_and_replacing_keeps_its_positions_in_columns() {
+        let mut broken: Vec<String> = Vec::new();
+
+        // Replace every match on one line, longer replacement than match
+        let mut editor = editor_with(&["one one one", "one"]);
+        editor.search_query = "one".to_string();
+        editor.find_all_matches();
+        editor.replace_text = "three".to_string();
+        editor.replace_all();
+        if editor.get_current_tab().content != vec!["three three three", "three"] {
+            broken.push(format!("replace_all: {:?}", editor.get_current_tab().content));
+        }
+        while editor.undo() {}
+        if editor.get_current_tab().content != vec!["one one one", "one"] {
+            broken.push(format!("replace_all undo: {:?}", editor.get_current_tab().content));
+        }
+
+        // One at a time, with the remaining matches shifting under each one
+        let mut editor = editor_with(&["one one one"]);
+        editor.search_query = "one".to_string();
+        editor.find_all_matches();
+        editor.replace_text = "seven".to_string();
+        editor.replace_current();
+        editor.replace_current();
+        editor.replace_current();
+        if editor.get_current_tab().content != vec!["seven seven seven"] {
+            broken.push(format!("replace_current thrice: {:?}", editor.get_current_tab().content));
+        }
+
+        // Shorter replacement, so later matches move left
+        let mut editor = editor_with(&["alpha alpha alpha"]);
+        editor.search_query = "alpha".to_string();
+        editor.find_all_matches();
+        editor.replace_text = "hi".to_string();
+        editor.replace_current();
+        editor.replace_current();
+        if editor.get_current_tab().content != vec!["hi hi alpha"] {
+            broken.push(format!("shorter replacement: {:?}", editor.get_current_tab().content));
+        }
+
+        // Walking the matches wraps at both ends
+        let mut editor = editor_with(&["a", "target", "b", "target"]);
+        editor.search_query = "target".to_string();
+        editor.find_all_matches();
+        let first = editor.current_match_index;
+        editor.find_next();
+        editor.find_next();
+        if editor.current_match_index != first {
+            broken.push(format!("find_next did not wrap: {} then {}", first, editor.current_match_index));
+        }
+
+        // A search that matches nothing leaves the file and the cursor alone
+        let mut editor = editor_with(&["nothing here"]);
+        editor.search_query = "zzz".to_string();
+        editor.find_all_matches();
+        editor.replace_text = "x".to_string();
+        editor.replace_all();
+        if editor.get_current_tab().content != vec!["nothing here"] {
+            broken.push(format!("empty search: {:?}", editor.get_current_tab().content));
+        }
+
+        // Matches on an accented line, one before the accent and one after
+        let mut editor = editor_with(&["ab caf\u{e9} ab"]);
+        editor.search_query = "ab".to_string();
+        editor.find_all_matches();
+        if editor.search_results != vec![(0, 0, 2), (0, 8, 10)] {
+            broken.push(format!("accented columns: {:?}", editor.search_results));
+        }
+        editor.replace_text = "xy".to_string();
+        editor.replace_all();
+        if editor.get_current_tab().content != vec!["xy caf\u{e9} xy"] {
+            broken.push(format!("accented replace_all: {:?}", editor.get_current_tab().content));
+        }
+
+        assert!(broken.is_empty(), "\n{}", broken.join("\n"));
+    }
+
+    /// A column counts characters and a Rust string index counts bytes, and
+    /// the two stop agreeing the moment a line holds anything but ASCII.
+    /// Every selection used to be sliced by column directly, so selecting
+    /// across an accent took the whole editor down with a panic.
+    #[test]
+    fn a_selection_over_accented_text_is_taken_whole() {
+        let mut editor = editor_with(&["caf\u{e9} au lait"]);
+        select(&mut editor, (0, 0), (8, 0));
+        assert_eq!(editor.get_selected_text(), "caf\u{e9} au ");
+        editor.delete_selected_text();
+        assert_eq!(editor.get_current_tab().content, vec!["lait"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["caf\u{e9} au lait"]);
+    }
+
+    /// The boundary that used to panic outright: a column landing in the
+    /// middle of a character rather than after it.
+    #[test]
+    fn a_selection_ending_inside_a_multibyte_character_does_not_panic() {
+        let mut editor = editor_with(&["\u{e9}\u{e9}\u{e9}"]);
+        select(&mut editor, (0, 0), (3, 0));
+        assert_eq!(editor.get_selected_text(), "\u{e9}\u{e9}\u{e9}");
+        editor.delete_selected_text();
+        assert_eq!(editor.get_current_tab().content, vec![""]);
+
+        let mut editor = editor_with(&["\u{e9}\u{e9}\u{e9}", "second"]);
+        select(&mut editor, (1, 0), (3, 1));
+        editor.delete_selected_text();
+        assert_eq!(editor.get_current_tab().content, vec!["\u{e9}ond"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["\u{e9}\u{e9}\u{e9}", "second"]);
+    }
+
+    /// Selecting everything and typing over it is the same edit on an
+    /// accented file as on an ASCII one, including the way back.
+    #[test]
+    fn select_all_covers_accented_lines_to_their_last_character() {
+        let mut editor = editor_with(&["\u{e9}\u{e9}", "na\u{ef}ve"]);
+        editor.select_all();
+        assert_eq!(editor.get_selected_text(), "\u{e9}\u{e9}\nna\u{ef}ve");
+        editor.insert_char('x');
+        assert_eq!(editor.get_current_tab().content, vec!["x"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["\u{e9}\u{e9}", "na\u{ef}ve"]);
+    }
+
+    /// The end of a line is a column, not a byte count. Landing past the end
+    /// of an accented line left the cursor in a place the file has no room
+    /// for, and typing there padded the line with spaces to reach it.
+    #[test]
+    fn the_end_of_an_accented_line_is_its_last_column() {
+        let mut editor = editor_with(&["caf\u{e9}"]);
+        editor.move_to_line_end();
+        assert_eq!(editor.get_current_tab().cursor_x, 4);
+        editor.insert_char('!');
+        assert_eq!(editor.get_current_tab().content, vec!["caf\u{e9}!"]);
+    }
+
+    /// A match is found over bytes and used as a column everywhere else, so
+    /// one after an accent used to select and replace the wrong letters.
+    #[test]
+    fn a_search_match_after_an_accent_is_found_at_its_column() {
+        let mut editor = editor_with(&["caf\u{e9} beans"]);
+        editor.search_query = "beans".to_string();
+        editor.find_all_matches();
+        assert_eq!(editor.search_results, vec![(0, 5, 10)]);
+        assert_eq!(editor.get_selected_text(), "beans");
+
+        editor.replace_text = "leaves".to_string();
+        editor.replace_current();
+        assert_eq!(editor.get_current_tab().content, vec!["caf\u{e9} leaves"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["caf\u{e9} beans"]);
+    }
+
+    #[test]
+    fn typing_over_a_selection_is_one_undo_away_from_the_text_it_replaced() {
+        let mut editor = editor_with(&["print(greeting);", "second line"]);
+        select(&mut editor, (0, 0), (16, 0));
+        editor.insert_char('x');
+        assert_eq!(editor.get_current_tab().content, vec!["x", "second line"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["print(greeting);", "second line"]);
+        assert!(editor.redo());
+        assert_eq!(editor.get_current_tab().content, vec!["x", "second line"]);
+    }
+
+    #[test]
+    fn pasting_over_a_selection_is_one_undo_away_from_the_text_it_replaced() {
+        let mut editor = editor_with(&["alpha", "beta", "gamma"]);
+        select(&mut editor, (2, 0), (2, 2));
+        editor.paste_text("XY");
+        assert_eq!(editor.get_current_tab().content, vec!["alXYmma"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["alpha", "beta", "gamma"]);
+        assert!(editor.redo());
+        assert_eq!(editor.get_current_tab().content, vec!["alXYmma"]);
+    }
+
+    /// A pasted tab arrives as four spaces, so the undo entry has to hold the
+    /// spaces. Holding the tab instead left three of them behind.
+    #[test]
+    fn undoing_a_paste_takes_back_the_spaces_a_tab_turned_into() {
+        let mut editor = editor_with(&["ab"]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_x = 1;
+        }
+        editor.paste_text("\tx");
+        assert_eq!(editor.get_current_tab().content, vec!["a    xb"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["ab"]);
+    }
+
+    #[test]
+    fn enter_over_a_selection_is_one_undo_away_from_the_text_it_replaced() {
+        let mut editor = editor_with(&["alpha beta", "gamma"]);
+        select(&mut editor, (5, 0), (5, 1));
+        editor.insert_newline();
+        assert_eq!(editor.get_current_tab().content, vec!["alpha", ""]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["alpha beta", "gamma"]);
+    }
+
+    #[test]
+    fn the_delete_key_over_a_selection_is_one_undo_away_from_it() {
+        let mut editor = editor_with(&["alpha", "beta", "gamma"]);
+        select(&mut editor, (1, 0), (2, 1));
+        editor.delete_forward();
+        assert_eq!(editor.get_current_tab().content, vec!["ata", "gamma"]);
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["alpha", "beta", "gamma"]);
+    }
+
+    /// A closing brace typed over a selection dedents the line instead of
+    /// going in where the cursor is, and that path records the line it
+    /// rewrote. The selection it swept out of the way needs an entry too.
+    #[test]
+    fn a_brace_typed_over_a_selection_still_leaves_a_way_back() {
+        let mut editor = editor_with(&["    ", "        keep"]);
+        select(&mut editor, (0, 1), (12, 1));
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_y = 1;
+            tab.cursor_x = 12;
+        }
+        editor.insert_char('}');
+        while editor.undo() {}
+        assert_eq!(editor.get_current_tab().content, vec!["    ", "        keep"]);
     }
 
     #[test]
@@ -5753,5 +6558,329 @@ mod tests {
         tab.follow_cursor(80, 20);
         assert_eq!(tab.scroll_position, 0);
         assert_eq!(tab.h_scroll, 0);
+    }
+
+    /// The point of an example is that it is complete, so putting one in the
+    /// file has to put all of it there, and leave the line it landed in the
+    /// middle of still whole.
+    #[test]
+    fn an_inserted_example_arrives_whole_and_keeps_the_rest_of_the_line() {
+        let mut editor = editor_with(&["before after", "next"]);
+        editor.get_current_tab_mut().cursor_x = 7;
+        editor.insert_lines_at_cursor("one\ntwo\nthree");
+        assert_eq!(editor.get_current_tab().content, vec!["before one", "two", "threeafter", "next"]);
+        assert_eq!(editor.get_current_tab().cursor_y, 2);
+        assert_eq!(editor.get_current_tab().cursor_x, 5);
+
+        let mut editor = editor_with(&["ab"]);
+        editor.get_current_tab_mut().cursor_x = 1;
+        editor.insert_lines_at_cursor("XY");
+        assert_eq!(editor.get_current_tab().content, vec!["aXYb"]);
+        assert_eq!(editor.get_current_tab().cursor_x, 3);
+    }
+
+    /// An insert past the end of the last line, and into a file with no lines
+    /// at all, both used to be reachable ways to panic.
+    #[test]
+    fn an_insert_survives_a_cursor_past_the_end_of_the_file() {
+        let mut editor = editor_with(&["short"]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_y = 5;
+            tab.cursor_x = 99;
+        }
+        editor.insert_lines_at_cursor("here");
+        assert_eq!(editor.get_current_tab().content.last().map(|line| line.as_str()), Some("here"));
+    }
+
+    /// The library browser is the one place a person is reading about a
+    /// function rather than typing it, so it hands over the worked example
+    /// instead of an empty pair of parentheses.
+    #[test]
+    fn the_library_browser_inserts_the_functions_example() {
+        let expected = crate::stdlib_registry::get_stdlib_function("array_sum").expect("array_sum is registered").example;
+        assert!(!expected.is_empty());
+
+        let mut editor = editor_with(&[""]);
+        editor.insert_stdlib_function("array_sum");
+        assert_eq!(editor.get_current_tab().content.join("\n"), expected);
+    }
+
+    /// An example is a program, so it never gets joined onto the end of the
+    /// statement the cursor happened to be after.
+    #[test]
+    fn an_inserted_example_starts_on_a_line_of_its_own() {
+        let mut editor = editor_with(&["total:i = 1;"]);
+        editor.get_current_tab_mut().cursor_x = 12;
+        editor.insert_stdlib_function("array_sum");
+        assert_eq!(editor.get_current_tab().content[0], "total:i = 1;");
+        assert_eq!(editor.get_current_tab().content[1], "numbers:a:i = [1, 2, 3];");
+
+        // Nothing typed on the line yet, so nothing is pushed down.
+        let mut editor = editor_with(&["    "]);
+        editor.get_current_tab_mut().cursor_x = 4;
+        editor.insert_stdlib_function("array_sum");
+        assert_eq!(editor.get_current_tab().content[0], "    numbers:a:i = [1, 2, 3];");
+    }
+
+    /// Three answers from one example. The completion list is someone typing,
+    /// so it gives the name. The documentation view gives the call on TAB and
+    /// the whole worked program on SHIFT+TAB.
+    #[test]
+    fn the_documentation_view_offers_the_call_and_the_whole_program() {
+        let function = crate::stdlib_registry::get_stdlib_function("array_sum").expect("array_sum is registered");
+        let completion = CompletionItem {
+            label: "array_sum".to_string(),
+            detail: String::new(),
+            description: String::new(),
+            example: function.example.to_string(),
+            kind: CompletionKind::Function,
+        };
+
+        // Neither key changes meaning depending on whether the documentation
+        // happens to be open, so both answers are the same either way.
+        for showing_documentation in [false, true] {
+            let mut editor = editor_with(&[""]);
+            editor.show_detail_view = showing_documentation;
+
+            let call = editor.generate_insertion_text(&completion, ExampleForm::Example);
+            assert_eq!(call, "array_sum(numbers)");
+            assert!(!call.contains('\n'));
+            assert!(function.example.contains(&call));
+
+            assert_eq!(editor.generate_insertion_text(&completion, ExampleForm::FullExample), function.example);
+        }
+        // The whole program declares the array the call reads, so it says
+        // more than the call does.
+        assert!(function.example.contains('\n'));
+    }
+
+    fn editor_completing(line: &str, name: &str) -> Editor {
+        let function = crate::stdlib_registry::get_stdlib_function(name).expect("a registered function");
+        let mut editor = editor_with(&[line]);
+        editor.get_current_tab_mut().cursor_x = line.chars().count();
+        editor.show_completions = true;
+        editor.completion_index = 0;
+        editor.completions = vec![CompletionItem {
+            label: name.to_string(),
+            detail: String::new(),
+            description: String::new(),
+            example: function.example.to_string(),
+            kind: CompletionKind::Function,
+        }];
+        return editor;
+    }
+
+    /// Asking for the full example halfway through writing the call wants the
+    /// declarations it needs, not a second copy of the statement. Pasting the
+    /// program as it stands would leave `total:i = ` dangling above it.
+    #[test]
+    fn a_full_example_brings_its_setup_above_the_statement_being_typed() {
+        let mut editor = editor_completing("total:i = array_su", "array_sum");
+        editor.accept_completion_full();
+        assert_eq!(editor.get_current_tab().content, vec!["numbers:a:i = [1, 2, 3];", "total:i = array_sum(numbers)"]);
+    }
+
+    /// On a line of its own there is no statement to work around, so the
+    /// whole program arrives as written.
+    #[test]
+    fn a_full_example_on_an_empty_line_arrives_whole() {
+        let function = crate::stdlib_registry::get_stdlib_function("array_sum").expect("array_sum is registered");
+        let mut editor = editor_completing("array_su", "array_sum");
+        editor.accept_completion_full();
+        assert_eq!(editor.get_current_tab().content.join("\n"), function.example);
+    }
+
+    /// Tab is the same key in the middle of a statement as anywhere else, so
+    /// what it inserts has to be an expression rather than a statement.
+    #[test]
+    fn tab_completes_the_call_in_place() {
+        let mut editor = editor_completing("total:i = array_su", "array_sum");
+        editor.accept_completion();
+        assert_eq!(editor.get_current_tab().content, vec!["total:i = array_sum(numbers)"]);
+    }
+
+    /// Pressing Enter to push a line down and Backspace to pull it back up is
+    /// two edits that cancel out, so the screen has to end where it started.
+    /// The list used to appear on the way back, because the cursor sat in
+    /// front of a name it read as half typed.
+    #[test]
+    fn pushing_a_line_down_and_pulling_it_back_up_leaves_the_list_closed() {
+        let mut editor = editor_with(&["nail 0.1.0", "print(`hello from nail`);"]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_y = 1;
+            tab.cursor_x = 0;
+        }
+
+        editor.insert_newline();
+        editor.refresh_open_completions();
+        assert!(!editor.show_completions);
+
+        editor.delete_char();
+        editor.refresh_open_completions();
+        assert_eq!(editor.get_current_tab().content, vec!["nail 0.1.0", "print(`hello from nail`);"]);
+        assert_eq!(editor.cursor_position(), (0, 1));
+        assert!(!editor.show_completions);
+    }
+
+    /// The same two keys around a name that is already finished. A whole
+    /// library function behind the cursor is not a word being typed, so
+    /// nothing is offered to finish it with.
+    #[test]
+    fn the_same_two_keys_after_a_finished_name_leave_the_list_closed() {
+        let mut editor = editor_with(&["nail 0.1.0", "total:i = array_sum(numbers);"]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_y = 1;
+            tab.cursor_x = 19;
+        }
+
+        editor.insert_newline();
+        editor.refresh_open_completions();
+        assert!(!editor.show_completions);
+
+        editor.delete_char();
+        editor.refresh_open_completions();
+        assert_eq!(editor.get_current_tab().content, vec!["nail 0.1.0", "total:i = array_sum(numbers);"]);
+        assert_eq!(editor.cursor_position(), (19, 1));
+        assert!(!editor.show_completions);
+    }
+
+    /// The prefix is what has been typed, which is what is behind the cursor.
+    /// A name the cursor is sitting in front of, or in the middle of, is
+    /// already written.
+    #[test]
+    fn the_completion_prefix_is_only_what_is_left_of_the_cursor() {
+        let mut editor = editor_with(&["print(`hi`);"]);
+
+        editor.get_current_tab_mut().cursor_x = 0;
+        assert_eq!(editor.completion_prefix_at_cursor(), "");
+        assert!(matches!(editor.get_completion_context(), CompletionContext::None));
+
+        editor.get_current_tab_mut().cursor_x = 3;
+        assert_eq!(editor.completion_prefix_at_cursor(), "pri");
+
+        editor.get_current_tab_mut().cursor_x = 5;
+        assert_eq!(editor.completion_prefix_at_cursor(), "print");
+    }
+
+    /// Typing still opens the list, and backspacing through what was typed
+    /// still narrows it, so the list only ever closes early once the prefix is
+    /// too short to mean anything.
+    #[test]
+    fn a_deletion_narrows_a_list_that_is_already_open() {
+        let mut editor = editor_with(&[""]);
+        for character in "array_su".chars() {
+            editor.insert_char(character);
+            editor.update_completions();
+        }
+        assert!(editor.show_completions);
+        assert!(editor.completions.iter().any(|completion| completion.label == "array_sum"));
+
+        editor.delete_char();
+        editor.refresh_open_completions();
+        assert!(editor.show_completions);
+        assert_eq!(editor.completion_prefix, "array_s");
+
+        for _ in 0..6 {
+            editor.delete_char();
+            editor.refresh_open_completions();
+        }
+        assert!(!editor.show_completions);
+    }
+
+    /// Vim's `o`. The new line inherits the indentation of the one it follows,
+    /// which is what makes it worth having over Enter at the end of a line.
+    #[test]
+    fn opening_a_line_below_lands_indented_under_the_one_it_follows() {
+        let mut editor = editor_with(&["f fn():v {", "    print(`hi`);", "}"]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_y = 1;
+            tab.cursor_x = 2;
+        }
+        editor.open_line_below();
+        let tab = editor.get_current_tab();
+        assert_eq!(tab.content, vec!["f fn():v {", "    print(`hi`);", "    ", "}"]);
+        assert_eq!((tab.cursor_x, tab.cursor_y), (4, 2));
+    }
+
+    /// Vim's `O`, which has to work on the first line of the file too, where
+    /// there is no line above to open one under.
+    #[test]
+    fn opening_a_line_above_works_at_the_top_of_the_file() {
+        let mut editor = editor_with(&["    second"]);
+        editor.open_line_above();
+        assert_eq!(editor.get_current_tab().content, vec!["", "    second"]);
+        assert_eq!(editor.cursor_position(), (0, 0));
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["    second"]);
+
+        let mut editor = editor_with(&["    first", "second"]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.cursor_y = 1;
+        }
+        editor.open_line_above();
+        assert_eq!(editor.get_current_tab().content, vec!["    first", "    ", "second"]);
+        assert_eq!(editor.cursor_position(), (4, 1));
+    }
+
+    /// Deleting forward joins the next line up, which is what Delete is for
+    /// and never what `x` means.
+    #[test]
+    fn deleting_the_character_under_the_cursor_stops_at_the_end_of_the_line() {
+        let mut editor = editor_with(&["ab", "cd"]);
+        editor.delete_char_at_cursor();
+        assert_eq!(editor.get_current_tab().content, vec!["b", "cd"]);
+
+        editor.get_current_tab_mut().cursor_x = 1;
+        editor.delete_char_at_cursor();
+        assert_eq!(editor.get_current_tab().content, vec!["b", "cd"]);
+    }
+
+    /// Vim's `cc` empties the line and leaves the cursor where the typing
+    /// goes, keeping the indentation it had.
+    #[test]
+    fn changing_a_line_keeps_its_indentation_and_nothing_else() {
+        let mut editor = editor_with(&["    print(`hi`);"]);
+        editor.change_line();
+        assert_eq!(editor.get_current_tab().content, vec!["    "]);
+        assert_eq!(editor.cursor_position(), (4, 0));
+        assert!(editor.undo());
+        assert_eq!(editor.get_current_tab().content, vec!["    print(`hi`);"]);
+    }
+
+    #[test]
+    fn killing_to_the_line_start_takes_what_is_behind_the_cursor() {
+        let mut editor = editor_with(&["one two"]);
+        editor.get_current_tab_mut().cursor_x = 4;
+        editor.kill_to_line_start();
+        assert_eq!(editor.get_current_tab().content, vec!["two"]);
+        assert_eq!(editor.cursor_position(), (0, 0));
+        // Nothing behind the cursor means nothing happens, rather than the
+        // line above being pulled up.
+        editor.kill_to_line_start();
+        assert_eq!(editor.get_current_tab().content, vec!["two"]);
+    }
+
+    /// Visual line mode is charwise selection with both ends pushed out to the
+    /// line boundaries, and which end goes where depends on which way the
+    /// selection was drawn.
+    #[test]
+    fn a_line_selection_covers_whole_lines_in_both_directions() {
+        let mut editor = editor_with(&["one", "two", "three"]);
+        select(&mut editor, (1, 0), (2, 2));
+        editor.snap_selection_to_lines();
+        let tab = editor.get_current_tab();
+        assert_eq!(tab.selection_start, Some((0, 0)));
+        assert_eq!(tab.selection_end, Some((5, 2)));
+
+        select(&mut editor, (2, 2), (1, 0));
+        editor.snap_selection_to_lines();
+        let tab = editor.get_current_tab();
+        assert_eq!(tab.selection_start, Some((5, 2)));
+        assert_eq!(tab.selection_end, Some((0, 0)));
     }
 }

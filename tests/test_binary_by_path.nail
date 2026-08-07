@@ -22,7 +22,7 @@ test_assert_equal_string(danger(fs_read(copy)), `hello`, `bytes survive the roun
 never:s = path_join(scratch, `never.bin`);
 f refused(err:e):v { }
 safe(fs_write_base64(never, `not base64!!`), refused);
-test_assert_false(fs_is_file(never), `nothing was written`);
+test_assert_false(danger(fs_is_file(never)), `nothing was written`);
 
 danger(fs_remove_dir_all(scratch));
 print(`every file held`);

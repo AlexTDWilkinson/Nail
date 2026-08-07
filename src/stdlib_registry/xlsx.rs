@@ -14,6 +14,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "rows:a:h<s,s> = danger(xlsx_read(`report.xlsx`, `Sheet1`));";
         "xlsx_write" [RustXlsxWriter, Tokio, DashMap] => "std_lib::xlsx::write", (path: s, sheet: s, headers: [s], rows: [(h s s)]) -> (v!e),
             "Writes one sheet from headers and rows, like csv_write. Every cell is written as text.",
-            "danger(xlsx_write(`export.xlsx`, `people`, [`name`, `city`], rows));";
+            "rows:a:h<s,s> = danger(csv_parse(`name,city\\nAda,London`, csv_default_options()));\ndanger(xlsx_write(`export.xlsx`, `people`, [`name`, `city`], rows));";
     }
 }

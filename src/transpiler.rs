@@ -272,6 +272,10 @@ pub struct Transpiler {
     // Source order, assigned once per transpile run.
     profile_fn_ids: HashMap<String, usize>,
     profile_fn_names: Vec<String>,
+    // Whether the program names a hashmap type anywhere in its annotations.
+    // A hashmap emits as a DashMap, so the import has to follow the types the
+    // program writes down, not only the crates its stdlib calls declare.
+    program_names_hashmap: bool,
 }
 
 impl Transpiler {
@@ -297,7 +301,38 @@ impl Transpiler {
             wasm_target: false,
             profile_fn_ids: HashMap::new(),
             profile_fn_names: Vec::new(),
+            program_names_hashmap: false,
         }
+    }
+
+    /// Whether this type, or any type nested inside it, is a hashmap.
+    fn type_names_hashmap(data_type: &NailDataTypeDescriptor) -> bool {
+        match data_type {
+            NailDataTypeDescriptor::HashMap(_, _) => true,
+            NailDataTypeDescriptor::Array(inner) | NailDataTypeDescriptor::Result(inner) => Self::type_names_hashmap(inner),
+            NailDataTypeDescriptor::OneOf(types) => types.iter().any(Self::type_names_hashmap),
+            NailDataTypeDescriptor::TypeVar(_, bounds) => bounds.iter().any(Self::type_names_hashmap),
+            NailDataTypeDescriptor::Fn(params, returns) => params.iter().any(Self::type_names_hashmap) || Self::type_names_hashmap(returns),
+            _ => false,
+        }
+    }
+
+    /// Whether any type annotation in the program names a hashmap. Every
+    /// hashmap in generated Rust is a DashMap, and a declaration is the only
+    /// place a type is written down, so this is where the import is decided.
+    /// Reading it off the crate dependencies of called functions instead
+    /// misses `counts:h<s,i> = array_count_by(books, author);`, where the
+    /// hashmap comes from the annotation and the function that filled it
+    /// never declared the crate.
+    fn ast_names_hashmap(node: &ASTNode) -> bool {
+        let here = match node {
+            ASTNode::FunctionDeclaration { params, data_type, .. } | ASTNode::LambdaDeclaration { params, data_type, .. } => {
+                params.iter().any(|(_, param_type)| Self::type_names_hashmap(param_type)) || Self::type_names_hashmap(data_type)
+            }
+            ASTNode::ConstDeclaration { data_type, .. } | ASTNode::StructDeclarationField { data_type, .. } => Self::type_names_hashmap(data_type),
+            _ => false,
+        };
+        return here || Self::ast_children(node).into_iter().any(Self::ast_names_hashmap);
     }
 
     /// Collect field types of every struct declaration in the program.
@@ -437,6 +472,12 @@ impl Transpiler {
             if let Some(func) = stdlib_registry::get_stdlib_function(func_name) {
                 required_crates.extend(func.crate_deps.clone());
             }
+        }
+
+        // A hashmap the program declares itself needs DashMap even when no
+        // function it calls asked for the crate.
+        if self.program_names_hashmap {
+            required_crates.insert(CrateDependency::DashMap);
         }
 
         required_crates
@@ -1723,6 +1764,7 @@ impl Transpiler {
         let mut return_types = HashMap::new();
         Self::collect_function_return_types(node, &mut return_types);
         self.function_return_types = return_types;
+        self.program_names_hashmap = Self::ast_names_hashmap(node);
         let mut declarations = Vec::new();
         Self::collect_function_declarations(node, &mut declarations);
         self.profile_fn_names = declarations.iter().map(|(name, _)| name.clone()).collect();
@@ -3344,5 +3386,29 @@ mod tests {
         transpiler.profile = true;
         let out = transpiler.transpile(&ast).expect("Transpilation should succeed");
         assert!(!out.contains("nail::prof"), "no user functions means nothing to profile");
+    }
+
+    /// A hashmap emits as a DashMap wherever it is named, so the import has to
+    /// follow the annotation. It used to follow the crate dependencies of the
+    /// functions being called instead, and the two examples below both
+    /// transpiled to Rust that would not build: the hashmap is what the
+    /// declaration asks for, and the array function filling it never declared
+    /// the crate.
+    #[test]
+    fn test_hashmap_annotation_brings_its_own_dashmap_import() {
+        let counted = "words:a:s = [`a`, `b`, `a`];\nf itself(word:s):s { r word; }\ncounts:h<s,i> = array_count_by(words, itself);";
+        assert!(transpile_source(counted).contains("use dashmap::DashMap;"), "a counted hashmap needs the import");
+
+        let grouped = "words:a:s = [`a`, `b`, `a`];\nf itself(word:s):s { r word; }\ngrouped:h<s,a:s> = array_group_by(words, itself);";
+        assert!(transpile_source(grouped).contains("use dashmap::DashMap;"), "a grouped hashmap needs the import");
+
+        let returned = "f empty_counts():h<s,i> { r hashmap_new(); }\ncounts:h<s,i> = empty_counts();";
+        assert!(transpile_source(returned).contains("use dashmap::DashMap;"), "a hashmap return type needs the import");
+
+        let nested = "struct Tally { counts:h<s,i> }";
+        assert!(transpile_source(nested).contains("use dashmap::DashMap;"), "a hashmap struct field needs the import");
+
+        let plain = "print(`hi`);";
+        assert!(!transpile_source(plain).contains("use dashmap::DashMap;"), "a program with no hashmap does not import one");
     }
 }

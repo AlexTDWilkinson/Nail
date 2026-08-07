@@ -123,7 +123,9 @@ pub async fn run_with(command: String, args: Vec<String>, options: PROCESS_Optio
 pub async fn which(name: String) -> Result<String, String> {
     // A name with a separator in it is a path already, not something to look up.
     if name.contains('/') {
-        if crate::parser::std_lib::fs::is_executable(name.clone()).await {
+        // The caller named this exact file, so a path that cannot be looked at
+        // is worth reporting rather than reading as "not a program".
+        if crate::parser::std_lib::fs::is_executable(name.clone()).await? {
             return Ok(name);
         }
         return Err(format!("process_which: '{}' is not a program that can be run", name));
@@ -135,7 +137,10 @@ pub async fn which(name: String) -> Result<String, String> {
             continue;
         }
         let candidate = std::path::Path::new(directory).join(&name).to_string_lossy().to_string();
-        if crate::parser::std_lib::fs::is_executable(candidate.clone()).await {
+        // A PATH entry that cannot be read is skipped rather than fatal: the
+        // search is over many directories, and one unreadable directory does
+        // not mean the program is not in the next one.
+        if crate::parser::std_lib::fs::is_executable(candidate.clone()).await.unwrap_or(false) {
             return Ok(candidate);
         }
     }
@@ -205,7 +210,7 @@ mod tests {
     async fn a_program_on_the_path_is_found_and_one_that_is_not_says_so() {
         let found = which("sh".to_string()).await.expect("a system with a shell");
         assert!(found.ends_with("/sh"));
-        assert!(crate::parser::std_lib::fs::is_executable(found).await);
+        assert!(crate::parser::std_lib::fs::is_executable(found).await.unwrap());
 
         assert!(which("nail_no_such_command".to_string()).await.unwrap_err().contains("not on PATH"));
         assert!(which("/bin/sh".to_string()).await.expect("an absolute path") == "/bin/sh");

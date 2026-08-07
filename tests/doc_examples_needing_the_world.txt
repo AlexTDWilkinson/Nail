@@ -1,0 +1,138 @@
+# Documentation examples that cannot run unattended.
+#
+# ./test_doc_examples.sh runs every example, because running them is the only
+# thing that executes most of the standard library. These cannot: they read a
+# file the reader is expected to have, talk to a server, draw on a terminal,
+# wait for a keystroke, or end the program on purpose.
+#
+# The list is checked both ways. An example here that starts passing is
+# reported, so the line can be deleted. Nothing is skipped quietly, and
+# nothing stays here because it was forgotten.
+#
+# Shrinking it is real work: an example that writes the file it then reads is
+# a better example, because it is one a reader can paste and run.
+
+args_value                     # needs command line arguments
+args_value_float               # needs command line arguments
+args_value_int                 # needs command line arguments
+audio_play_file                # needs a file that is not there
+bool_from                      # needs an environment variable
+crypto_hash_file_blake3        # needs a file that is not there
+crypto_hash_file_sha256        # needs a file that is not there
+csv_close                      # needs a file that is not there
+csv_next_rows                  # needs a file that is not there
+csv_open                       # needs a file that is not there
+danger                         # needs a file that is not there
+db_datafusion_query            # needs a database with data in it
+db_datafusion_query_single     # needs a database with data in it
+db_postgres_close              # needs a server to talk to
+db_postgres_connect            # needs an environment variable
+db_postgres_execute            # needs a server to talk to
+db_postgres_execute_batch      # needs a server to talk to
+db_postgres_query              # needs a server to talk to
+db_postgres_query_single       # needs a server to talk to
+db_sqlite_execute_params       # needs a database with data in it
+db_sqlite_query                # needs a database with data in it
+db_sqlite_query_params         # needs a database with data in it
+db_sqlite_query_single         # needs a database with data in it
+db_sqlite_query_single_params  # needs a database with data in it
+db_valkey_close                # needs a server to talk to
+db_valkey_connect              # needs a server to talk to
+db_valkey_delete               # needs a server to talk to
+db_valkey_exists               # needs a server to talk to
+db_valkey_expire               # needs a server to talk to
+db_valkey_get                  # needs a server to talk to
+db_valkey_increment            # needs a server to talk to
+db_valkey_list_length          # needs a server to talk to
+db_valkey_list_pop             # needs a server to talk to
+db_valkey_list_push            # needs a server to talk to
+db_valkey_publish              # needs a server to talk to
+db_valkey_set                  # needs a server to talk to
+db_valkey_set_ttl              # needs a server to talk to
+email_send                     # needs a mail server and a real address
+email_send_html                # needs a mail server and a real address
+email_send_with_attachments    # needs a file that is not there
+env_load_dotenv                # needs a file that is not there
+env_set_current_dir            # needs a file that is not there
+expect                         # needs a file that is not there
+fs_append_file                 # needs a file that is not there
+fs_close                       # needs a file that is not there
+fs_copy                        # needs a file that is not there
+fs_dir_size                    # needs a file that is not there
+fs_files_equal                 # needs a file that is not there
+fs_glob                        # needs a file that is not there
+fs_modified                    # needs a file that is not there
+fs_move                        # needs a file that is not there
+fs_next_lines                  # needs a file that is not there
+fs_open                        # needs a file that is not there
+fs_read                        # needs a file that is not there
+fs_read_base64                 # needs a file that is not there
+fs_read_dir                    # needs a file that is not there
+fs_read_lines                  # needs a file that is not there
+fs_read_range_base64           # needs a file that is not there
+fs_read_range_hex              # needs a file that is not there
+fs_read_with_encoding          # needs a file that is not there
+fs_reduce_lines                # needs a file that is not there
+fs_remove_dir                  # needs a file that is not there
+fs_remove_dir_all              # needs a file that is not there
+fs_remove_file                 # needs a file that is not there
+fs_set_executable              # needs a file that is not there
+fs_size                        # needs a file that is not there
+fs_tail_lines                  # needs a file that is not there
+fs_walk                        # needs a file that is not there
+fs_watch_next                  # needs a file that is not there
+fs_watch_start                 # needs a file that is not there
+fs_watch_stop                  # needs a file that is not there
+game3d_mesh_load               # needs a file that is not there
+game_run                       # runs until stopped
+game_sprite                    # needs a file that is not there
+game_sprite_load               # needs a file that is not there
+game_sprite_scaled             # needs a file that is not there
+http_download_file             # needs a server to talk to
+http_multipart_extract         # needs a file that is not there
+http_request_multipart         # needs a file that is not there
+http_server                    # runs until stopped
+http_server_realtime           # runs until stopped
+http_sse_close                 # needs a server to talk to
+http_sse_connect               # needs a server to talk to
+http_sse_next                  # needs a server to talk to
+http_ws_close                  # needs a server to talk to
+http_ws_connect                # needs a server to talk to
+http_ws_receive                # needs a server to talk to
+http_ws_send                   # needs a server to talk to
+i18n_load                      # needs a file that is not there
+i18n_translate                 # needs a file that is not there
+i18n_translate_count           # needs a file that is not there
+image_blur                     # needs a file that is not there
+image_convert                  # needs a file that is not there
+image_crop                     # needs a file that is not there
+image_format                   # needs a file that is not there
+image_grayscale                # needs a file that is not there
+image_height                   # needs a file that is not there
+image_mirror                   # needs a file that is not there
+image_resize                   # needs a file that is not there
+image_resize_within            # needs a file that is not there
+image_rotate                   # needs a file that is not there
+image_thumbnail                # needs a file that is not there
+image_width                    # needs a file that is not there
+io_read_float                  # needs something typed in
+io_read_float_prompt           # needs something typed in
+io_read_int                    # needs something typed in
+io_read_int_prompt             # needs something typed in
+io_select                      # runs until stopped
+log_set_file                   # needs a file that is not there
+net_dns_lookup                 # needs a server to talk to
+net_tcp_request                # needs a server to talk to
+net_tls_cert_days_left         # ends the program on purpose
+net_tls_cert_expiry            # ends the program on purpose
+net_udp_request                # needs a server to talk to
+panic                          # ends the program on purpose
+pdf_text                       # needs a file that is not there
+process_exit                   # ends the program on purpose
+process_wait_for_interrupt     # runs until stopped
+sys_disk_free_bytes            # needs a file that is not there
+test_fail                      # ends the program on purpose
+todo                           # ends the program on purpose
+tui_run                        # needs a terminal
+xlsx_read                      # needs a file that is not there
+xlsx_sheets                    # needs a file that is not there

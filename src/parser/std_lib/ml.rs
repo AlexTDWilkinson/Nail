@@ -354,7 +354,7 @@ fn grow(tree: &mut ML_Tree, rows: &Vec<Vec<f64>>, labels: &Vec<i64>, indices: Ve
 
     for feature in 0..width {
         let mut candidates: Vec<f64> = indices.iter().map(|index| rows[*index][feature]).collect();
-        candidates.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|left, right| left.total_cmp(right));
         candidates.dedup();
         if candidates.len() < 2 {
             continue;
@@ -528,7 +528,7 @@ pub fn knn_predict(features: Vec<Vec<f64>>, labels: Vec<i64>, query: Vec<f64>, k
 
     let mut distances: Vec<(f64, i64)> = features.iter().enumerate().map(|(index, row)| (distance(row, &query), labels[index])).collect();
     // Ties broken by label, so the answer never depends on row order.
-    distances.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(std::cmp::Ordering::Equal).then(left.1.cmp(&right.1)));
+    distances.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
 
     let nearest: Vec<i64> = distances.iter().take(k as usize).map(|(_, label)| *label).collect();
     return Ok(majority(&nearest));
@@ -1038,7 +1038,7 @@ fn feature_bins(rows: &Vec<Vec<f64>>, columns: usize, bins: usize) -> Vec<Vec<f6
     let mut all = Vec::with_capacity(columns);
     for column in 0..columns {
         let mut values: Vec<f64> = rows.iter().map(|row| row[column]).collect();
-        values.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+        values.sort_by(|left, right| left.total_cmp(right));
         values.dedup();
 
         if values.len() <= 1 {
@@ -1549,7 +1549,7 @@ pub fn regression_scores(predicted: Vec<f64>, actual: Vec<f64>) -> Result<ML_Reg
     } else {
         let mean_percentage = percentage_errors.iter().sum::<f64>() / percentage_errors.len() as f64;
         let mut sorted = percentage_errors.clone();
-        sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|left, right| left.total_cmp(right));
         let middle = sorted.len() / 2;
         let median = if sorted.len() % 2 == 0 { (sorted[middle - 1] + sorted[middle]) / 2.0 } else { sorted[middle] };
         (mean_percentage, median, close_enough / percentage_errors.len() as f64)

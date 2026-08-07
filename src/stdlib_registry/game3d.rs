@@ -53,7 +53,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct("GAME_Shape".to_string()))))),
         diverging: false,
         description: "A loaded mesh seen through a camera: placed at x, y, z, spun rotation_y radians, scaled, lit by a fixed light and depth-sorted, returned as ordinary triangle shapes for the frame. An empty tint keeps the mesh's material colours, a #rrggbb tint repaints every triangle.",
-        example: "spinning:a:GAME_Shape = danger(game3d_mesh(camera, ship, 0.0, 0.0, 0.0, angle, 1.0, ``));",
+        example: "camera:GAME3D_Camera = GAME3D_Camera {\n    position_x = 0.0, position_y = 1.0, position_z = 4.0,\n    target_x = 0.0, target_y = 0.0, target_z = 0.0,\n    field_of_view = 60.0, viewport_width = 800.0, viewport_height = 600.0\n};\nship:i = danger(game3d_mesh_cube());\nangle:f = 0.5;\nspinning:a:GAME_Shape = danger(game3d_mesh(camera, ship, 0.0, 0.0, 0.0, angle, 1.0, ``));",
     });
 
     m.insert("game3d_line", StdlibFunction {
@@ -76,6 +76,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct("GAME_Shape".to_string()))),
         diverging: false,
         description: "A line between two points in the world, projected onto the frame. The array is empty when the line is behind the camera, so it can always be concatenated into the shapes.",
-        example: "edge:a:GAME_Shape = game3d_line(camera, -1.0, 0.0, -1.0, 1.0, 0.0, -1.0, 2.0, `gray`);",
+        example: "camera:GAME3D_Camera = GAME3D_Camera {\n    position_x = 0.0, position_y = 1.0, position_z = 4.0,\n    target_x = 0.0, target_y = 0.0, target_z = 0.0,\n    field_of_view = 60.0, viewport_width = 800.0, viewport_height = 600.0\n};\nedge:a:GAME_Shape = game3d_line(camera, -1.0, 0.0, -1.0, 1.0, 0.0, -1.0, 2.0, `gray`);",
     });
 }

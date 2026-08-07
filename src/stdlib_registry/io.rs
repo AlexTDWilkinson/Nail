@@ -33,7 +33,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "answer:s = danger(io_confirm(`Deploy to production?`, false));";
         "io_select" [Tokio] => "std_lib::io::select", (question: s, options: [s]) -> (i!e),
             "Shows a numbered list and asks until one is picked, returning the index of the chosen option.",
-            "chosen:i = danger(io_select(`Which environment?`, environments));";
+            "environments:a:s = [`staging`, `production`];\nchosen:i = danger(io_select(`Which environment?`, environments));";
         "io_read_secret" [Tokio, Crossterm] => "std_lib::io::read_secret", (prompt: s) -> (s!e),
             "Reads a line with nothing shown as it is typed, for a password or a token pasted into a terminal.",
             "password:s = danger(io_read_secret(`Password: `));";

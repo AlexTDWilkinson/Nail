@@ -90,7 +90,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "growth:f = math_exp(1.0);";
         "math_pi" => "std_lib::math::pi", () -> f,
             "Returns the constant pi (3.14159...).",
-            "circumference:f = 2.0 * math_pi() * radius;";
+            "radius:f = 2.0;\ncircumference:f = 2.0 * math_pi() * radius;";
         "math_e" => "std_lib::math::e", () -> f,
             "Returns Euler's number e (2.71828...).",
             "base:f = math_e();";
@@ -99,10 +99,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "direction:i = math_sign(-4.2);";
         "math_atan2" => "std_lib::math::atan2", (y: f, x: f) -> f,
             "Returns the angle from the positive x axis to the point (x, y), from -pi to pi. Use this rather than math_atan for angles - a plain arc tangent cannot tell the quadrants apart.",
-            "angle:f = math_atan2(dy, dx);";
+            "dy:f = 4.0;\ndx:f = 3.0;\nangle:f = math_atan2(dy, dx);";
         "math_hypot" => "std_lib::math::hypot", (x: f, y: f) -> f,
             "Returns the distance from the origin to (x, y), computed without squaring the inputs first so very large distances stay exact.",
-            "distance:f = math_hypot(dx, dy);";
+            "dx:f = 3.0;\ndy:f = 4.0;\ndistance:f = math_hypot(dx, dy);";
         "math_cbrt" => "std_lib::math::cbrt", (value: f) -> f,
             "Returns the cube root, which is defined for negative numbers too - unlike raising to the power of one third.",
             "side:f = math_cbrt(27.0);";
@@ -114,7 +114,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "part:f = math_fract(2.75);";
         "math_to_degrees" => "std_lib::math::to_degrees", (radians: f) -> f,
             "Writes an angle given in radians as degrees.",
-            "degrees:f = math_to_degrees(angle);";
+            "angle:f = math_atan2(4.0, 3.0);\ndegrees:f = math_to_degrees(angle);";
         "math_to_radians" => "std_lib::math::to_radians", (degrees: f) -> f,
             "Writes an angle given in degrees as radians, which is what every function here that takes an angle expects.",
             "angle:f = math_to_radians(90.0);";
@@ -144,13 +144,13 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "power:f = danger(math_log_base(81.0, 3.0));";
         "math_is_nan" => "std_lib::math::is_nan", (value: f) -> b,
             "Returns whether this is the not-a-number value. It is the one value not equal to itself, so == cannot be used to ask.",
-            "broken:b = math_is_nan(computed);";
+            "computed:f = 1.0 / 3.0;\nbroken:b = math_is_nan(computed);";
         "math_is_infinite" => "std_lib::math::is_infinite", (value: f) -> b,
             "Returns whether this is positive or negative infinity.",
-            "overflowed:b = math_is_infinite(computed);";
+            "computed:f = 1.0 / 3.0;\noverflowed:b = math_is_infinite(computed);";
         "math_is_finite" => "std_lib::math::is_finite", (value: f) -> b,
             "Returns whether this is an ordinary number - neither infinite nor not-a-number. The check to make before trusting a computed value.",
-            "usable:b = math_is_finite(computed);";
+            "computed:f = 1.0 / 3.0;\nusable:b = math_is_finite(computed);";
         "math_round_to" => "std_lib::math::round_to", (value: f, decimals: i) -> (f!e),
             "Rounds to a fixed number of decimal places (0 to 12), halves away from zero the way people round on paper.",
             "price:f = danger(math_round_to(2.34567, 2));";
@@ -171,7 +171,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "orders:i = danger(math_permutations(10, 3));";
         "math_smoothstep" => "std_lib::math::smoothstep", (edge_low: f, edge_high: f, value: f) -> (f!e),
             "Eases from 0 at the low edge to 1 at the high edge along a smooth S-curve, holding at 0 and 1 outside them. The edges must differ.",
-            "fade:f = danger(math_smoothstep(0.0, 1.0, progress));";
+            "progress:f = 0.4;\nfade:f = danger(math_smoothstep(0.0, 1.0, progress));";
         "math_compound_growth" => "std_lib::math::compound_growth", (principal: f, rate_per_period: f, periods: i) -> (f!e),
             "Returns what a starting amount becomes after growing by a fixed rate for a number of periods. Errors on negative periods.",
             "balance:f = danger(math_compound_growth(1000.0, 0.05, 10));";
@@ -210,6 +210,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "tail:f = math_erfc(3.0);";
         "math_page_count" => "std_lib::math::page_count", (total_items: i, per_page: i) -> (i!e),
             "Returns how many pages a list of that many items fills, which is the last page number a listing can link to. A part-full last page counts, and an empty list is still one page.",
-            "pages:i = danger(math_page_count(total_posts, 20));";
+            "total_posts:i = 137;\npages:i = danger(math_page_count(total_posts, 20));";
     }
 }

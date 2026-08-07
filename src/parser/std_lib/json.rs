@@ -117,13 +117,14 @@ pub fn get_bool(text: String, path: String) -> Result<bool, String> {
 
 /// Whether there is anything at a dotted path. A field that is present but
 /// null counts as missing, because for a reader they amount to the same thing.
-pub fn has(text: String, path: String) -> bool {
-    return match document("json_has", &text) {
-        Ok(found) => match walk("json_has", &found, &path) {
-            Ok(value) => !value.is_null(),
-            Err(_) => false,
-        },
-        Err(_) => false,
+/// A path that reaches nothing is false rather than an error - that is the
+/// question being asked - but text that is not JSON is an error, because then
+/// there was never a document to ask about.
+pub fn has(text: String, path: String) -> Result<bool, String> {
+    let found = document("json_has", &text)?;
+    return match walk("json_has", &found, &path) {
+        Ok(value) => Ok(!value.is_null()),
+        Err(_) => Ok(false),
     };
 }
 
@@ -435,17 +436,14 @@ pub fn get_array_bools(text: String, path: String) -> Result<Vec<bool>, String> 
 
 /// Whether two pieces of JSON say the same thing, however they are written -
 /// spacing, indentation and the order of an object's fields do not count.
-/// Text that does not parse as JSON is equal to nothing.
-pub fn equal(first: String, second: String) -> bool {
-    let first_document: serde_json::Value = match serde_json::from_str(&first) {
-        Ok(found) => found,
-        Err(_) => return false,
-    };
-    let second_document: serde_json::Value = match serde_json::from_str(&second) {
-        Ok(found) => found,
-        Err(_) => return false,
-    };
-    return first_document == second_document;
+/// Text that does not parse is an error rather than unequal: a comparison
+/// answers "these differ", and a typo in the expected side is not that.
+pub fn equal(first: String, second: String) -> Result<bool, String> {
+    // Which side failed is the whole use of this error: the point of comparing
+    // is to find the difference, and a typo in one of them is not a difference.
+    let first_document: serde_json::Value = serde_json::from_str(&first).map_err(|e| format!("json_equal: the first text is not valid JSON: {}", e))?;
+    let second_document: serde_json::Value = serde_json::from_str(&second).map_err(|e| format!("json_equal: the second text is not valid JSON: {}", e))?;
+    return Ok(first_document == second_document);
 }
 
 /// How many entries the object or list at a dotted path holds - fields for an
@@ -509,11 +507,13 @@ mod reading_tests {
 
     #[test]
     fn asking_whether_something_is_there_never_fails() {
-        assert!(has(ANSWER.to_string(), "user.name".to_string()));
-        assert!(has(ANSWER.to_string(), "items.1".to_string()));
-        assert!(!has(ANSWER.to_string(), "user.email".to_string()));
-        assert!(!has(ANSWER.to_string(), "user.nickname".to_string()));
-        assert!(!has("not json".to_string(), "user".to_string()));
+        assert!(has(ANSWER.to_string(), "user.name".to_string()).unwrap());
+        assert!(has(ANSWER.to_string(), "items.1".to_string()).unwrap());
+        assert!(!has(ANSWER.to_string(), "user.email".to_string()).unwrap());
+        assert!(!has(ANSWER.to_string(), "user.nickname".to_string()).unwrap());
+        // A path reaching nothing is "no". Text that is not JSON is not an
+        // answer to the question at all.
+        assert!(has("not json".to_string(), "user".to_string()).is_err());
     }
 
     #[test]
@@ -534,7 +534,7 @@ mod shaping_tests {
     /// Whether two pieces of JSON text say the same thing, for checking a
     /// function's answer without caring how it was formatted.
     fn same(actual: &str, expected: &str) -> bool {
-        return equal(actual.to_string(), expected.to_string());
+        return equal(actual.to_string(), expected.to_string()).expect("both sides are JSON these tests wrote");
     }
 
     #[test]
@@ -662,12 +662,13 @@ mod shaping_tests {
 
     #[test]
     fn equality_ignores_formatting_and_the_order_of_fields() {
-        assert!(equal(r#"{"a": 1, "b": [1, 2]}"#.to_string(), "{\"b\":[1,2],\n  \"a\": 1}".to_string()));
-        assert!(!equal(r#"{"a": 1}"#.to_string(), r#"{"a": 2}"#.to_string()));
+        assert!(equal(r#"{"a": 1, "b": [1, 2]}"#.to_string(), "{\"b\":[1,2],\n  \"a\": 1}".to_string()).unwrap());
+        assert!(!equal(r#"{"a": 1}"#.to_string(), r#"{"a": 2}"#.to_string()).unwrap());
         // A list's order is meaning, so it still counts.
-        assert!(!equal("[1, 2]".to_string(), "[2, 1]".to_string()));
-        assert!(!equal("not json".to_string(), "{}".to_string()));
-        assert!(!equal("{}".to_string(), "not json".to_string()));
+        assert!(!equal("[1, 2]".to_string(), "[2, 1]".to_string()).unwrap());
+        // Which side has the typo is the point of the error.
+        assert!(equal("not json".to_string(), "{}".to_string()).unwrap_err().contains("first text"));
+        assert!(equal("{}".to_string(), "not json".to_string()).unwrap_err().contains("second text"));
     }
 
     #[test]

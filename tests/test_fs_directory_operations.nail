@@ -19,8 +19,8 @@ print(lines);
 
 // Size and kind describe what is there.
 bytes:i = danger(fs_size(log_path));
-is_regular_file:b = fs_is_file(log_path);
-is_folder:b = fs_is_dir(scratch);
+is_regular_file:b = danger(fs_is_file(log_path));
+is_folder:b = danger(fs_is_dir(scratch));
 changed:i = danger(fs_modified(log_path));
 print(`the log file:`);
 print(bytes);
@@ -31,8 +31,8 @@ print(changed > 0);
 // A path that is not there is neither a file nor a directory.
 missing:s = path_join(scratch, `nothing_here.txt`);
 print(`a missing path is neither:`);
-print(fs_is_file(missing));
-print(fs_is_dir(missing));
+print(danger(fs_is_file(missing)));
+print(danger(fs_is_dir(missing)));
 
 // Reading a directory lists what is directly inside it; walking finds every
 // file however deep.
@@ -49,4 +49,4 @@ print(array_length(found));
 // Removing the whole tree, which is the one that means it.
 danger(fs_remove_dir_all(scratch));
 print(`the scratch directory is gone:`);
-print(fs_is_dir(scratch));
+print(danger(fs_is_dir(scratch)));

@@ -1,3 +1,4 @@
+use crate::parser::std_lib::order::NailOrd;
 use rayon::prelude::*;
 use std::cmp::Ordering;
 
@@ -89,11 +90,13 @@ pub fn join<T: std::fmt::Display + Send + Sync>(arr: &Vec<T>, separator: String)
         .join(&separator)
 }
 
-pub fn sort<T: Ord + Clone + Send>(mut arr: Vec<T>) -> Vec<T> {
+/// The array sorted smallest first. Ordered with `NailOrd` rather than Rust's
+/// `Ord`, which floats do not implement - sorting an array of floats used to
+/// type check in Nail and then fail to compile in the generated Rust.
+pub fn sort<T: NailOrd + Clone + Send>(mut arr: Vec<T>) -> Vec<T> {
     use rayon::prelude::*;
-    use rayon::iter::IntoParallelIterator;
-    arr.par_sort();
-    arr
+    arr.par_sort_by(|left, right| left.nail_cmp(right));
+    return arr;
 }
 
 pub fn reverse<T: Clone>(mut arr: Vec<T>) -> Vec<T> {
@@ -539,9 +542,9 @@ pub fn is_empty<T>(arr: &Vec<T>) -> bool {
 
 /// The array sorted from largest to smallest - `array_sort` reversed, spelled
 /// as one step because leaderboards and recent-first lists are the common case.
-pub fn sort_descending<T: Clone + PartialOrd>(arr: Vec<T>) -> Vec<T> {
+pub fn sort_descending<T: Clone + NailOrd>(arr: Vec<T>) -> Vec<T> {
     let mut out = arr;
-    out.sort_by(|left, right| right.partial_cmp(left).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|left, right| right.nail_cmp(left));
     return out;
 }
 
@@ -558,16 +561,16 @@ pub fn sort_descending<T: Clone + PartialOrd>(arr: Vec<T>) -> Vec<T> {
 /// Sorting by a key rather than with a comparator is deliberate: a comparator
 /// can be inconsistent with itself and produce an order that depends on where
 /// the sort happened to start, and there is no way to check that it isn't.
-pub fn sort_by<T: Clone, K: PartialOrd, F: Fn(T) -> K>(arr: Vec<T>, key: F) -> Vec<T> {
+pub fn sort_by<T: Clone, K: NailOrd, F: Fn(T) -> K>(arr: Vec<T>, key: F) -> Vec<T> {
     let mut keyed: Vec<(K, T)> = arr.into_iter().map(|item| (key(item.clone()), item)).collect();
-    keyed.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(std::cmp::Ordering::Equal));
+    keyed.sort_by(|left, right| left.0.nail_cmp(&right.0));
     return keyed.into_iter().map(|(_, item)| item).collect();
 }
 
 /// The same, largest first - a leaderboard, or newest-first.
-pub fn sort_by_descending<T: Clone, K: PartialOrd, F: Fn(T) -> K>(arr: Vec<T>, key: F) -> Vec<T> {
+pub fn sort_by_descending<T: Clone, K: NailOrd, F: Fn(T) -> K>(arr: Vec<T>, key: F) -> Vec<T> {
     let mut keyed: Vec<(K, T)> = arr.into_iter().map(|item| (key(item.clone()), item)).collect();
-    keyed.sort_by(|left, right| right.0.partial_cmp(&left.0).unwrap_or(std::cmp::Ordering::Equal));
+    keyed.sort_by(|left, right| right.0.nail_cmp(&left.0));
     return keyed.into_iter().map(|(_, item)| item).collect();
 }
 
@@ -764,18 +767,18 @@ mod key_function_tests {
 /// So `sort_by` must never become `sort_unstable_by`, however tempting the
 /// speed is. `stability_is_what_lets_sorts_be_stacked` in this file's tests
 /// fails if it does.
-pub fn sort_by_keys<T: Clone, K: PartialOrd>(arr: Vec<T>, keys: Vec<K>) -> Vec<T> {
+pub fn sort_by_keys<T: Clone, K: NailOrd>(arr: Vec<T>, keys: Vec<K>) -> Vec<T> {
     let mut keyed: Vec<(K, T)> = keys.into_iter().zip(arr.into_iter()).collect();
-    keyed.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(std::cmp::Ordering::Equal));
+    keyed.sort_by(|left, right| left.0.nail_cmp(&right.0));
     return keyed.into_iter().map(|(_, item)| item).collect();
 }
 
 /// The same order upside down, and stable in the same way: equal keys keep the
 /// order they came in, they are not reversed along with everything else. That
 /// is what lets one key point down and another up in a stacked sort.
-pub fn sort_by_keys_descending<T: Clone, K: PartialOrd>(arr: Vec<T>, keys: Vec<K>) -> Vec<T> {
+pub fn sort_by_keys_descending<T: Clone, K: NailOrd>(arr: Vec<T>, keys: Vec<K>) -> Vec<T> {
     let mut keyed: Vec<(K, T)> = keys.into_iter().zip(arr.into_iter()).collect();
-    keyed.sort_by(|left, right| right.0.partial_cmp(&left.0).unwrap_or(std::cmp::Ordering::Equal));
+    keyed.sort_by(|left, right| right.0.nail_cmp(&left.0));
     return keyed.into_iter().map(|(_, item)| item).collect();
 }
 

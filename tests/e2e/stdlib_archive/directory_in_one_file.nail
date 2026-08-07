@@ -5,7 +5,7 @@ danger(fs_write(`source/top.txt`, `the top file`));
 danger(fs_write(`source/nested/under.txt`, `the nested file`));
 
 danger(archive_zip_create(`backup.zip`, `source`));
-print(fs_is_file(`backup.zip`));
+print(danger(fs_is_file(`backup.zip`)));
 print(danger(archive_zip_list(`backup.zip`)));
 danger(archive_zip_extract(`backup.zip`, `unpacked`));
 print(danger(fs_read(`unpacked/top.txt`)));
@@ -18,4 +18,4 @@ print(danger(fs_read(`from_tar/nested/under.txt`)));
 
 f refused(err:e):v { }
 safe(archive_zip_create(`never.zip`, `no_such_directory`), refused);
-print(fs_is_file(`never.zip`));
+print(danger(fs_is_file(`never.zip`)));

@@ -89,17 +89,19 @@ pub fn hash_password(password: String) -> Result<String, String> {
         .map_err(|e| format!("crypto_hash_password: could not hash the password: {}", e));
 }
 
-/// Checks a password against a stored hash from `crypto_hash_password`.
-/// Returns false for a wrong password and false for a stored value that is not
-/// a hash at all, so a corrupted row cannot let anyone in.
-pub fn verify_password(password: String, stored_hash: String) -> bool {
+/// Checks a password against a stored hash from `crypto_hash_password`. A
+/// wrong password is false. A stored value that is not a hash at all is an
+/// error, because that is not a wrong password - it is a row that can never
+/// match any password, and a login that silently rejects forever is a bug
+/// worth hearing about. The attempt is the untrusted side and cannot cause
+/// this: only the stored value is read as a hash. A caller that would rather
+/// fail closed says so with `safe(..., false)`.
+pub fn verify_password(password: String, stored_hash: String) -> Result<bool, String> {
     use argon2::password_hash::{PasswordHash, PasswordVerifier};
     use argon2::Argon2;
 
-    return match PasswordHash::new(&stored_hash) {
-        Ok(parsed) => Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok(),
-        Err(_) => false,
-    };
+    let parsed = PasswordHash::new(&stored_hash).map_err(|_| "crypto_verify_password: the stored value is not a password hash".to_string())?;
+    return Ok(Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok());
 }
 
 /// Random bytes from the operating system, as hex. This is the one to reach
@@ -243,9 +245,9 @@ mod tests {
     #[test]
     fn a_hashed_password_verifies_and_a_wrong_one_does_not() {
         let stored = hash_password("correct horse battery staple".to_string()).expect("a hashable password");
-        assert!(verify_password("correct horse battery staple".to_string(), stored.clone()));
-        assert!(!verify_password("Correct horse battery staple".to_string(), stored.clone()));
-        assert!(!verify_password(String::new(), stored));
+        assert!(verify_password("correct horse battery staple".to_string(), stored.clone()).unwrap());
+        assert!(!verify_password("Correct horse battery staple".to_string(), stored.clone()).unwrap());
+        assert!(!verify_password(String::new(), stored).unwrap());
     }
 
     #[test]
@@ -254,14 +256,15 @@ mod tests {
         let second = hash_password("hunter2".to_string()).expect("a hashable password");
         assert_ne!(first, second, "each hash must carry its own salt");
         // Both still verify, which is the whole point of storing the salt inside.
-        assert!(verify_password("hunter2".to_string(), first));
-        assert!(verify_password("hunter2".to_string(), second));
+        assert!(verify_password("hunter2".to_string(), first).unwrap());
+        assert!(verify_password("hunter2".to_string(), second).unwrap());
     }
 
     #[test]
     fn a_stored_value_that_is_not_a_hash_lets_nobody_in() {
-        assert!(!verify_password("anything".to_string(), "not a hash at all".to_string()));
-        assert!(!verify_password("anything".to_string(), String::new()));
+        // Not a wrong password: a row that can never match one.
+        assert!(verify_password("anything".to_string(), "not a hash at all".to_string()).unwrap_err().contains("not a password hash"));
+        assert!(verify_password("anything".to_string(), String::new()).unwrap_err().contains("not a password hash"));
     }
 
     #[test]

@@ -37,6 +37,9 @@ fn main() {
         eprintln!("                  and --package-name=<name> to override the package name)");
         eprintln!("  --cargo-toml-superset  Output a Cargo.toml requiring every stdlib crate");
         eprintln!("                 (no input file; used by the bundle build to warm the dep cache)");
+        eprintln!("  --dump-examples=<dir>  Write every documentation example to <dir> as a");
+        eprintln!("                 runnable .nail file (no input file; test_doc_examples.sh");
+        eprintln!("                 compiles them so a broken example cannot ship)");
         eprintln!("  -o <path>      Write transpiled Rust to <path> instead of next to the source");
         eprintln!("  --stdout       Write transpiled Rust to stdout, don't touch the filesystem");
         eprintln!("  --no-profile   Emit no runtime profiling (profiling is on by default: every");
@@ -127,6 +130,32 @@ fn main() {
         if matches.len() > 40 {
             println!("... and {} more", matches.len() - 40);
         }
+        return;
+    }
+
+    // Every documentation example as a file on disk, one per function. The
+    // examples are whole programs, so the only thing to add is the version
+    // line. `test_doc_examples.sh` compiles what this writes: an example is
+    // what the editor inserts and the website shows, so it has to be a
+    // program that builds, not only one that type checks.
+    if let Some(directory) = args.iter().find_map(|arg| arg.strip_prefix("--dump-examples=")) {
+        if let Err(error) = fs::create_dir_all(directory) {
+            eprintln!("Cannot write examples to '{}': {}", directory, error);
+            process::exit(1);
+        }
+        let mut written = 0;
+        for function in nail::parser::std_lib::stdlib::functions() {
+            if function.example.is_empty() {
+                continue;
+            }
+            let path = Path::new(directory).join(format!("{}.nail", function.name));
+            if let Err(error) = fs::write(&path, format!("nail latest\n{}\n", function.example)) {
+                eprintln!("Cannot write '{}': {}", path.display(), error);
+                process::exit(1);
+            }
+            written += 1;
+        }
+        println!("{}", written);
         return;
     }
 

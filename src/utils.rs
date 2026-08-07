@@ -5,7 +5,7 @@ use crate::transpiler::Transpiler;
 // The key tables live in the library half of the crate rather than being
 // declared a second time here, so there is one Action enum and not two that
 // merely look alike.
-use nail::keymap::{Action, Resolution};
+use nail::keymap::{Action, Resolution, VimMode};
 use crate::CodeError;
 use crate::Editor;
 use log::error;
@@ -691,12 +691,12 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
         } else {
             // Multi-line selection - rough estimate
             let lines = end_pos.1 - start_pos.1 + 1;
-            let chars_in_first_line = current_tab.content[start_pos.1].len() - start_pos.0;
+            let chars_in_first_line = current_tab.content[start_pos.1].chars().count().saturating_sub(start_pos.0);
             let chars_in_last_line = end_pos.0;
             let chars_in_middle_lines: usize = if lines > 2 {
                 current_tab.content[(start_pos.1 + 1)..end_pos.1]
                     .iter()
-                    .map(|line| line.len() + 1) // +1 for newline
+                    .map(|line| line.chars().count() + 1) // +1 for newline
                     .sum()
             } else {
                 0
@@ -759,7 +759,7 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
     // Which bindings are in force, when they are not the ones a user would
     // assume. Pushed before the width is measured, so the right flush below
     // still counts it.
-    if let Some(label) = editor.keymap.label() {
+    if let Some(label) = editor.keymap.label(editor.vim_mode) {
         spans.push(Span::styled(label, Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)));
     }
 
@@ -1028,36 +1028,62 @@ fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect)
         lines.push(Line::from(""));
     }
     
-    // Example
+    // Two forms of the same example, because there are two things a person
+    // can be short of: the call, for someone who already has the inputs, and
+    // the whole runnable program, for someone meeting the function today.
+    // Both are shown a line at a time with wrapping off, since an example
+    // that reflows is no longer the thing that would be pasted.
     if !selected.example.is_empty() {
+        let call = crate::stdlib_registry::example_snippet(&selected.label, &selected.example);
+
         lines.push(Line::from(vec![
-            Span::styled("Example:", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("Example ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled("(TAB to insert)", Style::default().fg(Color::Yellow)),
         ]));
-        lines.push(Line::from(vec![
-            Span::styled(&selected.example, Style::default().fg(Color::Gray)),
-        ]));
+        lines.push(Line::from(vec![Span::styled(call.to_string(), Style::default().fg(Color::Gray))]));
         lines.push(Line::from(""));
+
+        if selected.example.trim() != call {
+            lines.push(Line::from(vec![
+                Span::styled("Full example ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::styled("(SHIFT + TAB to insert)", Style::default().fg(Color::Yellow)),
+            ]));
+            for example_line in selected.example.lines() {
+                lines.push(Line::from(vec![
+                    Span::styled(example_line.to_string(), Style::default().fg(Color::Gray)),
+                ]));
+            }
+            lines.push(Line::from(""));
+        }
     }
-    
+
     // Help text
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("Press ", Style::default().fg(Color::DarkGray)),
         Span::styled("ESC", Style::default().fg(Color::Yellow)),
-        Span::styled(" to go back, ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" back  ", Style::default().fg(Color::DarkGray)),
         Span::styled("TAB", Style::default().fg(Color::Yellow)),
-        Span::styled(" to insert", Style::default().fg(Color::DarkGray)),
+        Span::styled(" to insert the example  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("SHIFT + TAB", Style::default().fg(Color::Yellow)),
+        Span::styled(" to insert the full example", Style::default().fg(Color::DarkGray)),
     ]));
-    
+
     // Calculate popup size
     let width = lines.iter()
         .map(|line| line.width())
         .max()
         .unwrap_or(40)
         .max(50)
-        .min(100) as u16;
-    
-    let height = (lines.len() + 2).min(20) as u16; // +2 for borders
+        .min(100)
+        .min(content_area.width.saturating_sub(2) as usize) as u16;
+
+    // A line longer than the box takes more than one row, and the description
+    // is usually two or three sentences. Counting lines rather than rows made
+    // the box too short by exactly that difference, which cut off the footer
+    // saying what TAB does.
+    let inner_width = width.saturating_sub(2).max(1) as usize;
+    let rendered_rows: usize = lines.iter().map(|line| line.width().div_ceil(inner_width).max(1)).sum();
+    let height = (rendered_rows + 2).min(content_area.height.saturating_sub(2).max(3) as usize) as u16; // +2 for borders
     
     // Center the popup
     let popup_x = content_area.x + (content_area.width.saturating_sub(width)) / 2;
@@ -1080,7 +1106,7 @@ fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect)
             .title(" Documentation (F1 to toggle) ")
             .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
         .style(Style::default().bg(editor.theme.background))
-        .wrap(Wrap { trim: true });
+        .wrap(Wrap { trim: false });
     
     f.render_widget(detail_paragraph, popup_area);
 }
@@ -1113,13 +1139,20 @@ fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
     // Limit completions shown
     let max_items = 10;
     let items_to_show = editor.completions.len().min(max_items);
-    
+    // The ten drawn are the ten around the picked one, not the first ten in
+    // the list. Arrowing down past the tenth used to leave nothing
+    // highlighted and the same ten rows on screen, so the eleventh match was
+    // reachable but invisible.
+    let first_shown = editor.completion_index.saturating_sub(items_to_show.saturating_sub(1));
+
     // Create list items with highlighting for selected item
     let items: Vec<ListItem> = editor.completions
         .iter()
+        .skip(first_shown)
         .take(items_to_show)
         .enumerate()
-        .map(|(i, item)| {
+        .map(|(offset, item)| {
+            let i = first_shown + offset;
             let icon = match item.kind {
                 CompletionKind::Function => "ƒ ",
                 CompletionKind::Variable => "v ",
@@ -1150,6 +1183,7 @@ fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
     // Calculate popup width based on longest item - make it wider to show full signatures
     let max_width = editor.completions
         .iter()
+        .skip(first_shown)
         .take(items_to_show)
         .map(|item| {
             // Consider label, detail, and description for width
@@ -1179,11 +1213,19 @@ fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
         false
     };
     
-    // Create title with hint about F1 if docs are available
-    let title = if has_docs {
-        " Completions (F1 for docs) "
-    } else {
+    // Say what the keys do, longest version that fits: a title wider than the
+    // popup is cut off mid-word, which teaches nothing.
+    let title = if !has_docs {
         " Completions "
+    } else {
+        [
+            " Completions (tab to complete, shift + tab to insert full example, F1 docs) ",
+            " Completions (tab to complete, shift + tab for full example) ",
+            " Completions (tab to complete) ",
+        ]
+        .into_iter()
+        .find(|hint| hint.len() <= popup_area.width as usize)
+        .unwrap_or(" Completions ")
     };
     
     // Create and render the list
@@ -1198,8 +1240,10 @@ fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
                 Style::default().fg(editor.theme.operator)
             }))
         .style(Style::default().bg(editor.theme.background));
-    
+
     f.render_widget(completions_list, popup_area);
+    let list_area = Rect::new(popup_area.x + 1, popup_area.y + 1, popup_area.width.saturating_sub(2), items_to_show as u16);
+    display_list_scrollbar(f, popup_area, list_area, editor.completions.len(), first_shown);
 }
 
 fn display_dialog(f: &mut Frame, editor: &Editor) {
@@ -1433,6 +1477,36 @@ fn search_switches(editor: &Editor) -> Vec<Span<'static>> {
     return spans;
 }
 
+/// The mark on the edge of a list that says it runs past its window.
+///
+/// A list that scrolls with nothing to show for it reads as the whole answer,
+/// and the rows below the fold never get looked for. The bar is drawn down
+/// the box's right border rather than in a column of its own, so the rows
+/// keep every character they had, and its track is the same line the border
+/// was already drawing. It appears only when there is more than fits.
+///
+/// `rows` is how many there are in total, `offset` is the first one on
+/// screen, and `list_area` is where the rows themselves were drawn: the bar
+/// runs level with them and stops where they stop.
+fn display_list_scrollbar(f: &mut Frame, box_area: Rect, list_area: Rect, rows: usize, offset: usize) {
+    let visible = list_area.height as usize;
+    if visible == 0 || rows <= visible {
+        return;
+    }
+
+    let bar_area = Rect::new(box_area.x + box_area.width.saturating_sub(1), list_area.y, 1, list_area.height);
+    let bar = Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .symbols(ratatui::symbols::scrollbar::VERTICAL)
+        .begin_symbol(None)
+        .end_symbol(None)
+        .track_style(Style::default().fg(Color::DarkGray))
+        .thumb_style(Style::default().fg(Color::Green));
+    let mut state = ScrollbarState::new(rows).position(offset).viewport_content_length(visible);
+
+    f.render_stateful_widget(bar, bar_area, &mut state);
+}
+
 /// The fuzzy list behind both the command palette and go to symbol: what has
 /// been typed on top, the matches under it, one of them picked. They share a
 /// drawing because they are the same thing pointed at different contents, and
@@ -1486,6 +1560,9 @@ fn display_picker(f: &mut Frame, editor: &Editor, title: &str, filter: &str, row
         list_state.select(Some(selected.min(rows.len() - 1)));
     }
     f.render_stateful_widget(list, chunks[1], &mut list_state);
+    // Asked after the list has drawn, because the list is the one that
+    // decided how far down it had to scroll to keep the picked row in sight.
+    display_list_scrollbar(f, dialog_area, chunks[1], rows.len(), list_state.offset());
 }
 
 fn display_palette_dialog(f: &mut Frame, editor: &Editor) {
@@ -1493,9 +1570,18 @@ fn display_palette_dialog(f: &mut Frame, editor: &Editor) {
         .palette_matches
         .iter()
         .filter_map(|index| nail::keymap::COMMANDS.get(*index))
-        .map(|command| (command.name.to_string(), command.keys.to_string()))
+        // Which keys a command answers to depends on which keymap is in force,
+        // and a hint naming the wrong one is worse than no hint at all.
+        .map(|command| (command.name.to_string(), command.keys.for_keymap(editor.keymap).to_string()))
         .collect();
-    display_picker(f, editor, " Commands (Ctrl+P) ", &editor.palette_filter, &rows, editor.palette_index);
+    // The palette names its own key too, and that key is not the same one in
+    // every keymap either.
+    let title = match editor.keymap {
+        nail::keymap::Keymap::Cua => " Commands (Ctrl+P) ",
+        nail::keymap::Keymap::Vim => " Commands (:) ",
+        nail::keymap::Keymap::Emacs => " Commands (Alt+X) ",
+    };
+    display_picker(f, editor, title, &editor.palette_filter, &rows, editor.palette_index);
 }
 
 fn display_symbol_dialog(f: &mut Frame, editor: &Editor) {
@@ -1824,7 +1910,14 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                         // the waiting one is taken and cleared before this key
                         // resolves rather than after.
                         let pending = editor.pending_prefix.take();
-                        match nail::keymap::resolve(editor.keymap, pending, key) {
+                        let vim_mode = vim_mode_for_dialog(&editor);
+                        // Vim leaves the matches lit after the search box has
+                        // closed, so an edit under them has to put them out:
+                        // highlighting stays where it was put, and the text
+                        // under it does not. What was searched for is kept, so
+                        // `n` finds them again.
+                        let before_the_key = editor.edit_marker();
+                        match nail::keymap::resolve(editor.keymap, vim_mode, pending, key) {
                             Resolution::Pending(prefix) => {
                                 editor.pending_prefix = Some(prefix);
                             }
@@ -1833,10 +1926,25 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     break;
                                 }
                             }
+                            // A key the bindings read and had no command for.
+                            // Vim's normal mode is where these come from, and
+                            // the point of them is that they are not text.
+                            Resolution::Swallowed => {}
                             // A cancelled chord must not leave its second key
                             // in the buffer, so an unbound key only counts as
                             // text when nothing was waiting on it.
                             Resolution::Unbound if pending.is_some() => {}
+                            // A chord no table claimed is still not a letter.
+                            // Without this, Ctrl+U in a keymap that does not
+                            // bind it types a u, and so does Alt+Q.
+                            //
+                            // Control and alt together are left alone, because
+                            // that is how a Windows keyboard spells AltGr and
+                            // the character it produces is text.
+                            Resolution::Unbound
+                                if matches!(key.code, KeyCode::Char(_))
+                                    && key.modifiers.intersects(KeyModifiers::CONTROL.union(KeyModifiers::ALT))
+                                    && !key.modifiers.contains(KeyModifiers::CONTROL.union(KeyModifiers::ALT)) => {}
                             Resolution::Unbound => match key.code {
                                 KeyCode::Char(c) => {
                                     log::warn!("Received KeyCode::Char('{}'), dialog_mode: {:?}", c, editor.dialog_mode);
@@ -1875,7 +1983,15 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                         // In replace mode, Tab switches between find and replace fields
                                         editor.switch_replace_field();
                                     } else if editor.show_completions {
-                                        editor.accept_completion();
+                                        // Some terminals send shift+tab as Tab
+                                        // with the modifier set rather than as
+                                        // BackTab, so both spellings have to
+                                        // mean the full example here.
+                                        if key.modifiers.contains(KeyModifiers::SHIFT) {
+                                            editor.accept_completion_full();
+                                        } else {
+                                            editor.accept_completion();
+                                        }
                                     } else if key.modifiers.contains(KeyModifiers::SHIFT) {
                                         // Shift+Tab - Dedent
                                         editor.dedent_selection();
@@ -1899,16 +2015,26 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     }
                                 },
                                 KeyCode::BackTab => {
-                                    // BackTab (Shift+Tab without explicit modifiers check) - Dedent
-                                    let has_selection = {
-                                        let current_tab = editor.get_current_tab();
-                                        current_tab.has_selection()
-                                    };
-                                
-                                    if has_selection {
-                                        editor.dedent_selection();
+                                    // An open completion list owns this key
+                                    // exactly as it owns tab, whether or not
+                                    // the documentation is showing: shift asks
+                                    // for the full example. Letting it fall
+                                    // through to dedent left the list on
+                                    // screen with nothing pasted.
+                                    if editor.show_completions {
+                                        editor.accept_completion_full();
                                     } else {
-                                        editor.previous_tab();
+                                        // BackTab (Shift+Tab without explicit modifiers check) - Dedent
+                                        let has_selection = {
+                                            let current_tab = editor.get_current_tab();
+                                            current_tab.has_selection()
+                                        };
+
+                                        if has_selection {
+                                            editor.dedent_selection();
+                                        } else {
+                                            editor.previous_tab();
+                                        }
                                     }
                                 },
                                 KeyCode::Backspace => {
@@ -1931,13 +2057,13 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                         crate::DialogMode::Settings | crate::DialogMode::ConfirmQuit | crate::DialogMode::CommandPalette | crate::DialogMode::SymbolPicker => {},
                                         crate::DialogMode::None => {
                                             editor.delete_char();
-                                            editor.update_completions();
+                                            editor.refresh_open_completions();
                                         }
                                     }
                                 },
                                 KeyCode::Delete => {
                                     editor.delete_forward();
-                                    editor.update_completions();
+                                    editor.refresh_open_completions();
                                 },
                                 KeyCode::Enter => {
                                     match editor.dialog_mode {
@@ -1945,8 +2071,19 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                             editor.execute_goto_line();
                                         },
                                         crate::DialogMode::Find => {
-                                            // Enter in find mode - find next
-                                            editor.find_next();
+                                            // A vim search ends at Enter: the
+                                            // box closes, the cursor stays on
+                                            // the match the typing already
+                                            // found, and `n` carries on from
+                                            // there. The other keymaps keep
+                                            // the box open, because there
+                                            // Enter is how the matches are
+                                            // walked.
+                                            if editor.keymap == nail::keymap::Keymap::Vim {
+                                                editor.close_dialog();
+                                            } else {
+                                                editor.find_next();
+                                            }
                                         },
                                         crate::DialogMode::Replace => {
                                             // Enter in replace mode - replace current and find next
@@ -1978,6 +2115,13 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     if editor.dialog_mode != crate::DialogMode::None {
                                         // Close any open dialog
                                         editor.close_dialog();
+                                    } else if editor.keymap == nail::keymap::Keymap::Vim && editor.vim_mode != VimMode::Normal {
+                                        // Under vim, getting back to normal
+                                        // mode is what Escape is for, and one
+                                        // press has to do it rather than
+                                        // spending the first on whatever else
+                                        // is open.
+                                        enter_normal_mode(&mut editor);
                                     } else if editor.show_detail_view {
                                         // Go back to completion list from detail view
                                         editor.show_detail_view = false;
@@ -1989,6 +2133,13 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                     } else if editor.has_selection() {
                                         // Clear selection if no completions are showing
                                         editor.clear_selection();
+                                    } else if editor.keymap == nail::keymap::Keymap::Vim {
+                                        // Already in normal mode with nothing
+                                        // to dismiss. A vim user presses
+                                        // Escape to be sure of the mode, not
+                                        // to be asked whether they meant to
+                                        // leave, so quitting is left to the
+                                        // name in the palette that `:` opens.
                                     } else {
                                         // Nothing left to dismiss, so this
                                         // Escape was aimed at the editor
@@ -1998,6 +2149,13 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                 },
                                 _ => {}
                             },
+                        }
+
+                        // Whatever that key turned out to be, if it changed the
+                        // text then the highlighting no longer points at what
+                        // it was pointing at.
+                        if editor.edit_marker() != before_the_key && !editor.search_results.is_empty() && editor.dialog_mode == crate::DialogMode::None {
+                            editor.clear_search_highlight();
                         }
                     }
                     Ok(Event::Paste(data)) => {
@@ -2078,6 +2236,20 @@ fn run_action(editor: &mut Editor, action: Action, tx: &Sender<EditorMessage>, t
         Action::Quit => {
             // Which files were open is worth keeping, and this is the last
             // moment there is to write it down.
+            editor.save_session();
+            let _ = tx.send(EditorMessage::Shutdown);
+            return true;
+        }
+        // Vim's `ZZ`, which is the other way out: the one that writes the file
+        // on the way rather than leaving the question open.
+        Action::SaveAndQuit => {
+            if let Err(e) = editor.save_file() {
+                // Leaving on a failed write would throw the work away without
+                // saying so, so the editor stays open and says so instead.
+                editor.build_status = BuildStatus::Failed(format!("Save failed: {}", e));
+                log::error!("Failed to save file: {}", e);
+                return false;
+            }
             editor.save_session();
             let _ = tx.send(EditorMessage::Shutdown);
             return true;
@@ -2166,7 +2338,7 @@ fn run_action(editor: &mut Editor, action: Action, tx: &Sender<EditorMessage>, t
 /// added without someone deciding which side of that line it falls on.
 fn apply_action(editor: &mut Editor, action: Action) {
     match action {
-        Action::Quit | Action::Save | Action::CycleExampleFiles | Action::Build => {}
+        Action::Quit | Action::SaveAndQuit | Action::Save | Action::CycleExampleFiles | Action::Build => {}
         Action::ToggleTheme => editor.toggle_theme(),
         Action::ToggleLineNumbers => {
             editor.show_line_numbers = !editor.show_line_numbers;
@@ -2228,14 +2400,8 @@ fn apply_action(editor: &mut Editor, action: Action) {
                 editor.toggle_case_sensitivity();
             }
         }
-        Action::FindNext => {
-            editor.search_direction_forward = true;
-            editor.find_next();
-        }
-        Action::FindPrevious => {
-            editor.search_direction_forward = false;
-            editor.find_previous();
-        }
+        Action::FindNext => editor.find_again(true),
+        Action::FindPrevious => editor.find_again(false),
         Action::OpenFileDialog => editor.open_file_dialog(),
         Action::CloseTab => {
             let tab_index = editor.tab_index;
@@ -2257,8 +2423,21 @@ fn apply_action(editor: &mut Editor, action: Action) {
                 editor.show_detail_view = !editor.show_detail_view;
             }
         }
-        Action::ScrollUp => editor.scroll_up(),
-        Action::ScrollDown => editor.scroll_down(),
+        // A page of scrolling takes the cursor with it, so a selection being
+        // dragged along has to hear about the move the same way a motion tells
+        // it.
+        Action::ScrollUp => {
+            editor.scroll_up();
+            if editor.mark_active {
+                editor.extend_selection();
+            }
+        }
+        Action::ScrollDown => {
+            editor.scroll_down();
+            if editor.mark_active {
+                editor.extend_selection();
+            }
+        }
         // An open completion list owns the up and down keys, because picking
         // from it is what the user is in the middle of doing.
         Action::CursorUp { extend } => {
@@ -2294,7 +2473,7 @@ fn apply_action(editor: &mut Editor, action: Action) {
         Action::KillToLineEnd => editor.kill_to_line_end(),
         Action::DeleteForward => {
             editor.delete_forward();
-            editor.update_completions();
+            editor.refresh_open_completions();
         }
         Action::OpenSettings => editor.open_settings(),
         // Editing a word at a time is only ever meant for the buffer, so a
@@ -2302,13 +2481,13 @@ fn apply_action(editor: &mut Editor, action: Action) {
         Action::DeleteWordLeft => {
             if editor.dialog_mode == crate::DialogMode::None {
                 editor.delete_word_left();
-                editor.update_completions();
+                editor.refresh_open_completions();
             }
         }
         Action::DeleteWordRight => {
             if editor.dialog_mode == crate::DialogMode::None {
                 editor.delete_word_right();
-                editor.update_completions();
+                editor.refresh_open_completions();
             }
         }
         Action::NextError => editor.go_to_error(true),
@@ -2338,7 +2517,158 @@ fn apply_action(editor: &mut Editor, action: Action) {
         Action::ToggleMouse => set_mouse_capture(editor, !editor.mouse_enabled),
         Action::ScrollLineUp => editor.scroll_by(-1),
         Action::ScrollLineDown => editor.scroll_by(1),
+        // The vim edits. The mode changes are here rather than in the keymap
+        // because a mode is something the editor is in, and the table's job
+        // ends at saying which key asked for it.
+        Action::EnterInsertMode => enter_insert_mode(editor),
+        Action::EnterNormalMode => enter_normal_mode(editor),
+        // Visual mode is the mark with a name: dropping an anchor is what
+        // makes every motion afterwards extend the selection, which is exactly
+        // what visual mode is. Pressing the key again is how vim turns it off.
+        Action::EnterVisualMode => {
+            if editor.vim_mode == VimMode::Visual {
+                enter_normal_mode(editor);
+            } else {
+                editor.vim_mode = VimMode::Visual;
+                editor.set_mark();
+            }
+        }
+        Action::EnterVisualLineMode => {
+            if editor.vim_mode == VimMode::VisualLine {
+                enter_normal_mode(editor);
+            } else {
+                editor.vim_mode = VimMode::VisualLine;
+                editor.set_mark();
+            }
+        }
+        Action::InsertAfterCursor => {
+            editor.move_cursor_right_with_selection(false);
+            enter_insert_mode(editor);
+        }
+        Action::InsertAtLineStart => {
+            editor.smart_home();
+            enter_insert_mode(editor);
+        }
+        Action::InsertAtLineEnd => {
+            editor.move_to_line_end_with_selection(false);
+            enter_insert_mode(editor);
+        }
+        Action::OpenLineBelow => {
+            editor.open_line_below();
+            enter_insert_mode(editor);
+        }
+        Action::OpenLineAbove => {
+            editor.open_line_above();
+            enter_insert_mode(editor);
+        }
+        Action::DeleteCharAtCursor => editor.delete_char_at_cursor(),
+        Action::DeleteBackward => editor.delete_char(),
+        Action::DeleteToLineStart => editor.kill_to_line_start(),
+        Action::ChangeToLineEnd => {
+            editor.kill_to_line_end();
+            enter_insert_mode(editor);
+        }
+        Action::ChangeLine => {
+            editor.change_line();
+            enter_insert_mode(editor);
+        }
+        Action::ChangeWord => {
+            editor.delete_word_right();
+            enter_insert_mode(editor);
+        }
+        Action::SubstituteChar => {
+            editor.delete_char_at_cursor();
+            enter_insert_mode(editor);
+        }
+        Action::YankLine => editor.yank_line(),
+        Action::YankWord => editor.yank_word(),
+        Action::YankToLineEnd => editor.yank_to_line_end(),
+        Action::PasteAfter => editor.paste_around_cursor(true),
+        Action::PasteBefore => editor.paste_around_cursor(false),
+        // The visual mode operators. Each one is done with the selection by
+        // the time it finishes, which is why each ends back in normal mode.
+        //
+        // Visual line mode takes a different route through three of them: a
+        // selection that covers whole lines still stops at the last character
+        // rather than after the last newline, so cutting it charwise would
+        // leave the emptied lines behind.
+        Action::CutSelection => {
+            if editor.vim_mode == VimMode::VisualLine {
+                editor.yank_selection_as_lines();
+                editor.delete_line();
+            } else if let Err(e) = editor.cut_selection() {
+                log::error!("Failed to cut to clipboard: {}", e);
+            }
+            enter_normal_mode(editor);
+        }
+        Action::YankSelection => {
+            if editor.vim_mode == VimMode::VisualLine {
+                editor.yank_selection_as_lines();
+            } else if let Err(e) = editor.copy_selection() {
+                log::error!("Failed to copy to clipboard: {}", e);
+            }
+            enter_normal_mode(editor);
+        }
+        Action::ChangeSelection => {
+            if let Err(e) = editor.cut_selection() {
+                log::error!("Failed to cut to clipboard: {}", e);
+            }
+            enter_insert_mode(editor);
+        }
+        Action::PasteOverSelection => {
+            if editor.vim_mode == VimMode::VisualLine {
+                editor.delete_line();
+                editor.paste_around_cursor(false);
+            } else if let Err(e) = editor.paste_from_clipboard() {
+                log::error!("Failed to paste from clipboard: {}", e);
+            }
+            enter_normal_mode(editor);
+        }
+        Action::Indent => editor.indent_selection(),
+        Action::Dedent => editor.dedent_selection(),
+        Action::ClearSearchHighlight => editor.clear_search_highlight(),
+        // The status line is where the editor already answers Ctrl+S, so it is
+        // where a key that cannot be answered says why.
+        Action::Unsupported(message) => editor.build_status = BuildStatus::Complete(message.to_string()),
     }
+
+    // Visual line mode is the only thing that has to be put right after every
+    // key rather than by the key itself: a motion moves one end of the
+    // selection, and whole lines are what that end has to land on.
+    if editor.vim_mode == VimMode::VisualLine {
+        editor.snap_selection_to_lines();
+    }
+}
+
+/// Both mode changes clear the same two things. The mark is what makes motions
+/// extend the selection, so leaving visual mode without dropping it would
+/// leave every later motion selecting.
+fn enter_insert_mode(editor: &mut Editor) {
+    editor.vim_mode = VimMode::Insert;
+    editor.pending_prefix = None;
+    editor.clear_mark();
+}
+
+/// A completion list is something only insert mode can pick from, so it is
+/// dismissed on the way out rather than left over normal mode where every key
+/// that could choose from it means something else.
+fn enter_normal_mode(editor: &mut Editor) {
+    editor.show_completions = false;
+    editor.show_detail_view = false;
+    editor.completions.clear();
+    editor.vim_mode = VimMode::Normal;
+    editor.pending_prefix = None;
+    editor.clear_mark();
+}
+
+/// Which vim mode the keys are read in, which is not always the mode the
+/// editor is in. A dialog that takes typing is insert mode by another name:
+/// normal mode swallows letters, so the find box would never see one.
+fn vim_mode_for_dialog(editor: &Editor) -> VimMode {
+    return match editor.dialog_mode {
+        crate::DialogMode::GoToLine | crate::DialogMode::Find | crate::DialogMode::Replace => VimMode::Insert,
+        _ => editor.vim_mode,
+    };
 }
 
 /// Asks the terminal to start or stop reporting the mouse. Handing it back is
@@ -3011,7 +3341,9 @@ fn display_file_dialog(f: &mut Frame, editor: &Editor) {
     let mut list_state = ListState::default();
     list_state.select(Some(editor.file_dialog_index));
 
-    f.render_stateful_widget(list, Rect::new(inner.x, inner.y + 1, inner.width, inner.height - 1), &mut list_state);
+    let list_area = Rect::new(inner.x, inner.y + 1, inner.width, inner.height - 1);
+    f.render_stateful_widget(list, list_area, &mut list_state);
+    display_list_scrollbar(f, dialog_area, list_area, editor.file_entries.len(), list_state.offset());
 }
 
 fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
@@ -3020,7 +3352,7 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
     // Create the dialog area
     let area = f.area();
     let width = std::cmp::min(100, area.width.saturating_sub(4));
-    let height = std::cmp::min(25, area.height.saturating_sub(4));
+    let height = std::cmp::min(32, area.height.saturating_sub(4));
     let x = (area.width.saturating_sub(width)) / 2;
     let y = (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
@@ -3028,10 +3360,11 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
     // Clear the area
     f.render_widget(Clear, dialog_area);
     
-    // Split dialog into list and detail areas
+    // Split dialog into list and detail areas. The detail half holds a whole
+    // worked example now, not two lines about a call, so it gets the room.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(8)])
+        .constraints([Constraint::Min(0), Constraint::Length(14)])
         .split(dialog_area);
     
     // Create function list items
@@ -3041,25 +3374,29 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
     }).collect();
     
     // Create the list widget
+    let list_block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Standard Library Functions - {} ", editor.stdlib_functions.len()))
+        .title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD));
+    let list_area = list_block.inner(chunks[0]);
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title(" Standard Library Functions ")
-            .title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
-        )
+        .block(list_block)
         .style(Style::default().fg(Color::White).bg(Color::Black))
         .highlight_style(Style::default().fg(Color::Black).bg(Color::White));
-    
+
     // Create list state
     let mut list_state = ListState::default();
     list_state.select(Some(editor.stdlib_index));
-    
+
     f.render_stateful_widget(list, chunks[0], &mut list_state);
-    
-    // Show function details
+    display_list_scrollbar(f, chunks[0], list_area, editor.stdlib_functions.len(), list_state.offset());
+
+    // Show function details, ending with the example, because Enter is about
+    // to put that example in the file and nobody should have to guess what
+    // arrives.
     if !editor.stdlib_functions.is_empty() && editor.stdlib_index < editor.stdlib_functions.len() {
         let func = &editor.stdlib_functions[editor.stdlib_index];
-        let details = vec![
+        let mut details = vec![
             Line::from(vec![
                 Span::styled("Signature: ", Style::default().fg(Color::Yellow)),
                 Span::styled(&func.signature, Style::default().fg(Color::White)),
@@ -3069,7 +3406,16 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
                 Span::styled(&func.description, Style::default().fg(Color::White)),
             ]),
         ];
-        
+        if !func.example.is_empty() {
+            details.push(Line::from(vec![Span::styled(
+                "Enter puts this example in your file:",
+                Style::default().fg(Color::Yellow),
+            )]));
+            for example_line in func.example.lines() {
+                details.push(Line::from(vec![Span::styled(example_line.to_string(), Style::default().fg(Color::Gray))]));
+            }
+        }
+
         let detail_paragraph = Paragraph::new(details)
             .block(Block::default()
                 .borders(Borders::ALL)
@@ -3077,8 +3423,8 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
                 .title_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
             )
             .style(Style::default().fg(Color::White).bg(Color::Black))
-            .wrap(ratatui::widgets::Wrap { trim: true });
-        
+            .wrap(ratatui::widgets::Wrap { trim: false });
+
         f.render_widget(detail_paragraph, chunks[1]);
     }
     
@@ -3172,11 +3518,14 @@ pub fn find_matching_bracket(content: &[String], cursor_y: usize, cursor_x: usiz
     }
     
     let line = &content[cursor_y];
-    if cursor_x >= line.len() {
+    let chars: Vec<char> = line.chars().collect();
+    // The bound is the number of characters in the line. Checked against its
+    // byte count instead, a cursor at the end of a line holding anything but
+    // ASCII passed the check and then indexed off the end of this vector.
+    if cursor_x >= chars.len() {
         return None;
     }
-    
-    let chars: Vec<char> = line.chars().collect();
+
     let bracket = chars[cursor_x];
     
     let (opening, closing, direction) = match bracket {
@@ -3212,8 +3561,8 @@ pub fn find_matching_bracket(content: &[String], cursor_y: usize, cursor_x: usiz
         // Search backward
         for line_idx in (0..=cursor_y).rev() {
             let search_line = &content[line_idx];
-            let end_x = if line_idx == cursor_y { cursor_x } else { search_line.len() };
             let line_chars: Vec<char> = search_line.chars().collect();
+            let end_x = if line_idx == cursor_y { cursor_x } else { line_chars.len() };
             
             for char_idx in (0..end_x.min(line_chars.len())).rev() {
                 let ch = line_chars[char_idx];
@@ -3235,6 +3584,118 @@ pub fn find_matching_bracket(content: &[String], cursor_y: usize, cursor_x: usiz
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Draws a scrollbar on its own and hands back the column it drew in, so
+    /// a test can say what the user would see on the right edge of a list.
+    fn scrollbar_column(box_width: u16, list_height: u16, rows: usize, offset: usize) -> String {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let mut terminal = Terminal::new(TestBackend::new(box_width, list_height + 2)).expect("a test terminal");
+        let box_area = Rect::new(0, 0, box_width, list_height + 2);
+        let list_area = Rect::new(1, 1, box_width.saturating_sub(2), list_height);
+        terminal
+            .draw(|f| display_list_scrollbar(f, box_area, list_area, rows, offset))
+            .expect("the frame draws");
+
+        let buffer = terminal.backend().buffer().clone();
+        let mut column = String::new();
+        for y in list_area.y..list_area.y + list_area.height {
+            column.push_str(buffer[(box_width - 1, y)].symbol());
+        }
+        return column;
+    }
+
+    /// Draws a whole dialog into a fixed size terminal and hands back its
+    /// lines, so a test can read what a user would have seen.
+    fn dialog_lines(width: u16, height: u16, draw: impl FnOnce(&mut Frame, &crate::Editor)) -> Vec<String> {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let editor = crate::Editor::new();
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("a test terminal");
+        terminal.draw(|f| draw(f, &editor)).expect("the frame draws");
+
+        let buffer = terminal.backend().buffer().clone();
+        let mut lines = Vec::new();
+        for y in 0..height {
+            let mut line = String::new();
+            for x in 0..width {
+                line.push_str(buffer[(x, y)].symbol());
+            }
+            lines.push(line);
+        }
+        return lines;
+    }
+
+    /// The palette is the list the complaint was about: it holds far more
+    /// commands than a window shows, and without a bar on its edge the ones
+    /// below the fold may as well not exist.
+    #[test]
+    fn the_command_palette_shows_that_it_has_more_rows_than_it_drew() {
+        let rows: Vec<(String, String)> = (0..60).map(|number| (format!("Command {number}"), format!("Ctrl+{number}"))).collect();
+        let lines = dialog_lines(80, 40, |f, editor| display_picker(f, editor, " Commands ", "", &rows, 0));
+
+        let thumbs = lines.iter().filter(|line| line.contains('█')).count();
+        assert!(thumbs > 0, "the palette draws a scrollbar thumb:\n{}", lines.join("\n"));
+
+        let short: Vec<(String, String)> = rows.iter().take(3).cloned().collect();
+        let fits = dialog_lines(80, 40, |f, editor| display_picker(f, editor, " Commands ", "", &short, 0));
+        assert!(fits.iter().all(|line| !line.contains('█')), "three rows need no scrollbar:\n{}", fits.join("\n"));
+    }
+
+    /// The standard library browser is the longest list in the editor by a
+    /// wide margin, and the window shows a couple of dozen of it. The bar and
+    /// the count in the title are the two things saying so.
+    #[test]
+    fn the_standard_library_browser_says_how_long_its_list_is() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let mut editor = crate::Editor::new();
+        editor.open_stdlib_browser();
+        assert!(editor.stdlib_functions.len() > 40, "the registry has more functions than one window holds");
+
+        let mut terminal = Terminal::new(TestBackend::new(110, 40)).expect("a test terminal");
+        terminal.draw(|f| display_stdlib_dialog(f, &editor)).expect("the frame draws");
+
+        let buffer = terminal.backend().buffer().clone();
+        let mut drawn = String::new();
+        for y in 0..40 {
+            for x in 0..110 {
+                drawn.push_str(buffer[(x, y)].symbol());
+            }
+            drawn.push('\n');
+        }
+
+        assert!(drawn.contains('█'), "the browser draws a scrollbar thumb:\n{drawn}");
+        assert!(drawn.contains(&editor.stdlib_functions.len().to_string()), "the title carries the count:\n{drawn}");
+    }
+
+    /// A list that fits says nothing. Drawing a full-height thumb over every
+    /// short list would make the mark meaningless in the case it is for.
+    #[test]
+    fn a_list_that_fits_gets_no_scrollbar() {
+        assert_eq!(scrollbar_column(20, 5, 5, 0), "     ");
+        assert_eq!(scrollbar_column(20, 5, 3, 0), "     ");
+    }
+
+    /// The whole point: five rows on screen out of forty has to look like
+    /// five rows out of forty, or the other thirty five are never looked for.
+    #[test]
+    fn a_list_that_runs_past_its_window_shows_where_it_is() {
+        let at_top = scrollbar_column(20, 5, 40, 0);
+        assert!(at_top.starts_with('█'), "the thumb sits at the top: {at_top}");
+        assert!(at_top.contains('│'), "the track is visible below it: {at_top}");
+
+        let at_bottom = scrollbar_column(20, 5, 40, 35);
+        assert!(at_bottom.ends_with('█'), "the thumb sits at the bottom: {at_bottom}");
+        assert!(at_bottom.starts_with('│'), "the track is visible above it: {at_bottom}");
+
+        let in_the_middle = scrollbar_column(20, 5, 40, 18);
+        assert!(in_the_middle.starts_with('│') && in_the_middle.ends_with('│'), "track on both sides: {in_the_middle}");
+        assert!(in_the_middle.contains('█'), "the thumb is somewhere between: {in_the_middle}");
+    }
 
     #[test]
     fn config_read_ignores_keys_that_only_share_a_prefix() {
@@ -3313,6 +3774,185 @@ mod tests {
     #[test]
     fn initials_reach_a_path_nobody_wants_to_type_out() {
         assert!(path_score("examples/website/page_sections.nail", "ewps").is_some());
+    }
+
+    /// Presses a key the way the key loop does, minus the parts that need a
+    /// terminal: the bindings resolve it, a prefix waits for the key after it,
+    /// and an action runs. Text input and the Escape cascade are the loop's
+    /// own and are not reachable from here.
+    fn press(editor: &mut Editor, code: ratatui::crossterm::event::KeyCode, modifiers: KeyModifiers) {
+        use ratatui::crossterm::event::KeyEvent;
+        let pending = editor.pending_prefix.take();
+        let key = KeyEvent::new(code, modifiers);
+        match nail::keymap::resolve(editor.keymap, vim_mode_for_dialog(editor), pending, key) {
+            Resolution::Pending(prefix) => editor.pending_prefix = Some(prefix),
+            Resolution::Run(action) => apply_action(editor, action),
+            Resolution::Swallowed | Resolution::Unbound => {}
+        }
+    }
+
+    fn typing(editor: &mut Editor, keys: &str) {
+        for letter in keys.chars() {
+            let modifiers = if letter.is_uppercase() { KeyModifiers::SHIFT } else { KeyModifiers::NONE };
+            press(editor, ratatui::crossterm::event::KeyCode::Char(letter), modifiers);
+        }
+    }
+
+    fn vim_editor(lines: &[&str]) -> Editor {
+        let mut editor = Editor::new_with_debug(false);
+        editor.tabs = vec![crate::Tab::new_with_file("test.nail".to_string(), lines.iter().map(|line| line.to_string()).collect())];
+        editor.tab_index = 0;
+        editor.keymap = nail::keymap::Keymap::Vim;
+        editor.vim_mode = VimMode::Normal;
+        return editor;
+    }
+
+    /// An operator and the motion after it are two key presses that make one
+    /// edit, which is the only thing in the editor that works that way.
+    #[test]
+    fn an_operator_and_its_motion_make_one_edit() {
+        let mut editor = vim_editor(&["one", "two", "three"]);
+        typing(&mut editor, "j");
+        typing(&mut editor, "dd");
+        assert_eq!(editor.get_current_tab().content, vec!["one", "three"]);
+        assert_eq!(editor.vim_mode, VimMode::Normal);
+        // The prefix is spent by the key after it, so the second d of a dd is
+        // not still waiting once the line is gone.
+        assert!(editor.pending_prefix.is_none());
+    }
+
+    #[test]
+    fn opening_a_line_leaves_the_editor_in_insert_mode() {
+        let mut editor = vim_editor(&["    one"]);
+        typing(&mut editor, "o");
+        assert_eq!(editor.vim_mode, VimMode::Insert);
+        assert_eq!(editor.get_current_tab().content, vec!["    one", "    "]);
+        // The letters that were commands a moment ago are letters again, so
+        // the one that deletes a line no longer deletes anything.
+        typing(&mut editor, "dd");
+        assert_eq!(editor.get_current_tab().content, vec!["    one", "    "]);
+    }
+
+    /// Visual mode is the mark under another name, which is what makes every
+    /// motion after it extend the selection.
+    #[test]
+    fn visual_mode_grows_the_selection_as_the_cursor_moves() {
+        let mut editor = vim_editor(&["one", "two", "three"]);
+        typing(&mut editor, "vj");
+        assert_eq!(editor.vim_mode, VimMode::Visual);
+        assert!(editor.has_selection());
+        assert_eq!(editor.get_current_tab().selection_start, Some((0, 0)));
+        assert_eq!(editor.get_current_tab().selection_end, Some((0, 1)));
+
+        // Pressing it again is how vim turns it off, and the selection goes
+        // with the mode.
+        typing(&mut editor, "v");
+        assert_eq!(editor.vim_mode, VimMode::Normal);
+        assert!(!editor.has_selection());
+    }
+
+    #[test]
+    fn a_line_selection_covers_whole_lines_from_the_first_key() {
+        let mut editor = vim_editor(&["one", "two", "three"]);
+        typing(&mut editor, "V");
+        assert_eq!(editor.get_current_tab().selection_start, Some((0, 0)));
+        assert_eq!(editor.get_current_tab().selection_end, Some((3, 0)));
+        typing(&mut editor, "j");
+        assert_eq!(editor.get_current_tab().selection_end, Some((3, 1)));
+    }
+
+    /// The matches used to be dropped when the find box closed, which left
+    /// both `n` and F3 doing nothing at the exact moment a user reaches for
+    /// them. The phrase outlives the box now, in every keymap.
+    #[test]
+    fn a_search_outlives_the_box_it_was_typed_into() {
+        let mut editor = vim_editor(&["one two", "one three", "one four"]);
+        editor.search_query = "one".to_string();
+        editor.dialog_mode = crate::DialogMode::Find;
+        editor.find_all_matches();
+        assert_eq!(editor.cursor_position(), (0, 0));
+
+        editor.close_dialog();
+        // Vim leaves the matches lit, because `n` is one key away.
+        assert!(!editor.search_results.is_empty());
+        typing(&mut editor, "n");
+        assert_eq!(editor.cursor_position(), (0, 1));
+        typing(&mut editor, "N");
+        assert_eq!(editor.cursor_position(), (0, 0));
+    }
+
+    #[test]
+    fn finding_again_works_after_the_matches_have_been_dropped() {
+        let mut editor = vim_editor(&["one two", "one three"]);
+        editor.keymap = nail::keymap::Keymap::Cua;
+        editor.search_query = "one".to_string();
+        editor.dialog_mode = crate::DialogMode::Find;
+        editor.find_all_matches();
+
+        editor.close_dialog();
+        // Every keymap but vim treats closing the box as the end of the
+        // search, so the highlighting goes.
+        assert!(editor.search_results.is_empty());
+        apply_action(&mut editor, Action::FindNext);
+        assert_eq!(editor.cursor_position(), (0, 1));
+    }
+
+    /// Putting the highlighting out is not the same as forgetting what was
+    /// searched for, which is what makes `n` still work afterwards.
+    #[test]
+    fn clearing_the_highlight_keeps_the_phrase() {
+        let mut editor = vim_editor(&["one two", "one three"]);
+        editor.search_query = "one".to_string();
+        editor.find_all_matches();
+        apply_action(&mut editor, Action::ClearSearchHighlight);
+        assert!(editor.search_results.is_empty());
+        assert_eq!(editor.search_query, "one");
+        typing(&mut editor, "n");
+        assert_eq!(editor.cursor_position(), (0, 1));
+    }
+
+    /// Highlighting stays where it was put and the text under it does not, so
+    /// the key loop puts the highlighting out after any key that changed the
+    /// text. This is the reading it decides that on: it has to move for an
+    /// edit and stay put for a motion, or the marks go out while a user is
+    /// walking between them.
+    #[test]
+    fn the_edit_marker_moves_for_an_edit_and_not_for_a_motion() {
+        let mut editor = vim_editor(&["one two", "one three"]);
+        let untouched = editor.edit_marker();
+
+        typing(&mut editor, "jw");
+        assert_eq!(editor.edit_marker(), untouched, "a motion is not an edit");
+        typing(&mut editor, "0");
+        assert_eq!(editor.edit_marker(), untouched, "nor is going to the line start");
+
+        typing(&mut editor, "x");
+        assert_ne!(editor.edit_marker(), untouched, "deleting a character is");
+        assert_eq!(editor.get_current_tab().content[1], "ne three");
+
+        let after_deleting = editor.edit_marker();
+        typing(&mut editor, "dd");
+        assert_ne!(editor.edit_marker(), after_deleting, "so is deleting a line");
+    }
+
+    /// A key that cannot be honoured says why, because silence reads as a
+    /// dropped keystroke and gets pressed again.
+    #[test]
+    fn a_key_with_nothing_behind_it_says_so() {
+        let mut editor = vim_editor(&["one"]);
+        press(&mut editor, ratatui::crossterm::event::KeyCode::Char('v'), KeyModifiers::CONTROL);
+        assert!(matches!(&editor.build_status, BuildStatus::Complete(message) if message.contains("Blockwise")));
+        assert_eq!(editor.get_current_tab().content, vec!["one"]);
+    }
+
+    #[test]
+    fn control_bracket_puts_the_mode_and_the_selection_back() {
+        let mut editor = vim_editor(&["one", "two"]);
+        typing(&mut editor, "vj");
+        press(&mut editor, ratatui::crossterm::event::KeyCode::Char('['), KeyModifiers::CONTROL);
+        assert_eq!(editor.vim_mode, VimMode::Normal);
+        assert!(!editor.has_selection());
+        assert!(!editor.mark_active);
     }
 
     #[test]

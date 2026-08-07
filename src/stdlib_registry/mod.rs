@@ -605,6 +605,75 @@ pub fn get_stdlib_function(name: &str) -> Option<&'static StdlibFunction> {
     STDLIB_FUNCTIONS.get(name)
 }
 
+/// The one line of an example that actually calls the function, pulled out of
+/// the whole program around it.
+///
+/// The documentation panel offers both and names them the way a person would:
+/// this line is "the example", and the program it came from, stored in the
+/// registry's `example` field, is "the full example". Someone who already has
+/// the inputs in hand wants only the first. Rather than keep a second string
+/// per function and let the two drift apart, the short one is read back out
+/// of the long one.
+/// The call on its own, as an expression: `array_sum(numbers)` out of
+/// `total:i = array_sum(numbers);`.
+///
+/// This is what the editor pastes, and it has to be safe to paste in the
+/// middle of a half-written statement. The whole line is not: replacing the
+/// word under the cursor in `total:i = array_su` with `total:i = array_sum(
+/// numbers);` writes the assignment twice. The expression alone drops in
+/// anywhere, and it still shows what the arguments look like, which an empty
+/// pair of parentheses never did.
+pub fn example_snippet<'a>(name: &str, example: &'a str) -> &'a str {
+    let line = example_call(name, example);
+    let opening = match line.find(&format!("{}(", name)) {
+        Some(at) => at,
+        // A keyword form like `spawn { ... }` has no call to cut out of it.
+        None => return line,
+    };
+    let mut depth = 0;
+    for (offset, character) in line[opening..].char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &line[opening..opening + offset + character.len_utf8()];
+                }
+            }
+            _ => {}
+        }
+    }
+    line
+}
+
+/// Everything the example does before it makes the call: the declarations and
+/// the functions it hands over, with the call line itself left off.
+///
+/// This is what an editor needs when the call is already being written. The
+/// setup goes in above, the call is finished in place, and nothing is either
+/// cut in half or said twice.
+pub fn example_setup<'a>(name: &str, example: &'a str) -> &'a str {
+    let call = example_call(name, example);
+    match example.rfind(call) {
+        Some(at) => example[..at].trim_end(),
+        None => "",
+    }
+}
+
+/// The one line of the example that names the function, trimmed.
+fn example_call<'a>(name: &str, example: &'a str) -> &'a str {
+    let opening = format!("{}(", name);
+    let line = example
+        .lines()
+        .rev()
+        // `spawn { ... }` is a keyword rather than a call, so a bare mention
+        // is the fallback before giving up on finding the interesting line.
+        .find(|line| line.contains(&opening))
+        .or_else(|| example.lines().rev().find(|line| line.contains(name)))
+        .or_else(|| example.lines().rev().find(|line| !line.trim().is_empty()));
+    line.map(|line| line.trim()).unwrap_or(example)
+}
+
 lazy_static! {
     /// Stdlib calls that have a lazy Rust-iterator form. When such a call is
     /// the iterable of a collection operation or for loop, the transpiler can
@@ -644,6 +713,7 @@ const SYNC_STDLIB_FUNCTIONS: &[&str] =
         "http_part_text",
         "http_part_file",
         "process_default_options",
+        "email_default_server",
         "net_ip_in_cidr",
         "net_ip_is_private",
         "net_ip_is_loopback",
@@ -2155,647 +2225,17 @@ mod stdlib_types_drift_tests {
 
 
 /// Every registry example is a piece of Nail that appears in `nail docs`, in
-/// the IDE's F1 panel, and on the website. It is the thing a person copies
-/// rather than a comment about the thing, so it has to be real Nail.
+/// the IDE's documentation panel, and on the website. The editor puts it
+/// straight into the file being edited, so it is not an illustration of a
+/// call - it is a whole program: it declares the inputs it uses, defines any
+/// function it hands over, and can be pasted into an empty file and run.
 ///
-/// Two rules, ratcheted apart because they are worth different amounts:
-///
-/// 1. EVERY example must parse. No exceptions, ever. An example that is not
-///    Nail teaches a syntax the compiler will refuse.
-/// 2. An example should also type-check as a whole program on its own, so it
-///    can be pasted straight into a file and run. Most do not yet, because
-///    they name inputs they never declare, and those are listed below. The
-///    list may only shrink: a name on it that starts passing is as much a
-///    failure as a name off it that starts failing, so finishing an example
-///    forces the list to be updated in the same change.
+/// That is the rule these tests hold, with no exceptions and no allowlist.
+/// The examples reached it one module at a time behind a shrinking list, and
+/// the list is gone because it emptied.
 #[cfg(test)]
 mod example_tests {
     use super::*;
-
-    /// Examples that are correct Nail but name inputs they do not declare, so
-    /// they cannot be pasted into an empty file and run. Every one of these is
-    /// a small piece of work: declare what it uses, take it off the list.
-    const NOT_YET_SELF_CONTAINED: &[&str] = &[
-        "args_help_text",
-        "args_parse",
-        "array_all_equal",
-        "array_binary_search",
-        "array_cartesian_product",
-        "array_chunk",
-        "array_combinations",
-        "array_common_prefix_length",
-        "array_compact_strings",
-        "array_contains",
-        "array_count_by",
-        "array_count_of",
-        "array_count_runs",
-        "array_deduplicate_by",
-        "array_difference",
-        "array_ends_with",
-        "array_find",
-        "array_find_last",
-        "array_first",
-        "array_flatten",
-        "array_get",
-        "array_group_by",
-        "array_index_of",
-        "array_index_of_max",
-        "array_index_of_min",
-        "array_insert",
-        "array_insert_sorted",
-        "array_insertion_point",
-        "array_interleave",
-        "array_intersect",
-        "array_is_empty",
-        "array_is_sorted",
-        "array_is_unique",
-        "array_join",
-        "array_last",
-        "array_length",
-        "array_max",
-        "array_max_by",
-        "array_middle",
-        "array_min",
-        "array_min_by",
-        "array_pad_end",
-        "array_pad_start",
-        "array_page",
-        "array_permutations",
-        "array_pop",
-        "array_push",
-        "array_remove_at",
-        "array_replace_at",
-        "array_reverse",
-        "array_rotate",
-        "array_rotate_left",
-        "array_rotate_right",
-        "array_shuffle",
-        "array_skip",
-        "array_skip_last",
-        "array_skip_while",
-        "array_slice",
-        "array_sort",
-        "array_sort_by",
-        "array_sort_by_descending",
-        "array_sort_descending",
-        "array_sort_natural",
-        "array_starts_with",
-        "array_step_by",
-        "array_sum",
-        "array_sum_by",
-        "array_swap",
-        "array_take",
-        "array_take_last",
-        "array_take_while",
-        "array_union",
-        "array_windows",
-        "array_zip_with",
-        "base32_decode",
-        "base32_decode_hex",
-        "base32_encode_hex",
-        "base58_decode",
-        "base58_decode_hex",
-        "base58_encode_hex",
-        "binary_byte_length",
-        "binary_concat",
-        "binary_slice",
-        "binary_unpack_float",
-        "binary_unpack_float32",
-        "binary_unpack_int",
-        "bits_and",
-        "bits_count_ones",
-        "bits_count_zeros",
-        "bits_extract",
-        "bits_get",
-        "bits_insert",
-        "bits_leading_zeros",
-        "bits_not",
-        "bits_or",
-        "bits_parity",
-        "bits_rotate_left",
-        "bits_rotate_right",
-        "bits_set",
-        "bits_shift_left",
-        "bits_shift_right",
-        "bits_trailing_zeros",
-        "bits_xor",
-        "cache_get",
-        "cache_get_or",
-        "cache_set",
-        "cache_set_ttl",
-        "chart_bar",
-        "chart_donut",
-        "chart_histogram",
-        "chart_line",
-        "chart_pie",
-        "chart_scatter",
-        "chart_sparkline",
-        "code_escape_html",
-        "code_highlight_html",
-        "code_transpile_to_rust",
-        "compress_brotli",
-        "compress_gunzip",
-        "compress_gzip",
-        "compress_unbrotli",
-        "compress_unzstd",
-        "compress_zstd",
-        "crypto_crc32",
-        "crypto_decrypt",
-        "crypto_encrypt",
-        "crypto_hash_blake3",
-        "crypto_hash_password",
-        "crypto_hash_sha1",
-        "crypto_hmac_sha1",
-        "crypto_hmac_sha256",
-        "crypto_hotp",
-        "crypto_secure_equal",
-        "crypto_sign",
-        "crypto_totp_at",
-        "crypto_totp_now",
-        "crypto_totp_verify",
-        "crypto_verify_password",
-        "crypto_verify_signature",
-        "crypto_verifying_key",
-        "csv_cell",
-        "csv_close",
-        "csv_column",
-        "csv_headers",
-        "csv_next_rows",
-        "csv_parse",
-        "csv_row_count",
-        "csv_select_columns",
-        "csv_serialize",
-        "csv_write",
-        "db_datafusion_close",
-        "db_datafusion_execute",
-        "db_datafusion_query",
-        "db_datafusion_query_single",
-        "db_datafusion_register_csv",
-        "db_datafusion_register_parquet",
-        "db_postgres_close",
-        "db_postgres_execute",
-        "db_postgres_execute_batch",
-        "db_postgres_query",
-        "db_postgres_query_single",
-        "db_sqlite_begin",
-        "db_sqlite_close",
-        "db_sqlite_commit",
-        "db_sqlite_execute",
-        "db_sqlite_execute_batch",
-        "db_sqlite_execute_params",
-        "db_sqlite_query",
-        "db_sqlite_query_params",
-        "db_sqlite_query_single",
-        "db_sqlite_query_single_params",
-        "db_sqlite_rollback",
-        "db_valkey_close",
-        "db_valkey_delete",
-        "db_valkey_exists",
-        "db_valkey_expire",
-        "db_valkey_get",
-        "db_valkey_increment",
-        "db_valkey_list_length",
-        "db_valkey_list_pop",
-        "db_valkey_list_push",
-        "db_valkey_publish",
-        "db_valkey_set",
-        "db_valkey_set_ttl",
-        "diff_apply",
-        "diff_changed",
-        "diff_lines",
-        "draw_group",
-        "draw_polygon",
-        "draw_polyline",
-        "draw_svg",
-        "email_send",
-        "email_send_html",
-        "feed_atom",
-        "feed_parse",
-        "feed_rss",
-        "finance_irr",
-        "finance_npv",
-        "finance_payback_periods",
-        "fs_append",
-        "fs_close",
-        "fs_next_lines",
-        "fs_reduce_lines",
-        "fs_watch_next",
-        "fs_watch_stop",
-        "fs_write",
-        "fs_write_atomic",
-        "fs_write_base64",
-        "game3d_line",
-        "game3d_mesh",
-        "game_run",
-        "game_sprite",
-        "game_sprite_scaled",
-        "geo_bounds_east",
-        "geo_bounds_north",
-        "geo_bounds_south",
-        "geo_bounds_west",
-        "geo_center",
-        "geo_closest",
-        "geo_point_in_polygon",
-        "geo_polygon_area_km2",
-        "hashmap_add_to",
-        "hashmap_clear",
-        "hashmap_contains_key",
-        "hashmap_entry_or_insert",
-        "hashmap_from_arrays",
-        "hashmap_get",
-        "hashmap_get_or",
-        "hashmap_increment",
-        "hashmap_invert",
-        "hashmap_is_empty",
-        "hashmap_key_of",
-        "hashmap_keys",
-        "hashmap_keys_by_value",
-        "hashmap_keys_by_value_descending",
-        "hashmap_len",
-        "hashmap_max_by_value",
-        "hashmap_merge",
-        "hashmap_min_by_value",
-        "hashmap_omit",
-        "hashmap_pick",
-        "hashmap_remove",
-        "hashmap_set",
-        "hashmap_sorted_keys",
-        "hashmap_sum_values",
-        "hashmap_values",
-        "hex_dump",
-        "html_count",
-        "html_images",
-        "html_links",
-        "html_meta",
-        "html_sanitize",
-        "html_select_attribute",
-        "html_select_html",
-        "html_select_text",
-        "html_text",
-        "html_title",
-        "html_to_markdown",
-        "http_build_cookie",
-        "http_default_cookie",
-        "http_live_send",
-        "http_multipart_extract",
-        "http_parse_cookies",
-        "http_path_matches",
-        "http_path_params",
-        "http_request",
-        "http_request_multipart",
-        "http_request_retry",
-        "http_server",
-        "http_server_realtime",
-        "http_sse_close",
-        "http_sse_connect",
-        "http_sse_next",
-        "http_ws_close",
-        "http_ws_receive",
-        "http_ws_send",
-        "i18n_translate",
-        "i18n_translate_count",
-        "image_format",
-        "ini_get",
-        "ini_has",
-        "ini_keys",
-        "ini_remove",
-        "ini_sections",
-        "ini_set",
-        "io_select",
-        "json_array_length",
-        "json_compact",
-        "json_count",
-        "json_equal",
-        "json_flatten",
-        "json_get_array_bools",
-        "json_get_array_floats",
-        "json_get_array_ints",
-        "json_get_array_strings",
-        "json_get_bool",
-        "json_get_float",
-        "json_get_int",
-        "json_get_string",
-        "json_has",
-        "json_keys",
-        "json_merge",
-        "json_pretty",
-        "json_remove",
-        "json_set",
-        "json_type_of",
-        "jwt_is_expired",
-        "jwt_read_unverified",
-        "jwt_sign",
-        "jwt_verify",
-        "linalg_mat3",
-        "linalg_mat3_determinant",
-        "linalg_mat3_equals",
-        "linalg_mat3_get",
-        "linalg_mat3_inverse",
-        "linalg_mat3_multiply",
-        "linalg_mat3_to_array",
-        "linalg_mat3_transform_point",
-        "linalg_mat3_transform_vector",
-        "linalg_mat3_transpose",
-        "linalg_vec2_add",
-        "linalg_vec2_angle_between",
-        "linalg_vec2_clamp",
-        "linalg_vec2_distance",
-        "linalg_vec2_divide",
-        "linalg_vec2_dot",
-        "linalg_vec2_equals",
-        "linalg_vec2_from_array",
-        "linalg_vec2_length",
-        "linalg_vec2_length_squared",
-        "linalg_vec2_max",
-        "linalg_vec2_min",
-        "linalg_vec2_multiply",
-        "linalg_vec2_negate",
-        "linalg_vec2_normalize",
-        "linalg_vec2_perpendicular",
-        "linalg_vec2_reflect",
-        "linalg_vec2_rotate",
-        "linalg_vec2_scale",
-        "linalg_vec2_subtract",
-        "linalg_vec2_to_array",
-        "linalg_vec3_add",
-        "linalg_vec3_angle_between",
-        "linalg_vec3_clamp",
-        "linalg_vec3_cross",
-        "linalg_vec3_distance",
-        "linalg_vec3_divide",
-        "linalg_vec3_dot",
-        "linalg_vec3_equals",
-        "linalg_vec3_from_array",
-        "linalg_vec3_length",
-        "linalg_vec3_length_squared",
-        "linalg_vec3_max",
-        "linalg_vec3_min",
-        "linalg_vec3_multiply",
-        "linalg_vec3_negate",
-        "linalg_vec3_normalize",
-        "linalg_vec3_reflect",
-        "linalg_vec3_scale",
-        "linalg_vec3_subtract",
-        "linalg_vec3_to_array",
-        "log_with_fields",
-        "markdown_front_matter",
-        "markdown_headings",
-        "markdown_links",
-        "markdown_to_html_with_options",
-        "markdown_to_text",
-        "markdown_toc",
-        "markdown_without_front_matter",
-        "markdown_word_count",
-        "math_atan2",
-        "math_hypot",
-        "math_is_finite",
-        "math_is_infinite",
-        "math_is_nan",
-        "math_page_count",
-        "math_pi",
-        "math_smoothstep",
-        "math_to_degrees",
-        "mcp_serve",
-        "mime_for_path",
-        "mime_is_text",
-        "ml_boost_fit",
-        "ml_boost_fit_validated",
-        "ml_boost_importance",
-        "ml_boost_predict",
-        "ml_boost_predict_probability",
-        "ml_cross_validate_boost",
-        "ml_encode_with",
-        "ml_forest_fit",
-        "ml_forest_predict",
-        "ml_kmeans",
-        "ml_knn_predict",
-        "ml_linear_fit",
-        "ml_linear_predict",
-        "ml_normalize",
-        "ml_one_hot",
-        "ml_one_hot_with",
-        "ml_regression_scores",
-        "ml_score",
-        "ml_split_train_test",
-        "ml_standardize",
-        "ml_target_encode",
-        "ml_tree_explain",
-        "ml_tree_fit",
-        "ml_tree_predict",
-        "money_percent_of",
-        "money_times",
-        "net_ip_in_cidr",
-        "net_ip_is_loopback",
-        "net_ip_is_private",
-        "net_ip_to_int",
-        "net_ip_version",
-        "net_tcp_serve",
-        "net_udp_serve",
-        "path_common_prefix",
-        "path_matches_glob",
-        "path_sanitize_filename",
-        "path_within",
-        "pdf_from_text",
-        "print_debug",
-        "process_close_stdin",
-        "process_is_running",
-        "process_kill",
-        "process_next_line",
-        "process_run_with",
-        "process_spawn",
-        "process_wait",
-        "process_write_stdin",
-        "rand_pick",
-        "rand_sample",
-        "rand_seeded_shuffle",
-        "rand_weighted_pick",
-        "regex_escape",
-        "regex_is_valid",
-        "sched_every",
-        "semver_is_newer",
-        "semver_is_older",
-        "semver_newest",
-        "semver_satisfies",
-        "semver_sort",
-        "semver_valid",
-        "stats_chi_square_test",
-        "stats_confidence_interval_95",
-        "stats_correlation",
-        "stats_covariance",
-        "stats_cumulative_sum",
-        "stats_cv",
-        "stats_differences",
-        "stats_ewma",
-        "stats_geometric_mean",
-        "stats_harmonic_mean",
-        "stats_histogram",
-        "stats_iqr",
-        "stats_kurtosis",
-        "stats_mad",
-        "stats_mean",
-        "stats_median",
-        "stats_midrange",
-        "stats_mode",
-        "stats_moving_average",
-        "stats_normalize",
-        "stats_outliers",
-        "stats_percent_change",
-        "stats_percentile",
-        "stats_percentile_rank",
-        "stats_pstddev",
-        "stats_pvariance",
-        "stats_range",
-        "stats_rank",
-        "stats_rms",
-        "stats_sem",
-        "stats_skewness",
-        "stats_spearman",
-        "stats_stddev",
-        "stats_t_test",
-        "stats_trimmed_mean",
-        "stats_variance",
-        "stats_weighted_mean",
-        "stats_zscores",
-        "string_best_match",
-        "string_between",
-        "string_char_at",
-        "string_closest",
-        "string_common_prefix",
-        "string_common_suffix",
-        "string_contains_ignore_case",
-        "string_cosine_words",
-        "string_dedent",
-        "string_delete_whitespace",
-        "string_ends_with_ignore_case",
-        "string_ensure_prefix",
-        "string_ensure_suffix",
-        "string_equals_ignore_case",
-        "string_escape_html",
-        "string_first_line",
-        "string_from_array_bool",
-        "string_from_array_f64",
-        "string_from_array_i64",
-        "string_from_array_string",
-        "string_grapheme_length",
-        "string_graphemes",
-        "string_hamming_distance",
-        "string_has_emoji",
-        "string_indent",
-        "string_initials",
-        "string_is_blank",
-        "string_jaccard_words",
-        "string_join",
-        "string_last_line",
-        "string_mask",
-        "string_minify",
-        "string_normalize_nfc",
-        "string_normalize_nfkc",
-        "string_normalize_whitespace",
-        "string_reading_time_minutes",
-        "string_remove_accents",
-        "string_rot13",
-        "string_shell_quote",
-        "string_shell_split",
-        "string_split_lines",
-        "string_starts_with_ignore_case",
-        "string_strip_emoji",
-        "string_strip_prefix",
-        "string_strip_suffix",
-        "string_truncate",
-        "string_unescape_html",
-        "string_word_count",
-        "string_word_wrap",
-        "template_has",
-        "template_names_used",
-        "template_render",
-        "template_render_or",
-        "template_render_rows",
-        "term_display_width",
-        "term_inverse",
-        "term_strip_styles",
-        "term_table",
-        "term_two_columns",
-        "test_assert",
-        "test_assert_array_contains",
-        "test_assert_array_empty",
-        "test_assert_array_length",
-        "test_assert_array_not_empty",
-        "test_assert_between_int",
-        "test_assert_contains",
-        "test_assert_ends_with",
-        "test_assert_equal_array",
-        "test_assert_equal_bool",
-        "test_assert_equal_float",
-        "test_assert_equal_hashmap",
-        "test_assert_equal_int",
-        "test_assert_equal_string",
-        "test_assert_false",
-        "test_assert_greater_float",
-        "test_assert_greater_int",
-        "test_assert_less_float",
-        "test_assert_less_int",
-        "test_assert_not_contains",
-        "test_assert_not_equal_int",
-        "test_assert_not_equal_string",
-        "test_assert_starts_with",
-        "time_add_days",
-        "time_add_hours",
-        "time_add_minutes",
-        "time_add_months",
-        "time_add_seconds",
-        "time_add_weeks",
-        "time_age_years",
-        "time_ago",
-        "time_cron_valid",
-        "time_days_between",
-        "time_diff",
-        "time_format",
-        "time_format_duration",
-        "time_months_between",
-        "time_same_day",
-        "time_workdays_between",
-        "time_zone_valid",
-        "toml_deserialize",
-        "toml_serialize",
-        "tui_run",
-        "url_build_query",
-        "url_domain",
-        "url_format",
-        "url_is_absolute",
-        "url_join",
-        "url_origin",
-        "url_path_segments",
-        "url_robots_allowed",
-        "url_strip_tracking",
-        "url_to_punycode",
-        "url_to_unicode",
-        "validate_credit_card",
-        "validate_email",
-        "validate_hex_color",
-        "validate_hostname",
-        "validate_iban",
-        "validate_ipv4",
-        "validate_ipv6",
-        "validate_isbn",
-        "validate_json",
-        "validate_length_between",
-        "validate_luhn",
-        "validate_mac_address",
-        "validate_password_strength",
-        "validate_phone_loose",
-        "validate_port",
-        "validate_postal_code",
-        "validate_schema",
-        "validate_slug",
-        "validate_url",
-        "validate_uuid",
-        "xlsx_write",
-        "xml_deserialize",
-        "xml_serialize",
-        "yaml_deserialize",
-        "yaml_serialize",
-    ];
-
 
     /// Checks one example the way the compiler would see it as a whole file.
     fn check_example(example: &str) -> Result<(), String> {
@@ -2822,6 +2262,127 @@ mod example_tests {
         assert!(broken.is_empty(), "these documentation examples are not valid Nail:\n{}", broken.join("\n"));
     }
 
+    /// The transpiler decides whether to write `.await` from
+    /// `is_stdlib_fn_async`, which reads a module default plus two hand-kept
+    /// exception lists. Nothing checked those lists against the Rust they
+    /// describe, so a sync function added to an async module got an `.await`
+    /// it could not satisfy and the whole module became uncallable -
+    /// `email_default_server` did exactly that, and it type checked the whole
+    /// way. This reads the implementations and compares.
+    #[test]
+    fn the_registry_agrees_with_rust_about_which_functions_are_async() {
+        let mut sources: HashMap<String, Option<String>> = HashMap::new();
+        let mut wrong: Vec<String> = Vec::new();
+        let mut missing: Vec<String> = Vec::new();
+
+        for (name, function) in STDLIB_FUNCTIONS.iter() {
+            let mut pieces: Vec<&str> = function.rust_path.split("::").collect();
+            let rust_name = match pieces.pop() {
+                Some(piece) => piece,
+                None => continue,
+            };
+            // print is the one function the transpiler writes itself, so it
+            // names a macro rather than a path into std_lib.
+            if pieces.is_empty() {
+                continue;
+            }
+            let path = format!("{}/src/parser/{}.rs", env!("CARGO_MANIFEST_DIR"), pieces.join("/"));
+            let source = sources.entry(path.clone()).or_insert_with(|| std::fs::read_to_string(&path).ok());
+            let source = match source {
+                Some(text) => text,
+                None => {
+                    missing.push(format!("  {}: no file at {}", name, path));
+                    continue;
+                }
+            };
+
+            // `fn name(`, but also `fn name<T>(` - most of the array module
+            // is generic, and a needle ending in a parenthesis misses all of it.
+            let needle = format!("fn {}", rust_name);
+            let found = source.match_indices(&needle).find(|(at, _)| {
+                let before = source[..*at].trim_end();
+                let after = source[at + needle.len()..].chars().next();
+                (before.ends_with("pub") || before.ends_with("pub async")) && matches!(after, Some('(') | Some('<'))
+            });
+            match found {
+                Some((at, _)) => {
+                    let defined_async = source[..at].trim_end().ends_with("async");
+                    if defined_async != is_stdlib_fn_async(name) {
+                        wrong.push(format!(
+                            "  {}: the registry says {}, {} says {}",
+                            name,
+                            if is_stdlib_fn_async(name) { "async" } else { "sync" },
+                            function.rust_path,
+                            if defined_async { "async" } else { "sync" }
+                        ));
+                    }
+                }
+                None => missing.push(format!("  {}: no `pub fn {}` in {}", name, rust_name, path)),
+            }
+        }
+
+        wrong.sort();
+        missing.sort();
+        assert!(missing.is_empty(), "these rust_path values do not point at a function any more:\n{}", missing.join("\n"));
+        assert!(
+            wrong.is_empty(),
+            "the transpiler writes `.await` from the registry, so a disagreement here is a program that will not build:\n{}",
+            wrong.join("\n")
+        );
+    }
+
+    /// The documentation panel offers the call on its own as well as the
+    /// whole program, and it reads the short form back out of the long one.
+    /// An example that never names its own function would silently offer the
+    /// wrong line.
+    #[test]
+    fn every_example_contains_a_call_to_its_own_function() {
+        let mut silent: Vec<String> = Vec::new();
+        for (name, function) in STDLIB_FUNCTIONS.iter() {
+            if function.example.is_empty() {
+                continue;
+            }
+            let call = example_snippet(name, function.example);
+            if !call.contains(name) {
+                silent.push(format!("  {}: nothing in the example names it\n{}", name, function.example));
+            }
+        }
+        silent.sort();
+        assert!(silent.is_empty(), "these examples never name the function they document:\n{}", silent.join("\n"));
+    }
+
+    /// What TAB inserts has to be droppable into a half-written statement, so
+    /// it is the call expression rather than the statement around it, and its
+    /// parentheses have to balance or it pastes a syntax error.
+    #[test]
+    fn the_inserted_call_is_a_balanced_expression() {
+        assert_eq!(example_snippet("array_sum", "numbers:a:i = [1];\ntotal:i = array_sum(numbers);"), "array_sum(numbers)");
+        assert_eq!(
+            example_snippet("html_sanitize", "comment:s = `x`;\nclean:s = html_sanitize(markdown_to_html(comment));"),
+            "html_sanitize(markdown_to_html(comment))"
+        );
+        // A keyword form has no call to cut out, so the line stands as it is.
+        assert_eq!(example_snippet("spawn", "spawn { print(`hi`); }"), "spawn { print(`hi`); }");
+
+        let mut unbalanced: Vec<String> = Vec::new();
+        for (name, function) in STDLIB_FUNCTIONS.iter() {
+            if function.example.is_empty() {
+                continue;
+            }
+            let snippet = example_snippet(name, function.example);
+            let depth = snippet.chars().fold(0i32, |depth, character| match character {
+                '(' => depth + 1,
+                ')' => depth - 1,
+                _ => depth,
+            });
+            if depth != 0 {
+                unbalanced.push(format!("  {}: {}", name, snippet));
+            }
+        }
+        unbalanced.sort();
+        assert!(unbalanced.is_empty(), "these would paste unbalanced parentheses:\n{}", unbalanced.join("\n"));
+    }
+
     #[test]
     fn every_stdlib_function_has_an_example() {
         let mut missing: Vec<&str> = STDLIB_FUNCTIONS.iter().filter(|(_, function)| function.example.is_empty()).map(|(name, _)| *name).collect();
@@ -2830,33 +2391,21 @@ mod example_tests {
     }
 
     #[test]
-    fn the_examples_that_stand_alone_still_do_and_the_rest_are_listed() {
-        let mut newly_passing: Vec<&str> = Vec::new();
-        let mut newly_failing: Vec<String> = Vec::new();
-
+    fn every_stdlib_example_is_a_whole_program() {
+        let mut broken: Vec<String> = Vec::new();
         for (name, function) in STDLIB_FUNCTIONS.iter() {
             if function.example.is_empty() {
                 continue;
             }
-            let listed = NOT_YET_SELF_CONTAINED.contains(name);
-            match (check_example(function.example), listed) {
-                (Ok(()), true) => newly_passing.push(name),
-                (Err(reason), false) => newly_failing.push(format!("  {}: {}\n    {}", name, reason, function.example)),
-                _ => {}
+            if let Err(reason) = check_example(function.example) {
+                broken.push(format!("  {}: {}\n{}", name, reason, function.example));
             }
         }
-        newly_passing.sort();
-        newly_failing.sort();
-
+        broken.sort();
         assert!(
-            newly_failing.is_empty(),
-            "these examples used to stand on their own and no longer do:\n{}",
-            newly_failing.join("\n")
-        );
-        assert!(
-            newly_passing.is_empty(),
-            "these examples now stand on their own - take them out of NOT_YET_SELF_CONTAINED:\n  {:?}",
-            newly_passing
+            broken.is_empty(),
+            "an example is the program the editor inserts, so it has to stand on its own - these do not:\n{}",
+            broken.join("\n")
         );
     }
 }

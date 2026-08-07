@@ -19,7 +19,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         ))))),
         diverging: false,
         description: "Parses CSV text into one hashmap per row, keyed by the header row. Quote-aware, so a field containing the delimiter or a newline stays intact.",
-        example: "rows:a:h<s,s> = danger(csv_parse(text, csv_default_options()));",
+        example: "text:s = `name,city\\nAda,London\\nGrace,New York`;\nrows:a:h<s,s> = danger(csv_parse(text, csv_default_options()));",
     });
 
     m.insert("csv_serialize", StdlibFunction {
@@ -40,7 +40,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
         diverging: false,
         description: "Writes rows out as CSV text, with the columns named and in the order given. Quotes any field holding the delimiter, a quote or a newline, and doubles a quote inside one. A row missing a column is written as an empty field.",
-        example: "text:s = danger(csv_serialize([`name`, `city`], rows, csv_default_options()));",
+        example: "text:s = `name,city\\nAda,London\\nGrace,New York`;\nrows:a:h<s,s> = danger(csv_parse(text, csv_default_options()));\nout:s = danger(csv_serialize([`name`, `city`], rows, csv_default_options()));",
     });
 
     m.insert("csv_write", StdlibFunction {
@@ -62,7 +62,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Writes rows straight to a file as CSV, with the same escaping as csv_serialize. The file is put in place by a rename, so a reader never catches it half written.",
-        example: "danger(csv_write(`export.csv`, [`name`, `city`], rows, csv_default_options()));",
+        example: "text:s = `name,city\\nAda,London\\nGrace,New York`;\nrows:a:h<s,s> = danger(csv_parse(text, csv_default_options()));\ndanger(csv_write(`export.csv`, [`name`, `city`], rows, csv_default_options()));",
     });
 
     m.insert("csv_default_options", StdlibFunction {
@@ -110,7 +110,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         ))))),
         diverging: false,
         description: "Reads up to `count` more rows from an open reader. A batch shorter than `count` means the file is finished, so callers loop until they get one.",
-        example: "batch:a:h<s,s> = danger(csv_next_rows(reader, 10000));",
+        example: "reader:CSV_Reader = danger(csv_open(`big.csv`, csv_default_options()));\nbatch:a:h<s,s> = danger(csv_next_rows(reader, 10000));",
     });
 
     m.insert("csv_close", StdlibFunction {
@@ -125,24 +125,24 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Closes a reader opened by csv_open and releases its file descriptor. A reader that is never closed holds its descriptor for the life of the process.",
-        example: "danger(csv_close(reader));",
+        example: "reader:CSV_Reader = danger(csv_open(`big.csv`, csv_default_options()));\ndanger(csv_close(reader));",
     });
 
     simple_fns! { m, Csv:
         "csv_headers" [Csv] => "std_lib::csv::headers", (text: s) -> ([s]!e),
             "Returns the first row's fields, which name the columns. Quote aware, so a header holding a comma inside quotes stays one field. Errors when the text is empty.",
-            "columns:a:s = danger(csv_headers(text));";
+            "text:s = `name,city\\nAda,London\\nGrace,New York`;\ncolumns:a:s = danger(csv_headers(text));";
         "csv_row_count" [Csv] => "std_lib::csv::data_row_count", (text: s) -> (i!e),
             "Returns how many data rows the text has, not counting the header row. A newline inside a quoted field does not add a row.",
-            "rows:i = danger(csv_row_count(text));";
+            "text:s = `name,city\\nAda,London\\nGrace,New York`;\nrows:i = danger(csv_row_count(text));";
         "csv_column" [Csv] => "std_lib::csv::column", (text: s, header: s) -> ([s]!e),
             "Returns one column's values as strings, found by header name. A missing header is an error naming it and listing the columns the text has.",
-            "cities:a:s = danger(csv_column(text, `city`));";
+            "text:s = `name,city\\nAda,London\\nGrace,New York`;\ncities:a:s = danger(csv_column(text, `city`));";
         "csv_cell" [Csv] => "std_lib::csv::cell", (text: s, header: s, row: i) -> (s!e),
             "Returns a single value by header name and zero based data row index, so row 0 is the first row after the header.",
-            "first_name:s = danger(csv_cell(text, `name`, 0));";
+            "text:s = `name,city\\nAda,London\\nGrace,New York`;\nfirst_name:s = danger(csv_cell(text, `name`, 0));";
         "csv_select_columns" [Csv] => "std_lib::csv::select_columns", (text: s, headers: [s]) -> (s!e),
             "Returns a new CSV keeping only the named columns, in the order given, with quoting undone and redone properly. A missing header is an error naming it and listing the columns the text has.",
-            "trimmed:s = danger(csv_select_columns(text, [`name`, `city`]));";
+            "text:s = `name,city\\nAda,London\\nGrace,New York`;\ntrimmed:s = danger(csv_select_columns(text, [`name`, `city`]));";
     }
 }

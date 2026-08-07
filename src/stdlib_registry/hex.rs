@@ -15,6 +15,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "masked:s = danger(hex_xor(`ff00`, `0f0f`));";
         "hex_dump" => "std_lib::hex::dump", (hex: s) -> (s!e),
             "Lays bytes out for a person: an offset column, 16 bytes of hex per line and an ASCII gutter with dots for the non-printable. Errors when the input is not hex.",
-            "listing:s = danger(hex_dump(payload));";
+            "payload:s = hex_encode(`Nail`);\nlisting:s = danger(hex_dump(payload));";
     }
 }

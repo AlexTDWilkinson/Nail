@@ -1,0 +1,7 @@
+nail latest
+// Stands in for a library somebody downloaded, so the import examples in
+// nail_language_spec.md have the file they name. Sandboxed: it computes and
+// nothing else.
+f library_function(input:s):s {
+    r string_concat([`handled `, input]);
+}

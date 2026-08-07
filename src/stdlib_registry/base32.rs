@@ -9,12 +9,12 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "encoded:s = base32_encode(`hello`);";
         "base32_decode" => "std_lib::base32::decode", (text: s) -> (s!e),
             "Base32 back to text. Case and padding are forgiven. Characters outside the alphabet are not.",
-            "decoded:s = danger(base32_decode(encoded));";
+            "encoded:s = base32_encode(`hello`);\ndecoded:s = danger(base32_decode(encoded));";
         "base32_encode_hex" => "std_lib::base32::encode_hex", (hex: s) -> (s!e),
             "Hex bytes as base32 - how a binary secret becomes the code an authenticator app accepts.",
-            "secret:s = danger(base32_encode_hex(crypto_random_hex(20)));";
+            "key_hex:s = danger(crypto_random_hex(20));\nsecret:s = danger(base32_encode_hex(key_hex));";
         "base32_decode_hex" => "std_lib::base32::decode_hex", (text: s) -> (s!e),
             "Base32 back to hex bytes, for secrets that were never text.",
-            "raw:s = danger(base32_decode_hex(secret));";
+            "secret:s = danger(base32_encode_hex(danger(crypto_random_hex(20))));\nraw:s = danger(base32_decode_hex(secret));";
     }
 }

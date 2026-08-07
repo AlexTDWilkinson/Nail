@@ -14,7 +14,7 @@ print(danger(fs_read(`copy.txt`)));
 
 f refused(err:e):v { }
 safe(fs_write_base64(`never.bin`, `not base64!!`), refused);
-print(fs_is_file(`never.bin`));
+print(danger(fs_is_file(`never.bin`)));
 
 // A picture, written by the program so nothing binary is checked into the repo.
 // A 2x2 red PNG, base64 encoded.

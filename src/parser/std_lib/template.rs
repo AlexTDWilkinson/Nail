@@ -25,6 +25,8 @@
 //! when the render says which name was missing than when someone notices the
 //! page has a blank in it. When a gap really is acceptable,
 //! `template_render_or` fills a missing name with a chosen fallback instead.
+//! It still errors on a template it cannot read: a gap in the values is data,
+//! but a tag that is never closed is a bug, and no fallback repairs it.
 
 use crate::parser::std_lib::string::push_escaped_html;
 use dashmap::DashMap;
@@ -252,24 +254,20 @@ pub fn render(template: String, values: DashMap<String, String>) -> Result<Strin
 /// values do not have becomes the fallback text instead of an error. For the
 /// page where a gap really is acceptable, such as a draft shown before every
 /// value exists. The fallback goes through the same escaping as a value. A
-/// template that cannot be read comes back unchanged, since nothing in it
-/// could be filled.
-pub fn render_or(template: String, values: DashMap<String, String>, fallback: String) -> String {
+/// template that cannot be read is still an error: the fallback answers a gap
+/// in the values, and a tag that is never closed is not that.
+pub fn render_or(template: String, values: DashMap<String, String>, fallback: String) -> Result<String, String> {
     let mut position = 0;
-    let (nodes, ended_with) = match read_nodes(&template, &mut position, None) {
-        Ok(read) => read,
-        Err(_) => return template,
-    };
-    if ended_with.is_some() {
-        return template;
+    let (nodes, ended_with) = read_nodes(&template, &mut position, None).map_err(|detail| format!("template_render_or: {}", detail))?;
+    if let Some(unexpected) = ended_with {
+        return Err(format!("template_render_or: a `{{{{{}}}}}` with nothing open before it", unexpected));
     }
     let mut out = String::with_capacity(template.len() + 64);
     // With a fallback in hand a missing value cannot fail the render, so this
-    // error path exists only to keep the impossible case harmless.
-    if render_nodes(&nodes, &values, Some(&fallback), &mut out).is_err() {
-        return template;
-    }
-    return out;
+    // one only carries a failure that reading the template would already have
+    // caught.
+    render_nodes(&nodes, &values, Some(&fallback), &mut out).map_err(|detail| format!("template_render_or: {}", detail))?;
+    return Ok(out);
 }
 
 /// Renders the same template once for each set of values and joins the results,
@@ -289,17 +287,16 @@ pub fn render_rows(template: String, rows: Vec<DashMap<String, String>>) -> Resu
 }
 
 /// Whether the template mentions the named placeholder, in a value tag or as
-/// the name a conditional asks about. A template that cannot be read mentions
-/// nothing, so a broken one reports false.
-pub fn has(template: String, name: String) -> bool {
+/// the name a conditional asks about. A template that does not mention it is
+/// false, and a template that cannot be read is an error: "no" and "the
+/// question could not be asked" are different answers, and its sibling
+/// `template_names_used` already draws the line there.
+pub fn has(template: String, name: String) -> Result<bool, String> {
     let mut position = 0;
-    let nodes = match read_nodes(&template, &mut position, None) {
-        Ok((nodes, _)) => nodes,
-        Err(_) => return false,
-    };
+    let (nodes, _) = read_nodes(&template, &mut position, None).map_err(|detail| format!("template_has: {}", detail))?;
     let mut found: Vec<String> = Vec::new();
     collect_names(&nodes, &mut found);
-    return found.contains(&name);
+    return Ok(found.contains(&name));
 }
 
 /// The names a template asks for, so a program can check it holds them before
@@ -501,48 +498,54 @@ mod tests {
 
     #[test]
     fn has_reports_the_names_a_template_mentions() {
-        assert!(has("Hello, {{name}}!".to_string(), "name".to_string()));
-        assert!(has("{{#if admin}}x{{/if}}".to_string(), "admin".to_string()));
-        assert!(has("{{#if admin}}{{admin_name}}{{/if}}".to_string(), "admin_name".to_string()));
-        assert!(has("<main>{{{body}}}</main>".to_string(), "body".to_string()));
-        assert!(!has("Hello, {{name}}!".to_string(), "other".to_string()));
-        assert!(!has("plain text".to_string(), "name".to_string()));
+        assert!(has("Hello, {{name}}!".to_string(), "name".to_string()).unwrap());
+        assert!(has("{{#if admin}}x{{/if}}".to_string(), "admin".to_string()).unwrap());
+        assert!(has("{{#if admin}}{{admin_name}}{{/if}}".to_string(), "admin_name".to_string()).unwrap());
+        assert!(has("<main>{{{body}}}</main>".to_string(), "body".to_string()).unwrap());
+        assert!(!has("Hello, {{name}}!".to_string(), "other".to_string()).unwrap());
+        assert!(!has("plain text".to_string(), "name".to_string()).unwrap());
     }
 
     #[test]
-    fn a_broken_template_mentions_nothing() {
-        assert!(!has("{{unclosed".to_string(), "unclosed".to_string()));
+    fn a_broken_template_cannot_be_asked() {
+        // "no" and "that question cannot be asked of this" are different
+        // answers, and only one of them is false.
+        assert!(has("{{unclosed".to_string(), "unclosed".to_string()).is_err());
     }
 
     #[test]
     fn render_or_fills_a_missing_name_with_the_fallback() {
         let out = render_or("Hello, {{name}}!".to_string(), values(&[]), "stranger".to_string());
-        assert_eq!(out, "Hello, stranger!");
+        assert_eq!(out.unwrap(), "Hello, stranger!");
     }
 
     #[test]
     fn render_or_still_prefers_the_value_it_has() {
         let out = render_or("Hello, {{name}}!".to_string(), values(&[("name", "Alex")]), "stranger".to_string());
-        assert_eq!(out, "Hello, Alex!");
+        assert_eq!(out.unwrap(), "Hello, Alex!");
     }
 
     #[test]
     fn render_or_escapes_the_fallback_the_same_as_a_value() {
         let escaped = render_or("<p>{{name}}</p>".to_string(), values(&[]), "<anon>".to_string());
-        assert_eq!(escaped, "<p>&lt;anon&gt;</p>");
+        assert_eq!(escaped.unwrap(), "<p>&lt;anon&gt;</p>");
         let raw = render_or("<main>{{{body}}}</main>".to_string(), values(&[]), "<p>x</p>".to_string());
-        assert_eq!(raw, "<main><p>x</p></main>");
+        assert_eq!(raw.unwrap(), "<main><p>x</p></main>");
     }
 
     #[test]
     fn render_or_leaves_conditionals_to_their_own_rules() {
         let template = "{{#if admin}}yes{{else}}no{{/if}}".to_string();
-        assert_eq!(render_or(template, values(&[]), "FALLBACK".to_string()), "no");
+        assert_eq!(render_or(template, values(&[]), "FALLBACK".to_string()).unwrap(), "no");
     }
 
     #[test]
-    fn render_or_gives_a_broken_template_back_unchanged() {
-        assert_eq!(render_or("Hello, {{name".to_string(), values(&[]), "x".to_string()), "Hello, {{name");
-        assert_eq!(render_or("text{{/if}}".to_string(), values(&[]), "x".to_string()), "text{{/if}}");
+    fn render_or_still_refuses_a_template_it_cannot_read() {
+        // A fallback answers a gap in the values. A tag that is never closed is
+        // a bug in the template itself, which no fallback repairs.
+        let unclosed = render_or("Hello, {{name".to_string(), values(&[]), "x".to_string());
+        assert!(unclosed.unwrap_err().contains("never closed"));
+        let stray = render_or("text{{/if}}".to_string(), values(&[]), "x".to_string());
+        assert!(stray.unwrap_err().contains("nothing open before it"));
     }
 }

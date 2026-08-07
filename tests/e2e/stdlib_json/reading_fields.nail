@@ -10,10 +10,11 @@ print(danger(json_get_string(answer, `items.1.name`)));
 print(danger(json_array_length(answer, `items`)));
 print(danger(json_array_length(`[1,2,3]`, ``)));
 print(danger(json_get_int(answer, `count`)));
-print(json_has(answer, `user.name`));
-print(json_has(answer, `user.email`));
-print(json_has(answer, `user.nickname`));
-print(json_has(`not json`, `user`));
+print(danger(json_has(answer, `user.name`)));
+print(danger(json_has(answer, `user.email`)));
+print(danger(json_has(answer, `user.nickname`)));
+f no_document(err:e):b { r false; }
+print(safe(json_has(`not json`, `user`), no_document));
 f missing(err:e):s { r `missing`; }
 print(safe(json_get_string(answer, `user.email`), missing));
 print(safe(json_get_string(answer, `user.nickname`), missing));

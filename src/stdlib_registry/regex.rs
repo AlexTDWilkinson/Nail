@@ -33,9 +33,9 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "digits:i = danger(regex_count(`\\d`, `a1b2`));";
         "regex_is_valid" [Regex] => "std_lib::regex::is_valid", (pattern: (&s)) -> b,
             "Returns true if the text is a usable regex pattern, for checking a search a visitor typed before running it.",
-            "usable:b = regex_is_valid(search_term);";
+            "search_term:s = `^na+il$`;\nusable:b = regex_is_valid(search_term);";
         "regex_escape" [Regex] => "std_lib::regex::escape", (text: s) -> s,
             "Escapes every regex character in the text so it can be put inside a pattern and match only itself.",
-            "literal:s = regex_escape(search_term);";
+            "search_term:s = `1+1 (exactly)`;\nliteral:s = regex_escape(search_term);";
     }
 }

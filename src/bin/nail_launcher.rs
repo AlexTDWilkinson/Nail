@@ -1147,9 +1147,17 @@ fn command_website(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
 /// Hands a URL to the desktop, and prints it either way. Over ssh or on a
 /// server there is no browser to hand it to, and xdg-open can report success
 /// while doing nothing at all, so printing is what makes this never a mystery.
+///
+/// The desktop is only asked when a person is watching. Piped or captured
+/// output means something is reading the address rather than wanting a window,
+/// and a window is not a thing to open behind somebody's back: the launcher's
+/// own test suite runs every command with its output captured, and used to
+/// open two browser tabs every time anyone ran it.
 fn open_url(url: &str) -> Fallible<ExitCode> {
     println!("{}", url);
-    let _ = Command::new("xdg-open").arg(url).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    if std::io::stdout().is_terminal() {
+        let _ = Command::new("xdg-open").arg(url).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
     return Ok(ExitCode::SUCCESS);
 }
 

@@ -12,7 +12,7 @@ f not_found(headers:h<s,s>):HTTP_Response {
 }
 
 f word_page(request:HTTP_Request, headers:h<s,s>):HTTP_Response {
-    params:h<s,s> = http_path_params(`/dictionary/:word`, request.path);
+    params:h<s,s> = danger(http_path_params(`/dictionary/:word`, request.path));
     word:s = danger(hashmap_get(params, `word`));
     r HTTP_Response {
         status = 200,

@@ -14,7 +14,7 @@ danger(fs_write(path_join(nested, `under.txt`), `the nested file`));
 // Zip: what the rest of the world sends.
 zip_file:s = path_join(scratch, `backup.zip`);
 danger(archive_zip_create(zip_file, source));
-test_assert(fs_is_file(zip_file), `the archive was written`);
+test_assert(danger(fs_is_file(zip_file)), `the archive was written`);
 
 listed:a:s = danger(archive_zip_list(zip_file));
 test_assert_equal_int(array_length(listed), 2, `both files are in it`);
@@ -41,7 +41,7 @@ missing_directory:s = path_join(scratch, `no_such_directory`);
 never_written:s = path_join(scratch, `never.zip`);
 f refused(err:e):v { }
 safe(archive_zip_create(never_written, missing_directory), refused);
-test_assert_false(fs_is_file(never_written), `a directory that is not there writes no archive`);
+test_assert_false(danger(fs_is_file(never_written)), `a directory that is not there writes no archive`);
 
 danger(fs_remove_dir_all(scratch));
 print(`every archive held`);

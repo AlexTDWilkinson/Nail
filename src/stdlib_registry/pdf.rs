@@ -9,6 +9,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "contents:s = danger(pdf_text(`statement.pdf`));";
         "pdf_from_text" [PrintPdf, Tokio] => "std_lib::pdf::from_text", (path: s, title: s, body: s) -> (v!e),
             "Writes a paginated A4 PDF of a title and plain text body, wrapping lines and flowing onto as many pages as needed. For tables and letterheads, use real typesetting instead.",
-            "danger(pdf_from_text(`invoice.pdf`, `Invoice INV-7`, body));";
+            "body:s = `Thanks for your business.\\n\\nTotal due: $42.00`;\ndanger(pdf_from_text(`invoice.pdf`, `Invoice INV-7`, body));";
     }
 }

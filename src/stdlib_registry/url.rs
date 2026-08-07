@@ -15,34 +15,34 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "params:h<s,s> = url_parse_query(`page=2&sort=asc`);";
         "url_build_query" [UrlEncoding, DashMap] => "std_lib::url::build_query", (params: (&(h s s))) -> s,
             "Builds a percent-encoded query string from a hashmap.",
-            "query:s = url_build_query(params);";
+            "params:h<s,s> = hashmap_new();\nhashmap_set(params, `page`, `2`);\nquery:s = url_build_query(params);";
         "url_join" => "std_lib::url::join", (base: s, reference: s) -> (s!e),
             "Resolves a link against the page it was found on, the way a browser does: /about, ../two, ?page=2, #top and a whole URL all come out as the address to fetch. Errors if the base is not a URL.",
-            "target:s = danger(url_join(page_url, link));";
+            "page_url:s = `https://example.com/blog/`;\nlink:s = `page-2`;\ntarget:s = danger(url_join(page_url, link));";
         "url_domain" => "std_lib::url::domain", (url: s) -> (s!e),
             "The host a URL points at, with any leading www. taken off - so https://www.example.com/a?b comes back as example.com. Errors when the text is not a URL or has no host.",
-            "site:s = danger(url_domain(shared_link));";
+            "shared_link:s = `https://www.example.com/blog?utm_source=news`;\nsite:s = danger(url_domain(shared_link));";
         "url_to_punycode" [Idna] => "std_lib::url::to_punycode", (hostname: s) -> (s!e),
             "A hostname written the way DNS and TLS need it, so münchen.de becomes xn--mnchen-3ya.de. This is the form a lookup or a certificate check needs. A name that is already ASCII comes back unchanged.",
-            "for_dns:s = danger(url_to_punycode(typed_host));";
+            "typed_host:s = `bücher.example`;\nfor_dns:s = danger(url_to_punycode(typed_host));";
         "url_to_unicode" [Idna] => "std_lib::url::to_unicode", (hostname: s) -> s,
             "The readable form of a hostname stored in punycode, so xn--mnchen-3ya.de becomes münchen.de. What to show a person, having done the lookup with the other one.",
-            "readable:s = url_to_unicode(stored_host);";
+            "stored_host:s = `xn--bcher-kva.example`;\nreadable:s = url_to_unicode(stored_host);";
         "url_origin" => "std_lib::url::origin", (url: s) -> (s!e),
             "The origin of a URL - scheme://host, with the port when the URL named one. The piece browsers compare for CORS and cookies. Errors when the text is not a URL or has no host.",
-            "origin:s = danger(url_origin(request_url));";
+            "request_url:s = `https://example.com/blog?page=2`;\norigin:s = danger(url_origin(request_url));";
         "url_is_absolute" => "std_lib::url::is_absolute", (url: s) -> b,
             "Returns true if the text is an absolute URL - one with a scheme and a host, so it can be fetched on its own. /about and example.com/path are not.",
-            "fetchable:b = url_is_absolute(found_link);";
+            "found_link:s = `/blog/page-2`;\nfetchable:b = url_is_absolute(found_link);";
         "url_strip_tracking" => "std_lib::url::strip_tracking", (url: s) -> (s!e),
             "Removes the tracking parameters - utm_*, fbclid, gclid, msclkid, mc_eid - that analytics tools staple onto shared links, keeping every other query field in its original order. A URL with no query comes back unchanged.",
-            "clean_link:s = danger(url_strip_tracking(shared_link));";
+            "shared_link:s = `https://example.com/post?utm_source=news&page=2`;\nclean_link:s = danger(url_strip_tracking(shared_link));";
         "url_path_segments" [UrlEncoding] => "std_lib::url::path_segments", (url: s) -> ([s]!e),
             "The path of a URL split into its slash-separated segments, each one percent-decoded. The root path / is an empty array.",
-            "segments:a:s = danger(url_path_segments(request_url));";
+            "request_url:s = `https://example.com/blog/page-2`;\nsegments:a:s = danger(url_path_segments(request_url));";
         "url_robots_allowed" => "std_lib::url::robots_allowed", (robots_txt: s, user_agent: s, path: s) -> b,
             "Whether a robots.txt file lets a user agent fetch a path - the polite scraper's question. Agent groups match case-insensitively by substring with * as the fallback, the longest matching rule between Allow and Disallow decides with Allow winning ties, * in a rule matches any run and $ anchors the end. An empty file allows everything.",
-            "polite:b = url_robots_allowed(robots, `NailBot`, `/private/page`);";
+            "robots:s = `User-agent: *\\nDisallow: /private/`;\npolite:b = url_robots_allowed(robots, `NailBot`, `/private/page`);";
     }
 
     // The two functions that speak in pieces of a URL use the full struct form.
@@ -69,6 +69,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!(s),
         diverging: false,
         description: "Puts a URL back together from its pieces, so a program can change one and keep the rest.",
-        example: "address:s = url_format(parts);",
+        example: "parts:URL_Parts = danger(url_parse(`https://example.com/blog?page=2`));\naddress:s = url_format(parts);",
     });
 }

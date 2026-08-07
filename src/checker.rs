@@ -813,6 +813,28 @@ fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut 
             add_error_with_help(state, message, help, code_span);
         }
     }
+
+    // A result is not a number and not comparable either, so an operator that
+    // reaches one is the same mistake as assigning one to a plain variable:
+    // the error was never dealt with. Left unsaid, this passed every check and
+    // then failed to compile as Rust, which is the one thing the checker
+    // exists to prevent.
+    if !matches!(operator, Operation::And | Operation::Or | Operation::Not) {
+        for operand in [&*left, &*right] {
+            let operand_type = check_type(&mut operand.clone(), state);
+            if let NailDataTypeDescriptor::Result(inner) = &operand_type {
+                add_error_with_help(
+                    state,
+                    format!("'{}' cannot work on {}", operator, operand_type.describe()),
+                    Some(format!(
+                        "results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. Name it first, then use it: value:{} = danger(...);",
+                        inner
+                    )),
+                    code_span,
+                );
+            }
+        }
+    }
 }
 
 fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], else_branch: &mut Option<Box<ASTNode>>, state: &mut AnalyzerState) {
@@ -1597,11 +1619,19 @@ fn visit_struct_declaration(name: &str, fields: &[ASTNode], state: &mut Analyzer
                 NailDataTypeDescriptor::Array(_) => {
                     // Array types are valid
                 }
+                NailDataTypeDescriptor::HashMap(_, _) => {
+                    // A struct may hold a hashmap, the same as it may hold an array
+                }
                 NailDataTypeDescriptor::Any => {
                     // Any type is valid
                 }
-                _ => {
-                    panic!("visit_struct_declaration: unhandled field type: {:?}", data_type);
+                // A field has to be able to hold a value. A result has to be
+                // unwrapped before anything can be stored in it, and the rest
+                // are types no value ever has. Saying so is the checker's job:
+                // this used to be a panic, which crashed the compiler on a
+                // struct someone had every reason to write.
+                unusable => {
+                    add_error(state, format!("Struct '{}' has a field declared as {}, which is not a type a field can hold", name, unusable.describe()), code_span);
                 }
             }
         }
@@ -2916,6 +2946,22 @@ mod tests {
 
         // Should type check successfully
         assert!(result.is_ok(), "danger() should properly unwrap f!e to f, got errors: {:?}", result.err());
+    }
+
+    /// A struct field type outside a short allowlist used to reach a panic,
+    /// so `struct Tally { counts:h<s,i> }` crashed the compiler rather than
+    /// compiling. A hashmap field is as ordinary as an array field, and a
+    /// field type that really cannot hold a value has to be said in words.
+    #[test]
+    fn test_struct_fields_accept_hashmaps_and_report_the_rest() {
+        let with_hashmap = "struct Tally { name:s, counts:h<s,i> }\ntally:Tally = Tally { name = `words`, counts = hashmap_new() };";
+        let mut ast = parse(lexer(with_hashmap)).expect("parses");
+        assert!(checker(&mut ast).is_ok(), "a struct may hold a hashmap");
+
+        let with_void = "struct Broken { nothing:v }";
+        let mut ast = parse(lexer(with_void)).expect("parses");
+        let errors = checker(&mut ast).expect_err("a void field is not a value");
+        assert!(errors[0].message.contains("not a type a field can hold"), "says what is wrong instead of crashing, got: {}", errors[0].message);
     }
 
     #[test]

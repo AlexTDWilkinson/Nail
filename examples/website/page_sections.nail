@@ -1,4 +1,5 @@
 nail latest
+// This is not a standalone program: examples/nail_website.nail imports it.
 // The HTML builders: one function per section of the page, plus the head,
 // the navbar, the footer and the menu script.
 

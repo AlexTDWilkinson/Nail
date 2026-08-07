@@ -36,7 +36,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "tall:i = danger(image_height(`upload.png`));";
         "image_format" [Image, Tokio] => "std_lib::image::format", (path: s) -> (s!e),
             "What format the file actually is, read from its bytes rather than its name - the check worth doing on an upload before storing it.",
-            "kind:s = danger(image_format(request.body_path));";
+            "upload_path:s = `uploads/photo.bin`;\nkind:s = danger(image_format(upload_path));";
     }
 
     // Turning takes the IMAGE_Turn enum, which needs a custom type import, so

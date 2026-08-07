@@ -230,20 +230,28 @@ pub async fn modified(path: String) -> Result<i64, String> {
 }
 
 /// Whether the path names a directory. False for a file, and false for a path
-/// that is not there at all.
-pub async fn is_dir(path: String) -> bool {
+/// that is not there at all. A path that cannot be looked at - no permission,
+/// a broken mount - is an error, because that is not the same as "no".
+pub async fn is_dir(path: String) -> Result<bool, String> {
     return match tokio::fs::metadata(Path::new(&path)).await {
-        Ok(metadata) => metadata.is_dir(),
-        Err(_) => false,
+        Ok(metadata) => Ok(metadata.is_dir()),
+        // A path that is not there is not a directory, which is an answer. Any
+        // other refusal - no permission to look, a broken mount - means the
+        // question could not be asked, and answering false there is how a
+        // program comes to quietly skip a directory it cannot see.
+        Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(failure) => Err(format!("fs_is_dir: could not look at '{}': {}", path, failure)),
     };
 }
 
 /// Whether the path names a file. False for a directory, and false for a path
-/// that is not there at all.
-pub async fn is_file(path: String) -> bool {
+/// that is not there at all. A path that cannot be looked at - no permission,
+/// a broken mount - is an error, because that is not the same as "no".
+pub async fn is_file(path: String) -> Result<bool, String> {
     return match tokio::fs::metadata(Path::new(&path)).await {
-        Ok(metadata) => metadata.is_file(),
-        Err(_) => false,
+        Ok(metadata) => Ok(metadata.is_file()),
+        Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(failure) => Err(format!("fs_is_file: could not look at '{}': {}", path, failure)),
     };
 }
 
@@ -326,7 +334,7 @@ mod tests {
 
         assert!(remove_dir(directory.clone()).await.unwrap_err().contains("could not remove directory"));
         remove_dir_all(directory.clone()).await.expect("a removable directory");
-        assert!(!is_dir(directory).await);
+        assert!(!is_dir(directory).await.unwrap());
     }
 
     #[tokio::test]
@@ -336,9 +344,9 @@ mod tests {
         write_file(path.clone(), "12345".to_string()).await.expect("a writable path");
 
         assert_eq!(size(path.clone()).await.expect("a written file"), 5);
-        assert!(is_file(path.clone()).await);
-        assert!(!is_dir(path.clone()).await);
-        assert!(is_dir(directory.clone()).await);
+        assert!(is_file(path.clone()).await.unwrap());
+        assert!(!is_dir(path.clone()).await.unwrap());
+        assert!(is_dir(directory.clone()).await.unwrap());
         assert!(modified(path).await.expect("a written file") > 0);
 
         remove_dir_all(directory).await.expect("a removable directory");
@@ -347,8 +355,8 @@ mod tests {
     #[tokio::test]
     async fn a_path_that_is_not_there_is_neither_file_nor_directory() {
         let missing = format!("{}/nail_fs_tests/nothing_here_at_all", std::env::temp_dir().to_string_lossy());
-        assert!(!is_file(missing.clone()).await);
-        assert!(!is_dir(missing.clone()).await);
+        assert!(!is_file(missing.clone()).await.unwrap());
+        assert!(!is_dir(missing.clone()).await.unwrap());
         assert!(size(missing).await.unwrap_err().contains("could not inspect"));
     }
 }
@@ -508,20 +516,22 @@ pub async fn set_executable(path: String, executable: bool) -> Result<(), String
 }
 
 /// Whether a file can be run as a program. False for a directory, and false on
-/// systems without file modes.
-pub async fn is_executable(path: String) -> bool {
+/// systems without file modes. A path that cannot be looked at is an error
+/// rather than false, the same as its neighbours here.
+pub async fn is_executable(path: String) -> Result<bool, String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         return match tokio::fs::metadata(Path::new(&path)).await {
-            Ok(metadata) => metadata.is_file() && metadata.permissions().mode() & 0o111 != 0,
-            Err(_) => false,
+            Ok(metadata) => Ok(metadata.is_file() && metadata.permissions().mode() & 0o111 != 0),
+            Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(failure) => Err(format!("fs_is_executable: could not look at '{}': {}", path, failure)),
         };
     }
     #[cfg(not(unix))]
     {
         let _ = path;
-        return false;
+        return Ok(false);
     }
 }
 
@@ -568,18 +578,18 @@ mod writing_tests {
         let path = temp_file("nail_script_".to_string(), "sh".to_string()).await.expect("a writable temporary directory");
         write_file(path.clone(), "#!/bin/sh\necho hi\n".to_string()).await.expect("a writable path");
 
-        assert!(!is_executable(path.clone()).await);
+        assert!(!is_executable(path.clone()).await.unwrap());
         set_executable(path.clone(), true).await.expect("a file we own");
-        assert!(is_executable(path.clone()).await);
+        assert!(is_executable(path.clone()).await.unwrap());
         set_executable(path.clone(), false).await.expect("a file we own");
-        assert!(!is_executable(path.clone()).await);
+        assert!(!is_executable(path.clone()).await.unwrap());
 
         tokio::fs::remove_file(&path).await.expect("a removable file");
     }
 
     #[tokio::test]
     async fn a_file_that_is_not_there_is_not_executable() {
-        assert!(!is_executable("/nowhere/at/all".to_string()).await);
+        assert!(!is_executable("/nowhere/at/all".to_string()).await.unwrap());
         assert!(set_executable("/nowhere/at/all".to_string(), true).await.unwrap_err().contains("could not read"));
     }
 }

@@ -35,7 +35,7 @@ fn bounds(values: &Vec<f64>) -> (f64, f64) {
 /// Sorted copy, so every summary orders NaN-free data the same way.
 fn sorted_copy(values: &Vec<f64>) -> Vec<f64> {
     let mut sorted = values.clone();
-    sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|left, right| left.total_cmp(right));
     return sorted;
 }
 
@@ -370,7 +370,7 @@ pub fn covariance(first: &Vec<f64>, second: &Vec<f64>) -> Result<f64, String> {
 /// sum to the same total no matter how many ties there are.
 pub fn rank(values: &Vec<f64>) -> Vec<f64> {
     let mut order: Vec<usize> = (0..values.len()).collect();
-    order.sort_by(|&left, &right| values[left].partial_cmp(&values[right]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|&left, &right| values[left].total_cmp(&values[right]));
 
     let mut ranks = vec![0.0; values.len()];
     let mut start = 0;

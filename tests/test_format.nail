@@ -1,16 +1,16 @@
 nail latest
 // Numbers turned into the text a person reads: prices, sizes, counts, places.
 
-test_assert_equal_string(format_decimals(3.5, 2), `3.50`, `a price keeps its trailing zero`);
+test_assert_equal_string(danger(format_decimals(3.5, 2)), `3.50`, `a price keeps its trailing zero`);
 test_assert_equal_string(format_thousands(1234567), `1,234,567`, `a large count is grouped`);
 test_assert_equal_string(format_thousands(-1000), `-1,000`, `a negative count keeps its sign`);
-test_assert_equal_string(format_thousands_float(1234.5, 2), `1,234.50`, `a money column is grouped and padded`);
+test_assert_equal_string(danger(format_thousands_float(1234.5, 2)), `1,234.50`, `a money column is grouped and padded`);
 
 test_assert_equal_string(format_currency(1234.5, `$`), `$1,234.50`, `an amount of money`);
 test_assert_equal_string(format_currency(-9.99, `$`), `-$9.99`, `a refund`);
 
-test_assert_equal_string(format_percent(0.125, 1), `12.5%`, `a fraction as a percentage`);
-test_assert_equal_string(format_percent(1.0, 0), `100%`, `all of it`);
+test_assert_equal_string(danger(format_percent(0.125, 1)), `12.5%`, `a fraction as a percentage`);
+test_assert_equal_string(danger(format_percent(1.0, 0)), `100%`, `all of it`);
 
 test_assert_equal_string(format_bytes(512), `512 B`, `whole bytes need no decimal`);
 test_assert_equal_string(format_bytes(1536), `1.5 KB`, `a size in the unit that fits`);
@@ -37,9 +37,9 @@ test_assert_equal_string(format_list([`a`], `and`), `a`, `one item is itself`);
 report:s = string_concat([
     format_thousands(48293),
     ` requests, `,
-    format_percent(0.9987, 2),
+    danger(format_percent(0.9987, 2)),
     ` served in `,
-    format_decimals(1.5, 1),
+    danger(format_decimals(1.5, 1)),
     `ms, log at `,
     format_bytes(1073741824),
 ]);

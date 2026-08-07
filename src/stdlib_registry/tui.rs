@@ -19,7 +19,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((T!e)),
         diverging: false,
         description: "Runs a full-screen terminal program until its view reports quit, and returns the state it finished with. The program supplies two functions - view(state) and update(state, event) - and this owns raw mode, input, redrawing, resizing and putting the terminal back, including when the program panics.",
-        example: "final_state:App = danger(tui_run(App { count = 0 }));",
+        example: "struct App { count:i }\n\nf view(state:App):TUI_Screen {\n    total:TUI_Line = tui_line(string_concat([`count: `, string_from(state.count)]));\n    r TUI_Screen { title = `Counter`, lines = [total], status = `q quits`, quit = false };\n}\n\nf update(state:App, event:TUI_Event):App {\n    r App { count = state.count + 1 };\n}\n\nfinal_state:App = danger(tui_run(App { count = 0 }));",
     });
 
     m.insert("tui_line", StdlibFunction {

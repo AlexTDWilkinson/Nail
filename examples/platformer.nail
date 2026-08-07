@@ -15,6 +15,14 @@ nail latest
 //
 // All motion is multiplied by input.delta_ms, so the game plays at the same
 // speed whatever frame rate the machine manages.
+//
+// The jump is where the feel lives, and it is five small mercies rather than
+// one big one: a coyote window that lets a jump leave just after the edge, a
+// buffer that remembers a jump asked for just before landing, a rise the
+// player can cut short by letting go, gravity that floats at the apex and
+// bites on the way down, and a corner the head slides past instead of
+// stopping against. None of them are visible. All of them are the difference
+// between a jump that missed and a game that cheated.
 
 // What a thing that wants you dead does. Walkers pace a stretch of ground and
 // can be stomped from above. Flyers do the same in the air, bobbing as they go.
@@ -23,10 +31,10 @@ enum Menace {
     Flyer
 }
 
-// Which screen the game is on. Everything except Running is a card over a
-// frozen level, and all of them leave on the same press.
+// Which screen the game is on. The game opens playing, with no card in front
+// of it. The other two are cards over a frozen level, and both leave on the
+// same press.
 enum Mode {
-    Title,
     Running,
     Cleared,
     Finished
@@ -72,12 +80,14 @@ struct Enemy {
     foe_alive:b
 }
 
-// What a vertical collision pass decided: where the player ended up,
-// what happened to the fall speed, and whether feet found ground.
+// What a vertical collision pass decided: where the player ended up, what
+// happened to the fall speed, whether feet found ground, and how far sideways
+// the player has to be moved to squeeze past a corner their head caught.
 struct Landing {
     land_y:f,
     land_vel:f,
-    grounded:b
+    grounded:b,
+    nudge_x:f
 }
 
 // The whole game in one value. banked is the coins from levels already
@@ -105,6 +115,8 @@ struct Platformer {
     vel_x:f,
     vel_y:f,
     coyote_ms:f,
+    jump_buffer_ms:f,
+    squash_ms:f,
     camera_x:f,
     coins:a:Coin,
     foes:a:Enemy,
@@ -464,7 +476,8 @@ f coins_so_far(state:Platformer):i {
 f start_level(level:i, banked:i, deaths:i):Platformer {
     r Platformer {
         mode = Mode::Running, level = level, banked = banked, deaths = deaths, intro_ms = 1700.0,
-        player_x = 60.0, player_y = 524.0, vel_x = 0.0, vel_y = 0.0, coyote_ms = 0.0, camera_x = 0.0,
+        player_x = 60.0, player_y = 524.0, vel_x = 0.0, vel_y = 0.0, coyote_ms = 0.0,
+        jump_buffer_ms = 0.0, squash_ms = 0.0, camera_x = 0.0,
         coins = level_coins(level), foes = level_foes(level), jump_held = true, reset_held = true,
         tap_held = true, step_phase = 0.0, pressing_left = false, pressing_right = false,
         pressing_jump = false, done = false
@@ -477,7 +490,7 @@ f respawn(state:Platformer):Platformer {
     r Platformer {
         mode = Mode::Running, level = state.level, banked = state.banked, deaths = state.deaths + 1,
         intro_ms = 0.0, player_x = 60.0, player_y = 524.0, vel_x = 0.0, vel_y = 0.0, coyote_ms = 0.0,
-        camera_x = 0.0, coins = state.coins, foes = level_foes(state.level), jump_held = true,
+        jump_buffer_ms = 0.0, squash_ms = 0.0, camera_x = 0.0, coins = state.coins, foes = level_foes(state.level), jump_held = true,
         reset_held = true, tap_held = true, step_phase = 0.0, pressing_left = false,
         pressing_right = false, pressing_jump = false, done = false
     };
@@ -490,7 +503,7 @@ f with_mode(state:Platformer, mode:Mode, tap_held:b, done:b):Platformer {
         mode = mode, level = state.level, banked = state.banked, deaths = state.deaths,
         intro_ms = state.intro_ms, player_x = state.player_x, player_y = state.player_y,
         vel_x = state.vel_x, vel_y = state.vel_y, coyote_ms = state.coyote_ms,
-        camera_x = state.camera_x, coins = state.coins, foes = state.foes,
+        jump_buffer_ms = state.jump_buffer_ms, squash_ms = state.squash_ms, camera_x = state.camera_x, coins = state.coins, foes = state.foes,
         jump_held = state.jump_held, reset_held = state.reset_held, tap_held = tap_held,
         step_phase = state.step_phase, pressing_left = false, pressing_right = false,
         pressing_jump = false, done = done
@@ -498,7 +511,7 @@ f with_mode(state:Platformer, mode:Mode, tap_held:b, done:b):Platformer {
 }
 
 f new_game():Platformer {
-    r with_mode(start_level(1, 0, 0), Mode::Title, false, false);
+    r start_level(1, 0, 0);
 }
 
 // The player is a 28 by 36 rectangle. True when it overlaps a platform.
@@ -530,15 +543,33 @@ f collide_x(try_x:f, pos_y:f, old_x:f, platforms:a:Platform):f {
 
 // Vertical resolution for one platform. Feet that were above the top last
 // frame land on it, anything else is a head bump against the underside.
+//
+// A head that catches the very corner of a platform is slid past it instead of
+// being stopped dead: within ten pixels of an edge the jump carries on and the
+// player is moved clear sideways. Without that, a jump aimed true but a few
+// pixels wide dies against a corner, and it reads as the game cheating rather
+// than as the player missing.
 f push_out_y(landing:Landing, pos_x:f, old_y:f, plat:Platform):Landing {
     if {
         hits_platform(pos_x, landing.land_y, plat) -> {
             if {
                 (old_y + 36.0) <= (plat.plat_y + 0.01) -> {
-                    r Landing { land_y = plat.plat_y - 36.0, land_vel = 0.0, grounded = true };
+                    r Landing { land_y = plat.plat_y - 36.0, land_vel = 0.0, grounded = true, nudge_x = 0.0 };
                 },
                 else -> {
-                    r Landing { land_y = plat.plat_y + plat.plat_h, land_vel = 0.0, grounded = false };
+                    into_left:f = (pos_x + 28.0) - plat.plat_x;
+                    into_right:f = (plat.plat_x + plat.plat_w) - pos_x;
+                    if {
+                        into_left <= 10.0 -> {
+                            r Landing { land_y = landing.land_y, land_vel = landing.land_vel, grounded = landing.grounded, nudge_x = 0.0 - (into_left + 1.0) };
+                        },
+                        into_right <= 10.0 -> {
+                            r Landing { land_y = landing.land_y, land_vel = landing.land_vel, grounded = landing.grounded, nudge_x = into_right + 1.0 };
+                        },
+                        else -> {
+                            r Landing { land_y = plat.plat_y + plat.plat_h, land_vel = 0.0, grounded = false, nudge_x = 0.0 };
+                        }
+                    }
                 }
             }
         },
@@ -547,7 +578,7 @@ f push_out_y(landing:Landing, pos_x:f, old_y:f, plat:Platform):Landing {
 }
 
 f collide_y(try_y:f, pos_x:f, old_y:f, fall_vel:f, platforms:a:Platform):Landing {
-    result:Landing = Landing { land_y = try_y, land_vel = fall_vel, grounded = false };
+    result:Landing = Landing { land_y = try_y, land_vel = fall_vel, grounded = false, nudge_x = 0.0 };
     for plat in platforms {
         result = push_out_y(result, pos_x, old_y, plat);
     }
@@ -555,13 +586,38 @@ f collide_y(try_y:f, pos_x:f, old_y:f, fall_vel:f, platforms:a:Platform):Landing
 }
 
 // Held keys accelerate toward a top speed of 0.38 pixels per millisecond,
-// letting go bleeds speed away, so starts and stops both have weight.
+// letting go bleeds speed away, so starts and stops both have weight. Turning
+// around is nearly twice as sharp as setting off, because a change of mind
+// should land where the player meant it to and not two strides later.
 f step_vel_x(vel:f, left_held:b, right_held:b, delta:f):f {
     if {
-        left_held && (right_held == false) -> { r math_max(vel - (0.0028 * delta), -0.38); },
-        right_held && (left_held == false) -> { r math_min(vel + (0.0028 * delta), 0.38); },
-        vel > 0.0 -> { r math_max(vel - (0.0035 * delta), 0.0); },
-        else -> { r math_min(vel + (0.0035 * delta), 0.0); }
+        left_held && (right_held == false) -> {
+            rate:f = if {
+                vel > 0.0 -> { r 0.0052; },
+                else -> { r 0.0030; }
+            };
+            r math_max(vel - (rate * delta), -0.38);
+        },
+        right_held && (left_held == false) -> {
+            rate:f = if {
+                vel < 0.0 -> { r 0.0052; },
+                else -> { r 0.0030; }
+            };
+            r math_min(vel + (rate * delta), 0.38);
+        },
+        vel > 0.0 -> { r math_max(vel - (0.0038 * delta), 0.0); },
+        else -> { r math_min(vel + (0.0038 * delta), 0.0); }
+    }
+}
+
+// Gravity is not one number. The arc floats a little at its top, where the
+// player is looking and aiming, and it comes down harder than it went up,
+// which is the difference between a jump and a balloon.
+f fall_gravity(vel:f):f {
+    if {
+        math_abs(vel) < 0.12 -> { r 0.0015; },
+        vel < 0.0 -> { r 0.0022; },
+        else -> { r 0.0028; }
     }
 }
 
@@ -612,9 +668,14 @@ f move_enemy(foe:Enemy, delta:f):Enemy {
 
 // A living enemy overlapping the player. Dead ones are simply scenery that is
 // no longer drawn.
+//
+// The box that can be hurt is smaller than the one that stands on things: five
+// pixels in from each shoulder and four down from the hair. A graze that the
+// eye reads as a miss should be a miss, and the difference is never the other
+// way round, so nothing that looks like a hit is ever forgiven.
 f enemy_hit(foe:Enemy, pos_x:f, pos_y:f):b {
     size:f = foe_size(foe.menace);
-    r foe.foe_alive && pos_x < (foe.foe_x + size) && (pos_x + 28.0) > foe.foe_x && pos_y < (foe.foe_y + size) && (pos_y + 36.0) > foe.foe_y;
+    r foe.foe_alive && (pos_x + 5.0) < (foe.foe_x + size) && (pos_x + 23.0) > foe.foe_x && (pos_y + 4.0) < (foe.foe_y + size) && (pos_y + 36.0) > foe.foe_y;
 }
 
 // Landing on one counts as a stomp, walking into one does not. The test is
@@ -640,7 +701,7 @@ f squash_enemy(foe:Enemy, pos_x:f, pos_y:f, old_y:f, fall_vel:f):Enemy {
 // Spikes are eighty wide and their teeth stand seventeen pixels proud of the
 // surface they sit on, so only feet low enough to be among them are caught.
 f spike_hit(spike:Spike, pos_x:f, pos_y:f):b {
-    r pos_x < (spike.spike_x + 80.0) && (pos_x + 28.0) > spike.spike_x && (pos_y + 36.0) > (spike.spike_y - 13.0) && pos_y < spike.spike_y;
+    r (pos_x + 5.0) < (spike.spike_x + 80.0) && (pos_x + 23.0) > spike.spike_x && (pos_y + 36.0) > (spike.spike_y - 9.0) && pos_y < spike.spike_y;
 }
 
 // Four notes climbing a major chord. The whole tune is queued in one go and
@@ -727,23 +788,58 @@ f step_world(state:Platformer, input:GAME_Input, reset_down:b):Platformer {
     left_held:b = array_contains(input.keys_down, `Left`) || array_contains(input.keys_down, `a`) || pad_pressed(input, left_pad());
     right_held:b = array_contains(input.keys_down, `Right`) || array_contains(input.keys_down, `d`) || pad_pressed(input, right_pad());
     jump_pressed:b = array_contains(input.keys_pressed, `Space`) || array_contains(input.keys_pressed, `Up`) || array_contains(input.keys_pressed, `w`) || (jump_pad_now && (state.jump_held == false));
+    jump_down:b = jump_pad_now || array_contains(input.keys_down, `Space`) || array_contains(input.keys_down, `Up`) || array_contains(input.keys_down, `w`);
 
     // Sideways first, clamped to the ends of the level.
     vel_x:f = step_vel_x(state.vel_x, left_held, right_held, delta);
     slid_x:f = collide_x(state.player_x + (vel_x * delta), state.player_y, state.player_x, platforms);
-    pos_x:f = math_clamp(slid_x, 0.0, level_span(state.level) - 28.0);
+    raw_x:f = math_clamp(slid_x, 0.0, level_span(state.level) - 28.0);
 
-    // A jump is allowed while feet are on ground or for the 90 millisecond
+    // A jump asked for a moment too early is remembered rather than thrown
+    // away: press it in the last 130 milliseconds of a fall and it goes off
+    // the instant the feet land. Together with the coyote window either side
+    // of an edge, that is a quarter of a second of forgiveness around the one
+    // moment a jump is meant to happen.
+    asking:f = if {
+        jump_pressed -> { r 130.0; },
+        else -> { r math_max(state.jump_buffer_ms - delta, 0.0); }
+    };
+
+    // A jump is allowed while feet are on ground or for the 120 millisecond
     // coyote window just after walking off an edge. Jumping spends the
     // window at once, which is exactly the no double jump rule.
-    may_jump:b = state.coyote_ms < 90.0;
-    jumped:b = jump_pressed && may_jump;
+    may_jump:b = state.coyote_ms < 120.0;
+    jumped:b = asking > 0.0 && may_jump;
+    jump_buffer_ms:f = if {
+        jumped -> { r 0.0; },
+        else -> { r asking; }
+    };
     launch_vel:f = if {
         jumped -> { r -0.78; },
         else -> { r state.vel_y; }
     };
-    fall_vel:f = math_min(launch_vel + (0.0022 * delta), 0.95);
-    landing:Landing = collide_y(state.player_y + (fall_vel * delta), pos_x, state.player_y, fall_vel, platforms);
+
+    // Letting go on the way up cuts the rise short, so a tap is a hop and a
+    // hold is the whole jump. The player owns the height, not the button.
+    rising_vel:f = if {
+        (jumped == false) && (jump_down == false) && launch_vel < -0.2 -> { r launch_vel * 0.5; },
+        else -> { r launch_vel; }
+    };
+    fall_vel:f = math_min(rising_vel + (fall_gravity(rising_vel) * delta), 0.95);
+    try_y:f = state.player_y + (fall_vel * delta);
+
+    // If a head caught a corner, slide clear of it and settle again from
+    // there, so the jump keeps going instead of stopping against a pixel.
+    caught:Landing = collide_y(try_y, raw_x, state.player_y, fall_vel, platforms);
+    nudged_x:f = if {
+        caught.nudge_x == 0.0 -> { r raw_x; },
+        else -> { r collide_x(raw_x + caught.nudge_x, state.player_y, raw_x, platforms); }
+    };
+    pos_x:f = math_clamp(nudged_x, 0.0, level_span(state.level) - 28.0);
+    landing:Landing = if {
+        caught.nudge_x == 0.0 -> { r caught; },
+        else -> { r collide_y(try_y, pos_x, state.player_y, fall_vel, platforms); }
+    };
 
     // The enemies move before anything is asked about them, so what the player
     // is judged against is where they are now and not where they were.
@@ -782,10 +878,17 @@ f step_world(state:Platformer, input:GAME_Input, reset_down:b):Platformer {
         else -> { r landing.land_vel; }
     };
     coyote_ms:f = if {
-        bounced -> { r 90.0; },
+        bounced -> { r 120.0; },
         landing.grounded -> { r 0.0; },
-        jumped -> { r 90.0; },
+        jumped -> { r 120.0; },
         else -> { r state.coyote_ms + delta; }
+    };
+
+    // Landing hard squashes the player for a moment and rising stretches them,
+    // which is the whole of the animation and most of the weight.
+    squash_ms:f = if {
+        landing.grounded && state.vel_y > 0.35 -> { r 140.0; },
+        else -> { r math_max(state.squash_ms - delta, 0.0); }
     };
 
     coins:a:Coin = map coin in state.coins {
@@ -865,10 +968,6 @@ f step_world(state:Platformer, input:GAME_Input, reset_down:b):Platformer {
         else -> { r state.banked; }
     };
 
-    // What the player is asking for this frame, key or finger alike, so the
-    // pads can show it.
-    pressing_jump:b = jump_pad_now || array_contains(input.keys_down, `Space`) || array_contains(input.keys_down, `Up`) || array_contains(input.keys_down, `w`);
-
     // The camera trails the player with lead room ahead and never shows
     // past either end of the level.
     camera_goal:f = math_clamp(pos_x - 300.0, 0.0, level_span(state.level) - 800.0);
@@ -878,24 +977,16 @@ f step_world(state:Platformer, input:GAME_Input, reset_down:b):Platformer {
         mode = mode, level = state.level, banked = banked, deaths = state.deaths,
         intro_ms = math_max(state.intro_ms - delta, 0.0),
         player_x = pos_x, player_y = landing.land_y, vel_x = vel_x, vel_y = vel_y,
-        coyote_ms = coyote_ms, camera_x = camera_x, coins = coins, foes = settled_foes,
+        coyote_ms = coyote_ms, jump_buffer_ms = jump_buffer_ms, squash_ms = squash_ms,
+        camera_x = camera_x, coins = coins, foes = settled_foes,
         jump_held = jump_pad_now, reset_held = reset_down, tap_held = pad_pressed(input, whole_window()),
         step_phase = step_phase, pressing_left = left_held, pressing_right = right_held,
-        pressing_jump = pressing_jump, done = false
+        pressing_jump = jump_down, done = false
     };
 }
 
-// The title card waits for anything at all, and the whole window is the
-// button, which is the only thing a first-time finger reliably finds.
-f title_update(state:Platformer, input:GAME_Input):Platformer {
-    tap:b = pad_pressed(input, whole_window());
-    go:b = confirm_key(input) || (tap && (state.tap_held == false));
-    if {
-        go -> { r start_level(1, 0, 0); },
-        else -> { r with_mode(state, Mode::Title, tap, false); }
-    }
-}
-
+// The whole window is the button on a card, which is the only thing a
+// first-time finger reliably finds.
 f cleared_update(state:Platformer, input:GAME_Input):Platformer {
     tap:b = pad_pressed(input, whole_window());
     go:b = confirm_key(input) || (tap && (state.tap_held == false));
@@ -929,7 +1020,6 @@ f running_update(state:Platformer, input:GAME_Input):Platformer {
 f update(state:Platformer, input:GAME_Input):Platformer {
     if {
         array_contains(input.keys_pressed, `Esc`) -> { r with_mode(state, state.mode, state.tap_held, true); },
-        state.mode == Mode::Title -> { r title_update(state, input); },
         state.mode == Mode::Cleared -> { r cleared_update(state, input); },
         state.mode == Mode::Finished -> { r finished_update(state, input); },
         else -> { r running_update(state, input); }
@@ -1019,39 +1109,42 @@ f backdrop_shapes(camera_x:f, level:i):a:GAME_Shape {
         game_rect(1450.0 - slide, 300.0, 100.0, 300.0, `#251e30`),
         game_rect(1600.0 - slide, 360.0, 120.0, 240.0, `#2b2339`)
     ];
-    // Little lit windows, the cutesy part: a few homes still awake.
+    // Little lit windows, the cutesy part: a few homes still awake. They are
+    // lit cold rather than gold, because a warm six by eight square at this
+    // size is a coin, and a player should never have to work out which of the
+    // two they are looking at.
     windows:a:GAME_Shape = [
-        game_rect(255.0 - slide, 320.0, 6.0, 8.0, `#8a6d3f`),
-        game_rect(275.0 - slide, 356.0, 6.0, 8.0, `#b08d4a`),
-        game_rect(70.0 - slide, 380.0, 6.0, 8.0, `#8a6d3f`),
-        game_rect(102.0 - slide, 420.0, 6.0, 8.0, `#8a6d3f`),
-        game_rect(672.0 - slide, 350.0, 6.0, 8.0, `#b08d4a`),
-        game_rect(700.0 - slide, 396.0, 6.0, 8.0, `#8a6d3f`),
-        game_rect(1040.0 - slide, 320.0, 6.0, 8.0, `#8a6d3f`),
-        game_rect(1066.0 - slide, 372.0, 6.0, 8.0, `#b08d4a`),
-        game_rect(1268.0 - slide, 366.0, 6.0, 8.0, `#8a6d3f`),
-        game_rect(1486.0 - slide, 340.0, 6.0, 8.0, `#8a6d3f`),
-        game_rect(1636.0 - slide, 396.0, 6.0, 8.0, `#b08d4a`)
+        game_rect(255.0 - slide, 320.0, 6.0, 8.0, `#5f7398`),
+        game_rect(275.0 - slide, 356.0, 6.0, 8.0, `#7b91bd`),
+        game_rect(70.0 - slide, 380.0, 6.0, 8.0, `#5f7398`),
+        game_rect(102.0 - slide, 420.0, 6.0, 8.0, `#5f7398`),
+        game_rect(672.0 - slide, 350.0, 6.0, 8.0, `#7b91bd`),
+        game_rect(700.0 - slide, 396.0, 6.0, 8.0, `#5f7398`),
+        game_rect(1040.0 - slide, 320.0, 6.0, 8.0, `#5f7398`),
+        game_rect(1066.0 - slide, 372.0, 6.0, 8.0, `#7b91bd`),
+        game_rect(1268.0 - slide, 366.0, 6.0, 8.0, `#5f7398`),
+        game_rect(1486.0 - slide, 340.0, 6.0, 8.0, `#5f7398`),
+        game_rect(1636.0 - slide, 396.0, 6.0, 8.0, `#7b91bd`)
     ];
     near:a:GAME_Shape = [
         game_rect(90.0 - near_slide, 220.0, 80.0, 380.0, `#3b3150`),
-        game_rect(114.0 - near_slide, 260.0, 8.0, 10.0, `#8a6d3f`),
+        game_rect(114.0 - near_slide, 260.0, 8.0, 10.0, `#6a80aa`),
         game_rect(430.0 - near_slide, 300.0, 90.0, 300.0, `#332a42`),
-        game_rect(454.0 - near_slide, 336.0, 8.0, 10.0, `#9a7b45`),
-        game_rect(486.0 - near_slide, 390.0, 8.0, 10.0, `#8a6d3f`),
+        game_rect(454.0 - near_slide, 336.0, 8.0, 10.0, `#8399c6`),
+        game_rect(486.0 - near_slide, 390.0, 8.0, 10.0, `#6a80aa`),
         game_rect(730.0 - near_slide, 190.0, 74.0, 410.0, `#3b3150`),
-        game_rect(756.0 - near_slide, 234.0, 8.0, 10.0, `#9a7b45`),
+        game_rect(756.0 - near_slide, 234.0, 8.0, 10.0, `#8399c6`),
         game_rect(1080.0 - near_slide, 280.0, 110.0, 320.0, `#332a42`),
-        game_rect(1108.0 - near_slide, 316.0, 8.0, 10.0, `#8a6d3f`),
-        game_rect(1150.0 - near_slide, 370.0, 8.0, 10.0, `#9a7b45`),
+        game_rect(1108.0 - near_slide, 316.0, 8.0, 10.0, `#6a80aa`),
+        game_rect(1150.0 - near_slide, 370.0, 8.0, 10.0, `#8399c6`),
         game_rect(1390.0 - near_slide, 210.0, 84.0, 390.0, `#3b3150`),
-        game_rect(1418.0 - near_slide, 252.0, 8.0, 10.0, `#8a6d3f`),
+        game_rect(1418.0 - near_slide, 252.0, 8.0, 10.0, `#6a80aa`),
         game_rect(1760.0 - near_slide, 320.0, 130.0, 280.0, `#332a42`),
-        game_rect(1794.0 - near_slide, 356.0, 8.0, 10.0, `#8a6d3f`),
+        game_rect(1794.0 - near_slide, 356.0, 8.0, 10.0, `#6a80aa`),
         game_rect(2070.0 - near_slide, 230.0, 78.0, 370.0, `#3b3150`),
-        game_rect(2096.0 - near_slide, 270.0, 8.0, 10.0, `#9a7b45`),
+        game_rect(2096.0 - near_slide, 270.0, 8.0, 10.0, `#8399c6`),
         game_rect(2400.0 - near_slide, 290.0, 100.0, 310.0, `#332a42`),
-        game_rect(2428.0 - near_slide, 328.0, 8.0, 10.0, `#9a7b45`)
+        game_rect(2428.0 - near_slide, 328.0, 8.0, 10.0, `#8399c6`)
     ];
     behind:a:GAME_Shape = array_concat(array_concat(sky, mountains), array_concat(ridge, haze));
     city:a:GAME_Shape = array_concat(array_concat(mid, windows), near);
@@ -1133,7 +1226,7 @@ f enemy_shapes(foe:Enemy, cam:f):a:GAME_Shape {
 // with distance walked, so the cycle speeds up with the run and freezes on
 // stopping, no animation clock needed. In the air they tuck. The eye looks
 // where the player is going.
-f player_shapes(screen_x:f, world_x:f, pos_y:f, vel_x:f, vel_y:f):a:GAME_Shape {
+f player_shapes(screen_x:f, world_x:f, pos_y:f, vel_x:f, vel_y:f, squash_ms:f):a:GAME_Shape {
     moving:b = math_abs(vel_x) > 0.02;
     grounded:b = vel_y == 0.0;
     swing:f = if {
@@ -1158,9 +1251,25 @@ f player_shapes(screen_x:f, world_x:f, pos_y:f, vel_x:f, vel_y:f):a:GAME_Shape {
         vel_x < -0.02 -> { r 6.0; },
         else -> { r 17.0; }
     };
+
+    // The body keeps its feet where they are and changes shape around them:
+    // wide and low for a moment after a hard landing, tall and narrow on the
+    // way up. It is two numbers and it does most of the work of weight.
+    wide:f = if {
+        squash_ms > 0.0 -> { r 34.0; },
+        vel_y < -0.3 -> { r 24.0; },
+        else -> { r 28.0; }
+    };
+    tall:f = if {
+        squash_ms > 0.0 -> { r 20.0; },
+        vel_y < -0.3 -> { r 31.0; },
+        else -> { r 27.0; }
+    };
+    body_x:f = screen_x + ((28.0 - wide) / 2.0);
+    body_y:f = pos_y + (27.0 - tall);
     body:a:GAME_Shape = [
-        game_rect(screen_x, pos_y, 28.0, 27.0, `#7bc4b8`),
-        game_rect(screen_x + eye_x, pos_y + 9.0, 5.0, 7.0, `#101018`)
+        game_rect(body_x, body_y, wide, tall, `#7bc4b8`),
+        game_rect(body_x + (eye_x * (wide / 28.0)), body_y + (tall * 0.33), 5.0, 7.0, `#101018`)
     ];
     r array_concat(body, legs);
 }
@@ -1207,22 +1316,6 @@ f control_pads(state:Platformer):a:GAME_Shape {
         game_rect(jump_x + 27.0, 541.0, 40.0, 6.0, jump_ink),
         game_rect(reset_x, 14.0, 62.0, 62.0, pad_plate_color(false)),
         centred_text(`R`, reset_x + 31.0, 30.0, 30.0, pad_ink_color(false))
-    ];
-}
-
-// The card the title screen puts over a still level one.
-f title_card():a:GAME_Shape {
-    r [
-        game_rect(0.0, 0.0, 800.0, 600.0, `#101018bb`),
-        centred_text(`NAIL PLATFORMER`, 400.0, 150.0, 46.0, `#e9c46a`),
-        centred_text(`five levels, and something on every one of them`, 400.0, 225.0, 18.0, `#e8ded1`),
-        centred_text(`arrows or A and D run, Space jumps, R starts the level over`, 400.0, 262.0, 16.0, `#9a94a8`),
-        centred_text(`on a phone, the pads in the corners do all three`, 400.0, 292.0, 16.0, `#9a94a8`),
-        centred_text(`land on what moves, and it stops moving`, 400.0, 330.0, 16.0, `#9a94a8`),
-        game_rect(250.0, 392.0, 300.0, 84.0, `#7bc4b833`),
-        game_rect_outline(250.0, 392.0, 300.0, 84.0, 2.0, `#7bc4b8`),
-        centred_text(`START`, 400.0, 412.0, 40.0, `#f4fbf9`),
-        centred_text(`press Space or touch anywhere`, 400.0, 500.0, 16.0, `#757575`)
     ];
 }
 
@@ -1274,7 +1367,6 @@ f intro_card(level:i, intro_ms:f):a:GAME_Shape {
 
 f overlay_shapes(state:Platformer):a:GAME_Shape {
     if {
-        state.mode == Mode::Title -> { r title_card(); },
         state.mode == Mode::Cleared -> { r cleared_card(state.level, taken_count(state.coins), state.banked, state.deaths); },
         state.mode == Mode::Finished -> { r finished_card(state.banked, state.deaths); },
         else -> { r intro_card(state.level, state.intro_ms); }
@@ -1325,6 +1417,8 @@ f blend(previous:Platformer, current:Platformer, part:f):Platformer {
         vel_x = current.vel_x,
         vel_y = current.vel_y,
         coyote_ms = current.coyote_ms,
+        jump_buffer_ms = current.jump_buffer_ms,
+        squash_ms = current.squash_ms,
         camera_x = mix(previous.camera_x, current.camera_x, part),
         coins = current.coins,
         foes = blend_enemies(previous.foes, current.foes, part),
@@ -1349,9 +1443,16 @@ f view(state:Platformer):GAME_Frame {
     remaining:a:Coin = filter coin in state.coins {
         y coin.taken == false;
     };
-    coin_shapes:a:GAME_Shape = map coin in remaining {
-        y game_circle(coin.coin_x - cam, coin.coin_y, 7.0, `#e9c46a`);
+    // A coin is a bright gold disc with a glint off its top left, which is two
+    // shapes rather than one because a flat disc at this size reads as a lit
+    // window in the city behind it, and a glinting one never does.
+    coin_discs:a:GAME_Shape = map coin in remaining {
+        y game_circle(coin.coin_x - cam, coin.coin_y, 7.0, `#ffd34a`);
     };
+    coin_glints:a:GAME_Shape = map coin in remaining {
+        y game_circle(coin.coin_x - cam - 2.0, coin.coin_y - 2.0, 2.5, `#fff3c8`);
+    };
+    coin_shapes:a:GAME_Shape = array_concat(coin_discs, coin_glints);
     score:i = taken_count(state.coins);
 
     // Spikes and enemies are several shapes each, so they are gathered rather
@@ -1371,7 +1472,7 @@ f view(state:Platformer):GAME_Frame {
         game_rect(goal_x - cam, 420.0, 8.0, 140.0, `#e8ded1`),
         game_rect(goal_x + 8.0 - cam, 420.0, 40.0, 26.0, `#e9c46a`)
     ];
-    player:a:GAME_Shape = player_shapes(state.player_x - cam, state.player_x, state.player_y, state.vel_x, state.vel_y);
+    player:a:GAME_Shape = player_shapes(state.player_x - cam, state.player_x, state.player_y, state.vel_x, state.vel_y, state.squash_ms);
     hud:a:GAME_Shape = [
         game_text(string_concat([`level `, string_from(level), `/`, string_from(level_count()), `   coins `, string_from(score), `/`, string_from(array_length(level_coins(level))), `   deaths `, string_from(state.deaths)]), 20.0, 20.0, 24.0, `#e9c46a`),
         game_text(`Arrows or A and D move, Space jumps, R restarts the level, Esc quits`, 20.0, 52.0, 15.0, `#757575`)

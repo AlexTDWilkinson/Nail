@@ -211,7 +211,9 @@ Full design in `nail_language_spec.md`, under Versioning and Toolchain Pinning.
 ## 🎮 IDE Controls
 
 **Ctrl+P** lists every command by name, with its keys beside it, so the rest of
-this list is a shortcut rather than something to memorise.
+this list is a shortcut rather than something to memorise. The keys it names
+are the ones your own keymap uses, and a command with no key under that keymap
+says so rather than naming a chord that does something else there.
 
 - **Ctrl+P**: Command palette
 - **Ctrl+R**: Go to a function, struct or constant in this file
@@ -220,14 +222,31 @@ this list is a shortcut rather than something to memorise.
 - **F8**: Jump to the next error, **Shift+F8** the previous one
 - **F7**: Compile and run current file
 - **Ctrl+S**: Save file
-- **Ctrl+C**: Exit
+- **Ctrl+C**: Copy, and **Esc** leaves the editor once there is nothing left
+  on screen to dismiss (it asks first)
 - **F4**: Hand the mouse back to the terminal, so its own select and copy work
 - **Mouse**: Click to put the cursor there, drag to select, wheel to scroll
 
 The first run asks which key bindings you want, with your machine's own answer
-already selected: CUA by default, emacs if `EDITOR` or your inputrc says emacs.
-The choice is remembered, and **F2** opens the settings screen to change it
+already selected: normal by default (the keys VS Code, Atom and most other
+editors use), vim or emacs if `EDITOR` or your inputrc says so. The choice is remembered, and **F2** opens the settings screen to change it
 later along with the theme and the display options.
+
+Vim mode is modal, and the status bar says which mode is on. The bindings
+follow neovim's defaults: the motions, the operators that pair with them
+(`dd`, `dw`, `cw`, `yy`, `>>`), both visual modes, `u` and Ctrl+R, `/`, `n` and
+`N`, Ctrl+L to put the highlighting out, `gcc` and visual `gc` to toggle
+comments, `gO` to list what the file declares, `]d` and `[d` to walk the
+errors, `gd` to follow an import, `K` to open the standard library, `Ctrl+W c`
+to close a tab, `ZZ` and `ZQ` to leave, and `:` for the command palette.
+
+It does not have counts, registers, marks, macros, text objects, blockwise
+visual or `.`, and each of those keys says so on the status line rather than
+doing something close to what was asked. Every chord vim never claimed still
+works: Ctrl+S saves, F7 builds, Ctrl+P lists commands.
+
+Emacs mode has the motions, the mark, both halves of the kill ring, the `C-x`
+file commands, and **Alt+X** for the command palette.
 
 Files you had open are reopened where you left them the next time the IDE
 starts in that directory.

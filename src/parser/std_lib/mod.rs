@@ -76,6 +76,7 @@ pub mod ml;
 pub mod money;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod net;
+pub mod order;
 pub mod panic;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod path;

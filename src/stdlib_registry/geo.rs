@@ -21,28 +21,28 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "nearby:b = danger(geo_in_radius(53.5461, -113.4937, 51.0447, -114.0719, 300.0));";
         "geo_closest" => "std_lib::geo::closest", (latitude: f, longitude: f, latitudes: (&[f]), longitudes: (&[f])) -> (i!e),
             "Returns the index of the nearest point among parallel latitude and longitude arrays, ties going to the earlier index. Errors when the arrays differ in length, are empty, or hold a coordinate off the map.",
-            "nearest:i = danger(geo_closest(53.5461, -113.4937, store_latitudes, store_longitudes));";
+            "store_latitudes:a:f = [53.5461, 51.0447, 49.2827];\nstore_longitudes:a:f = [-113.4937, -114.0719, -123.1207];\nnearest:i = danger(geo_closest(53.5461, -113.4937, store_latitudes, store_longitudes));";
         "geo_valid" => "std_lib::geo::valid", (latitude: f, longitude: f) -> b,
             "Returns whether the pair is a place on earth - latitude within -90 to 90 and longitude within -180 to 180. NaN is not a place.",
             "on_earth:b = geo_valid(53.5461, -113.4937);";
         "geo_point_in_polygon" => "std_lib::geo::point_in_polygon", (latitude: f, longitude: f, latitudes: (&[f]), longitudes: (&[f])) -> (b!e),
             "Returns whether the point lies inside the polygon traced by parallel latitude and longitude arrays - the neighborhood-boundary question, a point on the boundary counting as inside. The polygon closes itself from the last vertex back to the first. Errors when the arrays differ in length, hold fewer than 3 vertices, or hold a coordinate off the map.",
-            "in_zone:b = danger(geo_point_in_polygon(53.52, -113.50, zone_latitudes, zone_longitudes));";
+            "zone_latitudes:a:f = [53.50, 53.60, 53.60, 53.50];\nzone_longitudes:a:f = [-113.60, -113.60, -113.40, -113.40];\nin_zone:b = danger(geo_point_in_polygon(53.52, -113.50, zone_latitudes, zone_longitudes));";
         "geo_polygon_area_km2" => "std_lib::geo::polygon_area_km2", (latitudes: (&[f]), longitudes: (&[f])) -> (f!e),
             "Returns the area of the polygon in square kilometers, by the spherical shoelace formula. The winding direction does not matter, and the polygon closes itself from the last vertex back to the first. Errors when the arrays differ in length, hold fewer than 3 vertices, or hold a coordinate off the map.",
-            "zone_km2:f = danger(geo_polygon_area_km2(zone_latitudes, zone_longitudes));";
+            "zone_latitudes:a:f = [53.50, 53.60, 53.60, 53.50];\nzone_longitudes:a:f = [-113.60, -113.60, -113.40, -113.40];\nzone_km2:f = danger(geo_polygon_area_km2(zone_latitudes, zone_longitudes));";
         "geo_bounds_south" => "std_lib::geo::bounds_south", (latitudes: (&[f])) -> (f!e),
             "Returns the southernmost latitude in the array - the bottom edge of the points' bounding box. Errors when the array is empty or holds a latitude off the map.",
-            "south:f = danger(geo_bounds_south(store_latitudes));";
+            "store_latitudes:a:f = [53.5461, 51.0447, 49.2827];\nsouth:f = danger(geo_bounds_south(store_latitudes));";
         "geo_bounds_north" => "std_lib::geo::bounds_north", (latitudes: (&[f])) -> (f!e),
             "Returns the northernmost latitude in the array - the top edge of the points' bounding box. Errors when the array is empty or holds a latitude off the map.",
-            "north:f = danger(geo_bounds_north(store_latitudes));";
+            "store_latitudes:a:f = [53.5461, 51.0447, 49.2827];\nnorth:f = danger(geo_bounds_north(store_latitudes));";
         "geo_bounds_west" => "std_lib::geo::bounds_west", (longitudes: (&[f])) -> (f!e),
             "Returns the westernmost longitude in the array as a plain minimum. Points straddling the antimeridian get the honest numeric answer, a box reaching past 180 degrees wide, rather than a wrapped one. Errors when the array is empty or holds a longitude off the map.",
-            "west:f = danger(geo_bounds_west(store_longitudes));";
+            "store_longitudes:a:f = [-113.4937, -114.0719, -123.1207];\nwest:f = danger(geo_bounds_west(store_longitudes));";
         "geo_bounds_east" => "std_lib::geo::bounds_east", (longitudes: (&[f])) -> (f!e),
             "Returns the easternmost longitude in the array as a plain maximum, with the same honest antimeridian caveat as geo_bounds_west. Errors when the array is empty or holds a longitude off the map.",
-            "east:f = danger(geo_bounds_east(store_longitudes));";
+            "store_longitudes:a:f = [-113.4937, -114.0719, -123.1207];\neast:f = danger(geo_bounds_east(store_longitudes));";
         "geo_geohash" => "std_lib::geo::geohash", (latitude: f, longitude: f, precision: i) -> (s!e),
             "Returns the point encoded as a geohash of the given precision, 1 to 12 characters of the standard base32 alphabet. Longer is a smaller cell. Errors when the coordinate is off the map or the precision is outside 1 to 12.",
             "cell:s = danger(geo_geohash(57.64911, 10.40744, 6));";
@@ -92,7 +92,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("GEO_Point".to_string()))),
         diverging: false,
         description: "Returns the center of the points as the mean of their 3D unit vectors brought back to the surface, correct across the antimeridian, as a GEO_Point. Errors when the arrays differ in length, are empty, hold a coordinate off the map, or the points balance out exactly.",
-        example: "middle:GEO_Point = danger(geo_center(store_latitudes, store_longitudes));",
+        example: "store_latitudes:a:f = [53.5461, 51.0447, 49.2827];\nstore_longitudes:a:f = [-113.4937, -114.0719, -123.1207];\nmiddle:GEO_Point = danger(geo_center(store_latitudes, store_longitudes));",
     });
 
     m.insert("geo_geohash_decode", StdlibFunction {

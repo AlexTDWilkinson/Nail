@@ -56,7 +56,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("PROCESS_Result".to_string()))),
         diverging: false,
         description: "Runs a command in another directory, with extra environment variables, with text on its standard input, or with a time limit - whichever of those the options set. A command that runs out of time is killed.",
-        example: "ran:PROCESS_Result = danger(process_run_with(`psql`, [`-f`, `-`], options));",
+        example: "options:PROCESS_Options = process_default_options();\nran:PROCESS_Result = danger(process_run_with(`psql`, [`-f`, `-`], options));",
     });
 
     simple_fns! { m, Process:
@@ -91,7 +91,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("PROCESS_Handle".to_string()))),
         diverging: false,
         description: "Starts a program and keeps it running - what process_run cannot do, because it collects everything at the end. Output streams out through process_next_line. process_wait collects the exit code.",
-        example: "ffmpeg:PROCESS_Handle = danger(process_spawn(`ffmpeg`, [`-i`, input_path, output_path]));",
+        example: "input_path:s = `clip.mov`;\noutput_path:s = `clip.mp4`;\nffmpeg:PROCESS_Handle = danger(process_spawn(`ffmpeg`, [`-i`, input_path, output_path]));",
     });
 
     m.insert("process_next_line", StdlibFunction {
@@ -104,7 +104,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((s!e)),
         diverging: false,
         description: "The next line the process printed, stdout and stderr together in arrival order. Waits for one if none is ready. An error means the output is over. The shape of a tail loop is: ask for lines with safe(), stop on the error.",
-        example: "line:s = danger(process_next_line(ffmpeg));",
+        example: "ffmpeg:PROCESS_Handle = danger(process_spawn(`ffmpeg`, [`-i`, `clip.mov`, `clip.mp4`]));\nline:s = danger(process_next_line(ffmpeg));",
     });
 
     m.insert("process_write_stdin", StdlibFunction {
@@ -117,7 +117,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Writes text to the process's stdin, exactly as given - add a newline yourself when the program reads lines.",
-        example: "danger(process_write_stdin(repl, `help\\n`));",
+        example: "repl:PROCESS_Handle = danger(process_spawn(`python3`, [`-i`]));\ndanger(process_write_stdin(repl, `help\\n`));",
     });
 
     m.insert("process_close_stdin", StdlibFunction {
@@ -130,7 +130,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Closes the process's stdin - the end-of-input many programs wait for before finishing.",
-        example: "danger(process_close_stdin(sort));",
+        example: "sort:PROCESS_Handle = danger(process_spawn(`sort`, []));\ndanger(process_write_stdin(sort, `b\\na\\n`));\ndanger(process_close_stdin(sort));",
     });
 
     m.insert("process_is_running", StdlibFunction {
@@ -143,7 +143,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((b!e)),
         diverging: false,
         description: "Whether the process is still going.",
-        example: "alive:b = danger(process_is_running(ffmpeg));",
+        example: "ffmpeg:PROCESS_Handle = danger(process_spawn(`ffmpeg`, [`-i`, `clip.mov`, `clip.mp4`]));\nalive:b = danger(process_is_running(ffmpeg));",
     });
 
     m.insert("process_wait", StdlibFunction {
@@ -156,7 +156,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((i!e)),
         diverging: false,
         description: "Waits for the process to end and returns its exit code. Read the lines you want first - waiting forgets the handle, and any unread output with it.",
-        example: "code:i = danger(process_wait(ffmpeg));",
+        example: "ffmpeg:PROCESS_Handle = danger(process_spawn(`ffmpeg`, [`-i`, `clip.mov`, `clip.mp4`]));\ncode:i = danger(process_wait(ffmpeg));",
     });
 
     m.insert("process_kill", StdlibFunction {
@@ -169,6 +169,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Stops the process now and forgets its handle.",
-        example: "danger(process_kill(stuck_job));",
+        example: "stuck_job:PROCESS_Handle = danger(process_spawn(`sleep`, [`3600`]));\ndanger(process_kill(stuck_job));",
     });
 }

@@ -1,10 +1,9 @@
 nail latest
 // Calculate factorial
 f factorial(number:i):i {
-    if number <= 1 {
-        r 1;
-    } else {
-        r number * factorial(number - 1);
+    if {
+        number <= 1 -> { r 1; },
+        else -> { r number * factorial(number - 1); }
     }
 }
 

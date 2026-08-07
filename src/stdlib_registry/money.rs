@@ -22,10 +22,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "price:s = money_format(123450, `$`);";
         "money_percent_of" => "std_lib::money::percent_of", (cents: i, rate: f) -> i,
             "Returns a percentage of an amount, rounded to the nearest cent. The rate is a percentage, so 5.0 is five percent.",
-            "tax:i = money_percent_of(subtotal, 5.0);";
+            "subtotal:i = 2499;\ntax:i = money_percent_of(subtotal, 5.0);";
         "money_times" => "std_lib::money::times", (cents: i, count: i) -> (i!e),
             "Returns an amount multiplied by a count, which is what a line item comes to. Errors if the total is larger than can be counted.",
-            "line_total:i = danger(money_times(unit_price, quantity));";
+            "unit_price:i = 1250;\nquantity:i = 3;\nline_total:i = danger(money_times(unit_price, quantity));";
         "money_split" => "std_lib::money::split", (cents: i, ways: i) -> ([i]!e),
             "Splits an amount as evenly as it can be, handing the leftover cents out one each from the start so the shares add back up to the whole.",
             "shares:a:i = danger(money_split(1000, 3));";

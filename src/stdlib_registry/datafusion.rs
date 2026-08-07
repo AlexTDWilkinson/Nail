@@ -31,7 +31,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Register a Parquet file as a queryable SQL table",
-        example: "danger(db_datafusion_register_parquet(db, `homes`, `homes.parquet`));",
+        example: "db:DB_DataFusion = danger(db_datafusion_session());\ndanger(db_datafusion_register_parquet(db, `homes`, `homes.parquet`));",
     });
 
     m.insert("db_datafusion_register_csv", StdlibFunction {
@@ -48,7 +48,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Register a CSV file as a queryable SQL table",
-        example: "danger(db_datafusion_register_csv(db, `sales`, `sales.csv`));",
+        example: "db:DB_DataFusion = danger(db_datafusion_session());\ndanger(db_datafusion_register_csv(db, `sales`, `sales.csv`));",
     });
 
     m.insert("db_datafusion_execute", StdlibFunction {
@@ -64,7 +64,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("DB_DataFusion_Result".to_string()))),
         diverging: false,
         description: "Execute a DataFusion SQL statement (CREATE TABLE, INSERT)",
-        example: "result:DB_DataFusion_Result = danger(db_datafusion_execute(db, `CREATE TABLE t (id INT)`));",
+        example: "db:DB_DataFusion = danger(db_datafusion_session());\nresult:DB_DataFusion_Result = danger(db_datafusion_execute(db, `CREATE TABLE people (name VARCHAR, age INT)`));",
     });
 
     m.insert("db_datafusion_query", StdlibFunction {
@@ -80,7 +80,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))))),
         diverging: false,
         description: "Query DataFusion with SQL and return results as typed structs",
-        example: "rows:a:Person = danger(db_datafusion_query(db, `SELECT name, age FROM people`));",
+        example: "struct Person { name:s, age:i }\n\ndb:DB_DataFusion = danger(db_datafusion_session());\ndanger(db_datafusion_register_csv(db, `people`, `people.csv`));\nrows:a:Person = danger(db_datafusion_query(db, `SELECT name, age FROM people`));",
     });
 
     m.insert("db_datafusion_query_single", StdlibFunction {
@@ -96,7 +96,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))),
         diverging: false,
         description: "Query DataFusion with SQL and return a single result as a typed struct",
-        example: "person:Person = danger(db_datafusion_query_single(db, `SELECT name, age FROM people LIMIT 1`));",
+        example: "struct Person { name:s, age:i }\n\ndb:DB_DataFusion = danger(db_datafusion_session());\ndanger(db_datafusion_register_csv(db, `people`, `people.csv`));\nperson:Person = danger(db_datafusion_query_single(db, `SELECT name, age FROM people LIMIT 1`));",
     });
 
     m.insert("db_datafusion_close", StdlibFunction {
@@ -111,6 +111,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Void)),
         diverging: false,
         description: "Close a DataFusion session",
-        example: "danger(db_datafusion_close(db));",
+        example: "db:DB_DataFusion = danger(db_datafusion_session());\ndanger(db_datafusion_close(db));",
     });
 }

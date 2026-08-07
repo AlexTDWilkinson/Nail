@@ -66,7 +66,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "std_lib::email::send",
             "body",
             "Sends a plain text message through an SMTP server and waits for it to be accepted. Success means the server took the message, not that it was delivered.",
-            "danger(email_send(server, `someone@example.com`, `Your receipt`, body));",
+            "server:EMAIL_Server = email_default_server();\nbody:s = `Thanks for your order.`;\ndanger(email_send(server, `someone@example.com`, `Your receipt`, body));",
         ),
     );
 
@@ -76,7 +76,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "std_lib::email::send_html",
             "html",
             "Sends an HTML message. Mail readers are far stricter than browsers, so this wants plain markup with inline styles rather than a page.",
-            "danger(email_send_html(server, `someone@example.com`, `Your receipt`, markup));",
+            "server:EMAIL_Server = email_default_server();\nmarkup:s = `<p>Thanks for your order.</p>`;\ndanger(email_send_html(server, `someone@example.com`, `Your receipt`, markup));",
         ),
     );
 }

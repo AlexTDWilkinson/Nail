@@ -36,13 +36,13 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "link_text:s = term_underline(`documentation`);";
         "term_inverse" => "std_lib::term::inverse", (text: s) -> s,
             "Returns the text with foreground and background swapped, which is what a selected row looks like.",
-            "selected:s = term_inverse(row);";
+            "row:s = `selected row`;\nselected:s = term_inverse(row);";
         "term_strip_styles" => "std_lib::term::strip_styles", (text: s) -> s,
             "Removes every escape sequence, leaving the text as it will be read. Use it before writing coloured output anywhere that is not a terminal.",
-            "plain:s = term_strip_styles(colored);";
+            "colored:s = term_paint(`failed`, TERM_Color::Red);\nplain:s = term_strip_styles(colored);";
         "term_display_width" => "std_lib::term::display_width", (text: s) -> i,
             "Returns how wide the text is once printed, counting what a person sees rather than the characters in the string.",
-            "columns:i = term_display_width(cell);";
+            "cell:s = `Vancouver`;\ncolumns:i = term_display_width(cell);";
         "term_is_tty" => "std_lib::term::is_tty", () -> b,
             "Returns whether standard output is a terminal rather than a file or a pipe. False means do not colour and do not draw progress.",
             "interactive:b = term_is_tty();";
@@ -60,7 +60,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "bar:s = danger(term_progress_bar(0.42, 30));";
         "term_table" => "std_lib::term::table", (headers: [s], rows: [[s]]) -> (s!e),
             "Returns a plain-text table with aligned columns. Errors if a row has a different number of cells than there are headers.",
-            "rendered:s = danger(term_table(headers, rows));";
+            "headers:a:s = [`name`, `city`];\nrows:a:a:s = [[`Ada`, `London`], [`Grace`, `New York`]];\nrendered:s = danger(term_table(headers, rows));";
         "term_box" => "std_lib::term::boxed", (text: s) -> s,
             "Returns the text drawn inside a Unicode box sized to its widest line, measuring coloured text by what is seen.",
             "framed:s = term_box(`All tests passed`);";
@@ -69,7 +69,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "heading:s = danger(term_banner(`Results`, `=`));";
         "term_two_columns" => "std_lib::term::two_columns", (left: s, right: s, width: i) -> (s!e),
             "Returns the two texts side by side, each wrapped to half the given width with a two space gutter between them. Errors when the width is outside 20 to 400 columns.",
-            "usage:s = danger(term_two_columns(flags, explanations, 80));";
+            "flags:s = `--release\\n--quiet`;\nexplanations:s = `build with optimisations\\nsay less while working`;\nusage:s = danger(term_two_columns(flags, explanations, 80));";
     }
 
     m.insert("term_paint", color_fn("std_lib::term::paint", "Returns the text in the given colour.", "warning:s = term_paint(`careful`, TERM_Color::Yellow);"));

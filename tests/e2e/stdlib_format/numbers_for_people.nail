@@ -1,12 +1,12 @@
 nail latest
 // E2E: format_* turns numbers into the text a person reads
-print(format_decimals(3.5, 2));
+print(danger(format_decimals(3.5, 2)));
 print(format_thousands(1234567));
 print(format_thousands(-1000));
-print(format_thousands_float(1234.5, 2));
+print(danger(format_thousands_float(1234.5, 2)));
 print(format_currency(1234.5, `$`));
 print(format_currency(-9.99, `$`));
-print(format_percent(0.125, 1));
+print(danger(format_percent(0.125, 1)));
 print(format_bytes(512));
 print(format_bytes(1536));
 print(format_compact(1200));

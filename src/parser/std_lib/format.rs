@@ -44,8 +44,28 @@ fn group_digits(rendered: &str, separator: char) -> String {
 /// A float rounded to a fixed number of decimal places, always showing them
 /// all: `decimals(3.5, 2)` is `3.50`, not `3.5`. Prices and measurements line
 /// up in a column this way.
-pub fn decimals(value: f64, places: i64) -> String {
-    let places = places.clamp(0, 17) as usize;
+pub fn decimals(value: f64, places: i64) -> Result<String, String> {
+    return Ok(at_places(value, checked_places("format_decimals", places)?));
+}
+
+/// A count of decimal places that a float can actually honour. Both ends used
+/// to be clamped silently, which turned a request for -2 places into a request
+/// for none, and a request for 40 into one for 17. Neither is what was asked
+/// for, and neither said so.
+fn checked_places(function: &str, places: i64) -> Result<usize, String> {
+    if places < 0 {
+        return Err(format!("{}: asked for {} decimal places, and a count of places cannot be negative", function, places));
+    }
+    // A float carries about 17 significant digits, so beyond that the figures
+    // printed are noise rather than the number.
+    if places > 17 {
+        return Err(format!("{}: asked for {} decimal places, more than the 17 a float can actually distinguish", function, places));
+    }
+    return Ok(places as usize);
+}
+
+/// The formatting itself, once the count of places is known to be usable.
+fn at_places(value: f64, places: usize) -> String {
     return format!("{:.*}", places, value);
 }
 
@@ -56,8 +76,9 @@ pub fn thousands(value: i64) -> String {
 
 /// A float with both thousands separators and fixed decimals, which together
 /// are what a money column looks like: `1234.5` at 2 places is `1,234.50`.
-pub fn thousands_float(value: f64, places: i64) -> String {
-    return group_digits(&decimals(value, places), ',');
+pub fn thousands_float(value: f64, places: i64) -> Result<String, String> {
+    let places = checked_places("format_thousands_float", places)?;
+    return Ok(group_digits(&at_places(value, places), ','));
 }
 
 /// An amount of money: the symbol, then the grouped digits, then two decimals.
@@ -65,7 +86,8 @@ pub fn thousands_float(value: f64, places: i64) -> String {
 /// likely to be printing one puts it; a program needing another arrangement
 /// can concatenate its own.
 pub fn currency(amount: f64, symbol: String) -> String {
-    let rendered = thousands_float(amount.abs(), 2);
+    // Two places, fixed here rather than asked for, so this cannot fail.
+    let rendered = group_digits(&at_places(amount.abs(), 2), ',');
     let sign = if amount < 0.0 { "-" } else { "" };
     return format!("{}{}{}", sign, symbol, rendered);
 }
@@ -73,8 +95,9 @@ pub fn currency(amount: f64, symbol: String) -> String {
 /// A fraction as a percentage: `0.125` at one place is `12.5%`. The input is a
 /// fraction rather than an already-multiplied number because that is what
 /// dividing two counts gives you.
-pub fn percent(fraction: f64, places: i64) -> String {
-    return format!("{}%", decimals(fraction * 100.0, places));
+pub fn percent(fraction: f64, places: i64) -> Result<String, String> {
+    let places = checked_places("format_percent", places)?;
+    return Ok(format!("{}%", at_places(fraction * 100.0, places)));
 }
 
 /// A byte count in the largest unit that leaves a number below 1024, the way
@@ -94,7 +117,7 @@ pub fn bytes(count: i64) -> String {
     if unit == 0 {
         return format!("{}{} {}", sign, size as i64, UNITS[unit]);
     }
-    return format!("{}{} {}", sign, decimals(size, 1), UNITS[unit]);
+    return format!("{}{} {}", sign, at_places(size, 1), UNITS[unit]);
 }
 
 /// A large count shortened for a headline: `1200` is `1.2k`, `3_400_000` is
@@ -113,7 +136,7 @@ pub fn compact(value: i64) -> String {
         size /= 1000.0;
         unit += 1;
     }
-    return format!("{}{}{}", sign, decimals(size, 1), UNITS[unit]);
+    return format!("{}{}{}", sign, at_places(size, 1), UNITS[unit]);
 }
 
 /// The English ordinal for a number: 1st, 2nd, 3rd, 4th, and the teens that
@@ -347,10 +370,10 @@ mod tests {
 
     #[test]
     fn decimals_always_shows_the_places_asked_for() {
-        assert_eq!(decimals(3.5, 2), "3.50");
-        assert_eq!(decimals(3.567, 2), "3.57");
-        assert_eq!(decimals(3.567, 0), "4");
-        assert_eq!(decimals(-1.26, 1), "-1.3");
+        assert_eq!(decimals(3.5, 2).unwrap(), "3.50");
+        assert_eq!(decimals(3.567, 2).unwrap(), "3.57");
+        assert_eq!(decimals(3.567, 0).unwrap(), "4");
+        assert_eq!(decimals(-1.26, 1).unwrap(), "-1.3");
     }
 
     /// A value sitting exactly on a half goes to the even digit, which is what
@@ -358,8 +381,8 @@ mod tests {
     /// roundings all drifting the same way.
     #[test]
     fn an_exact_half_rounds_to_the_even_digit() {
-        assert_eq!(decimals(1.25, 1), "1.2");
-        assert_eq!(decimals(1.35, 1), "1.4");
+        assert_eq!(decimals(1.25, 1).unwrap(), "1.2");
+        assert_eq!(decimals(1.35, 1).unwrap(), "1.4");
     }
 
     #[test]
@@ -373,8 +396,8 @@ mod tests {
 
     #[test]
     fn a_grouped_float_keeps_its_decimals_ungrouped() {
-        assert_eq!(thousands_float(1234.5, 2), "1,234.50");
-        assert_eq!(thousands_float(-1234567.891, 3), "-1,234,567.891");
+        assert_eq!(thousands_float(1234.5, 2).unwrap(), "1,234.50");
+        assert_eq!(thousands_float(-1234567.891, 3).unwrap(), "-1,234,567.891");
     }
 
     #[test]
@@ -386,9 +409,9 @@ mod tests {
 
     #[test]
     fn a_fraction_becomes_a_percentage() {
-        assert_eq!(percent(0.125, 1), "12.5%");
-        assert_eq!(percent(1.0, 0), "100%");
-        assert_eq!(percent(0.0, 2), "0.00%");
+        assert_eq!(percent(0.125, 1).unwrap(), "12.5%");
+        assert_eq!(percent(1.0, 0).unwrap(), "100%");
+        assert_eq!(percent(0.0, 2).unwrap(), "0.00%");
     }
 
     #[test]

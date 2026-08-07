@@ -16,7 +16,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((s!e)),
         diverging: false,
         description: "Writes a struct, hashmap or array out as XML under the given root element, for the systems that still want it that way.",
-        example: "text:s = danger(xml_serialize(invoice, `invoice`));",
+        example: "struct Invoice { reference:s, total:i }\n\ninvoice:Invoice = Invoice { reference = `INV-7`, total = 4200 };\ntext:s = danger(xml_serialize(invoice, `invoice`));",
     });
 
     m.insert("xml_deserialize", StdlibFunction {
@@ -29,6 +29,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((T!e)),
         diverging: false,
         description: "Reads XML into a value. The type on the left of the assignment says what to read it as. Struct fields match child elements of the same name.",
-        example: "invoice:Invoice = danger(xml_deserialize(text));",
+        example: "struct Invoice { reference:s, total:i }\n\ntext:s = `<invoice><reference>INV-7</reference><total>4200</total></invoice>`;\ninvoice:Invoice = danger(xml_deserialize(text));",
     });
 }

@@ -1,4 +1,5 @@
 nail latest
+// This is not a standalone program: examples/nail_website.nail imports it.
 // The request handler and its routes.
 
 // Every request lands here. Routing is ordinary Nail code rather than a table

@@ -26,7 +26,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
 
         diverging: false,
         description: "Starts an HTTP server on the given port. Every request is passed to the program's handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response function, along with the config's state hashmap. Blocks forever.",
-        example: "http_server(8080, config);",
+        example: "f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {\n    r HTTP_Response { status = 200, body = `hello`, content_type = `text/html`, headers = hashmap_new() };\n}\n\nconfig:HTTP_Config = HTTP_Config {\n    static_mounts = [],\n    max_body_bytes = 0,\n    timeout_seconds = 0,\n    state = hashmap_new(),\n    cors_origins = [],\n    security_headers = true,\n    rate_limit_per_minute = 0,\n    rate_limit_message = ``\n};\nhttp_server(8080, config);",
     });
 
     m.insert("http_path_matches", StdlibFunction {
@@ -44,7 +44,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
 
         diverging: false,
         description: "Whether a request path matches a route pattern. Pattern segments beginning with ':' match any single segment, and a trailing '*' matches the rest of the path.",
-        example: "matched:b = http_path_matches(`/dictionary/:word`, request.path);",
+        example: "request_path:s = `/dictionary/cat`;\nmatched:b = http_path_matches(`/dictionary/:word`, request_path);",
     });
 
     m.insert("http_path_params", StdlibFunction {
@@ -58,11 +58,11 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             StdlibParameter { name: "pattern".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
             StdlibParameter { name: "path".to_string(), param_type: NailDataTypeDescriptor::String, pass_by_reference: false },
         ],
-        return_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)))),
 
         diverging: false,
-        description: "The named segments a route pattern binds, so `/dictionary/:word` against `/dictionary/cat` gives {word: cat}. Empty when the pattern does not match.",
-        example: "params:h<s,s> = http_path_params(`/dictionary/:word`, request.path);",
+        description: "The named segments a route pattern binds, so `/dictionary/:word` against `/dictionary/cat` gives {word: cat}. A path the pattern does not match is an error, since a pattern that binds nothing also gives an empty map.",
+        example: "request_path:s = `/dictionary/cat`;\nparams:h<s,s> = danger(http_path_params(`/dictionary/:word`, request_path));",
     });
 
 m.insert("http_request", StdlibFunction {
@@ -100,7 +100,7 @@ m.insert("http_request", StdlibFunction {
 
         diverging: false,
         description: "Makes an HTTP request (GET, POST, PUT, DELETE, or PATCH) and returns the response status and body.",
-        example: "response:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://example.com`, headers, ``));",
+        example: "headers:h<s,s> = hashmap_new();\nhashmap_set(headers, `accept`, `application/json`);\nresponse:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://example.com`, headers, ``));",
     });
 
     m.insert("http_part_text", StdlibFunction {
@@ -150,7 +150,7 @@ m.insert("http_request", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("HTTP_Response".to_string()))),
         diverging: false,
         description: "Sends a multipart/form-data request, the encoding file uploads use. Takes Post, Put or Patch, and sets Content-Type itself from the body's boundary, so headers must not carry one.",
-        example: "response:HTTP_Response = danger(http_request_multipart(HTTP_Method::Post, `https://api.example.com/files`, headers, parts));",
+        example: "headers:h<s,s> = hashmap_new();\nhashmap_set(headers, `accept`, `application/json`);\nparts:a:HTTP_Part = [HTTP_Part { name = `file`, value = ``, file_path = `report.pdf`, file_name = `report.pdf`, content_type = `application/pdf` }];\nresponse:HTTP_Response = danger(http_request_multipart(HTTP_Method::Post, `https://api.example.com/files`, headers, parts));",
     });
 
     m.insert("http_default_retry", StdlibFunction {
@@ -182,7 +182,7 @@ m.insert("http_request", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("HTTP_Response".to_string()))),
         diverging: false,
         description: "Makes an HTTP request, sending it again while it fails in a way that might not fail next time: no answer at all, or a 408, 429, 500, 502, 503 or 504. Waits longer between attempts each time, honours a Retry-After header, and returns the last response whatever its status. The request is sent again unchanged, so an API that must not act twice wants an idempotency key in the headers.",
-        example: "response:HTTP_Response = danger(http_request_retry(HTTP_Method::Get, url, headers, ``, http_default_retry()));",
+        example: "headers:h<s,s> = hashmap_new();\nhashmap_set(headers, `accept`, `application/json`);\nurl:s = `https://example.com`;\nresponse:HTTP_Response = danger(http_request_retry(HTTP_Method::Get, url, headers, ``, http_default_retry()));",
     });
 
     m.insert("http_default_cookie", StdlibFunction {
@@ -198,7 +198,7 @@ m.insert("http_request", StdlibFunction {
         return_type: NailDataTypeDescriptor::Struct("HTTP_Cookie".to_string()),
         diverging: false,
         description: "A cookie with the safe defaults filled in: site-wide path, session lifetime, HttpOnly, Secure, SameSite=Lax. Change the fields that need changing.",
-        example: "cookie:HTTP_Cookie = http_default_cookie(`sid`, session_id);",
+        example: "session_id:s = `abc123`;\ncookie:HTTP_Cookie = http_default_cookie(`sid`, session_id);",
     });
 
     m.insert("http_build_cookie", StdlibFunction {
@@ -211,7 +211,7 @@ m.insert("http_request", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
         diverging: false,
         description: "Builds the Set-Cookie header value for a cookie. Errors on a name, value or SameSite setting a browser would reject.",
-        example: "header:s = danger(http_build_cookie(cookie));",
+        example: "cookie:HTTP_Cookie = http_default_cookie(`sid`, `abc123`);\nheader:s = danger(http_build_cookie(cookie));",
     });
 
     m.insert("http_parse_cookies", StdlibFunction {
@@ -224,7 +224,7 @@ m.insert("http_request", StdlibFunction {
         return_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)),
         diverging: false,
         description: "Parses the browser's Cookie header, which holds every cookie for the site at once, into a hashmap of name to value.",
-        example: "cookies:h<s,s> = http_parse_cookies(raw_cookie_header);",
+        example: "raw_cookie_header:s = `sid=abc123; theme=dark`;\ncookies:h<s,s> = http_parse_cookies(raw_cookie_header);",
     });
 
     m.insert("http_default_config", StdlibFunction {
@@ -250,7 +250,7 @@ m.insert("http_request", StdlibFunction {
         return_type: nail_type!(((h s s)!e)),
         diverging: false,
         description: "Takes a multipart/form-data body apart: file parts are written into the directory and text parts come back as values, in one hashmap where `name` is a value or a written path, `name.filename` is the cleaned-up name the client gave, and `name.type` is the declared content type. Read in blocks, so a large upload costs no more memory than a small one.",
-        example: "fields:h<s,s> = danger(http_multipart_extract(request.body_path, danger(hashmap_get(request.headers, `content-type`)), `uploads`));",
+        example: "body_path:s = `uploads/incoming.part`;\ncontent_type:s = `multipart/form-data; boundary=----abc`;\nfields:h<s,s> = danger(http_multipart_extract(body_path, content_type, `uploads`));",
     });
 
     m.insert("http_server_realtime", StdlibFunction {
@@ -263,13 +263,13 @@ m.insert("http_request", StdlibFunction {
         return_type: NailDataTypeDescriptor::Void,
         diverging: false,
         description: "http_server with a live endpoint beside the ordinary routes: a GET to live_path is a server-sent-event stream of everything http_live_send broadcasts, a websocket upgrade on the same path joins the same channel, and each text frame a client sends is answered by the program's handle_message function. ?channel=name picks the channel.",
-        example: "http_server_realtime(8080, config, `/live`);",
+        example: "f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {\n    r HTTP_Response { status = 200, body = `hello`, content_type = `text/html`, headers = hashmap_new() };\n}\n\nf handle_message(message:s, state:h<s,s>):s {\n    r string_concat([`you said: `, message]);\n}\n\nconfig:HTTP_Config = HTTP_Config {\n    static_mounts = [],\n    max_body_bytes = 0,\n    timeout_seconds = 0,\n    state = hashmap_new(),\n    cors_origins = [],\n    security_headers = true,\n    rate_limit_per_minute = 0,\n    rate_limit_message = ``\n};\nhttp_server_realtime(8080, config, `/live`);",
     });
 
     simple_fns! { m, Http:
         "http_live_send" [Tokio] => "std_lib::http::http_live_send", (channel: s, message: s) -> i,
             "Sends a message to every SSE stream and websocket subscribed to the channel, returning how many there were. Nobody listening is 0, not an error.",
-            "heard_by:i = http_live_send(`chat`, rendered_message);";
+            "rendered_message:s = `<li>Ada: hello</li>`;\nheard_by:i = http_live_send(`chat`, rendered_message);";
         "http_live_count" [Tokio] => "std_lib::http::http_live_count", (channel: s) -> i,
             "How many live subscribers a channel has right now.",
             "watching:i = http_live_count(`chat`);";
@@ -299,7 +299,7 @@ m.insert("http_request", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("HTTP_Events".to_string()))),
         diverging: false,
         description: "Opens a server-sent-events stream and holds it open - the streaming shape every model API answers with, where the body arrives a piece at a time. The headers are where an API key goes. A status that is not a success is an error rather than an empty stream.",
-        example: "stream:HTTP_Events = danger(http_sse_connect(`https://api.example.com/stream`, headers));",
+        example: "headers:h<s,s> = hashmap_new();\nhashmap_set(headers, `accept`, `application/json`);\nstream:HTTP_Events = danger(http_sse_connect(`https://api.example.com/stream`, headers));",
     });
 
     m.insert("http_sse_next", StdlibFunction {
@@ -312,7 +312,7 @@ m.insert("http_request", StdlibFunction {
         return_type: nail_type!((s!e)),
         diverging: false,
         description: "The data of the next event, waiting up to the timeout or forever when the timeout is 0. Comments and event names are skipped, and an event written over several data lines comes back as one string. The end of the stream is an error, so a loop reading until it fails is the shape that works.",
-        example: "piece:s = danger(http_sse_next(stream, 30000));",
+        example: "headers:h<s,s> = hashmap_new();\nhashmap_set(headers, `accept`, `application/json`);\nstream:HTTP_Events = danger(http_sse_connect(`https://api.example.com/stream`, headers));\npiece:s = danger(http_sse_next(stream, 30000));",
     });
 
     m.insert("http_sse_close", StdlibFunction {
@@ -325,7 +325,7 @@ m.insert("http_request", StdlibFunction {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Closes the stream and forgets the handle. Closing twice is not an error.",
-        example: "danger(http_sse_close(stream));",
+        example: "headers:h<s,s> = hashmap_new();\nhashmap_set(headers, `accept`, `application/json`);\nstream:HTTP_Events = danger(http_sse_connect(`https://api.example.com/stream`, headers));\ndanger(http_sse_close(stream));",
     });
 
     m.insert("http_ws_connect", StdlibFunction {
@@ -351,7 +351,7 @@ m.insert("http_request", StdlibFunction {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Sends one text frame.",
-        example: "danger(http_ws_send(feed, subscribe_message));",
+        example: "feed:HTTP_Websocket = danger(http_ws_connect(`wss://api.example.com/feed`));\nsubscribe_message:s = `{\"subscribe\":\"prices\"}`;\ndanger(http_ws_send(feed, subscribe_message));",
     });
 
     m.insert("http_ws_receive", StdlibFunction {
@@ -364,7 +364,7 @@ m.insert("http_request", StdlibFunction {
         return_type: nail_type!((s!e)),
         diverging: false,
         description: "The next text frame the other side sends. Waits up to the timeout, or forever when the timeout is 0. Pings are answered quietly. A closed connection is an error and forgets the handle.",
-        example: "update:s = danger(http_ws_receive(feed, 30000));",
+        example: "feed:HTTP_Websocket = danger(http_ws_connect(`wss://api.example.com/feed`));\nupdate:s = danger(http_ws_receive(feed, 30000));",
     });
 
     m.insert("http_ws_close", StdlibFunction {
@@ -377,6 +377,6 @@ m.insert("http_request", StdlibFunction {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Says goodbye properly and forgets the handle. Closing twice is not an error.",
-        example: "danger(http_ws_close(feed));",
+        example: "feed:HTTP_Websocket = danger(http_ws_connect(`wss://api.example.com/feed`));\ndanger(http_ws_close(feed));",
     });
 }

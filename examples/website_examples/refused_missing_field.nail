@@ -1,5 +1,6 @@
 nail latest
 // A Point needs both coordinates, and this literal hopes nobody notices.
+// Nail should FAIL type checking here, which is the point of the page.
 struct Point {
     x_pos:i,
     y_pos:i

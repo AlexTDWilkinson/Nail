@@ -8,64 +8,64 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Json:
         "json_get_string" [SerdeJson] => "std_lib::json::get_string", (json: s, path: s) -> (s!e),
             "Returns the text at a dotted path like user.name, where a number in the path indexes a list. A number or boolean there comes back as it was written. Errors if the path is not there.",
-            "name:s = danger(json_get_string(body, `user.name`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nname:s = danger(json_get_string(body, `user.name`));";
         "json_get_int" [SerdeJson] => "std_lib::json::get_int", (json: s, path: s) -> (i!e),
             "Returns the whole number at a dotted path. A fraction is an error rather than a silent rounding.",
-            "age:i = danger(json_get_int(body, `user.age`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nage:i = danger(json_get_int(body, `user.age`));";
         "json_get_float" [SerdeJson] => "std_lib::json::get_float", (json: s, path: s) -> (f!e),
             "Returns the number at a dotted path, whole or fractional.",
-            "score:f = danger(json_get_float(body, `user.score`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nscore:f = danger(json_get_float(body, `user.score`));";
         "json_get_bool" [SerdeJson] => "std_lib::json::get_bool", (json: s, path: s) -> (b!e),
             "Returns the true or false at a dotted path. The strings true and false count too.",
-            "active:b = danger(json_get_bool(body, `user.active`));";
-        "json_has" [SerdeJson] => "std_lib::json::has", (json: s, path: s) -> b,
-            "Whether there is anything at a dotted path. A field that is present but null counts as missing, and text that is not JSON is simply false.",
-            "present:b = json_has(body, `user.email`);";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nactive:b = danger(json_get_bool(body, `user.active`));";
+        "json_has" [SerdeJson] => "std_lib::json::has", (json: s, path: s) -> (b!e),
+            "Whether there is anything at a dotted path. A field that is present but null counts as missing, and a path that reaches nothing is false. Text that is not JSON is an error, because then there is no document to ask about.",
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\npresent:b = danger(json_has(body, `user.email`));";
         "json_array_length" [SerdeJson] => "std_lib::json::array_length", (json: s, path: s) -> (i!e),
             "Returns how many items the list at a dotted path holds - the number to count up to when reading them one at a time. An empty path asks about the whole document.",
-            "total:i = danger(json_array_length(body, `items`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\ntotal:i = danger(json_array_length(body, `items`));";
         "json_pretty" [SerdeJson] => "std_lib::json::pretty", (json: s) -> (s!e),
             "Returns the same JSON indented, for a file a person will read or a diff that shows which field changed.",
-            "readable:s = danger(json_pretty(body));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nreadable:s = danger(json_pretty(body));";
         "json_compact" [SerdeJson] => "std_lib::json::compact", (json: s) -> (s!e),
             "Returns the same JSON with every space between values taken out - the form to send or store.",
-            "wire:s = danger(json_compact(body));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nwire:s = danger(json_compact(body));";
         "json_merge" [SerdeJson] => "std_lib::json::merge", (base: s, overlay: s) -> (s!e),
             "Returns two objects folded into one - the overlay's fields win, nested objects merge field by field, and lists and plain values are replaced whole. Errors unless both are objects.",
-            "settings:s = danger(json_merge(defaults, overrides));";
+            "defaults:s = `{\"retries\":3,\"quiet\":false}`;\noverrides:s = `{\"retries\":5}`;\nsettings:s = danger(json_merge(defaults, overrides));";
         "json_flatten" [SerdeJson] => "std_lib::json::flatten", (json: s) -> (s!e),
             "Returns a nested object pressed into one flat object whose keys are dotted paths, so {\"a\":{\"b\":1}} becomes {\"a.b\":1} and a list contributes numbered segments like items.0. Errors if the document is not an object.",
-            "flat:s = danger(json_flatten(body));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nflat:s = danger(json_flatten(body));";
         "json_keys" [SerdeJson] => "std_lib::json::keys", (json: s) -> ([s]!e),
             "Returns the top-level field names of an object, sorted - for looking over an answer whose shape nobody wrote down.",
-            "fields:a:s = danger(json_keys(body));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nfields:a:s = danger(json_keys(body));";
         "json_set" [SerdeJson] => "std_lib::json::set", (json: s, path: s, value_json: s) -> (s!e),
             "Returns the document with the field at a dotted path set. The value is itself JSON, so `\"hi\"` sets text and 5 sets a number. Missing objects along the path are created. Walking through a plain value is an error.",
-            "changed:s = danger(json_set(body, `user.name`, `\"Ada\"`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nchanged:s = danger(json_set(body, `user.name`, `\"Grace\"`));";
         "json_remove" [SerdeJson] => "std_lib::json::remove", (json: s, path: s) -> (s!e),
             "Returns the document with the field at a dotted path dropped. Removing a field that was never there is fine.",
-            "trimmed:s = danger(json_remove(body, `user.password`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"password\":\"hunter2\"}}`;\ntrimmed:s = danger(json_remove(body, `user.password`));";
         "json_type_of" [SerdeJson] => "std_lib::json::type_of", (json: s, path: s) -> (s!e),
             "Returns what kind of value sits at a dotted path - object, array, string, number, boolean or null. An empty path asks about the whole document. Errors if the path is not there.",
-            "kind:s = danger(json_type_of(body, `user.id`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nkind:s = danger(json_type_of(body, `user.id`));";
         "json_get_array_strings" [SerdeJson] => "std_lib::json::get_array_strings", (json: s, path: s) -> ([s]!e),
             "Returns the list of strings at a dotted path. Every item must be text - a list that mixes in numbers or objects is an error naming the first item that is not.",
-            "tags:a:s = danger(json_get_array_strings(body, `user.tags`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\ntags:a:s = danger(json_get_array_strings(body, `user.tags`));";
         "json_get_array_ints" [SerdeJson] => "std_lib::json::get_array_ints", (json: s, path: s) -> ([i]!e),
             "Returns the list of whole numbers at a dotted path. Each item is read the way json_get_int reads one: a number written as text is accepted, and a fraction is an error rather than a silent rounding.",
-            "ids:a:i = danger(json_get_array_ints(body, `order.item_ids`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nids:a:i = danger(json_get_array_ints(body, `order.item_ids`));";
         "json_get_array_floats" [SerdeJson] => "std_lib::json::get_array_floats", (json: s, path: s) -> ([f]!e),
             "Returns the list of numbers at a dotted path, whole or fractional. Each item is read the way json_get_float reads one.",
-            "prices:a:f = danger(json_get_array_floats(body, `cart.prices`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nprices:a:f = danger(json_get_array_floats(body, `cart.prices`));";
         "json_get_array_bools" [SerdeJson] => "std_lib::json::get_array_bools", (json: s, path: s) -> ([b]!e),
             "Returns the list of true-or-false values at a dotted path. Each item is read the way json_get_bool reads one.",
-            "flags:a:b = danger(json_get_array_bools(body, `features.enabled`));";
-        "json_equal" [SerdeJson] => "std_lib::json::equal", (first: s, second: s) -> b,
-            "Whether two pieces of JSON say the same thing, however they are written - spacing, indentation and the order of an object's fields do not count. Text that does not parse is equal to nothing.",
-            "matches:b = json_equal(expected, actual);";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nflags:a:b = danger(json_get_array_bools(body, `features.enabled`));";
+        "json_equal" [SerdeJson] => "std_lib::json::equal", (first: s, second: s) -> (b!e),
+            "Whether two pieces of JSON say the same thing, however they are written - spacing, indentation and the order of an object's fields do not count. Text that does not parse is an error naming which side it was, since a typo in one of them is not a difference between them.",
+            "expected:s = `{\"name\":\"Ada\"}`;\nactual:s = `{ \"name\": \"Ada\" }`;\nmatches:b = danger(json_equal(expected, actual));";
         "json_count" [SerdeJson] => "std_lib::json::count", (json: s, path: s) -> (i!e),
             "Returns how many entries the object or list at a dotted path holds - fields for an object, items for a list. An empty path asks about the whole document.",
-            "fields:i = danger(json_count(body, `user`));";
+            "body:s = `{\"user\":{\"name\":\"Ada\",\"age\":36,\"active\":true,\"score\":9.5,\"id\":42,\"email\":\"ada@example.com\",\"tags\":[\"founder\"]},\"items\":[1,2],\"order\":{\"item_ids\":[7,9]},\"cart\":{\"prices\":[9.99,4.5]},\"features\":{\"enabled\":[true,false]}}`;\nfields:i = danger(json_count(body, `user`));";
     }
 
     m.insert("json_serialize", StdlibFunction {
