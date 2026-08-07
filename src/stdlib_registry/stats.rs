@@ -111,7 +111,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "standing:f = danger(stats_percentile_rank(scores, 88.0));";
         "stats_quartiles" => "std_lib::stats::quartiles", (values: (&[f])) -> ([f]!e),
             "Returns the 25th, 50th and 75th percentiles as a three-value array, the box of a boxplot in one call. Errors on an empty array.",
-            "spread:a:f = danger(stats_quartiles(latencies));";
+            "latencies:a:f = [12.0, 15.0, 19.0, 22.0, 31.0];\nspread:a:f = danger(stats_quartiles(latencies));";
         "stats_normal_cdf" => "std_lib::stats::normal_cdf", (value: f, mean: f, stddev: f) -> (f!e),
             "Returns the probability that a normal draw lands at or below the value. Errors unless the standard deviation is positive.",
             "share:f = danger(stats_normal_cdf(1.96, 0.0, 1.0));";

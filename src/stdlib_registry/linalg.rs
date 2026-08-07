@@ -92,7 +92,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "turned:LINALG_Vec2 = linalg_vec2_rotate(direction, math_to_radians(90.0));";
         "linalg_vec2_lerp" => "std_lib::linalg::vec2_lerp", (start: Vec2, end: Vec2, t: f) -> Vec2,
             "The point part of the way from start to end, with t clamped to 0.0..1.0.",
-            "halfway:LINALG_Vec2 = linalg_vec2_lerp(start, finish, 0.5);";
+            "start:LINALG_Vec2 = linalg_vec2(0.0, 0.0);\nfinish:LINALG_Vec2 = linalg_vec2(10.0, 4.0);\nhalfway:LINALG_Vec2 = linalg_vec2_lerp(start, finish, 0.5);";
         "linalg_vec2_min" => "std_lib::linalg::vec2_min", (first: Vec2, second: Vec2) -> Vec2,
             "The smaller of each component - one corner of the box holding both points.",
             "top_left:LINALG_Vec2 = linalg_vec2_min(first_corner, second_corner);";
@@ -163,7 +163,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "heading:LINALG_Vec3 = danger(linalg_vec3_normalize(velocity));";
         "linalg_vec3_lerp" => "std_lib::linalg::vec3_lerp", (start: Vec3, end: Vec3, t: f) -> Vec3,
             "The point part of the way from start to end, with t clamped to 0.0..1.0.",
-            "halfway:LINALG_Vec3 = linalg_vec3_lerp(start, finish, 0.5);";
+            "start:LINALG_Vec3 = linalg_vec3(0.0, 0.0, 0.0);\nfinish:LINALG_Vec3 = linalg_vec3(10.0, 4.0, 6.0);\nhalfway:LINALG_Vec3 = linalg_vec3_lerp(start, finish, 0.5);";
         "linalg_vec3_min" => "std_lib::linalg::vec3_min", (first: Vec3, second: Vec3) -> Vec3,
             "The smaller of each component - one corner of the box holding both points.",
             "low_corner:LINALG_Vec3 = linalg_vec3_min(first_corner, second_corner);";

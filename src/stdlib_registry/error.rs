@@ -7,7 +7,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Error:
         "safe" => "std_lib::error::safe", (value: (T!e), handler: (fn(e) -> T)) -> T,
             "Unwraps a result, calling the error handler to produce a fallback value on failure.",
-            "count:i = safe(int_from(input), zero_when_unreadable);";
+            "f zero_when_unreadable(err:e):i { r 0; }\n\ntyped:s = `not a number`;\ncount:i = safe(int_from(typed), zero_when_unreadable);";
         "danger" => "std_lib::error::danger", (value: (T!e)) -> T,
             "Unwraps a result, crashing the program if it is an error. Intended as a temporary escape hatch.",
             "content:s = danger(fs_read(`config.txt`));";

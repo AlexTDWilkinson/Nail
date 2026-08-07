@@ -27,7 +27,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "flipped:a:i = array_reverse(numbers);";
         "array_concat" => "std_lib::array::concat", (first: [T], second: [T]) -> [T],
             "Returns a new array containing all elements of the first array followed by the second.",
-            "joined:a:i = array_concat(evens, odds);";
+            "evens:a:i = [2, 4];\nodds:a:i = [1, 3];\njoined:a:i = array_concat(evens, odds);";
         "array_get" => "std_lib::array::get", (array: (&[T]), index: i) -> (T!e),
             "Returns the element at the given index, or an error if the index is out of bounds.",
             "item:i = danger(array_get(numbers, 0));";
