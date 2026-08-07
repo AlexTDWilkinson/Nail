@@ -754,12 +754,25 @@ mod key_function_tests {
 ///
 /// Every one of these takes the elements and their keys as two arrays of the same
 /// length, in the same order.
+/// Sorting is STABLE, and that is a promise the language makes rather than an
+/// accident of which sort is used here. Elements whose keys are equal come out
+/// in the order they went in, and that is what lets a program sort on more than
+/// one key without any two-key sort function existing: sort by the least
+/// important key first and the most important key last, and each pass leaves
+/// the previous order standing wherever its own keys tie.
+///
+/// So `sort_by` must never become `sort_unstable_by`, however tempting the
+/// speed is. `stability_is_what_lets_sorts_be_stacked` in this file's tests
+/// fails if it does.
 pub fn sort_by_keys<T: Clone, K: PartialOrd>(arr: Vec<T>, keys: Vec<K>) -> Vec<T> {
     let mut keyed: Vec<(K, T)> = keys.into_iter().zip(arr.into_iter()).collect();
     keyed.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(std::cmp::Ordering::Equal));
     return keyed.into_iter().map(|(_, item)| item).collect();
 }
 
+/// The same order upside down, and stable in the same way: equal keys keep the
+/// order they came in, they are not reversed along with everything else. That
+/// is what lets one key point down and another up in a stacked sort.
 pub fn sort_by_keys_descending<T: Clone, K: PartialOrd>(arr: Vec<T>, keys: Vec<K>) -> Vec<T> {
     let mut keyed: Vec<(K, T)> = keys.into_iter().zip(arr.into_iter()).collect();
     keyed.sort_by(|left, right| right.0.partial_cmp(&left.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -818,6 +831,58 @@ pub fn group_by_keys<T: Clone, K: std::hash::Hash + Eq + Clone>(arr: Vec<T>, key
     return buckets;
 }
 
+/// The front of the array, up to the first element the test said no to. The
+/// tests have already been run - `keep` holds one answer per element - so this
+/// only has to find where the run of yeses ends.
+///
+/// Different from filter, which takes every element that passes wherever it
+/// sits. This stops at the first failure and ignores everything after it, which
+/// is what reading a header off the top of a file wants.
+pub fn take_while_values<T: Clone>(arr: Vec<T>, keep: Vec<bool>) -> Vec<T> {
+    let stop = keep.iter().position(|answer| !answer).unwrap_or(arr.len());
+    return arr.into_iter().take(stop).collect();
+}
+
+/// The rest of the array, from the first element the test said no to onwards.
+/// The other half of take_while: the two together put the array back.
+pub fn skip_while_values<T: Clone>(arr: Vec<T>, skip: Vec<bool>) -> Vec<T> {
+    let start = skip.iter().position(|answer| !answer).unwrap_or(arr.len());
+    return arr.into_iter().skip(start).collect();
+}
+
+/// The array with later elements dropped when their key has been seen before,
+/// keeping the first of each and the order they came in. Where
+/// `array_deduplicate` compares whole elements, this compares one thing about
+/// them - the same address, the same id - which is what deduplicating records
+/// actually means.
+pub fn deduplicate_by_keys<T, K: std::hash::Hash + Eq>(arr: Vec<T>, keys: Vec<K>) -> Vec<T> {
+    let mut seen: std::collections::HashSet<K> = std::collections::HashSet::new();
+    let mut kept = Vec::new();
+    for (item, key) in arr.into_iter().zip(keys.into_iter()) {
+        if seen.insert(key) {
+            kept.push(item);
+        }
+    }
+    return kept;
+}
+
+/// Two arrays walked in step, with a function of the program's saying what each
+/// pair becomes. The combining has already happened by the time this is called -
+/// `combined` holds one result per pair - so all that is left is the length
+/// check, which is here rather than in the emitter because refusing uneven
+/// lengths is this function's rule and not code generation's.
+///
+/// Uneven lengths are an error rather than a silent stop at the shorter one, the
+/// same choice `hashmap_from_arrays` makes. Two lists that were meant to line up
+/// and do not is a bug worth hearing about, and a caller who really wants the
+/// common prefix can say so with `array_take`.
+pub fn zip_with_values<A, B, C>(first: Vec<A>, second: Vec<B>, combined: Vec<C>) -> Result<Vec<C>, String> {
+    if first.len() != second.len() {
+        return Err(format!("array_zip_with: {} and {} items, and they must be the same length", first.len(), second.len()));
+    }
+    return Ok(combined);
+}
+
 pub fn count_by_keys<T, K: std::hash::Hash + Eq + Clone>(_arr: Vec<T>, keys: Vec<K>) -> dashmap::DashMap<K, i64> {
     let counts: dashmap::DashMap<K, i64> = dashmap::DashMap::new();
     for key in keys.into_iter() {
@@ -829,6 +894,60 @@ pub fn count_by_keys<T, K: std::hash::Hash + Eq + Clone>(_arr: Vec<T>, keys: Vec
 #[cfg(test)]
 mod keyed_tests {
     use super::*;
+
+    #[test]
+    fn taking_and_skipping_while_split_the_array_at_the_first_no() {
+        let lines = vec!["title".to_string(), "author".to_string(), "".to_string(), "body".to_string(), "more".to_string()];
+        let not_blank: Vec<bool> = lines.iter().map(|line| !line.is_empty()).collect();
+
+        assert_eq!(take_while_values(lines.clone(), not_blank.clone()), vec!["title".to_string(), "author".to_string()]);
+        assert_eq!(skip_while_values(lines.clone(), not_blank.clone()), vec!["".to_string(), "body".to_string(), "more".to_string()]);
+        assert_eq!(take_while_values(lines.clone(), not_blank.clone()).len() + skip_while_values(lines.clone(), not_blank).len(), lines.len(), "the two halves put the array back");
+
+        // Unlike filter, everything after the first no is ignored however it tests.
+        assert_eq!(take_while_values(vec![1, 2, 3, 4], vec![true, false, true, true]), vec![1]);
+        // Nothing says no, and nothing says yes.
+        assert_eq!(take_while_values(vec![1, 2], vec![true, true]), vec![1, 2]);
+        assert_eq!(skip_while_values(vec![1, 2], vec![true, true]), Vec::<i32>::new());
+        assert_eq!(take_while_values(vec![1, 2], vec![false, false]), Vec::<i32>::new());
+        assert_eq!(skip_while_values(vec![1, 2], vec![false, false]), vec![1, 2]);
+        assert_eq!(take_while_values(Vec::<i32>::new(), Vec::new()), Vec::<i32>::new());
+    }
+
+    #[test]
+    fn deduplicating_by_a_key_keeps_the_first_of_each() {
+        let users = vec!["ada@one", "bob@two", "ada@one", "cat@three", "bob@two"];
+        let keys: Vec<String> = users.iter().map(|user| user.to_string()).collect();
+        assert_eq!(deduplicate_by_keys(users, keys), vec!["ada@one", "bob@two", "cat@three"], "the first of each key survives, in the order they came in");
+
+        // The key is one thing about the element, not the whole element.
+        let records = vec![("ada", 1), ("ada", 2), ("bob", 3)];
+        let names: Vec<&str> = records.iter().map(|record| record.0).collect();
+        assert_eq!(deduplicate_by_keys(records, names), vec![("ada", 1), ("bob", 3)]);
+
+        assert_eq!(deduplicate_by_keys(Vec::<i32>::new(), Vec::<i64>::new()), Vec::<i32>::new());
+    }
+
+    /// The guarantee multi-key sorting rests on. If someone swaps `sort_by`
+    /// for `sort_unstable_by` in this file, every stacked sort in every Nail
+    /// program starts returning a different order for tied keys, and this is
+    /// the test that says so.
+    #[test]
+    fn stability_is_what_lets_sorts_be_stacked() {
+        // Same key for everything, so a stable sort must change nothing at all.
+        let entries = vec!["first".to_string(), "second".to_string(), "third".to_string(), "fourth".to_string()];
+        let all_tied = vec![7, 7, 7, 7];
+        assert_eq!(sort_by_keys(entries.clone(), all_tied.clone()), entries, "equal keys keep the order they came in");
+        assert_eq!(sort_by_keys_descending(entries.clone(), all_tied), entries, "descending reverses the order of the keys, not of the ties");
+
+        // Two keys, the less important one sorted first. Posts are (author, day).
+        let posts = vec![("bob", 2), ("ada", 3), ("bob", 1), ("ada", 1)];
+        let days: Vec<i64> = posts.iter().map(|post| post.1).collect();
+        let newest_first = sort_by_keys_descending(posts, days);
+        let authors: Vec<&str> = newest_first.iter().map(|post| post.0).collect();
+        let by_author_then_newest = sort_by_keys(newest_first, authors);
+        assert_eq!(by_author_then_newest, vec![("ada", 3), ("ada", 1), ("bob", 2), ("bob", 1)], "each author's posts stay newest first inside the author sort");
+    }
 
     #[test]
     fn sorting_follows_the_keys_it_was_given() {

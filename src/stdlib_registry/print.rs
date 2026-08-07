@@ -16,8 +16,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "print_debug" => "std_lib::print::print_debug", (value: T) -> v,
             "Prints a value in expanded debug format, useful for structs and arrays.",
             "print_debug(person);";
-        "print_error" => "eprintln!", () -> v,
-            "Prints a value to stderr followed by a newline.",
+        "print_error" => "std_lib::print::print_error", (message: T) -> v,
+            "Prints a value to stderr followed by a newline, so a note about the run does not land in the answer the run produced. For anything with a level or a timestamp, use the log module instead.",
             "print_error(`warning: low disk space`);";
     }
 }

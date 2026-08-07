@@ -80,20 +80,45 @@ fn emit_line(output: &str) {
     }
 }
 
+/// Where a line of error output goes. Standard error on a real machine, and
+/// the browser console's error channel in wasm, for the same reason emit_line
+/// has to ask: a wasm program has no standard error either.
+fn emit_error_line(output: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::console::error_1(&output.into());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        eprintln!("{}", output);
+    }
+}
+
+/// A value as a person should read it. Strings arrive Debug-escaped in quotes,
+/// so the quotes come off and the escaping is undone, and everything else keeps
+/// its Debug form.
+fn readable<T: Debug>(value: T) -> String {
+    let formatted = format!("{:?}", value);
+    if formatted.starts_with('"') && formatted.ends_with('"') && formatted.len() > 1 {
+        return unescape_debug_string(&formatted[1..formatted.len() - 1]);
+    }
+    return formatted.replace("\\n", "\n");
+}
+
 /// Print with newline (aliased as "print" for convenience)
 pub fn print<T>(value: T)
 where
     T: Debug
 {
-    let formatted = format!("{:?}", value);
-    // Strings arrive Debug-escaped in quotes; strip the quotes and undo the
-    // escaping so the real text is printed
-    let output = if formatted.starts_with('"') && formatted.ends_with('"') && formatted.len() > 1 {
-        unescape_debug_string(&formatted[1..formatted.len()-1])
-    } else {
-        formatted.replace("\\n", "\n")
-    };
-    emit_line(&output);
+    emit_line(&readable(value));
+}
+
+/// The same as print, but to standard error. For a note about the run rather
+/// than the answer the run produced, so whatever is on standard output stays
+/// pipeable. For anything with a level or a timestamp, reach for the log
+/// module instead.
+pub fn print_error<T: Debug>(value: T) {
+    emit_error_line(&readable(value));
 }
 
 /// Print without newline

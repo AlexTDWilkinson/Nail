@@ -32,9 +32,9 @@ Generated files to watch for and delete:
 This is non-negotiable to maintain language stability and prevent regressions.
 
 A clean run currently reports 165/165 lexer/parser, 165/165 type checker and
-149/149 transpiler, with zero failures. `cargo test --lib` reports 1251 passing
-(1269 with `--features "game audio"`), `cargo test --bin nail` reports 1232
-(the library's tests plus the editor's own), and `./test_e2e.sh` reports 365
+149/149 transpiler, with zero failures. `cargo test --lib` reports 1273 passing
+(1291 with `--features "game audio"`), `cargo test --bin nail` reports 1254
+(the library's tests plus the editor's own), and `./test_e2e.sh` reports 375
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 

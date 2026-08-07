@@ -333,10 +333,11 @@ impl Transpiler {
                         _ => true,
                     }
                 } else if let Some(stdlib_fn) = stdlib_registry::get_stdlib_function(name) {
-                    // A key function is run before the call, in a loop this
-                    // emits; if that function is async, so is the call.
-                    let key_is_async = stdlib_registry::precomputes_key_argument(name)
-                        && matches!(args.get(1), Some(ASTNode::Identifier { name: key, .. }) if !pure.contains(key));
+                    // A callback is run before the call, in a loop this emits.
+                    // If any callback is async, so is the call.
+                    let key_is_async = stdlib_registry::precomputed_callbacks(name).is_some_and(|callbacks| {
+                        callbacks.iter().any(|callback| matches!(args.get(callback.position), Some(ASTNode::Identifier { name: callback_name, .. }) if !pure.contains(callback_name)))
+                    });
                     // A file fold is emitted as a loop that reads the file, so it
                     // is always awaited whatever its step function does.
                     let folds_a_file = stdlib_registry::file_fold(name).is_some();
@@ -2867,29 +2868,66 @@ impl Transpiler {
             }
         }
 
-        // A stdlib function that takes a key function gets the keys rather than
-        // the function: they are worked out here, in a loop that can await, so
-        // nothing downstream ever calls back into the program. The registry says
-        // which functions these are, so no name is baked in here.
-        if stdlib_registry::precomputes_key_argument(name) && args.len() == 2 {
-            if let (Some(stdlib_fn), ASTNode::Identifier { name: key_function, .. }) = (stdlib_registry::get_stdlib_function(name), &args[1]) {
-                self.used_stdlib_functions.insert(name.to_string());
-                let key_is_async = !self.pure_functions.contains(key_function);
+        // A stdlib function that takes a Nail function gets that function's
+        // results rather than the function itself: they are worked out here, in
+        // a loop that can await, so nothing downstream ever calls back into the
+        // program. The registry says which functions these are and which arrays
+        // each callback walks, so no name is baked in here.
+        if let Some(callbacks) = stdlib_registry::precomputed_callbacks(name) {
+            if let Some(stdlib_fn) = stdlib_registry::get_stdlib_function(name) {
+                let callback_names: Option<Vec<&String>> = callbacks
+                    .iter()
+                    .map(|callback| match args.get(callback.position) {
+                        Some(ASTNode::Identifier { name: function_name, .. }) => Some(function_name),
+                        _ => None,
+                    })
+                    .collect();
 
-                if add_indent {
-                    write!(output, "{}", self.indent())?;
+                if let Some(callback_names) = callback_names {
+                    self.used_stdlib_functions.insert(name.to_string());
+
+                    if add_indent {
+                        write!(output, "{}", self.indent())?;
+                    }
+                    write!(output, "{{ ")?;
+
+                    // Every argument that is not a callback becomes a local, in
+                    // order, so a callback can walk it and the call can take it.
+                    let value_positions: Vec<usize> = (0..args.len()).filter(|position| !callbacks.iter().any(|callback| callback.position == *position)).collect();
+                    for position in &value_positions {
+                        write!(output, "let nail_callback_value_{} = ", position)?;
+                        self.transpile_node_internal(&args[*position], output, false)?;
+                        write!(output, "; ")?;
+                    }
+
+                    for (index, (callback, callback_name)) in callbacks.iter().zip(callback_names.iter()).enumerate() {
+                        // Walking several arrays in step stops at the shortest,
+                        // and the implementation decides whether uneven lengths
+                        // are an error - that judgement is not the emitter's.
+                        let length = callback.over.iter().map(|position| format!("nail_callback_value_{}.len()", position)).collect::<Vec<String>>().join(".min(");
+                        let length = format!("{}{}", length, ")".repeat(callback.over.len() - 1));
+                        write!(output, "let nail_callback_count_{} = {}; ", index, length)?;
+                        write!(output, "let mut nail_callback_results_{} = Vec::with_capacity(nail_callback_count_{}); ", index, index)?;
+                        write!(output, "for nail_callback_index in 0..nail_callback_count_{} {{ nail_callback_results_{}.push({}(", index, index, callback_name)?;
+                        let arguments = callback.over.iter().map(|position| format!("nail_callback_value_{}[nail_callback_index].clone()", position)).collect::<Vec<String>>().join(", ");
+                        write!(output, "{})", arguments)?;
+                        if !self.pure_functions.contains(*callback_name) {
+                            write!(output, ".await")?;
+                        }
+                        write!(output, "); }} ")?;
+                    }
+
+                    let passed: Vec<String> = value_positions
+                        .iter()
+                        .map(|position| format!("nail_callback_value_{}", position))
+                        .chain((0..callbacks.len()).map(|index| format!("nail_callback_results_{}", index)))
+                        .collect();
+                    write!(output, "{}({}) }}", stdlib_fn.rust_path, passed.join(", "))?;
+                    if add_indent {
+                        writeln!(output, ";")?;
+                    }
+                    return Ok(());
                 }
-                write!(output, "{{ let nail_key_items = ")?;
-                self.transpile_node_internal(&args[0], output, false)?;
-                write!(output, "; let mut nail_keys = Vec::with_capacity(nail_key_items.len()); for nail_key_item in nail_key_items.iter() {{ nail_keys.push({}(nail_key_item.clone())", key_function)?;
-                if key_is_async {
-                    write!(output, ".await")?;
-                }
-                write!(output, "); }} {}(nail_key_items, nail_keys) }}", stdlib_fn.rust_path)?;
-                if add_indent {
-                    writeln!(output, ";")?;
-                }
-                return Ok(());
             }
         }
 

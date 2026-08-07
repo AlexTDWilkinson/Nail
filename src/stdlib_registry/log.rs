@@ -19,6 +19,9 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "log_set_json" => "std_lib::log::set_json", (enabled: b) -> v,
             "Switches log lines between a human-readable form and one JSON object per line, for the rest of the run.",
             "log_set_json(true);";
+        "log_set_file" => "std_lib::log::set_file", (path: s) -> (v!e),
+            "Sends log lines to a file instead of standard error, for the rest of the run. The file is added to rather than replaced. Errors if the file cannot be opened, which is better found here than by losing lines later.",
+            "danger(log_set_file(`/var/log/orders.log`));";
     }
 
     // log_set_level and log_with_fields take the LOG_Level enum, which needs a

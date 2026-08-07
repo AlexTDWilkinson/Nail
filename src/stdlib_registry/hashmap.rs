@@ -55,5 +55,32 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "hashmap_key_of" [DashMap] => "std_lib::hashmap::key_of", (map: (&(h K V)), value: (&V)) -> (K!e),
             "Returns a key holding the given value, or an error when none does - the lookup run backwards. With several such keys, which one comes back is undefined. Meant for values that appear once, the way an id does.",
             "name:s = danger(hashmap_key_of(user_ids, 42));";
+        "hashmap_sorted_keys" [DashMap] => "std_lib::hashmap::sorted_keys", (map: (&(h (K: i|s|b) V))) -> [K],
+            "Returns the keys in order. A hashmap has no order of its own and hashmap_keys can hand them back differently between runs, so this is the one to use anywhere the order is seen.",
+            "names:a:s = hashmap_sorted_keys(scores);";
+        "hashmap_keys_by_value" [DashMap] => "std_lib::hashmap::keys_by_value", (map: (&(h (K: i|s|b) (V: i|f|s)))) -> [K],
+            "Returns the keys ordered by the value each one holds, smallest first. Keys holding equal values come back in their own order, so two runs agree.",
+            "quietest:a:s = hashmap_keys_by_value(counts);";
+        "hashmap_keys_by_value_descending" [DashMap] => "std_lib::hashmap::keys_by_value_descending", (map: (&(h (K: i|s|b) (V: i|f|s)))) -> [K],
+            "Returns the keys ordered by the value each one holds, largest first. This with array_take is the top ten: count with hashmap_increment, order here, take the front.",
+            "top:a:s = array_take(hashmap_keys_by_value_descending(counts), 10);";
+        "hashmap_max_by_value" [DashMap] => "std_lib::hashmap::max_by_value", (map: (&(h (K: i|s|b) (V: i|f|s)))) -> (K!e),
+            "Returns the key holding the largest value, or an error when the hashmap is empty. Ties go to the first key in the keys' own order.",
+            "winner:s = danger(hashmap_max_by_value(votes));";
+        "hashmap_min_by_value" [DashMap] => "std_lib::hashmap::min_by_value", (map: (&(h (K: i|s|b) (V: i|f|s)))) -> (K!e),
+            "Returns the key holding the smallest value, or an error when the hashmap is empty. Ties go to the first key in the keys' own order.",
+            "cheapest:s = danger(hashmap_min_by_value(prices));";
+        "hashmap_sum_values" [DashMap] => "std_lib::hashmap::sum_values", (map: (&(h K (V: i|f)))) -> V,
+            "Returns the values added together. An empty hashmap totals zero, the way an empty array does.",
+            "total:i = hashmap_sum_values(counts);";
+        "hashmap_invert" [DashMap] => "std_lib::hashmap::invert", (map: (&(h K (V: i|s|b)))) -> (h V K),
+            "Returns the hashmap turned around, so what were the values are the keys. Where two keys held the same value only one survives, so this is for lookups that go both ways, a code and its name.",
+            "names:h<i,s> = hashmap_invert(codes);";
+        "hashmap_pick" [DashMap] => "std_lib::hashmap::pick", (map: (&(h K V)), keys: [K]) -> (h K V),
+            "Returns a new hashmap holding only the named keys. A name that is not in the hashmap is simply not in the answer rather than an error.",
+            "shown:h<s,s> = hashmap_pick(settings, public_names);";
+        "hashmap_omit" [DashMap] => "std_lib::hashmap::omit", (map: (&(h K V)), keys: [K]) -> (h K V),
+            "Returns a new hashmap holding everything except the named keys - the other half of hashmap_pick. Dropping a password or a token before something is logged is what this is for.",
+            "safe_fields:h<s,s> = hashmap_omit(fields, [`password`, `token`]);";
     }
 }

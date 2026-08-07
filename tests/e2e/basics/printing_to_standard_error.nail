@@ -1,0 +1,7 @@
+nail latest
+// E2E: print_error goes to standard error, so the answer on standard output
+// stays pipeable. Pinned by the .stdout and .stderr goldens side by side.
+print(`the answer`);
+print_error(`warning: low disk space`);
+print(`more answer`);
+print_error(42);

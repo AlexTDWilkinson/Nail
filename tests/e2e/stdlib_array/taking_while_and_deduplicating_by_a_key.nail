@@ -1,0 +1,28 @@
+nail latest
+// E2E: stopping at the first no, and deduplicating on one thing about an
+// element rather than the whole of it.
+struct User {
+    name:s,
+    email:s
+}
+
+f line_is_not_blank(line:s):b { r string_length(line) > 0; }
+f user_email(user:User):s { r user.email; }
+
+lines:a:s = [`title`, `author`, ``, `body`, `more`];
+print(array_join(array_take_while(lines, line_is_not_blank), `,`));
+print(array_join(array_skip_while(lines, line_is_not_blank), `,`));
+
+// Unlike filter, everything past the first no is ignored however it tests.
+mixed:a:s = [`one`, ``, `three`];
+print(array_join(array_take_while(mixed, line_is_not_blank), `,`));
+print(array_length(filter line in mixed { y line_is_not_blank(line); }));
+
+users:a:User = [
+    User { name = `Ada`, email = `ada@one` },
+    User { name = `Bob`, email = `bob@two` },
+    User { name = `Ada again`, email = `ada@one` }
+];
+one_each:a:User = array_deduplicate_by(users, user_email);
+print(array_length(one_each));
+print(array_join(map user in one_each { y user.name; }, `,`));

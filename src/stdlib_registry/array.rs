@@ -176,10 +176,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "Returns the index of the smallest element (the first one when tied). Errors if the array is empty.",
             "cheapest:i = danger(array_index_of_min(prices));";
         "array_sort_by" => "std_lib::array::sort_by_keys", (array: [T], key: (fn(T) -> K)) -> [T],
-            "Returns the array sorted by what the named key function returns for each element, smallest first. The key function must be a plain one - reading a field or doing arithmetic - not one that reads a file or makes a request.",
+            "Returns the array sorted by what the named key function returns for each element, smallest first. The sort is stable, so elements with equal keys keep the order they came in. That is how to sort on more than one key: sort by the least important key first and the most important key last.",
             "by_year:a:Book = array_sort_by(books, book_year);";
         "array_sort_by_descending" => "std_lib::array::sort_by_keys_descending", (array: [T], key: (fn(T) -> K)) -> [T],
-            "Returns the array sorted by the key function, largest first.",
+            "Returns the array sorted by the key function, largest first. Stable in the same way, and it reverses the order of the keys rather than the order of the ties, so one key can point down and another up in a stacked sort.",
             "newest_first:a:Book = array_sort_by_descending(books, book_year);";
         "array_min_by" => "std_lib::array::min_by_keys", (array: [T], key: (fn(T) -> K)) -> (T!e),
             "Returns the element whose key is smallest. An empty array is an error.",
@@ -190,12 +190,24 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_sum_by" => "std_lib::array::sum_of_keys", (array: [T], key: (fn(T) -> (K: i|f))) -> K,
             "Returns every element's key added up, which is the total of a field over the array. An empty array sums to zero.",
             "total_pages:i = array_sum_by(books, book_pages);";
-        "array_group_by" => "std_lib::array::group_by_keys", (array: [T], key: (fn(T) -> (K: i|s))) -> (h K [T]),
-            "Buckets the elements by what the key function returns, keeping the order they appeared in inside each bucket. For anything beyond bucketing, register the rows and write SQL.",
-            "by_author:h<s,a:Book> = array_group_by(books, book_author);";
-        "array_count_by" => "std_lib::array::count_by_keys", (array: [T], key: (fn(T) -> (K: i|s))) -> (h K i),
+        "array_group_by" => "std_lib::array::group_by_keys", (array: [T], key: (fn(T) -> (K: i|s|b))) -> (h K [T]),
+            "Buckets the elements by what the key function returns, keeping the order they appeared in inside each bucket. A key function returning true or false splits the array in two, which other languages call partition. For anything beyond bucketing, register the rows and write SQL.",
+            "split:h<b,a:Invoice> = array_group_by(invoices, is_paid);";
+        "array_count_by" => "std_lib::array::count_by_keys", (array: [T], key: (fn(T) -> (K: i|s|b))) -> (h K i),
             "Returns how many elements share each key, which is array_group_by when only the sizes matter.",
             "per_author:h<s,i> = array_count_by(books, book_author);";
+        "array_take_while" => "std_lib::array::take_while_values", (array: [T], keep: (fn(T) -> b)) -> [T],
+            "Returns the front of the array, up to the first element the named function says no to. Different from filter, which takes every element that passes wherever it sits - this stops at the first failure and ignores the rest.",
+            "header:a:s = array_take_while(lines, line_is_not_blank);";
+        "array_skip_while" => "std_lib::array::skip_while_values", (array: [T], skip: (fn(T) -> b)) -> [T],
+            "Returns the rest of the array, from the first element the named function says no to onwards. The other half of array_take_while - the two together put the array back.",
+            "body:a:s = array_skip_while(lines, line_is_not_blank);";
+        "array_deduplicate_by" => "std_lib::array::deduplicate_by_keys", (array: [T], key: (fn(T) -> (K: i|s|b))) -> [T],
+            "Returns the array with later elements dropped when their key has been seen before, keeping the first of each and the order they came in. Where array_deduplicate compares whole elements, this compares one thing about them, the way deduplicating records by address or id does.",
+            "one_per_person:a:User = array_deduplicate_by(users, user_email);";
+        "array_zip_with" => "std_lib::array::zip_with_values", (first: [A], second: [B], combine: (fn(A, B) -> C)) -> ([C]!e),
+            "Walks two arrays in step and returns what the named function makes of each pair. Errors if the arrays are different lengths, since two lists meant to line up and not lining up is a bug worth hearing about.",
+            "totals:a:f = danger(array_zip_with(prices, quantities, line_total));";
         "array_sort_natural" => "std_lib::array::sort_natural", (array: [s]) -> [s],
             "Sorts text the way a person reads names with numbers in them, so file2 comes before file10 instead of after it. Case is ignored, and names that differ only in case are settled by the text itself so the order never depends on the input order.",
             "in_order:a:s = array_sort_natural(filenames);";

@@ -86,6 +86,32 @@ pub fn is_odd(value: i64) -> bool {
     return value % 2 != 0;
 }
 
+/// The size of a number with its sign taken off. The float version lives in
+/// the math module as math_abs. Only one integer has no answer here: the most
+/// negative one, whose size is one past the largest positive integer, so that
+/// is an error rather than a value that wraps around to itself.
+pub fn abs(value: i64) -> Result<i64, String> {
+    return value.checked_abs().ok_or_else(|| format!("int_abs: {} has no positive counterpart in a 64-bit integer", value));
+}
+
+/// The smaller of two whole numbers. The float version lives in the math
+/// module as math_min.
+pub fn min(first: i64, second: i64) -> i64 {
+    return first.min(second);
+}
+
+/// The larger of two whole numbers. The float version lives in the math
+/// module as math_max.
+pub fn max(first: i64, second: i64) -> i64 {
+    return first.max(second);
+}
+
+/// Which side of zero a number is on: -1 below, 1 above, 0 at zero. The float
+/// version lives in the math module as math_sign.
+pub fn sign(value: i64) -> i64 {
+    return value.signum();
+}
+
 /// Restricts a value to the range from low to high, both included. The float
 /// version lives in the math module as math_clamp.
 pub fn clamp(value: i64, low: i64, high: i64) -> Result<i64, String> {
@@ -110,6 +136,33 @@ mod tests {
         assert!(!is_odd(0));
         assert!(is_even(i64::MIN));
         assert!(is_odd(i64::MAX));
+    }
+
+    #[test]
+    fn size_without_a_sign_has_one_number_it_cannot_answer_for() {
+        assert_eq!(abs(7).expect("in range"), 7);
+        assert_eq!(abs(-7).expect("in range"), 7);
+        assert_eq!(abs(0).expect("in range"), 0);
+        assert_eq!(abs(i64::MAX).expect("in range"), i64::MAX);
+        assert!(abs(i64::MIN).unwrap_err().contains("no positive counterpart"));
+    }
+
+    #[test]
+    fn the_smaller_and_larger_of_two_whole_numbers() {
+        assert_eq!(min(3, 9), 3);
+        assert_eq!(min(-3, -9), -9);
+        assert_eq!(max(3, 9), 9);
+        assert_eq!(max(-3, -9), -3);
+        assert_eq!(min(4, 4), 4);
+        assert_eq!(max(i64::MIN, i64::MAX), i64::MAX);
+    }
+
+    #[test]
+    fn the_sign_is_the_side_of_zero_a_number_is_on() {
+        assert_eq!(sign(42), 1);
+        assert_eq!(sign(-42), -1);
+        assert_eq!(sign(0), 0);
+        assert_eq!(sign(i64::MIN), -1);
     }
 
     #[test]

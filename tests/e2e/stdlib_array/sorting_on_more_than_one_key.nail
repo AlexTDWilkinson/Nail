@@ -1,0 +1,41 @@
+nail latest
+// E2E: sorting on more than one key, including keys pointing opposite ways.
+// There is no two-key sort function and there does not need to be: sorting is
+// stable, so sorting by the least important key first and the most important
+// key last leaves the earlier order standing wherever the later keys tie.
+struct Post {
+    title:s,
+    author:s,
+    day:i
+}
+
+f post_author(post:Post):s { r post.author; }
+f post_day(post:Post):i { r post.day; }
+f post_title(post:Post):s { r post.title; }
+
+posts:a:Post = [
+    Post { title = `bob-two`, author = `bob`, day = 2 },
+    Post { title = `ada-three`, author = `ada`, day = 3 },
+    Post { title = `bob-one`, author = `bob`, day = 1 },
+    Post { title = `ada-one`, author = `ada`, day = 1 },
+    Post { title = `ada-also-one`, author = `ada`, day = 1 }
+];
+
+// The plain sort is stable on its own: the three day-1 posts keep the order
+// they came in.
+by_day:a:Post = array_sort_by(posts, post_day);
+print(array_join(map post in by_day { y post.title; }, `,`));
+
+// By author, and within an author the newest first - two keys pointing
+// opposite ways. Sort by day descending, then by author.
+newest_per_author:a:Post = array_sort_by(array_sort_by_descending(posts, post_day), post_author);
+print(array_join(map post in newest_per_author { y post.title; }, `,`));
+
+// By author, oldest first: the same two sorts with the inner one turned round.
+oldest_per_author:a:Post = array_sort_by(array_sort_by(posts, post_day), post_author);
+print(array_join(map post in oldest_per_author { y post.title; }, `,`));
+
+// Three keys the same way, least important first. Here it decides between the
+// two ada posts from day one, which the two-key sort above left alone.
+three_keys:a:Post = array_sort_by(array_sort_by(array_sort_by(posts, post_title), post_day), post_author);
+print(array_join(map post in three_keys { y post.title; }, `,`));

@@ -1,0 +1,24 @@
+nail latest
+// E2E: size, smaller, larger and sign for whole numbers, which used to mean a
+// trip through floats and back, plus reading a written yes or no.
+print(danger(int_abs(-7)));
+print(danger(int_abs(7)));
+print(danger(int_abs(0)));
+print(int_min(3, 9));
+print(int_max(3, 9));
+print(int_min(-3, -9));
+print(int_max(-3, -9));
+print(int_sign(-42));
+print(int_sign(0));
+print(int_sign(42));
+
+print(danger(bool_from(`true`)));
+print(danger(bool_from(`YES`)));
+print(danger(bool_from(` on `)));
+print(danger(bool_from(`off`)));
+print(danger(bool_from(`False`)));
+print(danger(bool_from(1)));
+print(danger(bool_from(0)));
+f not_a_flag(err:e):b { r false; }
+print(safe(bool_from(`maybe`), not_a_flag));
+print(safe(bool_from(2), not_a_flag));

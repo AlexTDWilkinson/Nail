@@ -4,6 +4,14 @@ pub fn get(key: String) -> Result<String, String> {
     std_env::var(&key).map_err(|_| format!("env_get: environment variable '{}' is not set", key))
 }
 
+/// The value of an environment variable, or the fallback when it is not set.
+/// Most settings have a sensible default and only some deployments override
+/// them, and this is that shape in one line rather than a result to unwrap.
+/// A variable set to empty text counts as set, and comes back empty.
+pub fn get_or(key: String, fallback: String) -> String {
+    return std_env::var(&key).unwrap_or(fallback);
+}
+
 pub fn set(key: String, value: String) -> Result<(), String> {
     std_env::set_var(key, value);
     Ok(())
@@ -197,6 +205,18 @@ mod tests {
         let path = format!("{}/nail_env_{}.env", std_env::temp_dir().to_string_lossy(), name);
         std::fs::write(&path, content).expect("a writable temporary directory");
         return path;
+    }
+
+    /// One test for both env_get_or cases, since the environment is
+    /// process-wide and concurrent tests would fight over a shared name.
+    #[test]
+    fn a_setting_falls_back_only_when_it_is_not_set_at_all() {
+        assert_eq!(get_or("NAIL_ENV_GET_OR_UNSET".to_string(), "8080".to_string()), "8080");
+        std_env::set_var("NAIL_ENV_GET_OR_SET", "9090");
+        assert_eq!(get_or("NAIL_ENV_GET_OR_SET".to_string(), "8080".to_string()), "9090");
+        std_env::set_var("NAIL_ENV_GET_OR_SET", "");
+        assert_eq!(get_or("NAIL_ENV_GET_OR_SET".to_string(), "8080".to_string()), "", "set to nothing is still set");
+        std_env::remove_var("NAIL_ENV_GET_OR_SET");
     }
 
     #[test]

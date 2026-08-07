@@ -38,7 +38,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "flat:s = danger(json_flatten(body));";
         "json_keys" [SerdeJson] => "std_lib::json::keys", (json: s) -> ([s]!e),
             "Returns the top-level field names of an object, sorted - for looking over an answer whose shape nobody wrote down.",
-            "fields:[s] = danger(json_keys(body));";
+            "fields:a:s = danger(json_keys(body));";
         "json_set" [SerdeJson] => "std_lib::json::set", (json: s, path: s, value_json: s) -> (s!e),
             "Returns the document with the field at a dotted path set. The value is itself JSON, so `\"hi\"` sets text and 5 sets a number. Missing objects along the path are created. Walking through a plain value is an error.",
             "changed:s = danger(json_set(body, `user.name`, `\"Ada\"`));";
@@ -50,7 +50,16 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "kind:s = danger(json_type_of(body, `user.id`));";
         "json_get_array_strings" [SerdeJson] => "std_lib::json::get_array_strings", (json: s, path: s) -> ([s]!e),
             "Returns the list of strings at a dotted path. Every item must be text - a list that mixes in numbers or objects is an error naming the first item that is not.",
-            "tags:[s] = danger(json_get_array_strings(body, `user.tags`));";
+            "tags:a:s = danger(json_get_array_strings(body, `user.tags`));";
+        "json_get_array_ints" [SerdeJson] => "std_lib::json::get_array_ints", (json: s, path: s) -> ([i]!e),
+            "Returns the list of whole numbers at a dotted path. Each item is read the way json_get_int reads one: a number written as text is accepted, and a fraction is an error rather than a silent rounding.",
+            "ids:a:i = danger(json_get_array_ints(body, `order.item_ids`));";
+        "json_get_array_floats" [SerdeJson] => "std_lib::json::get_array_floats", (json: s, path: s) -> ([f]!e),
+            "Returns the list of numbers at a dotted path, whole or fractional. Each item is read the way json_get_float reads one.",
+            "prices:a:f = danger(json_get_array_floats(body, `cart.prices`));";
+        "json_get_array_bools" [SerdeJson] => "std_lib::json::get_array_bools", (json: s, path: s) -> ([b]!e),
+            "Returns the list of true-or-false values at a dotted path. Each item is read the way json_get_bool reads one.",
+            "flags:a:b = danger(json_get_array_bools(body, `features.enabled`));";
         "json_equal" [SerdeJson] => "std_lib::json::equal", (first: s, second: s) -> b,
             "Whether two pieces of JSON say the same thing, however they are written - spacing, indentation and the order of an object's fields do not count. Text that does not parse is equal to nothing.",
             "matches:b = json_equal(expected, actual);";

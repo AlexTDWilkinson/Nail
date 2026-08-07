@@ -29,5 +29,17 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "int_clamp" => "std_lib::int::clamp", (value: i, low: i, high: i) -> (i!e),
             "Restricts an integer to the range low..high, both included. Errors if low is above high.",
             "bounded:i = danger(int_clamp(15, 0, 10));";
+        "int_abs" => "std_lib::int::abs", (value: i) -> (i!e),
+            "The size of an integer with its sign taken off. The most negative integer has no positive counterpart, so that one is an error.",
+            "size:i = danger(int_abs(-7));";
+        "int_min" => "std_lib::int::min", (first: i, second: i) -> i,
+            "The smaller of two integers. The float version is math_min.",
+            "lowest:i = int_min(3, 9);";
+        "int_max" => "std_lib::int::max", (first: i, second: i) -> i,
+            "The larger of two integers. The float version is math_max.",
+            "highest:i = int_max(3, 9);";
+        "int_sign" => "std_lib::int::sign", (value: i) -> i,
+            "Which side of zero an integer is on: -1 below, 1 above, 0 at zero. The float version is math_sign.",
+            "direction:i = int_sign(-42);";
     }
 }

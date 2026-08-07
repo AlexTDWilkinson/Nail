@@ -1,0 +1,34 @@
+nail latest
+// E2E: two arrays walked in step, with a named function saying what each pair
+// becomes. No pair type ever exists, which is why this works in a language
+// with no tuples.
+f line_total(price:f, quantity:f):f { r price * quantity; }
+
+prices:a:f = [2.5, 4.0, 1.25];
+quantities:a:f = [2.0, 1.0, 4.0];
+print(danger(array_zip_with(prices, quantities, line_total)));
+
+f labelled(name:s, score:i):s { r array_join([name, `=`, string_from(score)], ``); }
+
+names:a:s = [`ada`, `bob`];
+scores:a:i = [9, 7];
+print(array_join(danger(array_zip_with(names, scores, labelled)), `,`));
+
+// Two lists that were meant to line up and do not is an error, not a quiet
+// stop at the shorter one.
+f no_pairs(err:e):a:f { r []; }
+print(safe(array_zip_with(prices, [1.0], line_total), no_pairs));
+
+// Empty on both sides pairs up to nothing.
+empty_prices:a:f = [];
+empty_quantities:a:f = [];
+print(danger(array_zip_with(empty_prices, empty_quantities, line_total)));
+
+// The combining function may read a file, the same as a key function may. The
+// loop that pairs the arrays is where the waiting happens.
+danger(fs_write(`first.txt`, `hello`));
+danger(fs_write(`second.txt`, `hi`));
+f size_plus(path:s, extra:i):i { r danger(fs_size(path)) + extra; }
+paths:a:s = [`first.txt`, `second.txt`];
+extras:a:i = [100, 200];
+print(danger(array_zip_with(paths, extras, size_plus)));

@@ -1,0 +1,13 @@
+nail latest
+// E2E: reading a whole list out of JSON in one call, for each kind of value.
+// Each item is read the way the single-value getter reads one.
+body:s = `{"ids":[1,2,3],"written":["4","5"],"prices":[1.5,2],"flags":[true,"false"],"tags":["red","green"],"mixed":[1,"x"],"count":3}`;
+print(danger(json_get_array_ints(body, `ids`)));
+print(danger(json_get_array_ints(body, `written`)));
+print(danger(json_get_array_floats(body, `prices`)));
+print(danger(json_get_array_bools(body, `flags`)));
+print(danger(json_get_array_strings(body, `tags`)));
+print(danger(json_get_array_ints(`[]`, ``)));
+f no_list(err:e):a:i { r [-1]; }
+print(safe(json_get_array_ints(body, `mixed`), no_list));
+print(safe(json_get_array_ints(body, `count`), no_list));

@@ -96,6 +96,7 @@ mod base58;
 mod base64;
 mod binary;
 mod bits;
+mod boolean;
 mod cache;
 mod chart;
 mod code;
@@ -355,6 +356,7 @@ stdlib_modules! {
     String => "std_lib::string", "string_",
     Int => "std_lib::int", "int_",
     Float => "std_lib::float", "float_",
+    Bool => "std_lib::boolean", "bool_",
     Format => "std_lib::format", "format_",
     Convert => "std_lib::convert", "convert_",
     Color => "std_lib::color", "color_",
@@ -508,6 +510,7 @@ lazy_static! {
         email::register(&mut m);
         env::register(&mut m);
         error::register(&mut m);
+        boolean::register(&mut m);
         float::register(&mut m);
         feed::register(&mut m);
         finance::register(&mut m);
@@ -649,21 +652,50 @@ const SYNC_STDLIB_FUNCTIONS: &[&str] =
         "net_ip_from_int",
     ];
 
-/// Stdlib functions whose second argument is a Nail function producing one key
-/// per element - `array_sort_by(books, book_year)` and the rest of the `_by`
-/// family.
+/// One callback argument of a stdlib function, and where its parameters come
+/// from: `over` lists the argument positions of the arrays to walk in step, one
+/// array per callback parameter.
 ///
-/// Nothing calls that function while it works. The transpiler runs it over the
-/// array first, in a loop it can await in, and then passes the keys alongside the
-/// elements to the `..._keys` implementation the registry names. That is what lets
-/// a key function read a file: sorting never has to wait for anything, because
-/// the waiting all happened before it started.
-const KEY_FUNCTION_CALLERS: &[&str] = &["array_sort_by", "array_sort_by_descending", "array_min_by", "array_max_by", "array_sum_by", "array_group_by", "array_count_by"];
+/// `array_sort_by(books, book_year)` has its callback at position 1 taking one
+/// element from the array at position 0, so `over` is `[0]`.
+/// `array_zip_with(prices, counts, line_total)` has its callback at position 2
+/// taking one element from each of positions 0 and 1, so `over` is `[0, 1]`.
+pub struct CallbackArgument {
+    pub position: usize,
+    pub over: &'static [usize],
+}
 
-/// Whether this stdlib function takes an array and a key function, so the keys
-/// are worked out before it is called.
-pub fn precomputes_key_argument(name: &str) -> bool {
-    return KEY_FUNCTION_CALLERS.contains(&name);
+/// Stdlib functions that take a Nail function and want its results rather than
+/// the function itself - `array_sort_by(books, book_year)` and the rest of the
+/// `_by` family, plus `array_zip_with`.
+///
+/// Nothing calls the program back while these work. The transpiler runs the
+/// callback over the arrays first, in a loop it can await in, and then hands the
+/// results alongside the arrays to the implementation the registry names. That
+/// is what lets a key function read a file: sorting never has to wait for
+/// anything, because the waiting all happened before it started.
+///
+/// The generated call is every non-callback argument in order, then one results
+/// vector per callback in order. So `array_sort_by` reaches `sort_by_keys(items,
+/// keys)` and `array_zip_with` reaches `zip_with_values(first, second, combined)`.
+const CALLBACK_PRECOMPUTES: &[(&str, &[CallbackArgument])] = &[
+    ("array_sort_by", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_sort_by_descending", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_min_by", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_max_by", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_sum_by", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_group_by", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_count_by", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_take_while", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_skip_while", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_deduplicate_by", &[CallbackArgument { position: 1, over: &[0] }]),
+    ("array_zip_with", &[CallbackArgument { position: 2, over: &[0, 1] }]),
+];
+
+/// The callback arguments this stdlib function wants worked out before it is
+/// called, or None if it takes no callback at all.
+pub fn precomputed_callbacks(name: &str) -> Option<&'static [CallbackArgument]> {
+    return CALLBACK_PRECOMPUTES.iter().find(|(function_name, _)| *function_name == name).map(|(_, callbacks)| *callbacks);
 }
 
 /// How a stdlib function that folds a file line by line is put together: which
@@ -2118,4 +2150,5 @@ mod stdlib_types_drift_tests {
         }
     }
 }
+
 

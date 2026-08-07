@@ -1,0 +1,36 @@
+nail latest
+// E2E: the hashmap functions that put an unordered thing into an order - the
+// top-of-the-list shape, the ends of the range, and the two ways to narrow a
+// hashmap down.
+counts:h<s,i> = hashmap_new();
+hashmap_set(counts, `pear`, 2);
+hashmap_set(counts, `apple`, 5);
+hashmap_set(counts, `fig`, 2);
+hashmap_set(counts, `plum`, 9);
+
+print(hashmap_sorted_keys(counts));
+print(hashmap_keys_by_value(counts));
+print(hashmap_keys_by_value_descending(counts));
+print(array_take(hashmap_keys_by_value_descending(counts), 2));
+print(danger(hashmap_max_by_value(counts)));
+print(danger(hashmap_min_by_value(counts)));
+print(hashmap_sum_values(counts));
+
+// Turned around, a code looks up its name.
+codes:h<s,i> = hashmap_new();
+hashmap_set(codes, `not found`, 404);
+hashmap_set(codes, `teapot`, 418);
+names:h<i,s> = hashmap_invert(codes);
+print(danger(hashmap_get(names, 404)));
+print(danger(hashmap_get(names, 418)));
+
+// Picking and omitting read the hashmap without changing it, and a key that
+// is not there is simply not in the answer.
+print(hashmap_sorted_keys(hashmap_pick(counts, [`apple`, `plum`, `ghost`])));
+print(hashmap_sorted_keys(hashmap_omit(counts, [`apple`, `plum`])));
+print(hashmap_len(counts));
+
+empty:h<s,i> = hashmap_new();
+print(hashmap_sum_values(empty));
+f no_key(err:e):s { r `none`; }
+print(safe(hashmap_max_by_value(empty), no_key));

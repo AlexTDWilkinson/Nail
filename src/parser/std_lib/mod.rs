@@ -14,6 +14,7 @@ pub mod base58;
 pub mod base64;
 pub mod binary;
 pub mod bits;
+pub mod boolean;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cache;
 pub mod chart;

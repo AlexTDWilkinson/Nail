@@ -49,6 +49,18 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_ends_with" => "std_lib::string::ends_with", (input: (&s), suffix: s) -> b,
             "Returns true if the string ends with the given suffix.",
             "yes:b = string_ends_with(`hello`, `lo`);";
+        "string_equals_ignore_case" => "std_lib::string::equals_ignore_case", (first: (&s), second: (&s)) -> b,
+            "Returns true if two strings are the same when the difference between capital and small letters does not count. The comparison for things people type: header names, commands, answers at a prompt.",
+            "same:b = string_equals_ignore_case(name, `Content-Type`);";
+        "string_contains_ignore_case" => "std_lib::string::contains_ignore_case", (input: (&s), pattern: s) -> b,
+            "Returns true if the string holds the given substring, ignoring capitals.",
+            "found:b = string_contains_ignore_case(line, `error`);";
+        "string_starts_with_ignore_case" => "std_lib::string::starts_with_ignore_case", (input: (&s), prefix: s) -> b,
+            "Returns true if the string starts with the given prefix, ignoring capitals.",
+            "secure:b = string_starts_with_ignore_case(address, `https://`);";
+        "string_ends_with_ignore_case" => "std_lib::string::ends_with_ignore_case", (input: (&s), suffix: s) -> b,
+            "Returns true if the string ends with the given suffix, ignoring capitals.",
+            "printable:b = string_ends_with_ignore_case(filename, `.pdf`);";
         "string_index_of" => "std_lib::string::index_of", (input: (&s), substring: s) -> (i!e),
             "Returns the index of the first occurrence of a substring, or an error if not found.",
             "index:i = danger(string_index_of(`hello`, `ll`));";

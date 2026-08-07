@@ -1,0 +1,12 @@
+nail latest
+// E2E: the four comparisons for text a person typed, where the difference
+// between a capital and a small letter should not count.
+print(string_equals_ignore_case(`Content-Type`, `content-type`));
+print(string_equals_ignore_case(`yes`, `no`));
+print(string_equals_ignore_case(`yes`, `yes `));
+print(string_contains_ignore_case(`Hello World`, `LO WO`));
+print(string_contains_ignore_case(`Hello`, `bye`));
+print(string_starts_with_ignore_case(`HTTPS://example.com`, `https://`));
+print(string_starts_with_ignore_case(`ftp://example.com`, `https://`));
+print(string_ends_with_ignore_case(`Report.PDF`, `.pdf`));
+print(string_ends_with_ignore_case(`Report.txt`, `.pdf`));

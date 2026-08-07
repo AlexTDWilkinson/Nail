@@ -706,6 +706,34 @@ pub fn strip_suffix(text: String, suffix: String) -> String {
     };
 }
 
+/// Whether two pieces of text are the same when the difference between a
+/// capital and a small letter does not count. This is the comparison for
+/// things people type rather than things a machine stores: a header name, a
+/// command, an answer at a prompt.
+///
+/// The four ignore-case functions fold both sides to lower case first. That
+/// is right for the alphabets a keyboard has, and it is worth knowing that no
+/// single rule is right for every alphabet at once: Turkish dotless i and
+/// German sharp s each fold in ways their readers would argue with.
+pub fn equals_ignore_case(first: &String, second: &String) -> bool {
+    return first.to_lowercase() == second.to_lowercase();
+}
+
+/// Whether the text holds the pattern somewhere, ignoring capitals.
+pub fn contains_ignore_case(text: &String, pattern: String) -> bool {
+    return text.to_lowercase().contains(&pattern.to_lowercase());
+}
+
+/// Whether the text begins with the prefix, ignoring capitals.
+pub fn starts_with_ignore_case(text: &String, prefix: String) -> bool {
+    return text.to_lowercase().starts_with(&prefix.to_lowercase());
+}
+
+/// Whether the text ends with the suffix, ignoring capitals.
+pub fn ends_with_ignore_case(text: &String, suffix: String) -> bool {
+    return text.to_lowercase().ends_with(&suffix.to_lowercase());
+}
+
 /// A secret with all but the last few characters replaced, for showing which
 /// key or card is in use without printing it. Everything is hidden when the
 /// text is no longer than the part that would have been shown.
@@ -722,6 +750,26 @@ pub fn mask(text: String, visible_tail: i64, mask_character: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capitals_stop_counting_in_the_ignore_case_comparisons() {
+        assert!(equals_ignore_case(&"Content-Type".to_string(), &"content-type".to_string()));
+        assert!(equals_ignore_case(&"".to_string(), &"".to_string()));
+        assert!(!equals_ignore_case(&"yes".to_string(), &"yes ".to_string()), "space is still a difference");
+        assert!(contains_ignore_case(&"Hello World".to_string(), "LO WO".to_string()));
+        assert!(!contains_ignore_case(&"Hello".to_string(), "bye".to_string()));
+        assert!(starts_with_ignore_case(&"HTTPS://a".to_string(), "https://".to_string()));
+        assert!(!starts_with_ignore_case(&"ftp://a".to_string(), "https://".to_string()));
+        assert!(ends_with_ignore_case(&"Report.PDF".to_string(), ".pdf".to_string()));
+        assert!(!ends_with_ignore_case(&"Report.txt".to_string(), ".pdf".to_string()));
+    }
+
+    #[test]
+    fn an_empty_pattern_is_in_everything_the_way_it_is_for_the_exact_versions() {
+        assert!(contains_ignore_case(&"anything".to_string(), "".to_string()));
+        assert!(starts_with_ignore_case(&"anything".to_string(), "".to_string()));
+        assert!(ends_with_ignore_case(&"anything".to_string(), "".to_string()));
+    }
 
     #[test]
     fn html_entities_go_back_to_the_characters_they_stood_for() {

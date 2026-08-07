@@ -1394,11 +1394,69 @@ per_author:h<s,i>      = array_count_by(books, book_author);
 - `array_group_by(arr:a:T, key:f(T):K):h<K,a:T>` - buckets, in the order they appeared
 - `array_count_by(arr:a:T, key:f(T):K):h<K,i>` - the bucket sizes alone
 
+The key may be `i`, `s` or `b`. A `b` key is how an array is split in two,
+which other languages call partition:
+
+```nail
+f is_paid(invoice:Invoice):b { r invoice.paid_on > 0; }
+
+split:h<b,a:Invoice> = array_group_by(invoices, is_paid);
+paid:a:Invoice       = hashmap_get_or(split, true, []);
+owing:a:Invoice      = hashmap_get_or(split, false, []);
+```
+
+Reach for `hashmap_get_or` with an empty array rather than `hashmap_get`: a side
+with nothing on it has no bucket at all, and empty is the right answer there
+rather than an error.
+
 Nothing calls the key function while it works: the keys are worked out over the
 array first, and only then is anything sorted, bucketed or totalled. So a key
 function may read a file or make a request -
 `array_sort_by(reports, report_size)` where `report_size` calls `fs_size` is fine,
 and costs one read per element rather than one per comparison.
+
+**Sorting is stable.** Elements whose keys are equal come out in the order they
+went in, and that is a promise, not an implementation detail. It is what lets a
+program sort on more than one key with no two-key sort function existing: sort
+by the least important key first and the most important key last, and each pass
+leaves the previous order standing wherever its own keys tie.
+
+```nail
+// By author, and within an author the newest first.
+newest_per_author:a:Post = array_sort_by(array_sort_by_descending(posts, post_day), post_author);
+```
+
+That composes to any number of keys, and the keys may point in different
+directions - `array_sort_by_descending` reverses the order of the keys, not the
+order of the ties. A comparator taking two elements would say the same thing in
+one pass, and Nail has no closures to write one with, so this is the way.
+
+Three more take a named function and answer a question `filter` cannot:
+
+- `array_take_while(arr:a:T, keep:f(T):b):a:T` - The front of the array, up to the first element that fails
+- `array_skip_while(arr:a:T, skip:f(T):b):a:T` - The rest, from that element onwards
+- `array_deduplicate_by(arr:a:T, key:f(T):K):a:T` - First of each key, in the order they came in
+
+`filter` takes every element that passes wherever it sits. `array_take_while`
+stops at the first failure and ignores everything after it, which is what
+reading a header off the top of a file wants. Taking and skipping with the same
+test put the array back together.
+
+The same named-function idea pairs two arrays up:
+
+- `array_zip_with(first:a:A, second:a:B, combine:f(A,B):C):a:C!e` - What the function makes of each pair, in order
+
+```nail
+f line_total(price:f, quantity:f):f { r price * quantity; }
+
+totals:a:f = danger(array_zip_with(prices, quantities, line_total));
+```
+
+Arrays of different lengths are an error rather than a quiet stop at the shorter
+one, the same choice `hashmap_from_arrays` makes: two lists meant to line up and
+not lining up is a bug worth hearing about. There is no `array_zip` producing
+pairs, because a pair would need a type to be, and Nail has neither tuples nor
+generic structs. Combining as the arrays are walked needs no such type.
 
 These are the bucketing and ordering that fit in an array. Counting inside groups,
 ordering groups by their totals, joining two sets of rows - those are what
@@ -1419,10 +1477,31 @@ number of array functions would.
 - `hashmap_values(map:h<K,V>):a:V` - Get all values as array
 - `hashmap_is_empty(map:h<K,V>):b` - Check if map is empty
 
+A hashmap has no order of its own, and `hashmap_keys` may hand the same keys
+back in a different order on the next run. Anywhere the order is seen - a
+listing, a report, a comparison against a previous run - reach for one of these
+instead, which all break ties on the key so two runs agree:
+
+- `hashmap_sorted_keys(map:h<K,V>):a:K` - The keys in order
+- `hashmap_keys_by_value(map:h<K,V>):a:K` - The keys ordered by their value, smallest first
+- `hashmap_keys_by_value_descending(map:h<K,V>):a:K` - The keys ordered by their value, largest first
+- `hashmap_max_by_value(map:h<K,V>):K!e` - The key holding the largest value
+- `hashmap_min_by_value(map:h<K,V>):K!e` - The key holding the smallest value
+
+The top ten is those two together: count with `hashmap_increment`, order with
+`hashmap_keys_by_value_descending`, take the front with `array_take`.
+
+The rest read a hashmap into a new one, leaving the original alone:
+
+- `hashmap_sum_values(map:h<K,V>):V` - The values added together
+- `hashmap_invert(map:h<K,V>):h<V,K>` - The hashmap turned around, values becoming keys
+- `hashmap_pick(map:h<K,V>, keys:a:K):h<K,V>` - Only the named keys
+- `hashmap_omit(map:h<K,V>, keys:a:K):h<K,V>` - Everything except the named keys
+
 ### Type Conversion
 - `int_from(value):i!e` - Convert to integer
 - `float_from(value):f!e` - Convert to float
-- `bool_from(value):b!e` - Convert to boolean
+- `bool_from(value):b!e` - Convert to boolean. Text may be true, yes, y, on or 1 and their opposites false, no, n, off or 0, in any case. A number must be 1 or 0. Anything else is an error rather than a guess
 
 ### JSON Serialization/Deserialization
 - `json_serialize(value:T):s!e` - Serialize any value to pretty-formatted JSON string (with indentation)
@@ -1484,6 +1563,18 @@ through; `math_round_to_int` is the one that leaves the number line of floats.
 - `math_is_nan(value:f):b` / `math_is_infinite(value:f):b` / `math_is_finite(value:f):b` - What kind of number this is. Not-a-number is the one value not equal to itself, so `==` cannot be used to ask
 - `math_random():f` - A fraction from 0.0 up to 1.0. **Not for secrets** - see `crypto_random_hex`
 - `math_pi():f` / `math_e():f` - Constants
+
+The `math_*` functions above work in floats. Where the answer to a question
+about whole numbers is itself a whole number, the `int_*` version says so
+without a trip out to floats and back:
+
+- `int_abs(value:i):i!e` - Size without the sign. The most negative integer has no positive counterpart, so that one is an error
+- `int_min(a:i, b:i):i` / `int_max(a:i, b:i):i` - Smaller and larger of two whole numbers
+- `int_sign(value:i):i` - -1, 0 or 1 according to the direction of the value
+- `int_clamp(value:i, low:i, high:i):i!e` - Restrict a whole number to a range
+- `int_pow(base:i, exponent:i):i!e` - Raise to a power, erroring on a negative exponent or overflow
+- `int_is_even(value:i):b` / `int_is_odd(value:i):b` - Whether the number divides evenly by two. Zero is even
+- `int_from_hex(text:s):i!e` / `int_from_radix(text:s, base:i):i!e` / `int_to_radix(value:i, base:i):s!e` - Numbers written in another base, from 2 to 36
 
 ### Statistics (`stats_*`)
 
@@ -2032,6 +2123,11 @@ stays pipeable on standard output.
 - `log_with_fields(level:LOG_Level, message:s, fields:h<s,s>):v` - A message with named values beside it, which is what turns a log line from prose into something searchable
 - `log_set_level(level:LOG_Level):v` - Hide everything below this level. `Info` by default
 - `log_set_json(enabled:b):v` - Switch to one JSON object per line, which is what a log collector wants
+- `log_set_file(path:s):v!e` - Send the lines to a file instead of standard error, for the rest of the run. The file is added to rather than replaced
+
+A program run under a service manager usually wants the default, since the
+manager collects standard error already. `log_set_file` is for the program that
+has to keep its own file.
 
 **LOG_Level values:** `Debug`, `Info`, `Warn`, `Error`.
 
@@ -2215,6 +2311,11 @@ utilities every program ends up writing for itself:
 - `string_normalize_whitespace(text:s):s` - Collapse every run of whitespace to one space
 - `string_unescape_html(text:s):s` - The reverse of `string_escape_html`
 - `string_mask(text:s, visible_tail:i, mask_character:s):s` - Show which secret is in use without printing it
+
+For text a person typed rather than text a machine stored, the difference
+between a capital and a small letter usually should not count:
+- `string_equals_ignore_case(first:s, second:s):b` - The comparison for a header name, a command, an answer at a prompt
+- `string_contains_ignore_case(text:s, pattern:s):b` / `string_starts_with_ignore_case(text:s, prefix:s):b` / `string_ends_with_ignore_case(text:s, suffix:s):b`
 
 ### Formatting Numbers (`format_*`)
 Nail has no format strings, so the roundings and comma insertions every program

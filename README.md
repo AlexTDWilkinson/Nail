@@ -79,7 +79,7 @@ Nail not baby anymore. Nail teenager with attitude:
 - ✅ **Type Checker:** Catches errors before runtime
 - ✅ **Transpiler:** Generates clean, async Rust code
 - ✅ **IDE:** Full terminal IDE with syntax highlighting
-- ✅ **Standard Library:** 1100 functions across 80 modules, listed in full at [the website's library section](https://nail.alex-wilkinson.ca/#stdlib) or by calling `stdlib_functions()`
+- ✅ **Standard Library:** 1166 functions across 83 modules, listed in full at [the website's library section](https://nail.alex-wilkinson.ca/#stdlib) or by calling `stdlib_functions()`
 - ✅ **Compiler Binary:** `nailc` for standalone compilation
 
 ## 📝 Example Nail Code

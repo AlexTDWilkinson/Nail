@@ -365,6 +365,74 @@ pub fn get_array_strings(text: String, path: String) -> Result<Vec<String>, Stri
     return Ok(strings);
 }
 
+/// The list at a dotted path, for the four get_array_ functions to read item
+/// by item. Kept apart so all four give the same message for a path that is
+/// not a list at all.
+fn list_at(function: &str, text: &str, path: &str) -> Result<Vec<serde_json::Value>, String> {
+    let found = document(function, text)?;
+    let value = walk(function, &found, path)?;
+    return match value {
+        // Cloned because `walk` borrows from `found`, which ends with this call.
+        serde_json::Value::Array(items) => Ok(items.clone()),
+        _ => Err(format!("{}: '{}' is not a list", function, path)),
+    };
+}
+
+/// The list of whole numbers at a dotted path. Each item follows the same rule
+/// as json_get_int: a number written as text is read, and a fraction is an
+/// error rather than a silent rounding.
+pub fn get_array_ints(text: String, path: String) -> Result<Vec<i64>, String> {
+    let items = list_at("json_get_array_ints", &text, &path)?;
+    let mut numbers = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let read = match item {
+            serde_json::Value::Number(number) => number.as_i64(),
+            serde_json::Value::String(written) => written.parse::<i64>().ok(),
+            _ => None,
+        };
+        match read {
+            Some(number) => numbers.push(number),
+            None => return Err(format!("json_get_array_ints: item {} of '{}' is not a whole number", index, path)),
+        }
+    }
+    return Ok(numbers);
+}
+
+/// The list of numbers at a dotted path, whole or fractional. Each item
+/// follows the same rule as json_get_float.
+pub fn get_array_floats(text: String, path: String) -> Result<Vec<f64>, String> {
+    let items = list_at("json_get_array_floats", &text, &path)?;
+    let mut numbers = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let read = match item {
+            serde_json::Value::Number(number) => number.as_f64(),
+            serde_json::Value::String(written) => written.parse::<f64>().ok(),
+            _ => None,
+        };
+        match read {
+            Some(number) => numbers.push(number),
+            None => return Err(format!("json_get_array_floats: item {} of '{}' is not a number", index, path)),
+        }
+    }
+    return Ok(numbers);
+}
+
+/// The list of true-or-false values at a dotted path. Each item follows the
+/// same rule as json_get_bool.
+pub fn get_array_bools(text: String, path: String) -> Result<Vec<bool>, String> {
+    let items = list_at("json_get_array_bools", &text, &path)?;
+    let mut flags = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            serde_json::Value::Bool(flag) => flags.push(*flag),
+            serde_json::Value::String(written) if written == "true" => flags.push(true),
+            serde_json::Value::String(written) if written == "false" => flags.push(false),
+            _ => return Err(format!("json_get_array_bools: item {} of '{}' is not true or false", index, path)),
+        }
+    }
+    return Ok(flags);
+}
+
 /// Whether two pieces of JSON say the same thing, however they are written -
 /// spacing, indentation and the order of an object's fields do not count.
 /// Text that does not parse as JSON is equal to nothing.
@@ -565,6 +633,31 @@ mod shaping_tests {
         assert_eq!(get_array_strings("[]".to_string(), "".to_string()).expect("an empty list"), Vec::<String>::new());
         assert!(get_array_strings(body.to_string(), "mixed".to_string()).unwrap_err().contains("item 1 of 'mixed' is not a piece of text"));
         assert!(get_array_strings(body.to_string(), "count".to_string()).unwrap_err().contains("not a list"));
+    }
+
+    #[test]
+    fn a_list_of_numbers_reads_the_way_the_single_number_getters_do() {
+        let body = r#"{"ids": [1, 2, 3], "written": ["4", "5"], "prices": [1.5, 2], "mixed": [1, "x"], "fraction": [1.5], "count": 3}"#;
+        assert_eq!(get_array_ints(body.to_string(), "ids".to_string()).expect("whole numbers"), vec![1i64, 2, 3]);
+        assert_eq!(get_array_ints(body.to_string(), "written".to_string()).expect("numbers written as text"), vec![4i64, 5]);
+        assert_eq!(get_array_floats(body.to_string(), "prices".to_string()).expect("numbers"), vec![1.5f64, 2.0]);
+        assert_eq!(get_array_ints("[]".to_string(), "".to_string()).expect("an empty list"), Vec::<i64>::new());
+
+        assert!(get_array_ints(body.to_string(), "fraction".to_string()).unwrap_err().contains("item 0 of 'fraction' is not a whole number"));
+        assert!(get_array_ints(body.to_string(), "mixed".to_string()).unwrap_err().contains("item 1 of 'mixed' is not a whole number"));
+        assert!(get_array_floats(body.to_string(), "mixed".to_string()).unwrap_err().contains("item 1 of 'mixed' is not a number"));
+        assert!(get_array_ints(body.to_string(), "count".to_string()).unwrap_err().contains("not a list"));
+        assert!(get_array_floats(body.to_string(), "count".to_string()).unwrap_err().contains("not a list"));
+    }
+
+    #[test]
+    fn a_list_of_flags_reads_the_way_the_single_flag_getter_does() {
+        let body = r#"{"flags": [true, false], "written": ["true", "false"], "mixed": [true, 1], "count": 3}"#;
+        assert_eq!(get_array_bools(body.to_string(), "flags".to_string()).expect("flags"), vec![true, false]);
+        assert_eq!(get_array_bools(body.to_string(), "written".to_string()).expect("flags written as text"), vec![true, false]);
+        assert_eq!(get_array_bools("[]".to_string(), "".to_string()).expect("an empty list"), Vec::<bool>::new());
+        assert!(get_array_bools(body.to_string(), "mixed".to_string()).unwrap_err().contains("item 1 of 'mixed' is not true or false"));
+        assert!(get_array_bools(body.to_string(), "count".to_string()).unwrap_err().contains("not a list"));
     }
 
     #[test]

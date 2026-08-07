@@ -4,13 +4,16 @@
 //! everything else - what it tried, what was slow, what went wrong - and it
 //! goes to standard error so the answer on standard output stays pipeable.
 //!
-//! Two knobs, both process-wide because a log level that varied by call site
-//! would be useless: `log_set_level` drops everything below a threshold, and
+//! Three knobs, all process-wide because a log level that varied by call site
+//! would be useless: `log_set_level` drops everything below a threshold,
 //! `log_set_json` switches the line format from something a person reads to
-//! something a log collector parses.
+//! something a log collector parses, and `log_set_file` points the lines at a
+//! file instead of standard error.
 
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::Mutex;
 
 /// How serious a message is. Ordered: setting the level to Warn hides Info and
 /// Debug and keeps Warn and Error.
@@ -59,6 +62,40 @@ pub fn set_json(enabled: bool) {
     WRITE_JSON.store(enabled, Ordering::Relaxed);
 }
 
+/// Where the lines go once a file has been named. Nothing until then, which
+/// means standard error.
+static LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
+
+/// Send log lines to a file instead of standard error, for the rest of the
+/// run. The file is added to rather than replaced, so a restart keeps the
+/// history, and it is opened once here rather than per line.
+///
+/// A program run under a service manager usually wants the default: the
+/// manager collects standard error already. This is for the program that must
+/// write its own file, and for that program it is better to fail here, where
+/// the path is named, than to lose lines quietly later.
+pub fn set_file(path: String) -> Result<(), String> {
+    let file = std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|e| format!("log_set_file: could not open '{}' to write to: {}", path, e))?;
+    let mut destination = LOG_FILE.lock().map_err(|_| "log_set_file: the log file is in a broken state after a panic".to_string())?;
+    *destination = Some(file);
+    return Ok(());
+}
+
+/// Writes one finished line wherever the log is pointed. A file that cannot
+/// be written to falls back to standard error rather than dropping the line:
+/// losing the message that says the disk is full would be the worst possible
+/// moment to lose a message.
+fn write_line(line: &str) {
+    if let Ok(mut destination) = LOG_FILE.lock() {
+        if let Some(file) = destination.as_mut() {
+            if writeln!(file, "{}", line).is_ok() {
+                return;
+            }
+        }
+    }
+    eprintln!("{}", line);
+}
+
 fn enabled(level: LOG_Level) -> bool {
     return level.severity() >= MINIMUM_SEVERITY.load(Ordering::Relaxed);
 }
@@ -104,7 +141,7 @@ fn emit(level: LOG_Level, message: &str, fields: &[(String, String)]) {
         out
     };
 
-    eprintln!("{}", line);
+    write_line(&line);
 }
 
 pub fn debug(message: String) {
@@ -170,5 +207,30 @@ mod tests {
 
         // Back to the default so nothing else observes the change.
         set_level(LOG_Level::Info);
+    }
+
+    /// One test for the file sink, for the same reason: the destination is
+    /// process-wide. It runs last in the file and puts the log back on
+    /// standard error before it finishes.
+    #[test]
+    fn a_named_file_collects_the_lines_and_is_added_to() {
+        let path = format!("{}/nail_log_sink.log", std::env::temp_dir().to_string_lossy());
+        let _ = std::fs::remove_file(&path);
+
+        set_file(path.clone()).expect("a writable temporary directory");
+        warn("first".to_string());
+        set_file(path.clone()).expect("opening the same file again");
+        warn("second".to_string());
+
+        let written = std::fs::read_to_string(&path).expect("the file we just wrote");
+        assert!(written.contains("first"), "the line went to the file, not to standard error");
+        assert!(written.contains("second"), "opening again adds to the file rather than replacing it");
+        assert!(written.contains("WARN"));
+
+        assert!(set_file("/a/directory/that/is/not/there/out.log".to_string()).unwrap_err().contains("could not open"));
+
+        // Back to standard error so nothing else writes into the file.
+        *LOG_FILE.lock().expect("no panic held the lock") = None;
+        let _ = std::fs::remove_file(&path);
     }
 }

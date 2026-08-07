@@ -7,6 +7,9 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "env_get" => "std_lib::env::get", (key: s) -> (s!e),
             "Returns the value of an environment variable. Errors if it is not set.",
             "home:s = danger(env_get(`HOME`));";
+        "env_get_or" => "std_lib::env::get_or", (key: s, fallback: s) -> s,
+            "Returns the value of an environment variable, or the fallback when it is not set. A variable set to empty text counts as set and comes back empty.",
+            "port:s = env_get_or(`PORT`, `8080`);";
         "env_set" => "std_lib::env::set", (key: s, value: s) -> (v!e),
             "Sets an environment variable for the current process.",
             "danger(env_set(`MODE`, `production`));";

@@ -9,10 +9,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "port:s = danger(ini_get(config, `server`, `port`));";
         "ini_sections" => "std_lib::ini::sections", (text: s) -> [s],
             "Section header names in order of first appearance, without duplicates.",
-            "names:[s] = ini_sections(config);";
+            "names:a:s = ini_sections(config);";
         "ini_keys" => "std_lib::ini::keys", (text: s, section: s) -> ([s]!e),
             "The keys of one section in order, with an empty section name meaning the top of the file. A missing section is named in the error.",
-            "settings:[s] = danger(ini_keys(config, `server`));";
+            "settings:a:s = danger(ini_keys(config, `server`));";
         "ini_has" => "std_lib::ini::has", (text: s, section: s, key: s) -> b,
             "Whether the section holds the key.",
             "known:b = ini_has(config, `server`, `port`);";

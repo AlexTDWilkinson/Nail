@@ -1,0 +1,19 @@
+nail latest
+// E2E: a setting with a default, which is what most settings are, and a log
+// pointed at a file rather than at standard error.
+print(env_get_or(`NAIL_E2E_PORT`, `8080`));
+danger(env_set(`NAIL_E2E_PORT`, `9090`));
+print(env_get_or(`NAIL_E2E_PORT`, `8080`));
+danger(env_set(`NAIL_E2E_PORT`, ``));
+print(string_length(env_get_or(`NAIL_E2E_PORT`, `8080`)));
+danger(env_remove(`NAIL_E2E_PORT`));
+print(env_get_or(`NAIL_E2E_PORT`, `8080`));
+
+danger(log_set_file(`run.log`));
+log_warn(`disk is filling up`);
+log_error(`could not reach the database`);
+written:s = danger(fs_read(`run.log`));
+print(string_contains(written, `disk is filling up`));
+print(string_contains(written, `WARN`));
+print(string_contains(written, `ERROR`));
+print(array_length(string_split_lines(string_trim(written))));
