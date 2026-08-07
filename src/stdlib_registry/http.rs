@@ -282,6 +282,52 @@ m.insert("http_request", StdlibFunction {
     let websocket_import = || vec![("HTTP_Websocket", "nail::std_lib::http")];
     let websocket_deps = || vec![CrateDependency::TokioTungstenite, CrateDependency::Tokio, CrateDependency::DashMap, CrateDependency::Uuid, CrateDependency::Serde, CrateDependency::Futures];
 
+    let events_parameter = || StdlibParameter { name: "events".to_string(), param_type: NailDataTypeDescriptor::Struct("HTTP_Events".to_string()), pass_by_reference: true };
+    let events_import = || vec![("HTTP_Events", "nail::std_lib::http")];
+    let events_deps = || vec![CrateDependency::Reqwest, CrateDependency::Tokio, CrateDependency::DashMap, CrateDependency::Uuid, CrateDependency::Serde];
+
+    m.insert("http_sse_connect", StdlibFunction {
+        rust_path: "std_lib::http::sse_connect".to_string(),
+        crate_deps: events_deps(),
+        struct_derives: vec![],
+        custom_type_imports: events_import(),
+        module: StdlibModule::Http,
+        parameters: vec![
+            nail_param!(url: s),
+            StdlibParameter { name: "headers".to_string(), param_type: NailDataTypeDescriptor::HashMap(Box::new(NailDataTypeDescriptor::String), Box::new(NailDataTypeDescriptor::String)), pass_by_reference: false },
+        ],
+        return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::Struct("HTTP_Events".to_string()))),
+        diverging: false,
+        description: "Opens a server-sent-events stream and holds it open - the streaming shape every model API answers with, where the body arrives a piece at a time. The headers are where an API key goes. A status that is not a success is an error rather than an empty stream.",
+        example: "stream:HTTP_Events = danger(http_sse_connect(`https://api.example.com/stream`, headers));",
+    });
+
+    m.insert("http_sse_next", StdlibFunction {
+        rust_path: "std_lib::http::sse_next".to_string(),
+        crate_deps: events_deps(),
+        struct_derives: vec![],
+        custom_type_imports: events_import(),
+        module: StdlibModule::Http,
+        parameters: vec![events_parameter(), nail_param!(timeout_milliseconds: i)],
+        return_type: nail_type!((s!e)),
+        diverging: false,
+        description: "The data of the next event, waiting up to the timeout or forever when the timeout is 0. Comments and event names are skipped, and an event written over several data lines comes back as one string. The end of the stream is an error, so a loop reading until it fails is the shape that works.",
+        example: "piece:s = danger(http_sse_next(stream, 30000));",
+    });
+
+    m.insert("http_sse_close", StdlibFunction {
+        rust_path: "std_lib::http::sse_close".to_string(),
+        crate_deps: events_deps(),
+        struct_derives: vec![],
+        custom_type_imports: events_import(),
+        module: StdlibModule::Http,
+        parameters: vec![events_parameter()],
+        return_type: nail_type!((v!e)),
+        diverging: false,
+        description: "Closes the stream and forgets the handle. Closing twice is not an error.",
+        example: "danger(http_sse_close(stream));",
+    });
+
     m.insert("http_ws_connect", StdlibFunction {
         rust_path: "std_lib::http::ws_connect".to_string(),
         crate_deps: websocket_deps(),

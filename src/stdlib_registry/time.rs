@@ -233,4 +233,22 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         description: "Returns the next date strictly after the timestamp that falls on the given weekday, keeping the time of day. A Monday asked for the next Monday gets the one a week out.",
         example: "next_monday:i = danger(time_next_weekday(time_now(), TIME_Weekday::Monday));",
     });
+
+    m.insert("time_nth_weekday_of_month", StdlibFunction {
+        rust_path: "std_lib::time::nth_weekday_of_month".to_string(),
+        crate_deps: vec![CrateDependency::Chrono],
+        struct_derives: vec![],
+        custom_type_imports: vec![("TIME_Weekday", "nail::std_lib::time"), ("TIME_Nth", "nail::std_lib::time")],
+        module: StdlibModule::Time,
+        parameters: vec![
+            nail_param!(year: i),
+            nail_param!(month: i),
+            StdlibParameter { name: "weekday".to_string(), param_type: NailDataTypeDescriptor::Enum("TIME_Weekday".to_string()), pass_by_reference: false },
+            StdlibParameter { name: "nth".to_string(), param_type: NailDataTypeDescriptor::Enum("TIME_Nth".to_string()), pass_by_reference: false },
+        ],
+        return_type: nail_type!((i!e)),
+        diverging: false,
+        description: "Returns the date a rule like the third Monday in January names, at midnight UTC - how holidays, pay days and standing meetings are written down. TIME_Nth::Last is its own choice rather than a count, because how many of a weekday a month holds depends on the month. A month without that many of them is an error rather than a date in the month after.",
+        example: "family_day:i = danger(time_nth_weekday_of_month(2026, 2, TIME_Weekday::Monday, TIME_Nth::Third));",
+    });
 }

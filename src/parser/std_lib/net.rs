@@ -113,6 +113,144 @@ pub async fn dns_lookup(hostname: String) -> Result<Vec<String>, String> {
     return Ok(found);
 }
 
+/// A resolver reading the machine's own DNS settings, so a lookup goes to the
+/// same servers everything else on the box uses. Built per call: these
+/// functions are asked once at a time, and a resolver held for the life of the
+/// program would be a piece of global state this module does not otherwise
+/// have.
+#[cfg(feature = "dns")]
+fn resolver() -> hickory_resolver::TokioAsyncResolver {
+    return match hickory_resolver::TokioAsyncResolver::tokio_from_system_conf() {
+        Ok(resolver) => resolver,
+        // A machine with no resolver configuration of its own still has the
+        // public servers, which is better than refusing to look anything up.
+        Err(_) => {
+            let mut options = hickory_resolver::config::ResolverOpts::default();
+            options.timeout = Duration::from_secs(5);
+            hickory_resolver::TokioAsyncResolver::tokio(hickory_resolver::config::ResolverConfig::default(), options)
+        }
+    };
+}
+
+/// The mail hosts a domain names, in the order mail should be tried: the lowest
+/// preference number first, which is what the numbers mean. This is the lookup
+/// behind "does this address have anywhere to deliver to", the check worth
+/// doing on a typed email address that `validate_email` cannot make.
+///
+/// A domain with no mail hosts is an error rather than an empty list, because
+/// that is the answer that means something: nothing accepts mail there.
+#[cfg(feature = "dns")]
+pub async fn dns_mx(domain: String) -> Result<Vec<String>, String> {
+    let lookup = resolver().mx_lookup(domain.clone()).await.map_err(|failure| format!("net_dns_mx: could not look up the mail hosts for '{}': {}", domain, failure))?;
+
+    let mut hosts: Vec<(u16, String)> = lookup.iter().map(|record| (record.preference(), record.exchange().to_utf8().trim_end_matches('.').to_string())).collect();
+    hosts.sort_by(|first, second| first.0.cmp(&second.0).then_with(|| first.1.cmp(&second.1)));
+    if hosts.is_empty() {
+        return Err(format!("net_dns_mx: '{}' names no mail hosts", domain));
+    }
+    return Ok(hosts.into_iter().map(|(_, host)| host).collect());
+}
+
+/// The text records on a name, one string per record. This is where a domain
+/// keeps the things other machines need to be told about it: an SPF or DMARC
+/// policy, a verification token a service asked to have put there, a public key
+/// for signing mail.
+///
+/// A record split into several quoted pieces comes back joined, which is how
+/// every reader of these is supposed to treat it.
+#[cfg(feature = "dns")]
+pub async fn dns_txt(name: String) -> Result<Vec<String>, String> {
+    let lookup = resolver().txt_lookup(name.clone()).await.map_err(|failure| format!("net_dns_txt: could not look up the text records for '{}': {}", name, failure))?;
+
+    let records: Vec<String> = lookup
+        .iter()
+        .map(|record| record.txt_data().iter().map(|piece| String::from_utf8_lossy(piece).to_string()).collect::<Vec<String>>().join(""))
+        .collect();
+    if records.is_empty() {
+        return Err(format!("net_dns_txt: '{}' has no text records", name));
+    }
+    return Ok(records);
+}
+
+/// The names an address points back at. What a log line showing an address can
+/// be turned into for a person to read, and the first half of the forward-
+/// confirmed check that tells a crawler apart from something claiming to be one.
+///
+/// Most addresses have no reverse name at all, and that is an error rather than
+/// an empty list.
+#[cfg(feature = "dns")]
+pub async fn dns_reverse(ip: String) -> Result<Vec<String>, String> {
+    let address: std::net::IpAddr = ip.parse().map_err(|_| format!("net_dns_reverse: '{}' is not an IP address", ip))?;
+    let lookup = resolver().reverse_lookup(address).await.map_err(|failure| format!("net_dns_reverse: could not look up the name for '{}': {}", ip, failure))?;
+
+    let names: Vec<String> = lookup.iter().map(|name| name.to_utf8().trim_end_matches('.').to_string()).collect();
+    if names.is_empty() {
+        return Err(format!("net_dns_reverse: '{}' has no reverse name", ip));
+    }
+    return Ok(names);
+}
+
+/// When the certificate a server presents stops being valid, as a Unix
+/// timestamp to compare with `time_now`.
+///
+/// This is the number behind every "the certificate expired on Saturday"
+/// outage: a program that checks it on a schedule knows weeks ahead. The
+/// certificate is read from a real TLS handshake, so what comes back is what
+/// the server is actually serving today, not what a renewal script believes it
+/// installed.
+///
+/// A certificate that is already expired, or that no trusted authority signed,
+/// fails the handshake and the error says which - so the alert fires either way.
+#[cfg(feature = "tls")]
+pub async fn tls_cert_expiry(hostname: String, port: i64, timeout_milliseconds: i64) -> Result<i64, String> {
+    use x509_parser::prelude::FromDer;
+
+    let wait = deadline(timeout_milliseconds, "net_tls_cert_expiry")?;
+    if !(1..=65535).contains(&port) {
+        return Err(format!("net_tls_cert_expiry: {} is not a port", port));
+    }
+
+    let mut roots = tokio_rustls::rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let settings = tokio_rustls::rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+    let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(settings));
+    let server_name = tokio_rustls::rustls::pki_types::ServerName::try_from(hostname.clone())
+        .map_err(|_| format!("net_tls_cert_expiry: '{}' is not a hostname a certificate can be checked against", hostname))?;
+
+    let handshake = async {
+        let stream = tokio::net::TcpStream::connect(format!("{}:{}", hostname, port))
+            .await
+            .map_err(|failure| format!("net_tls_cert_expiry: could not connect to {}:{}: {}", hostname, port, failure))?;
+        return connector.connect(server_name, stream).await.map_err(|failure| format!("net_tls_cert_expiry: {}:{} did not present a usable certificate: {}", hostname, port, failure));
+    };
+    let connection = match tokio::time::timeout(wait, handshake).await {
+        Ok(result) => result?,
+        Err(_) => return Err(format!("net_tls_cert_expiry: {}:{} did not answer within {}ms", hostname, port, timeout_milliseconds)),
+    };
+
+    let (_, session) = connection.get_ref();
+    let presented = session.peer_certificates().ok_or_else(|| format!("net_tls_cert_expiry: {}:{} presented no certificate", hostname, port))?;
+    // The server's own certificate is the first one - the rest are the chain up
+    // to an authority, and they expire on their own schedules.
+    let own = presented.first().ok_or_else(|| format!("net_tls_cert_expiry: {}:{} presented no certificate", hostname, port))?;
+    let (_, parsed) = x509_parser::certificate::X509Certificate::from_der(own.as_ref())
+        .map_err(|failure| format!("net_tls_cert_expiry: {}:{} presented a certificate this cannot read: {}", hostname, port, failure))?;
+    return Ok(parsed.validity().not_after.timestamp());
+}
+
+/// How many whole days are left before the certificate a server presents stops
+/// being valid - the number an alert compares against. Fourteen days left is a
+/// renewal that has not happened yet.
+///
+/// Part of a day does not count, so this is the number of days a program can
+/// still wait, not the number it has been running for.
+#[cfg(feature = "tls")]
+pub async fn tls_cert_days_left(hostname: String, port: i64, timeout_milliseconds: i64) -> Result<i64, String> {
+    let expires_at = tls_cert_expiry(hostname, port, timeout_milliseconds).await.map_err(|failure| failure.replace("net_tls_cert_expiry:", "net_tls_cert_days_left:"))?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|since| since.as_secs() as i64).unwrap_or(0);
+    return Ok((expires_at - now).div_euclid(86_400));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,5 +554,87 @@ mod serve_tests {
     async fn a_bad_port_is_refused() {
         let failure = tcp_serve("127.0.0.1".to_string(), 700000, |_| Box::pin(async { String::new() }) as LineFuture).await.unwrap_err();
         assert!(failure.contains("1 to 65535"));
+    }
+}
+
+/// These reach the real network, so they are written to say something useful
+/// whichever way they land: a machine with no way out gets the error path
+/// checked, a machine with one gets both.
+#[cfg(all(test, feature = "dns"))]
+mod name_lookup_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_domain_with_mail_names_its_hosts_in_preference_order() {
+        match dns_mx("gmail.com".to_string()).await {
+            Ok(hosts) => {
+                assert!(!hosts.is_empty());
+                assert!(hosts.iter().all(|host| !host.ends_with('.')), "the trailing dot is not part of a hostname: {:?}", hosts);
+                assert!(hosts[0].contains("google"), "the first host is the one to try first: {:?}", hosts);
+            }
+            Err(failure) => assert!(failure.contains("net_dns_mx"), "got: {}", failure),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_name_with_no_mail_and_no_records_says_so() {
+        let failure = dns_mx("this-domain-does-not-exist.invalid".to_string()).await.unwrap_err();
+        assert!(failure.contains("net_dns_mx"), "got: {}", failure);
+        let failure = dns_txt("this-domain-does-not-exist.invalid".to_string()).await.unwrap_err();
+        assert!(failure.contains("net_dns_txt"), "got: {}", failure);
+    }
+
+    #[tokio::test]
+    async fn text_records_come_back_whole() {
+        match dns_txt("gmail.com".to_string()).await {
+            Ok(records) => assert!(records.iter().any(|record| record.contains("spf")), "a domain that sends mail publishes an SPF policy: {:?}", records),
+            Err(failure) => assert!(failure.contains("net_dns_txt"), "got: {}", failure),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_reverse_lookup_needs_an_address_to_start_from() {
+        let failure = dns_reverse("not-an-address".to_string()).await.unwrap_err();
+        assert!(failure.contains("is not an IP address"), "got: {}", failure);
+
+        match dns_reverse("8.8.8.8".to_string()).await {
+            Ok(names) => assert!(names.iter().any(|name| name.contains("dns.google")), "got: {:?}", names),
+            Err(failure) => assert!(failure.contains("net_dns_reverse"), "got: {}", failure),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "tls"))]
+mod certificate_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_certificate_says_when_it_stops_being_valid() {
+        match tls_cert_expiry("example.com".to_string(), 443, 8000).await {
+            Ok(expires_at) => {
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("a clock after 1970").as_secs() as i64;
+                assert!(expires_at > now, "a certificate in use has not expired yet");
+                // No public authority issues for longer than about 400 days.
+                assert!(expires_at - now < 400 * 86_400, "got {} seconds of validity left", expires_at - now);
+
+                let days = tls_cert_days_left("example.com".to_string(), 443, 8000).await.expect("the same handshake twice");
+                assert!(days >= 0 && days <= 400);
+            }
+            Err(failure) => assert!(failure.contains("net_tls_cert_expiry"), "got: {}", failure),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_port_that_is_not_a_port_and_a_timeout_that_is_not_one_are_refused() {
+        assert!(tls_cert_expiry("example.com".to_string(), 0, 1000).await.unwrap_err().contains("is not a port"));
+        assert!(tls_cert_expiry("example.com".to_string(), 443, 0).await.unwrap_err().contains("at least 1 millisecond"));
+    }
+
+    /// Nothing is listening, so this is the connection-refused path rather than
+    /// a handshake, and it must still name the function that failed.
+    #[tokio::test]
+    async fn a_server_that_is_not_there_says_so() {
+        let failure = tls_cert_days_left("127.0.0.1".to_string(), 1, 1000).await.unwrap_err();
+        assert!(failure.contains("net_tls_cert_days_left"), "got: {}", failure);
     }
 }

@@ -2074,6 +2074,133 @@ pub async fn ws_receive(socket: &HTTP_Websocket, timeout_milliseconds: i64) -> R
     }
 }
 
+/// An open server-sent-events stream, held by handle like an open file.
+///
+/// This is the other streaming shape on the web, and the one every model API
+/// answers with: an ordinary GET or POST whose body arrives a piece at a time
+/// as `data:` lines, rather than the two-way conversation `http_ws_connect`
+/// opens. `http_server_realtime` serves these; this reads somebody else's.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct HTTP_Events {
+    pub handle: String,
+    pub url: String,
+}
+
+/// A stream being read, with whatever arrived after the last whole event kept
+/// until the rest of it turns up. Events do not arrive one to a network packet:
+/// a chunk can hold three of them or half of one.
+struct OpenEventStream {
+    response: reqwest::Response,
+    unread: String,
+}
+
+lazy_static::lazy_static! {
+    static ref OPEN_EVENT_STREAMS: DashMap<String, OpenEventStream> = DashMap::new();
+}
+
+/// Opens a server-sent-events stream and holds it open. The headers are the
+/// place an API key goes, the same as for `http_request`.
+///
+/// A status that is not a success is an error here rather than a stream that
+/// ends immediately, because the body of a refused request is a message about
+/// the refusal and not events.
+pub async fn sse_connect(url: String, headers: DashMap<String, String>) -> Result<HTTP_Events, String> {
+    let trimmed = url.trim().to_string();
+    let mut request = reqwest::Client::new().get(&trimmed).header("Accept", "text/event-stream");
+    for entry in headers.iter() {
+        request = request.header(entry.key(), entry.value());
+    }
+
+    let response = request.send().await.map_err(|failure| format!("http_sse_connect: could not open `{}`: {}", trimmed, failure))?;
+    if !response.status().is_success() {
+        return Err(format!("http_sse_connect: `{}` answered {}", trimmed, response.status().as_u16()));
+    }
+
+    let handle = format!("events_{}", uuid::Uuid::new_v4());
+    OPEN_EVENT_STREAMS.insert(handle.clone(), OpenEventStream { response, unread: String::new() });
+    return Ok(HTTP_Events { handle, url: trimmed });
+}
+
+/// The data of the next event, waiting up to the timeout or forever when the
+/// timeout is 0. An event written over several `data:` lines comes back as one
+/// string with newlines between them, which is what the format means by them.
+///
+/// Comments, event names and retry hints are skipped: what a program does with
+/// one of these streams is read the data. The end of the stream is an error and
+/// forgets the handle, so a loop reading until it fails is the shape that works.
+pub async fn sse_next(events: &HTTP_Events, timeout_milliseconds: i64) -> Result<String, String> {
+    let mut stream = OPEN_EVENT_STREAMS.get_mut(&events.handle).ok_or_else(|| format!("http_sse_next: the stream from `{}` is closed", events.url))?;
+
+    loop {
+        // An event ends at a blank line, so anything already read may hold a
+        // whole one before another byte arrives from the network.
+        if let Some(event) = take_event(&mut stream.unread) {
+            match event {
+                Some(data) => return Ok(data),
+                None => continue,
+            }
+        }
+
+        let next_chunk = if timeout_milliseconds > 0 {
+            match tokio::time::timeout(Duration::from_millis(timeout_milliseconds as u64), stream.response.chunk()).await {
+                Ok(chunk) => chunk,
+                Err(_) => return Err(format!("http_sse_next: nothing arrived from `{}` within {}ms", events.url, timeout_milliseconds)),
+            }
+        } else {
+            stream.response.chunk().await
+        };
+
+        match next_chunk {
+            Ok(Some(bytes)) => stream.unread.push_str(&String::from_utf8_lossy(&bytes)),
+            Ok(None) => {
+                drop(stream);
+                OPEN_EVENT_STREAMS.remove(&events.handle);
+                return Err(format!("http_sse_next: `{}` ended the stream", events.url));
+            }
+            Err(failure) => {
+                drop(stream);
+                OPEN_EVENT_STREAMS.remove(&events.handle);
+                return Err(format!("http_sse_next: the stream from `{}` failed: {}", events.url, failure));
+            }
+        }
+    }
+}
+
+/// The next whole event out of what has been read, removing it from the buffer.
+///
+/// Three answers, not two: `None` means no complete event has arrived yet and
+/// more has to be read, `Some(None)` means one arrived and carried no data (a
+/// comment or a bare event name) so the caller should look again, and
+/// `Some(Some(data))` is an event to hand back.
+fn take_event(unread: &mut String) -> Option<Option<String>> {
+    // The format allows either line ending, and a proxy may rewrite them.
+    let end = unread.find("\n\n").map(|at| (at, 2)).into_iter().chain(unread.find("\r\n\r\n").map(|at| (at, 4))).min_by_key(|(at, _)| *at)?;
+    let (at, separator) = end;
+    let block: String = unread.drain(..at + separator).collect();
+
+    let mut data_lines: Vec<String> = Vec::new();
+    for line in block.lines() {
+        // A line starting with a colon is a comment, which servers send to
+        // keep an idle connection from being closed by something in between.
+        if line.starts_with(':') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("data:") {
+            data_lines.push(rest.strip_prefix(' ').unwrap_or(rest).to_string());
+        }
+    }
+    if data_lines.is_empty() {
+        return Some(None);
+    }
+    return Some(Some(data_lines.join("\n")));
+}
+
+/// Closes the stream and forgets the handle. Closing twice is not an error.
+pub async fn sse_close(events: &HTTP_Events) -> Result<(), String> {
+    OPEN_EVENT_STREAMS.remove(&events.handle);
+    return Ok(());
+}
+
 /// Say goodbye properly and forget the handle. Closing twice is not an error.
 #[cfg(feature = "websocket")]
 pub async fn ws_close(socket: &HTTP_Websocket) -> Result<(), String> {
@@ -2117,5 +2244,110 @@ mod ws_client_tests {
         ws_close(&socket).await.expect("goodbye is easy");
         assert!(ws_send(&socket, "again".to_string()).await.unwrap_err().contains("closed"));
         assert!(ws_connect("http://not-a-ws-url".to_string()).await.unwrap_err().contains("not a ws://"));
+    }
+}
+
+#[cfg(test)]
+mod event_stream_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// Events arrive in whatever pieces the network hands over, so the parsing
+    /// is tested on its own before the reading is tested over a socket.
+    #[test]
+    fn events_are_taken_out_of_the_buffer_one_at_a_time() {
+        let mut unread = String::from("data: first\n\ndata: second\n\n");
+        assert_eq!(take_event(&mut unread), Some(Some("first".to_string())));
+        assert_eq!(take_event(&mut unread), Some(Some("second".to_string())));
+        assert_eq!(take_event(&mut unread), None, "nothing whole is left");
+
+        // Half an event is not an event yet.
+        let mut unread = String::from("data: half");
+        assert_eq!(take_event(&mut unread), None);
+        unread.push_str(" and half\n\n");
+        assert_eq!(take_event(&mut unread), Some(Some("half and half".to_string())));
+
+        // Several data lines are one event with newlines between them.
+        let mut unread = String::from("event: message\ndata: one\ndata: two\n\n");
+        assert_eq!(take_event(&mut unread), Some(Some("one\ntwo".to_string())));
+
+        // A comment is a whole block that carries nothing.
+        let mut unread = String::from(": keeping the connection open\n\n");
+        assert_eq!(take_event(&mut unread), Some(None));
+
+        // Windows line endings and a missing space after the colon both work.
+        let mut unread = String::from("data:tight\r\n\r\n");
+        assert_eq!(take_event(&mut unread), Some(Some("tight".to_string())));
+    }
+
+    /// A server written by hand, so the test owns exactly what arrives and
+    /// when: a comment, one event, then an event spread over two data lines,
+    /// then the end of the stream.
+    async fn a_streaming_server() -> i64 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+        let port = listener.local_addr().expect("a bound address").port() as i64;
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("a connection");
+            let mut request = vec![0u8; 1024];
+            let _ = stream.read(&mut request).await;
+
+            // No content length, so the body runs until the connection closes,
+            // which is one of the two shapes a real events endpoint uses.
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n").await;
+            let _ = stream.write_all(b": waking up\n\ndata: first\n\n").await;
+            let _ = stream.flush().await;
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            let _ = stream.write_all(b"event: message\ndata: line one\ndata: line two\n\n").await;
+            let _ = stream.flush().await;
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        });
+        return port;
+    }
+
+    #[tokio::test]
+    async fn a_stream_is_read_event_by_event_until_it_ends() {
+        let port = a_streaming_server().await;
+        let stream = sse_connect(format!("http://127.0.0.1:{}/events", port), DashMap::new()).await.expect("the server is up");
+
+        assert_eq!(sse_next(&stream, 2000).await.expect("an event"), "first", "the comment before it is skipped");
+        assert_eq!(sse_next(&stream, 2000).await.expect("an event"), "line one\nline two");
+
+        let ended = sse_next(&stream, 2000).await.unwrap_err();
+        assert!(ended.contains("ended the stream"), "got: {}", ended);
+        // The handle is forgotten once the stream ends, and closing it again is fine.
+        sse_close(&stream).await.expect("closing is always allowed");
+        assert!(sse_next(&stream, 2000).await.unwrap_err().contains("is closed"));
+    }
+
+    #[tokio::test]
+    async fn a_refusal_is_an_error_rather_than_an_empty_stream() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+        let port = listener.local_addr().expect("a bound address").port() as i64;
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("a connection");
+            let mut request = vec![0u8; 1024];
+            let _ = stream.read(&mut request).await;
+            let _ = stream.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n").await;
+        });
+
+        let failure = sse_connect(format!("http://127.0.0.1:{}/events", port), DashMap::new()).await.unwrap_err();
+        assert!(failure.contains("answered 401"), "got: {}", failure);
+    }
+
+    #[tokio::test]
+    async fn a_stream_that_says_nothing_times_out_without_closing() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+        let port = listener.local_addr().expect("a bound address").port() as i64;
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("a connection");
+            let mut request = vec![0u8; 1024];
+            let _ = stream.read(&mut request).await;
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n").await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        });
+
+        let stream = sse_connect(format!("http://127.0.0.1:{}/events", port), DashMap::new()).await.expect("the server is up");
+        assert!(sse_next(&stream, 100).await.unwrap_err().contains("within 100ms"));
+        sse_close(&stream).await.expect("closing is always allowed");
     }
 }

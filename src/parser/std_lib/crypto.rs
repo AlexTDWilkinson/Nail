@@ -153,6 +153,76 @@ pub fn hmac_sha256(key: String, message: String) -> String {
     return super::hex::encode_bytes(&mac.finalize().into_bytes());
 }
 
+/// Bytes of a key or signature out of the hex they are written in, checked to
+/// be the length the algorithm requires. Signing errors are worth being exact
+/// about: a key one byte short is a truncated copy, not a different key.
+fn signing_bytes<const LENGTH: usize>(function: &str, label: &str, hex: &str) -> Result<[u8; LENGTH], String> {
+    let bytes = super::hex::decode_bytes_labelled(function, label, hex)?;
+    if bytes.len() != LENGTH {
+        return Err(format!("{}: the {} is {} bytes, and it has to be {}", function, label, bytes.len(), LENGTH));
+    }
+    let mut fixed = [0u8; LENGTH];
+    fixed.copy_from_slice(&bytes);
+    return Ok(fixed);
+}
+
+/// A new signing key, as hex - the secret half of an Ed25519 pair, and the only
+/// piece that must never be published. Keep it somewhere a person can read it
+/// out of, not in the source: `env_get` from a file the service user owns.
+///
+/// Signing is what HMAC cannot do: anyone holding the verifying key can check a
+/// signature without being able to make one, so the checker does not have to be
+/// trusted with the secret. Licence keys, release manifests, and links a
+/// program hands to somebody else's server to verify.
+pub fn signing_key() -> String {
+    use rand::RngCore;
+    let mut seed = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut seed);
+    let key = ed25519_dalek::SigningKey::from_bytes(&seed);
+    return super::hex::encode_bytes(&key.to_bytes());
+}
+
+/// The verifying key that goes with a signing key, as hex. This is the half to
+/// publish: put it in the program that checks signatures, or in the
+/// documentation of an API other people call.
+pub fn verifying_key(signing_key: String) -> Result<String, String> {
+    let bytes = signing_bytes::<32>("crypto_verifying_key", "signing key", &signing_key)?;
+    let key = ed25519_dalek::SigningKey::from_bytes(&bytes);
+    return Ok(super::hex::encode_bytes(key.verifying_key().as_bytes()));
+}
+
+/// An Ed25519 signature over the message, as hex. The signature proves the
+/// message was signed by whoever holds this key and that not one character of
+/// it has changed since.
+pub fn sign(signing_key: String, message: String) -> Result<String, String> {
+    use ed25519_dalek::Signer;
+    let bytes = signing_bytes::<32>("crypto_sign", "signing key", &signing_key)?;
+    let key = ed25519_dalek::SigningKey::from_bytes(&bytes);
+    return Ok(super::hex::encode_bytes(&key.sign(message.as_bytes()).to_bytes()));
+}
+
+/// Whether the signature really is this message signed by the holder of that
+/// verifying key. False means the message, the signature or the key does not
+/// belong with the other two, and there is no way to tell which - that is what
+/// a signature is for.
+///
+/// A key or signature that is not the right length or not hex is an error
+/// rather than a false, because that is a mistake in the program rather than a
+/// message that failed its check.
+pub fn verify_signature(verifying_key: String, message: String, signature: String) -> Result<bool, String> {
+    use ed25519_dalek::Verifier;
+    let key_bytes = signing_bytes::<32>("crypto_verify_signature", "verifying key", &verifying_key)?;
+    let signature_bytes = signing_bytes::<64>("crypto_verify_signature", "signature", &signature)?;
+    let key = match ed25519_dalek::VerifyingKey::from_bytes(&key_bytes) {
+        Ok(key) => key,
+        Err(_) => return Err("crypto_verify_signature: the verifying key is the right length but is not a key".to_string()),
+    };
+    let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes);
+    // verify_strict rather than verify: it refuses the small-order keys that
+    // let one signature check out under more than one key.
+    return Ok(key.verify_strict(message.as_bytes(), &signature).is_ok());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -697,5 +767,61 @@ mod checksum_tests {
         assert_eq!(hotp(secret.clone(), 9).unwrap(), "520489");
         assert!(hotp(secret, -1).unwrap_err().contains("below zero"));
         assert!(hotp("".to_string(), 0).unwrap_err().contains("empty"));
+    }
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+
+    #[test]
+    fn a_signature_checks_out_under_the_key_that_made_it() {
+        let secret = signing_key();
+        let public = verifying_key(secret.clone()).expect("a key we just made");
+        assert_eq!(secret.len(), 64, "32 bytes in hex");
+        assert_eq!(public.len(), 64, "32 bytes in hex");
+
+        let signature = sign(secret.clone(), "release 1.2.3".to_string()).expect("a key we just made");
+        assert_eq!(signature.len(), 128, "64 bytes in hex");
+        assert!(verify_signature(public.clone(), "release 1.2.3".to_string(), signature.clone()).expect("well-formed inputs"));
+
+        // One character of the message changed, and the signature no longer belongs to it.
+        assert!(!verify_signature(public.clone(), "release 1.2.4".to_string(), signature.clone()).expect("well-formed inputs"));
+
+        // Another key entirely cannot claim the same signature.
+        let other = verifying_key(signing_key()).expect("a key we just made");
+        assert!(!verify_signature(other, "release 1.2.3".to_string(), signature).expect("well-formed inputs"));
+    }
+
+    #[test]
+    fn the_same_key_always_gives_the_same_signature_and_the_same_public_half() {
+        // Ed25519 signatures are deterministic, so this is a property a program
+        // may rely on: signing twice gives one answer to compare.
+        let secret = signing_key();
+        assert_eq!(sign(secret.clone(), "same".to_string()).expect("our key"), sign(secret.clone(), "same".to_string()).expect("our key"));
+        assert_eq!(verifying_key(secret.clone()).expect("our key"), verifying_key(secret).expect("our key"));
+    }
+
+    /// The published test vector from RFC 8032, section 7.1, so the
+    /// implementation is pinned to the standard rather than to itself.
+    #[test]
+    fn the_published_test_vector_signs_to_the_published_signature() {
+        let secret = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+        let public = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+        assert_eq!(verifying_key(secret.to_string()).expect("the vector's key"), public);
+
+        // The vector signs the empty message.
+        let expected = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b";
+        assert_eq!(sign(secret.to_string(), String::new()).expect("the vector's key"), expected);
+        assert!(verify_signature(public.to_string(), String::new(), expected.to_string()).expect("the vector's key"));
+    }
+
+    #[test]
+    fn a_key_or_signature_of_the_wrong_shape_is_an_error_not_a_false() {
+        assert!(sign("abcd".to_string(), "message".to_string()).unwrap_err().contains("has to be 32"));
+        assert!(verifying_key("nothex!!".to_string()).unwrap_err().contains("not a hex byte"));
+        let public = verifying_key(signing_key()).expect("a key we just made");
+        assert!(verify_signature(public.clone(), "m".to_string(), "00".to_string()).unwrap_err().contains("has to be 64"));
+        assert!(verify_signature("00".to_string(), "m".to_string(), "00".repeat(64)).unwrap_err().contains("has to be 32"));
     }
 }

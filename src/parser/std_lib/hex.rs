@@ -50,8 +50,9 @@ pub fn decode(data: String) -> Result<String, String> {
 
 /// Hex to raw bytes for the functions that work on bytes rather than text.
 /// The label names which argument was bad, so the error reads like a person
-/// wrote it.
-fn decode_bytes_labelled(function: &str, label: &str, data: &str) -> Result<Vec<u8>, String> {
+/// wrote it. Shared with `crypto_sign` and the rest of the signing functions,
+/// whose keys and signatures are bytes spelled in hex.
+pub(crate) fn decode_bytes_labelled(function: &str, label: &str, data: &str) -> Result<Vec<u8>, String> {
     let characters: Vec<char> = data.chars().collect();
     if characters.len() % 2 != 0 {
         return Err(format!("{}: the {} has {} characters, and hex needs an even number", function, label, characters.len()));

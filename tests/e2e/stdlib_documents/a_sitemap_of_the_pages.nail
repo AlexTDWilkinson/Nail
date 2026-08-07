@@ -1,0 +1,13 @@
+nail latest
+// E2E: the sitemap a search engine reads, built from the pages a site has.
+pages:a:s = [`https://example.com/`, `https://example.com/about`, `https://example.com/`];
+sitemap:s = danger(feed_sitemap(pages));
+print(string_count(sitemap, `<loc>`));
+print(string_contains(sitemap, `<loc>https://example.com/about</loc>`));
+print(string_contains(sitemap, `http://www.sitemaps.org/schemas/sitemap/0.9`));
+
+escaped:s = danger(feed_sitemap([`https://example.com/search?a=1&b=2`]));
+print(string_contains(escaped, `a=1&amp;b=2`));
+
+f not_absolute(err:e):s { r `refused`; }
+print(safe(feed_sitemap([`/about`]), not_absolute));

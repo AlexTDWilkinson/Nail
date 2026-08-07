@@ -1,0 +1,5 @@
+nail latest
+// E2E: a hostname outside ASCII, written for DNS and read back for a person.
+print(danger(url_to_punycode(`münchen.de`)));
+print(url_to_unicode(`xn--mnchen-3ya.de`));
+print(danger(url_to_punycode(`example.com`)));

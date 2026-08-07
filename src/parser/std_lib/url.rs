@@ -755,3 +755,54 @@ mod robots_tests {
         assert!(allowed(robots, "GammaBot", "/private/page"));
     }
 }
+
+/// A hostname written the way DNS and TLS need it: `münchen.de` becomes
+/// `xn--mnchen-3ya.de`. Names outside ASCII are stored and looked up in this
+/// encoding, so this is the form that goes into a lookup, a certificate check,
+/// or the host part of a URL a machine will use.
+///
+/// A name that is already ASCII comes back unchanged, which makes this safe to
+/// apply to whatever a person typed.
+pub fn to_punycode(hostname: String) -> Result<String, String> {
+    return match idna::domain_to_ascii(&hostname) {
+        Ok(ascii) => Ok(ascii),
+        Err(_) => Err(format!("url_to_punycode: '{}' is not a hostname that can be written for DNS", hostname)),
+    };
+}
+
+/// The readable form of a hostname stored in punycode: `xn--mnchen-3ya.de`
+/// becomes `münchen.de`. What to show a person, having done the lookup with the
+/// other one.
+pub fn to_unicode(hostname: String) -> String {
+    let (readable, _) = idna::domain_to_unicode(&hostname);
+    return readable;
+}
+
+#[cfg(test)]
+mod international_name_tests {
+    use super::{to_punycode, to_unicode};
+
+    #[test]
+    fn a_name_outside_ascii_is_written_for_dns_and_read_back() {
+        assert_eq!(to_punycode("münchen.de".to_string()).expect("a real hostname"), "xn--mnchen-3ya.de");
+        assert_eq!(to_unicode("xn--mnchen-3ya.de".to_string()), "münchen.de");
+        // The classic example from the IDNA specification itself.
+        assert_eq!(to_punycode("bücher.example".to_string()).expect("a real hostname"), "xn--bcher-kva.example");
+    }
+
+    #[test]
+    fn a_plain_name_passes_through_both_ways() {
+        assert_eq!(to_punycode("example.com".to_string()).expect("a real hostname"), "example.com");
+        assert_eq!(to_unicode("example.com".to_string()), "example.com");
+        // Uppercase is folded, which is what a lookup needs.
+        assert_eq!(to_punycode("EXAMPLE.com".to_string()).expect("a real hostname"), "example.com");
+    }
+
+    #[test]
+    fn a_round_trip_gets_the_same_name_back() {
+        for name in ["münchen.de", "täst.example", "example.com", "日本.jp"] {
+            let for_dns = to_punycode(name.to_string()).expect("a real hostname");
+            assert_eq!(to_unicode(for_dns), name);
+        }
+    }
+}

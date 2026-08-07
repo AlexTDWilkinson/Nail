@@ -1,0 +1,18 @@
+nail latest
+// E2E: signing with a key from the RFC 8032 test vectors, so the answer is the
+// published one rather than whatever this machine produced.
+secret:s = `9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60`;
+public:s = danger(crypto_verifying_key(secret));
+print(public);
+
+signature:s = danger(crypto_sign(secret, `release 1.2.3`));
+print(string_length(signature));
+print(danger(crypto_verify_signature(public, `release 1.2.3`, signature)));
+print(danger(crypto_verify_signature(public, `release 1.2.4`, signature)));
+
+// A key made fresh signs and verifies the same way, with a different key.
+other_secret:s = crypto_signing_key();
+other_public:s = danger(crypto_verifying_key(other_secret));
+other_signature:s = danger(crypto_sign(other_secret, `release 1.2.3`));
+print(danger(crypto_verify_signature(other_public, `release 1.2.3`, other_signature)));
+print(danger(crypto_verify_signature(public, `release 1.2.3`, other_signature)));

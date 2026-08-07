@@ -1,0 +1,6 @@
+nail latest
+// E2E: a page read off the internet, kept as markdown rather than markup.
+page:s = `<h1>Release notes</h1><p>Now with <b>signing</b> and a <a href="https://nail-lang.org">link</a>.</p><ul><li>first</li><li>second</li></ul><script>alert(1)</script>`;
+notes:s = danger(html_to_markdown(page));
+print(notes);
+print(string_contains(notes, `alert`));

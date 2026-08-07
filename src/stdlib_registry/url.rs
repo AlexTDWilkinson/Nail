@@ -22,6 +22,12 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "url_domain" => "std_lib::url::domain", (url: s) -> (s!e),
             "The host a URL points at, with any leading www. taken off - so https://www.example.com/a?b comes back as example.com. Errors when the text is not a URL or has no host.",
             "site:s = danger(url_domain(shared_link));";
+        "url_to_punycode" [Idna] => "std_lib::url::to_punycode", (hostname: s) -> (s!e),
+            "A hostname written the way DNS and TLS need it, so münchen.de becomes xn--mnchen-3ya.de. This is the form a lookup or a certificate check needs. A name that is already ASCII comes back unchanged.",
+            "for_dns:s = danger(url_to_punycode(typed_host));";
+        "url_to_unicode" [Idna] => "std_lib::url::to_unicode", (hostname: s) -> s,
+            "The readable form of a hostname stored in punycode, so xn--mnchen-3ya.de becomes münchen.de. What to show a person, having done the lookup with the other one.",
+            "readable:s = url_to_unicode(stored_host);";
         "url_origin" => "std_lib::url::origin", (url: s) -> (s!e),
             "The origin of a URL - scheme://host, with the port when the URL named one. The piece browsers compare for CORS and cookies. Errors when the text is not a URL or has no host.",
             "origin:s = danger(url_origin(request_url));";

@@ -19,6 +19,21 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "net_dns_lookup" [Tokio] => "std_lib::net::dns_lookup", (hostname: s) -> ([s]!e),
             "Returns every address a hostname resolves to, in the order the resolver gave them.",
             "addresses:a:s = danger(net_dns_lookup(`nail-lang.org`));";
+        "net_dns_mx" [HickoryResolver, Tokio] => "std_lib::net::dns_mx", (domain: s) -> ([s]!e),
+            "Returns the mail hosts a domain names, in the order mail should be tried. This is the check worth doing on a typed email address that validate_email cannot make: whether anything accepts mail there at all. A domain naming none is an error.",
+            "hosts:a:s = danger(net_dns_mx(`example.com`));";
+        "net_dns_txt" [HickoryResolver, Tokio] => "std_lib::net::dns_txt", (name: s) -> ([s]!e),
+            "Returns the text records on a name, one string per record - an SPF or DMARC policy, a verification token a service asked to have put there, a signing key. A record written in several quoted pieces comes back joined.",
+            "records:a:s = danger(net_dns_txt(`example.com`));";
+        "net_dns_reverse" [HickoryResolver, Tokio] => "std_lib::net::dns_reverse", (ip: s) -> ([s]!e),
+            "Returns the names an address points back at, for turning a log line into something a person reads. Most addresses have no reverse name, and that is an error rather than an empty list.",
+            "names:a:s = danger(net_dns_reverse(`8.8.8.8`));";
+        "net_tls_cert_expiry" [TokioRustls, WebpkiRoots, X509Parser, Tokio] => "std_lib::net::tls_cert_expiry", (hostname: s, port: i, timeout_milliseconds: i) -> (i!e),
+            "Returns when the certificate a server presents stops being valid, as a Unix timestamp to compare with time_now. Read from a real handshake, so it is what the server serves today rather than what a renewal script believes it installed.",
+            "expires:i = danger(net_tls_cert_expiry(`nail-lang.org`, 443, 5000));";
+        "net_tls_cert_days_left" [TokioRustls, WebpkiRoots, X509Parser, Tokio] => "std_lib::net::tls_cert_days_left", (hostname: s, port: i, timeout_milliseconds: i) -> (i!e),
+            "Returns how many whole days are left before the certificate a server presents stops being valid - the number a scheduled check compares against. An expired or untrusted certificate fails the handshake and the error says which.",
+            "days:i = danger(net_tls_cert_days_left(`nail-lang.org`, 443, 5000));";
         "net_ip_in_cidr" => "std_lib::net::ip_in_cidr", (ip: s, cidr: s) -> (b!e),
             "Whether an address sits inside a CIDR range like `10.0.0.0/8` - how an allowlist is checked. An address of the other family is outside the range, not an error.",
             "allowed:b = danger(net_ip_in_cidr(client_ip, `10.0.0.0/8`));";

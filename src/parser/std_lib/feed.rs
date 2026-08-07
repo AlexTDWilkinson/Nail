@@ -378,3 +378,86 @@ mod tests {
         assert_eq!(parsed.entries[1].published, entries[1].published);
     }
 }
+
+/// The most URLs one sitemap may list, from the sitemap protocol itself. A site
+/// with more than this splits into several files and an index pointing at them,
+/// which is a decision about how the site is laid out rather than something
+/// this can do on its own.
+const LARGEST_SITEMAP: usize = 50_000;
+
+/// Builds a sitemap listing the given URLs, the file a search engine reads to
+/// learn which pages exist without following every link to find them. Written
+/// to `/sitemap.xml` and named from `robots.txt`, it is the other half of the
+/// crawling story `url_robots_allowed` covers.
+///
+/// Every URL has to be absolute, because a sitemap is read on its own with no
+/// page to be relative to. Duplicates are dropped, the order given is kept, and
+/// the protocol's limit of fifty thousand is an error rather than a file no
+/// crawler will accept.
+pub fn build_sitemap(urls: &Vec<String>) -> Result<String, String> {
+    if urls.len() > LARGEST_SITEMAP {
+        return Err(format!("feed_sitemap: {} URLs is more than the {} one sitemap may list", urls.len(), LARGEST_SITEMAP));
+    }
+
+    let mut document = String::new();
+    document.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    document.push_str("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
+
+    let mut already_listed = std::collections::HashSet::new();
+    for url in urls {
+        let trimmed = url.trim();
+        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+            return Err(format!("feed_sitemap: '{}' is not an absolute URL, and a sitemap is read with no page to be relative to", url));
+        }
+        if !already_listed.insert(trimmed.to_string()) {
+            continue;
+        }
+        document.push_str(&format!("<url><loc>{}</loc></url>\n", xml_escape(trimmed)));
+    }
+
+    document.push_str("</urlset>\n");
+    return Ok(document);
+}
+
+#[cfg(test)]
+mod sitemap_tests {
+    use super::build_sitemap;
+
+    fn urls(items: &[&str]) -> Vec<String> {
+        return items.iter().map(|item| item.to_string()).collect();
+    }
+
+    #[test]
+    fn a_sitemap_lists_every_page_once_in_the_order_given() {
+        let map = build_sitemap(&urls(&["https://example.com/", "https://example.com/about", "https://example.com/"])).expect("absolute URLs");
+        assert!(map.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+        assert!(map.contains("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"));
+        assert_eq!(map.matches("<loc>").count(), 2, "the repeat is dropped");
+        let first = map.find("https://example.com/<").expect("the home page");
+        let second = map.find("https://example.com/about").expect("the about page");
+        assert!(first < second, "the order given is kept");
+        assert!(map.trim_end().ends_with("</urlset>"));
+    }
+
+    #[test]
+    fn what_goes_in_a_loc_is_escaped() {
+        let map = build_sitemap(&urls(&["https://example.com/search?a=1&b=2"])).expect("absolute URLs");
+        assert!(map.contains("a=1&amp;b=2"), "got: {}", map);
+        assert!(!map.contains("a=1&b=2"));
+    }
+
+    #[test]
+    fn a_relative_url_and_too_many_urls_are_refused() {
+        assert!(build_sitemap(&urls(&["/about"])).unwrap_err().contains("not an absolute URL"));
+        assert!(build_sitemap(&urls(&["ftp://example.com/f"])).unwrap_err().contains("not an absolute URL"));
+        let far_too_many: Vec<String> = (0..50_001).map(|number| format!("https://example.com/{}", number)).collect();
+        assert!(build_sitemap(&far_too_many).unwrap_err().contains("more than the"));
+    }
+
+    #[test]
+    fn an_empty_sitemap_is_still_a_sitemap() {
+        let map = build_sitemap(&Vec::new()).expect("no URLs is not an error");
+        assert!(map.contains("<urlset"));
+        assert!(!map.contains("<loc>"));
+    }
+}

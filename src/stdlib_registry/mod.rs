@@ -287,6 +287,13 @@ crate_dependencies! {
     TinySkia => { cargo: "tiny-skia = \"0.11\"", name: "tiny-skia", import: "use tiny_skia;", feature: "game" },
     Fontdue => { cargo: "fontdue = \"0.9\"", name: "fontdue", import: "use fontdue;", feature: "game" },
     Gltf => { cargo: "gltf = { version = \"1\", default-features = false, features = [\"import\", \"utils\"] }", name: "gltf", import: "use gltf;", feature: "game" },
+    Idna => { cargo: "idna = \"1\"", name: "idna", import: "use idna;" },
+    Ed25519 => { cargo: "ed25519-dalek = { version = \"2\", features = [\"rand_core\"] }", name: "ed25519-dalek", import: "use ed25519_dalek;" },
+    Htmd => { cargo: "htmd = \"0.5\"", name: "htmd", import: "use htmd;", feature: "html" },
+    HickoryResolver => { cargo: "hickory-resolver = \"0.24\"", name: "hickory-resolver", import: "use hickory_resolver;", feature: "dns" },
+    TokioRustls => { cargo: "tokio-rustls = \"0.26\"", name: "tokio-rustls", import: "use tokio_rustls;", feature: "tls" },
+    WebpkiRoots => { cargo: "webpki-roots = \"1\"", name: "webpki-roots", import: "use webpki_roots;", feature: "tls" },
+    X509Parser => { cargo: "x509-parser = \"0.18\"", name: "x509-parser", import: "use x509_parser;", feature: "tls" },
 }
 
 /// Defines the StdlibModule enum, its runtime module path, the namespace
@@ -1012,6 +1019,17 @@ lazy_static! {
         // HTTP_Websocket struct
         m.insert("HTTP_Websocket", StdlibTypeInfo {
             name: "HTTP_Websocket".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("url".to_string(), NailDataTypeDescriptor::String);
+                fields
+            }
+        });
+
+        // HTTP_Events struct
+        m.insert("HTTP_Events", StdlibTypeInfo {
+            name: "HTTP_Events".to_string(),
             fields: {
                 let mut fields = HashMap::new();
                 fields.insert("handle".to_string(), NailDataTypeDescriptor::String);
@@ -1753,10 +1771,12 @@ lazy_static! {
         );
         m.insert("DRAW_Anchor", vec!["Start", "Middle", "End"]);
         m.insert("HTTP_Method", vec!["Get", "Post", "Put", "Delete", "Patch"]);
+        m.insert("IMAGE_Turn", vec!["Clockwise", "UpsideDown", "CounterClockwise"]);
         m.insert("HTTP_SameSite", vec!["Strict", "Lax", "None"]);
         m.insert("LOG_Level", vec!["Debug", "Info", "Warn", "Error"]);
         m.insert("ML_Objective", vec!["Squared", "Logistic"]);
         m.insert("TIME_Format", vec!["Unix", "UnixMillis", "ISO8601", "RFC3339", "RFC2822"]);
+        m.insert("TIME_Nth", vec!["First", "Second", "Third", "Fourth", "Fifth", "Last"]);
         m.insert("TIME_Weekday", vec!["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]);
         m.insert("VALIDATE_Country", vec!["UnitedStates", "Canada", "UnitedKingdom", "Germany", "France", "Netherlands", "Australia"]);
         m.insert(
@@ -1916,14 +1936,17 @@ mod stdlib_types_drift_tests {
         assert_enum_matches_registry::<crate::parser::std_lib::log::LOG_Level>("LOG_Level");
         assert_enum_matches_registry::<crate::parser::std_lib::term::TERM_Color>("TERM_Color");
         assert_enum_matches_registry::<crate::parser::std_lib::time::TIME_Format>("TIME_Format");
+        assert_enum_matches_registry::<crate::parser::std_lib::time::TIME_Nth>("TIME_Nth");
         assert_enum_matches_registry::<crate::parser::std_lib::time::TIME_Weekday>("TIME_Weekday");
+        #[cfg(feature = "image")]
+        assert_enum_matches_registry::<crate::parser::std_lib::image::IMAGE_Turn>("IMAGE_Turn");
         assert_enum_matches_registry::<crate::parser::std_lib::ml::ML_Objective>("ML_Objective");
         assert_enum_matches_registry::<crate::parser::std_lib::validate::VALIDATE_Country>("VALIDATE_Country");
     }
 
     #[test]
     fn all_stdlib_enums_are_drift_tested() {
-        let covered = ["CONVERT_FuelEconomy", "CONVERT_Unit", "CSV_Trim", "DRAW_Anchor", "HTTP_Method", "HTTP_SameSite", "LOG_Level", "ML_Objective", "TERM_Color", "TIME_Format", "TIME_Weekday", "VALIDATE_Country"];
+        let covered = ["CONVERT_FuelEconomy", "CONVERT_Unit", "CSV_Trim", "DRAW_Anchor", "HTTP_Method", "HTTP_SameSite", "IMAGE_Turn", "LOG_Level", "ML_Objective", "TERM_Color", "TIME_Format", "TIME_Nth", "TIME_Weekday", "VALIDATE_Country"];
         for enum_name in STDLIB_ENUMS.keys() {
             assert!(covered.contains(enum_name), "STDLIB_ENUMS entry '{}' has no drift test", enum_name);
         }
@@ -2058,6 +2081,7 @@ mod stdlib_types_drift_tests {
         assert_matches_registry::<crate::parser::std_lib::valkey::DB_Valkey>("DB_Valkey");
         #[cfg(feature = "websocket")]
         assert_matches_registry::<crate::parser::std_lib::http::HTTP_Websocket>("HTTP_Websocket");
+        assert_matches_registry::<crate::parser::std_lib::http::HTTP_Events>("HTTP_Events");
         assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Handle>("PROCESS_Handle");
         assert_matches_registry::<crate::parser::std_lib::sched::SCHED_Job>("SCHED_Job");
         assert_matches_registry::<crate::parser::std_lib::geo::GEO_Point>("GEO_Point");
@@ -2085,7 +2109,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input", "GAME3D_Camera"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "HTTP_Events", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input", "GAME3D_Camera"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

@@ -235,6 +235,32 @@ pub fn sanitize(dirty: String) -> String {
     return ammonia::clean(&dirty);
 }
 
+/// The page as markdown: headings, lists, links, emphasis and code kept as
+/// markdown of their own, everything else dropped. The other direction from
+/// `markdown_to_html`, for a page fetched off the internet that has to be
+/// stored, diffed, searched or handed to something that reads text rather than
+/// markup.
+///
+/// `html_text` is the one that throws the structure away and leaves only the
+/// words. This keeps the structure, which is what makes the result worth
+/// storing: a heading is still a heading when it comes back out.
+pub fn to_markdown(document: String) -> Result<String, String> {
+    let converter = htmd::HtmlToMarkdown::builder()
+        // Scripts and stylesheets are not content, and their text would
+        // otherwise land in the markdown as paragraphs of code.
+        .skip_tags(vec!["script", "style", "noscript"])
+        .options(htmd::options::Options {
+            // A dash for bullets and one space after it, which is what
+            // markdown_to_html reads back and what every other markdown in a
+            // Nail program looks like.
+            bullet_list_marker: htmd::options::BulletListMarker::Dash,
+            ul_bullet_spacing: 1,
+            ..htmd::options::Options::default()
+        })
+        .build();
+    return converter.convert(&document).map_err(|failure| format!("html_to_markdown: this document could not be read as HTML: {}", failure));
+}
+
 #[cfg(test)]
 mod sanitize_tests {
     use super::sanitize;
@@ -249,5 +275,36 @@ mod sanitize_tests {
         assert!(cleaned.contains("link"));
         let cleaned = sanitize(r#"<img src=x onerror=alert(1)>"#.to_string());
         assert!(!cleaned.contains("onerror"));
+    }
+}
+
+#[cfg(test)]
+mod markdown_conversion_tests {
+    use super::to_markdown;
+
+    #[test]
+    fn structure_survives_the_crossing() {
+        let page = "<h1>Title</h1><p>Some <b>bold</b> text and a <a href=\"https://example.com\">link</a>.</p><ul><li>one</li><li>two</li></ul>";
+        let markdown = to_markdown(page.to_string()).expect("a readable page");
+        assert!(markdown.contains("# Title"), "got: {}", markdown);
+        assert!(markdown.contains("**bold**"), "got: {}", markdown);
+        assert!(markdown.contains("[link](https://example.com)"), "got: {}", markdown);
+        assert!(markdown.contains("- one"), "got: {}", markdown);
+    }
+
+    #[test]
+    fn what_is_not_content_is_dropped() {
+        let page = "<html><head><style>p { color: red }</style></head><body><script>alert(1)</script><p>kept</p></body></html>";
+        let markdown = to_markdown(page.to_string()).expect("a readable page");
+        assert!(markdown.contains("kept"));
+        assert!(!markdown.contains("alert"), "got: {}", markdown);
+        assert!(!markdown.contains("color: red"), "got: {}", markdown);
+    }
+
+    #[test]
+    fn a_round_trip_through_markdown_keeps_the_words() {
+        let markdown = to_markdown("<p>hello</p>".to_string()).expect("a readable page");
+        assert_eq!(markdown.trim(), "hello");
+        assert_eq!(to_markdown(String::new()).expect("an empty page").trim(), "");
     }
 }

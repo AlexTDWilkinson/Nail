@@ -49,5 +49,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "format_number_words" => "std_lib::format::number_words", (value: i) -> s,
             "A whole number in English words, so 42 becomes forty-two and -8000 becomes negative eight thousand. American style with no and, hyphenated twenty-one through ninety-nine, reaching the quintillions.",
             "spelled:s = format_number_words(42);";
+        "format_parse_bytes" => "std_lib::format::parse_bytes", (text: s) -> (i!e),
+            "Reads a size written for people back into a count of bytes, so 1.5 KB is 1536 and 20 MB is twenty megabytes. This is what format_bytes wrote, and what a person types into a config file for a size limit. Steps of 1024, and KiB is another spelling of KB.",
+            "limit:i = danger(format_parse_bytes(`20 MB`));";
     }
 }

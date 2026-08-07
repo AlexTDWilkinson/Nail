@@ -1670,6 +1670,258 @@ pub fn has_emoji(text: &String) -> bool {
     return text.chars().any(is_emoji_character);
 }
 
+/// Compares two pieces of text the way a person reads names with numbers in
+/// them: `file2` before `file10`, because the digits are read as the number
+/// they spell rather than one character at a time. Returns -1 when the first
+/// comes earlier, 1 when it comes later, 0 when they are the same text.
+///
+/// Letters are compared without regard to case, so `Chapter` and `chapter` sort
+/// together, and identical-but-for-case names are then settled by the text
+/// itself so the order never depends on which one arrived first.
+pub fn compare_natural(first: String, second: String) -> i64 {
+    return match natural_ordering(&first, &second) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    };
+}
+
+/// The comparison `string_compare_natural` and `array_sort_natural` share.
+///
+/// Walks both strings together. Where both sides have digits, the whole runs of
+/// digits are compared as numbers - by length once leading zeros are gone, then
+/// character by character, which is right for numbers of any size and never
+/// parses anything. Anywhere else, one character against one character, folded
+/// to lower case. Two strings that differ only in case or in leading zeros fall
+/// through to a plain comparison of the raw text, so the order is total: a sort
+/// cannot leave two different names in an order that depends on the input.
+pub(crate) fn natural_ordering(first: &str, second: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    let mut left = first.chars().peekable();
+    let mut right = second.chars().peekable();
+    loop {
+        let (next_left, next_right) = (left.peek().copied(), right.peek().copied());
+        match (next_left, next_right) {
+            (None, None) => break,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(from_left), Some(from_right)) => {
+                if from_left.is_ascii_digit() && from_right.is_ascii_digit() {
+                    let left_run = take_digit_run(&mut left);
+                    let right_run = take_digit_run(&mut right);
+                    let ordering = compare_digit_runs(&left_run, &right_run);
+                    if ordering != Ordering::Equal {
+                        return ordering;
+                    }
+                } else {
+                    left.next();
+                    right.next();
+                    let ordering = from_left.to_lowercase().cmp(from_right.to_lowercase());
+                    if ordering != Ordering::Equal {
+                        return ordering;
+                    }
+                }
+            }
+        }
+    }
+    return first.cmp(second);
+}
+
+/// The run of digits at the front of what is left, consumed.
+fn take_digit_run(characters: &mut std::iter::Peekable<std::str::Chars>) -> String {
+    let mut run = String::new();
+    while let Some(character) = characters.peek() {
+        if !character.is_ascii_digit() {
+            break;
+        }
+        run.push(*character);
+        characters.next();
+    }
+    return run;
+}
+
+/// Two runs of digits compared as the numbers they spell, without parsing them
+/// - a version string can hold a number longer than any integer type.
+fn compare_digit_runs(left: &str, right: &str) -> std::cmp::Ordering {
+    let left_number = left.trim_start_matches('0');
+    let right_number = right.trim_start_matches('0');
+    if left_number.len() != right_number.len() {
+        return left_number.len().cmp(&right_number.len());
+    }
+    return left_number.cmp(right_number);
+}
+
+/// The number inside text a person wrote or a spreadsheet exported: `$1,234.50`,
+/// `1 234,50`, `45%`, `(89.10)` for the negative that accountants write in
+/// brackets. Currency symbols, spaces, and the separators between groups of
+/// digits are all thrown away, and what is left is the number.
+///
+/// Both conventions for the decimal point are understood. When a string has
+/// both a comma and a dot, whichever comes last is the decimal point and the
+/// other one groups digits. When it has only commas, they group digits if they
+/// group them in threes and are the decimal point otherwise, so `1,234` is a
+/// thousand and `1,5` is one and a half.
+///
+/// Anything with a letter in it is an error rather than a guess: `12 apples`
+/// has no obvious number, and silently answering 12 is how bad data gets into a
+/// database.
+pub fn parse_number(text: String) -> Result<f64, String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("string_parse_number: there is no number in an empty string".to_string());
+    }
+
+    // Brackets around the whole thing are how a negative is written on an
+    // invoice, and they may sit inside or outside the currency symbol.
+    let bracketed = trimmed.starts_with('(') && trimmed.ends_with(')');
+    let inner = if bracketed { trimmed[1..trimmed.len() - 1].trim() } else { trimmed };
+
+    let mut digits = String::with_capacity(inner.len());
+    let mut negative = bracketed;
+    for character in inner.chars() {
+        match character {
+            '0'..='9' | '.' | ',' => digits.push(character),
+            '-' if digits.is_empty() => negative = true,
+            // Grouping and currency: apostrophes group digits in Switzerland,
+            // the narrow no-break space does in France, and the symbols name a
+            // currency rather than the amount.
+            '+' | ' ' | '\'' | '_' | '\u{00A0}' | '\u{202F}' | '%' => {}
+            character if !character.is_alphanumeric() => {}
+            other => return Err(format!("string_parse_number: `{}` is not part of a number, so `{}` has no clear value", other, text.trim())),
+        }
+    }
+    if !digits.chars().any(|character| character.is_ascii_digit()) {
+        return Err(format!("string_parse_number: `{}` has no digits in it", text.trim()));
+    }
+
+    let cleaned = remove_group_separators(&digits);
+    let value: f64 = cleaned.parse().map_err(|_| format!("string_parse_number: `{}` is not a number this can read", text.trim()))?;
+    return Ok(if negative { -value } else { value });
+}
+
+/// Digits, dots and commas with the grouping taken out and the decimal point
+/// written as a dot, ready to parse.
+fn remove_group_separators(digits: &str) -> String {
+    let last_comma = digits.rfind(',');
+    let last_dot = digits.rfind('.');
+    let decimal_at = match (last_comma, last_dot) {
+        // Both present: the one further right is the decimal point, the other
+        // groups digits. `1.234,56` and `1,234.56` are the same amount.
+        (Some(comma), Some(dot)) => Some(comma.max(dot)),
+        // Only commas: three digits after the last one is a group of
+        // thousands, anything else is a decimal comma. `1,234` is a thousand
+        // and `1,5` is one and a half, which is the reading everybody expects
+        // and the only one available without knowing the writer's country.
+        (Some(comma), None) => {
+            let after = digits.len() - comma - 1;
+            if after == 3 {
+                None
+            } else {
+                Some(comma)
+            }
+        }
+        (None, Some(dot)) => Some(dot),
+        (None, None) => None,
+    };
+
+    let mut cleaned = String::with_capacity(digits.len());
+    for (position, character) in digits.char_indices() {
+        if Some(position) == decimal_at {
+            cleaned.push('.');
+        } else if character != ',' && character != '.' {
+            cleaned.push(character);
+        }
+    }
+    return cleaned;
+}
+
+/// A command line split into the words a shell would pass to a program, so
+/// `process_run` can be handed something a person typed or a config file holds.
+/// Quotes group words, a backslash outside quotes protects the next character,
+/// and single quotes are literal all the way through the way `sh` treats them.
+///
+/// A quote that is never closed is an error: the rest of the line is not a word
+/// anybody meant.
+pub fn shell_split(line: String) -> Result<Vec<String>, String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut started = false;
+    let mut characters = line.chars();
+    while let Some(character) = characters.next() {
+        match character {
+            '\'' => {
+                started = true;
+                loop {
+                    match characters.next() {
+                        Some('\'') => break,
+                        Some(inside) => word.push(inside),
+                        None => return Err("string_shell_split: a single quote is never closed".to_string()),
+                    }
+                }
+            }
+            '"' => {
+                started = true;
+                loop {
+                    match characters.next() {
+                        Some('"') => break,
+                        // Inside double quotes a backslash only protects the
+                        // few characters the shell would otherwise read, and is
+                        // a plain backslash before anything else.
+                        Some('\\') => match characters.next() {
+                            Some(protected @ ('"' | '\\' | '$' | '`')) => word.push(protected),
+                            Some(other) => {
+                                word.push('\\');
+                                word.push(other);
+                            }
+                            None => return Err("string_shell_split: a double quote is never closed".to_string()),
+                        },
+                        Some(inside) => word.push(inside),
+                        None => return Err("string_shell_split: a double quote is never closed".to_string()),
+                    }
+                }
+            }
+            '\\' => {
+                started = true;
+                match characters.next() {
+                    Some(protected) => word.push(protected),
+                    None => return Err("string_shell_split: the line ends in a backslash, which protects nothing".to_string()),
+                }
+            }
+            character if character.is_whitespace() => {
+                if started {
+                    words.push(std::mem::take(&mut word));
+                    started = false;
+                }
+            }
+            other => {
+                started = true;
+                word.push(other);
+            }
+        }
+    }
+    if started {
+        words.push(word);
+    }
+    return Ok(words);
+}
+
+/// One word written so a shell reads it as exactly this text, for a command
+/// line built out of values: a filename with a space in it, a message with an
+/// apostrophe, anything a person typed.
+///
+/// Text that a shell would already read whole is returned untouched, so simple
+/// command lines stay readable.
+pub fn shell_quote(word: String) -> String {
+    let is_plain = !word.is_empty() && word.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | '/' | ':' | '=' | '@' | '+' | ','));
+    if is_plain {
+        return word;
+    }
+    // Single quotes make everything inside literal, and the only thing they
+    // cannot hold is another single quote - which is closed, escaped, reopened.
+    return format!("'{}'", word.replace('\'', "'\\''"));
+}
+
 #[cfg(test)]
 mod fuzzy_matching_and_emoji_tests {
     use super::*;
@@ -1767,5 +2019,64 @@ mod fuzzy_matching_and_emoji_tests {
         assert!(!has_emoji(&"plain text".to_string()));
         assert!(!has_emoji(&"café".to_string()));
         assert!(!has_emoji(&"日本語".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod natural_order_number_and_shell_tests {
+    use super::*;
+
+    #[test]
+    fn digits_are_read_as_the_number_they_spell() {
+        assert_eq!(compare_natural("file2".to_string(), "file10".to_string()), -1);
+        assert_eq!(compare_natural("file10".to_string(), "file2".to_string()), 1);
+        assert_eq!(compare_natural("file2".to_string(), "file2".to_string()), 0);
+        assert_eq!(compare_natural("a".to_string(), "b".to_string()), -1);
+        assert_eq!(compare_natural("A".to_string(), "a".to_string()), -1, "same but for case is settled by the text");
+        assert_eq!(compare_natural("chapter 9".to_string(), "Chapter 10".to_string()), -1, "case does not decide before the number does");
+        assert_eq!(compare_natural("x01".to_string(), "x1".to_string()), -1, "leading zeros do not change the number, only the tie-break");
+        // Longer than any integer type, and still compared as numbers.
+        assert_eq!(compare_natural("id99999999999999999999".to_string(), "id100000000000000000000".to_string()), -1);
+        assert_eq!(compare_natural("file".to_string(), "file1".to_string()), -1);
+    }
+
+    #[test]
+    fn a_number_is_read_out_of_what_a_person_wrote() {
+        assert_eq!(parse_number("$1,234.50".to_string()).expect("a number"), 1234.50);
+        assert_eq!(parse_number("1 234,50".to_string()).expect("a number"), 1234.50);
+        assert_eq!(parse_number("1.234,56".to_string()).expect("a number"), 1234.56);
+        assert_eq!(parse_number("45%".to_string()).expect("a number"), 45.0);
+        assert_eq!(parse_number("(89.10)".to_string()).expect("a number"), -89.10);
+        assert_eq!(parse_number("-12".to_string()).expect("a number"), -12.0);
+        assert_eq!(parse_number("  7  ".to_string()).expect("a number"), 7.0);
+        assert_eq!(parse_number("1,234".to_string()).expect("a number"), 1234.0, "three digits after a lone comma is grouping");
+        assert_eq!(parse_number("1,5".to_string()).expect("a number"), 1.5, "anything else is a decimal comma");
+        assert_eq!(parse_number("1'234.5".to_string()).expect("a number"), 1234.5);
+        assert!(parse_number("12 apples".to_string()).unwrap_err().contains("not part of a number"));
+        assert!(parse_number("".to_string()).unwrap_err().contains("empty"));
+        assert!(parse_number("$".to_string()).unwrap_err().contains("no digits"));
+    }
+
+    #[test]
+    fn a_command_line_splits_the_way_a_shell_reads_it() {
+        assert_eq!(shell_split("ls -la /tmp".to_string()).expect("a whole line"), vec!["ls", "-la", "/tmp"]);
+        assert_eq!(shell_split("echo 'hello world'".to_string()).expect("a whole line"), vec!["echo", "hello world"]);
+        assert_eq!(shell_split("echo \"two  spaces\"".to_string()).expect("a whole line"), vec!["echo", "two  spaces"]);
+        assert_eq!(shell_split("cp a\\ b c".to_string()).expect("a whole line"), vec!["cp", "a b", "c"]);
+        assert_eq!(shell_split("say \"it's\"".to_string()).expect("a whole line"), vec!["say", "it's"]);
+        assert_eq!(shell_split("   ".to_string()).expect("a whole line"), Vec::<String>::new());
+        assert_eq!(shell_split("empty ''".to_string()).expect("a whole line"), vec!["empty", ""], "a closed empty quote is still a word");
+        assert!(shell_split("echo 'unclosed".to_string()).unwrap_err().contains("never closed"));
+        assert!(shell_split("echo trailing\\".to_string()).unwrap_err().contains("protects nothing"));
+    }
+
+    #[test]
+    fn quoting_survives_a_round_trip_through_splitting() {
+        for word in ["plain", "with space", "it's", "$HOME", "a\\b", "", "semi;colon"] {
+            let quoted = shell_quote(word.to_string());
+            let back = shell_split(format!("cmd {}", quoted)).expect("a line we just built");
+            assert_eq!(back, vec!["cmd".to_string(), word.to_string()], "quoting `{}` gave `{}`", word, quoted);
+        }
+        assert_eq!(shell_quote("plain-name.txt".to_string()), "plain-name.txt", "nothing to quote stays readable");
     }
 }

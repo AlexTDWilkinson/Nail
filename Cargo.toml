@@ -64,6 +64,8 @@ sha1 = "0.10"
 blake3 = "1.5"
 unicode-segmentation = "1.11"
 unicode-normalization = "0.1"
+idna = "1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 diffy = "0.4"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 encoding_rs = "0.8"
@@ -82,6 +84,7 @@ jsonschema = { version = "0.18", default-features = false, optional = true }
 chrono-tz = { version = "0.9", optional = true }
 sysinfo = { version = "0.31", optional = true }
 ammonia = { version = "4", optional = true }
+htmd = { version = "0.5", optional = true }
 tokio-tungstenite = { version = "0.23", features = ["rustls-tls-webpki-roots"], optional = true }
 redis = { version = "0.27", features = ["tokio-comp"], optional = true }
 tiny-skia = { version = "0.11", optional = true }
@@ -100,6 +103,14 @@ tokio = { version = "1", features = ["full"] }
 # "blocking" is for Hammer, which downloads releases with no async runtime.
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "multipart", "blocking"] }
 notify = "6"
+# Name lookups beyond an address: mail hosts, text records, reverse names.
+# The resolver stack is large enough to keep behind a feature.
+hickory-resolver = { version = "0.24", optional = true }
+# Reading the certificate a server presents, for an expiry check. rustls
+# rather than native-tls, for the same reason reqwest uses it above.
+tokio-rustls = { version = "0.26", optional = true }
+webpki-roots = { version = "1", optional = true }
+x509-parser = { version = "0.18", optional = true }
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde_rusqlite = "0.35"
 arboard = "3.2"
@@ -131,7 +142,9 @@ default = []
 datafusion = ["dep:datafusion"]
 audio = ["dep:rodio"]
 email = ["dep:lettre"]
-html = ["dep:scraper", "dep:ammonia"]
+html = ["dep:scraper", "dep:ammonia", "dep:htmd"]
+dns = ["dep:hickory-resolver"]
+tls = ["dep:tokio-rustls", "dep:webpki-roots", "dep:x509-parser"]
 compress = ["dep:zstd", "dep:brotli"]
 jsonschema = ["dep:jsonschema"]
 timezones = ["dep:chrono-tz"]

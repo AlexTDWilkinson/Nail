@@ -1048,6 +1048,229 @@ pub fn index_of_min<T: PartialOrd>(arr: &Vec<T>) -> Result<i64, String> {
     return Ok(best as i64);
 }
 
+/// How many arrays the combining functions may produce before they refuse.
+///
+/// Combinations and permutations grow faster than anybody expects: ten things
+/// arranged every way is three and a half million arrays, and asking for it by
+/// accident should say so rather than take the machine's memory. A million is
+/// far past anything a program does something useful with one at a time.
+const LARGEST_PRODUCED_COUNT: usize = 1_000_000;
+
+/// The array sorted the way a person reads names with numbers in them, so
+/// `file2` comes before `file10` instead of after it. Plain sorting compares
+/// text one character at a time, which puts `10` before `2` because `1` is
+/// before `2`, and that is wrong for every list of versions, chapters, or
+/// numbered files anybody looks at.
+pub fn sort_natural(mut arr: Vec<String>) -> Vec<String> {
+    arr.sort_by(|first, second| crate::parser::std_lib::string::natural_ordering(first, second));
+    return arr;
+}
+
+/// Where in a sorted array the item sits, found by halving the range rather
+/// than walking it - the answer in twenty steps for a million elements, where
+/// array_index_of takes a million.
+///
+/// The array must already be sorted, which is the whole bargain: this cannot
+/// check that without the walk it exists to avoid. An unsorted array gets an
+/// answer that is simply wrong, not an error.
+pub fn binary_search<T: PartialOrd>(arr: &Vec<T>, item: T) -> Result<i64, String> {
+    let mut low = 0usize;
+    let mut high = arr.len();
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if arr[middle] < item {
+            low = middle + 1;
+        } else if arr[middle] > item {
+            high = middle;
+        } else {
+            return Ok(middle as i64);
+        }
+    }
+    return Err("array_binary_search: the array does not contain that item".to_string());
+}
+
+/// The position the item would go into a sorted array at, which is also how
+/// many elements come before it. Asking a sorted list of prices how many are
+/// under twenty is this function, not a pass over the whole list.
+///
+/// Equal elements are counted as coming after, so inserting here keeps a run of
+/// equal values in the order they arrived.
+pub fn insertion_point<T: PartialOrd>(arr: &Vec<T>, item: T) -> i64 {
+    let mut low = 0usize;
+    let mut high = arr.len();
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if arr[middle] > item {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    return low as i64;
+}
+
+/// The sorted array with one more item in it, still sorted. Keeping a leader
+/// board or a queue in order as things arrive, without sorting the whole thing
+/// again each time.
+pub fn insert_sorted<T: PartialOrd + Clone>(mut arr: Vec<T>, item: T) -> Vec<T> {
+    let at = insertion_point(&arr, item.clone()) as usize;
+    arr.insert(at, item);
+    return arr;
+}
+
+/// One page of a list, numbered from one, for a page of results with links to
+/// the next. A page past the end is empty rather than an error: a listing that
+/// has shrunk since the link was made shows nothing, it does not break.
+pub fn page<T: Clone>(arr: &Vec<T>, page: i64, per_page: i64) -> Result<Vec<T>, String> {
+    if page < 1 {
+        return Err(format!("array_page: pages are numbered from 1, got {}", page));
+    }
+    if per_page < 1 {
+        return Err(format!("array_page: a page has to hold at least one item, got {}", per_page));
+    }
+    let first = (page as usize - 1).saturating_mul(per_page as usize);
+    if first >= arr.len() {
+        return Ok(Vec::new());
+    }
+    let last = first.saturating_add(per_page as usize).min(arr.len());
+    return Ok(arr[first..last].to_vec());
+}
+
+/// Every run of neighbouring elements of the given size, one step apart -
+/// `[1, 2, 3, 4]` in twos is `[1, 2]`, `[2, 3]`, `[3, 4]`. This is what a
+/// moving average, a pairwise difference, or a "three in a row" check reads.
+///
+/// array_chunk is the one that cuts a list into pieces that do not overlap.
+/// An array shorter than the window has no runs of that size, which is no
+/// windows rather than an error.
+pub fn windows<T: Clone>(arr: &Vec<T>, size: i64) -> Result<Vec<Vec<T>>, String> {
+    if size <= 0 {
+        return Err(format!("array_windows: the window has to hold at least one element, got {}", size));
+    }
+    let width = size as usize;
+    if width > arr.len() {
+        return Ok(Vec::new());
+    }
+    return Ok(arr.windows(width).map(|window| window.to_vec()).collect());
+}
+
+/// Every way of choosing that many elements, order not counting: three people
+/// out of ten for a rota, two cards out of a hand. Each choice keeps the order
+/// the elements came in, and the choices come out in the order their positions
+/// do.
+///
+/// Choosing none is one empty choice, and choosing more than there are is no
+/// choices at all.
+pub fn combinations<T: Clone>(arr: &Vec<T>, size: i64) -> Result<Vec<Vec<T>>, String> {
+    if size < 0 {
+        return Err(format!("array_combinations: cannot choose {} elements", size));
+    }
+    let choose = size as usize;
+    if choose > arr.len() {
+        return Ok(Vec::new());
+    }
+    let total = combination_count(arr.len(), choose);
+    if total > LARGEST_PRODUCED_COUNT {
+        return Err(format!("array_combinations: choosing {} of {} elements is {} arrays, more than the {} this will build", choose, arr.len(), total, LARGEST_PRODUCED_COUNT));
+    }
+
+    let mut chosen: Vec<usize> = (0..choose).collect();
+    let mut produced = Vec::with_capacity(total);
+    loop {
+        produced.push(chosen.iter().map(|position| arr[*position].clone()).collect());
+        // Step the rightmost position that still has room, then repack the ones
+        // after it against it - the standard walk through combinations in the
+        // order their positions read.
+        let mut position = choose;
+        while position > 0 {
+            position -= 1;
+            if chosen[position] != position + arr.len() - choose {
+                chosen[position] += 1;
+                for later in position + 1..choose {
+                    chosen[later] = chosen[later - 1] + 1;
+                }
+                break;
+            }
+            if position == 0 {
+                return Ok(produced);
+            }
+        }
+        if choose == 0 {
+            return Ok(produced);
+        }
+    }
+}
+
+/// How many ways there are to choose that many of that many, worked out without
+/// building any of them, so an impossible request can be refused before it
+/// allocates. Saturates rather than overflowing, since anything past the cap is
+/// refused anyway.
+fn combination_count(total: usize, choose: usize) -> usize {
+    if choose > total {
+        return 0;
+    }
+    let choose = choose.min(total - choose);
+    let mut count = 1usize;
+    for step in 0..choose {
+        count = count.saturating_mul(total - step) / (step + 1);
+        if count > LARGEST_PRODUCED_COUNT {
+            return usize::MAX;
+        }
+    }
+    return count;
+}
+
+/// Every ordering of the elements. Ten elements is three and a half million
+/// orderings, so this refuses anything that large rather than trying.
+pub fn permutations<T: Clone>(arr: &Vec<T>) -> Result<Vec<Vec<T>>, String> {
+    let mut total = 1usize;
+    for step in 1..=arr.len() {
+        total = total.saturating_mul(step);
+        if total > LARGEST_PRODUCED_COUNT {
+            return Err(format!("array_permutations: {} elements have more orderings than the {} this will build", arr.len(), LARGEST_PRODUCED_COUNT));
+        }
+    }
+
+    let mut produced = Vec::with_capacity(total);
+    let mut chosen: Vec<T> = Vec::with_capacity(arr.len());
+    let mut left = arr.clone();
+    fill_permutations(&mut chosen, &mut left, &mut produced);
+    return Ok(produced);
+}
+
+/// Takes each remaining element in turn as the next one chosen, which produces
+/// the orderings in the order their positions read.
+fn fill_permutations<T: Clone>(chosen: &mut Vec<T>, left: &mut Vec<T>, produced: &mut Vec<Vec<T>>) {
+    if left.is_empty() {
+        produced.push(chosen.clone());
+        return;
+    }
+    for position in 0..left.len() {
+        let item = left.remove(position);
+        chosen.push(item.clone());
+        fill_permutations(chosen, left, produced);
+        chosen.pop();
+        left.insert(position, item);
+    }
+}
+
+/// Every pairing of one element from each array, as two-element arrays: sizes
+/// against colours, days against rooms. The first array moves slowest, so the
+/// pairs come out grouped by their first element.
+pub fn cartesian_product<T: Clone>(first: &Vec<T>, second: &Vec<T>) -> Result<Vec<Vec<T>>, String> {
+    let total = first.len().saturating_mul(second.len());
+    if total > LARGEST_PRODUCED_COUNT {
+        return Err(format!("array_cartesian_product: {} by {} is {} pairs, more than the {} this will build", first.len(), second.len(), total, LARGEST_PRODUCED_COUNT));
+    }
+    let mut produced = Vec::with_capacity(total);
+    for from_first in first.iter() {
+        for from_second in second.iter() {
+            produced.push(vec![from_first.clone(), from_second.clone()]);
+        }
+    }
+    return Ok(produced);
+}
+
 #[cfg(test)]
 mod pure_function_tests {
     use super::*;
@@ -1197,5 +1420,95 @@ mod pure_function_tests {
         assert_eq!(rotate_left(vec![1, 2, 3], -1), rotate_right(vec![1, 2, 3], 1));
         assert_eq!(rotate_left(Vec::<i64>::new(), 2), Vec::<i64>::new());
         assert_eq!(rotate_right(words(&["a", "b"]), 1), words(&["b", "a"]));
+    }
+}
+
+#[cfg(test)]
+mod ordering_paging_and_combining_tests {
+    use super::*;
+
+    fn words(items: &[&str]) -> Vec<String> {
+        return items.iter().map(|item| item.to_string()).collect();
+    }
+
+    #[test]
+    fn natural_order_reads_the_numbers_in_names() {
+        assert_eq!(sort_natural(words(&["file10", "file2", "file1"])), words(&["file1", "file2", "file10"]));
+        assert_eq!(sort_natural(words(&["v1.10.0", "v1.9.0", "v1.2.0"])), words(&["v1.2.0", "v1.9.0", "v1.10.0"]));
+        assert_eq!(sort_natural(words(&["b", "A", "a"])), words(&["A", "a", "b"]), "case-insensitive, then the text itself breaks the tie");
+        assert_eq!(sort_natural(Vec::new()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn halving_the_range_finds_what_walking_it_would() {
+        let sorted = vec![1, 3, 5, 7, 9, 11];
+        for (position, value) in sorted.iter().enumerate() {
+            assert_eq!(binary_search(&sorted, *value).expect("a present value"), position as i64);
+        }
+        assert!(binary_search(&sorted, 4).is_err());
+        assert!(binary_search(&Vec::<i64>::new(), 1).is_err());
+        assert_eq!(binary_search(&words(&["ant", "bee", "cow"]), "bee".to_string()).expect("a present word"), 1);
+        assert_eq!(binary_search(&vec![0.5, 1.5, 2.5], 2.5).expect("a present number"), 2);
+    }
+
+    #[test]
+    fn the_insertion_point_counts_what_comes_before() {
+        let sorted = vec![10, 20, 20, 30];
+        assert_eq!(insertion_point(&sorted, 5), 0);
+        assert_eq!(insertion_point(&sorted, 15), 1);
+        assert_eq!(insertion_point(&sorted, 20), 3, "equal values are passed, so an insert keeps arrival order");
+        assert_eq!(insertion_point(&sorted, 99), 4);
+        assert_eq!(insertion_point(&Vec::<i64>::new(), 1), 0);
+    }
+
+    #[test]
+    fn inserting_keeps_the_array_sorted() {
+        assert_eq!(insert_sorted(vec![1, 3, 5], 4), vec![1, 3, 4, 5]);
+        assert_eq!(insert_sorted(vec![1, 3, 5], 0), vec![0, 1, 3, 5]);
+        assert_eq!(insert_sorted(vec![1, 3, 5], 9), vec![1, 3, 5, 9]);
+        assert_eq!(insert_sorted(Vec::<i64>::new(), 2), vec![2]);
+        assert_eq!(insert_sorted(words(&["ant", "cow"]), "bee".to_string()), words(&["ant", "bee", "cow"]));
+    }
+
+    #[test]
+    fn pages_are_numbered_from_one_and_run_out_quietly() {
+        let items = vec![1, 2, 3, 4, 5];
+        assert_eq!(page(&items, 1, 2).expect("a real page"), vec![1, 2]);
+        assert_eq!(page(&items, 3, 2).expect("a real page"), vec![5], "the last page is short");
+        assert_eq!(page(&items, 4, 2).expect("a real page"), Vec::<i64>::new(), "past the end is empty, not an error");
+        assert_eq!(page(&items, 1, 99).expect("a real page"), items);
+        assert!(page(&items, 0, 2).unwrap_err().contains("numbered from 1"));
+        assert!(page(&items, 1, 0).unwrap_err().contains("at least one item"));
+    }
+
+    #[test]
+    fn windows_overlap_where_chunks_do_not() {
+        assert_eq!(windows(&vec![1, 2, 3, 4], 2).expect("a real size"), vec![vec![1, 2], vec![2, 3], vec![3, 4]]);
+        assert_eq!(windows(&vec![1, 2, 3], 3).expect("a real size"), vec![vec![1, 2, 3]]);
+        assert_eq!(windows(&vec![1, 2], 3).expect("a real size"), Vec::<Vec<i64>>::new(), "no run that long exists");
+        assert!(windows(&vec![1, 2], 0).unwrap_err().contains("at least one element"));
+    }
+
+    #[test]
+    fn combinations_choose_without_order_and_permutations_with_it() {
+        assert_eq!(combinations(&vec![1, 2, 3], 2).expect("a real size"), vec![vec![1, 2], vec![1, 3], vec![2, 3]]);
+        assert_eq!(combinations(&vec![1, 2, 3], 3).expect("a real size"), vec![vec![1, 2, 3]]);
+        assert_eq!(combinations(&vec![1, 2], 0).expect("a real size"), vec![Vec::<i64>::new()], "choosing none is one empty choice");
+        assert_eq!(combinations(&vec![1, 2], 3).expect("a real size"), Vec::<Vec<i64>>::new());
+        // 52 cards chosen 5 at a time is nearly three million hands.
+        let too_many: Vec<i64> = (0..52).collect();
+        assert!(combinations(&too_many, 5).unwrap_err().contains("more than the"));
+
+        assert_eq!(permutations(&vec![1, 2, 3]).expect("few enough"), vec![vec![1, 2, 3], vec![1, 3, 2], vec![2, 1, 3], vec![2, 3, 1], vec![3, 1, 2], vec![3, 2, 1]]);
+        assert_eq!(permutations(&Vec::<i64>::new()).expect("few enough"), vec![Vec::<i64>::new()]);
+        let ten: Vec<i64> = (0..10).collect();
+        assert!(permutations(&ten).unwrap_err().contains("more orderings than"));
+    }
+
+    #[test]
+    fn every_pairing_comes_out_grouped_by_the_first_array() {
+        assert_eq!(cartesian_product(&vec![1, 2], &vec![8, 9]).expect("a small product"), vec![vec![1, 8], vec![1, 9], vec![2, 8], vec![2, 9]]);
+        assert_eq!(cartesian_product(&vec![1], &Vec::<i64>::new()).expect("a small product"), Vec::<Vec<i64>>::new());
+        assert_eq!(cartesian_product(&words(&["s", "m"]), &words(&["red"])).expect("a small product"), vec![words(&["s", "red"]), words(&["m", "red"])]);
     }
 }

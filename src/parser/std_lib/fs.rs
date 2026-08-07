@@ -139,6 +139,84 @@ pub async fn size(path: String) -> Result<i64, String> {
     return Ok(metadata.len() as i64);
 }
 
+/// How many bytes everything under a directory adds up to, however deep - what
+/// `du` reports, for a disk-usage line or a check before an upload.
+///
+/// The sizes of the files themselves are added, not the blocks they occupy, so
+/// this is the number of bytes there are to copy rather than the space freed by
+/// deleting them. Directories themselves count as nothing and links are not
+/// followed, matching `fs_walk`.
+pub async fn dir_size(path: String) -> Result<i64, String> {
+    let mut total: i64 = 0;
+    let mut pending = vec![path.clone()];
+
+    while let Some(directory) = pending.pop() {
+        let mut entries = tokio::fs::read_dir(Path::new(&directory)).await.map_err(|e| format!("fs_dir_size: could not read directory '{}': {}", directory, e))?;
+        loop {
+            let entry = entries.next_entry().await.map_err(|e| format!("fs_dir_size: could not read directory '{}': {}", directory, e))?;
+            let entry = match entry {
+                Some(entry) => entry,
+                None => break,
+            };
+
+            let entry_path = entry.path().to_string_lossy().to_string();
+            let file_type = entry.file_type().await.map_err(|e| format!("fs_dir_size: could not inspect '{}': {}", entry_path, e))?;
+            if file_type.is_dir() {
+                pending.push(entry_path);
+            } else if file_type.is_file() {
+                let metadata = entry.metadata().await.map_err(|e| format!("fs_dir_size: could not inspect '{}': {}", entry_path, e))?;
+                total = total.saturating_add(metadata.len() as i64);
+            }
+        }
+    }
+
+    return Ok(total);
+}
+
+/// Whether two files hold exactly the same bytes. Two paths that name the same
+/// file are equal without reading anything, and two files of different lengths
+/// are different without reading anything either - only the remaining case
+/// reads, and it stops at the first block that differs.
+///
+/// This answers the question a hash answers, without the cost of reading both
+/// files all the way through when they differ early. Hash them instead when the
+/// answer has to be stored or compared with a file on another machine.
+pub async fn files_equal(first_path: String, second_path: String) -> Result<bool, String> {
+    let first_size = size(first_path.clone()).await.map_err(|failure| failure.replace("fs_size:", "fs_files_equal:"))?;
+    let second_size = size(second_path.clone()).await.map_err(|failure| failure.replace("fs_size:", "fs_files_equal:"))?;
+    if first_path == second_path {
+        return Ok(true);
+    }
+    if first_size != second_size {
+        return Ok(false);
+    }
+
+    use tokio::io::AsyncReadExt;
+    let mut first = tokio::fs::File::open(Path::new(&first_path)).await.map_err(|e| format!("fs_files_equal: could not read '{}': {}", first_path, e))?;
+    let mut second = tokio::fs::File::open(Path::new(&second_path)).await.map_err(|e| format!("fs_files_equal: could not read '{}': {}", second_path, e))?;
+
+    // A block at a time, so two identical films do not both sit in memory and
+    // two films that differ in their first frame cost one block of reading.
+    const BLOCK: usize = 64 * 1024;
+    let mut from_first = vec![0u8; BLOCK];
+    let mut from_second = vec![0u8; BLOCK];
+    loop {
+        let read_first = first.read(&mut from_first).await.map_err(|e| format!("fs_files_equal: could not read '{}': {}", first_path, e))?;
+        let read_second = second.read_exact(&mut from_second[..read_first]).await;
+        if read_first == 0 {
+            return Ok(true);
+        }
+        // The lengths matched, so the second file running out early means it
+        // changed underneath us - which is an answer of not equal, not an error.
+        if read_second.is_err() {
+            return Ok(false);
+        }
+        if from_first[..read_first] != from_second[..read_first] {
+            return Ok(false);
+        }
+    }
+}
+
 /// When a file was last changed, as a Unix timestamp in seconds, to compare
 /// with `time_now`. Some filesystems do not record this, and that is an error
 /// rather than a made-up date.
@@ -1002,5 +1080,82 @@ mod encoding_tests {
     async fn a_made_up_label_is_refused() {
         let failure = read_with_encoding("/tmp/whatever".to_string(), "klingon-8".to_string()).await.unwrap_err();
         assert!(failure.contains("not an encoding label"));
+    }
+}
+
+#[cfg(test)]
+mod directory_size_and_comparison_tests {
+    use super::{dir_size, files_equal};
+
+    /// A directory with known contents, made fresh so a leftover from a
+    /// previous run cannot change the total.
+    async fn a_tree(name: &str) -> String {
+        let root = std::env::temp_dir().join(format!("nail_fs_{}", name));
+        let _ = tokio::fs::remove_dir_all(&root).await;
+        tokio::fs::create_dir_all(root.join("inner")).await.expect("a writable temporary directory");
+        tokio::fs::write(root.join("one.txt"), "12345").await.expect("a writable file");
+        tokio::fs::write(root.join("inner").join("two.txt"), "1234567890").await.expect("a writable file");
+        return root.to_string_lossy().to_string();
+    }
+
+    #[tokio::test]
+    async fn a_directory_adds_up_everything_underneath_it() {
+        let root = a_tree("size").await;
+        assert_eq!(dir_size(root.clone()).await.expect("a readable tree"), 15);
+
+        let empty = std::env::temp_dir().join("nail_fs_size_empty");
+        let _ = tokio::fs::remove_dir_all(&empty).await;
+        tokio::fs::create_dir_all(&empty).await.expect("a writable temporary directory");
+        assert_eq!(dir_size(empty.to_string_lossy().to_string()).await.expect("a readable tree"), 0);
+
+        assert!(dir_size("/tmp/nail_no_such_directory_at_all".to_string()).await.unwrap_err().contains("fs_dir_size"));
+        let _ = tokio::fs::remove_dir_all(&root).await;
+        let _ = tokio::fs::remove_dir_all(&empty).await;
+    }
+
+    #[tokio::test]
+    async fn two_files_are_equal_only_when_every_byte_is() {
+        let directory = std::env::temp_dir();
+        let same_one = directory.join("nail_fs_equal_one.txt");
+        let same_two = directory.join("nail_fs_equal_two.txt");
+        let different = directory.join("nail_fs_equal_three.txt");
+        let shorter = directory.join("nail_fs_equal_four.txt");
+        tokio::fs::write(&same_one, "the same bytes").await.expect("a writable file");
+        tokio::fs::write(&same_two, "the same bytes").await.expect("a writable file");
+        tokio::fs::write(&different, "the OTHER bytes").await.expect("a writable file");
+        tokio::fs::write(&shorter, "short").await.expect("a writable file");
+
+        let path = |at: &std::path::PathBuf| at.to_string_lossy().to_string();
+        assert!(files_equal(path(&same_one), path(&same_two)).await.expect("readable files"));
+        assert!(files_equal(path(&same_one), path(&same_one)).await.expect("readable files"), "a file is equal to itself");
+        assert!(!files_equal(path(&same_one), path(&different)).await.expect("readable files"));
+        assert!(!files_equal(path(&same_one), path(&shorter)).await.expect("readable files"));
+        assert!(files_equal(path(&same_one), "/tmp/nail_no_such_file".to_string()).await.unwrap_err().contains("fs_files_equal"));
+
+        for file in [same_one, same_two, different, shorter] {
+            let _ = tokio::fs::remove_file(file).await;
+        }
+    }
+
+    /// Bigger than the block the comparison reads at a time, so the loop runs
+    /// more than once and a difference past the first block is still found.
+    #[tokio::test]
+    async fn files_longer_than_one_block_are_compared_all_the_way_through() {
+        let directory = std::env::temp_dir();
+        let long_one = directory.join("nail_fs_equal_long_one.bin");
+        let long_two = directory.join("nail_fs_equal_long_two.bin");
+        let mut bytes = vec![7u8; 200_000];
+        tokio::fs::write(&long_one, &bytes).await.expect("a writable file");
+        bytes[199_999] = 8;
+        tokio::fs::write(&long_two, &bytes).await.expect("a writable file");
+
+        let path = |at: &std::path::PathBuf| at.to_string_lossy().to_string();
+        assert!(!files_equal(path(&long_one), path(&long_two)).await.expect("readable files"));
+        tokio::fs::write(&long_two, vec![7u8; 200_000]).await.expect("a writable file");
+        assert!(files_equal(path(&long_one), path(&long_two)).await.expect("readable files"));
+
+        for file in [long_one, long_two] {
+            let _ = tokio::fs::remove_file(file).await;
+        }
     }
 }

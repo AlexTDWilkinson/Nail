@@ -959,6 +959,23 @@ mod pure_addition_tests {
     }
 }
 
+/// How many pages a list of that many items fills, which is the last page
+/// number a page of results can link to. A part-full last page still counts, so
+/// 11 items at 10 a page is 2 pages, and nothing at all is still one page - an
+/// empty listing shows page 1 of 1, not page 1 of 0.
+pub fn page_count(total_items: i64, per_page: i64) -> Result<i64, String> {
+    if per_page < 1 {
+        return Err(format!("math_page_count: a page has to hold at least one item, got {}", per_page));
+    }
+    if total_items < 0 {
+        return Err(format!("math_page_count: a list cannot hold {} items", total_items));
+    }
+    if total_items == 0 {
+        return Ok(1);
+    }
+    return Ok((total_items + per_page - 1) / per_page);
+}
+
 #[cfg(test)]
 mod error_function_tests {
     use super::*;
@@ -1008,5 +1025,21 @@ mod error_function_tests {
         assert!(close(erfc(-4.0), 2.0 - erfc(4.0)));
         assert_eq!(erfc(f64::INFINITY), 0.0);
         assert_eq!(erfc(f64::NEG_INFINITY), 2.0);
+    }
+}
+
+#[cfg(test)]
+mod paging_tests {
+    use super::*;
+
+    #[test]
+    fn a_part_full_last_page_still_counts() {
+        assert_eq!(page_count(0, 10).expect("a real page size"), 1, "an empty listing is page 1 of 1");
+        assert_eq!(page_count(1, 10).expect("a real page size"), 1);
+        assert_eq!(page_count(10, 10).expect("a real page size"), 1);
+        assert_eq!(page_count(11, 10).expect("a real page size"), 2);
+        assert_eq!(page_count(100, 7).expect("a real page size"), 15);
+        assert!(page_count(10, 0).unwrap_err().contains("at least one item"));
+        assert!(page_count(-1, 10).unwrap_err().contains("cannot hold"));
     }
 }

@@ -32,15 +32,18 @@ Generated files to watch for and delete:
 This is non-negotiable to maintain language stability and prevent regressions.
 
 A clean run currently reports 165/165 lexer/parser, 165/165 type checker and
-149/149 transpiler, with zero failures. `cargo test --lib` reports 1214 passing
-(1228 with `--features "game audio"`), `cargo test --bin nail` reports 1191
-(the library's tests plus the editor's own), and `./test_e2e.sh` reports 357
+149/149 transpiler, with zero failures. `cargo test --lib` reports 1251 passing
+(1269 with `--features "game audio"`), `cargo test --bin nail` reports 1232
+(the library's tests plus the editor's own), and `./test_e2e.sh` reports 365
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
 `./test_launcher.sh` reports 41 checks passing. `./test_error_messages.sh`
-currently reports 22 passed, 3 failed. Those three predate this baseline and are
-not a regression.
+currently reports 0 passed, 25 failed: every golden in `tests/errors/` predates
+the block-arrow syntax migration and the version line, so each one differs from
+today's output by `=>` against `->` and by one line number. The messages
+themselves are right. Regenerate the lot with `./test_error_messages.sh --bless`
+before trusting that suite again.
 
 ## CRITICAL: Never Use Workarounds
 

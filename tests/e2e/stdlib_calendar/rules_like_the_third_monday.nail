@@ -1,0 +1,14 @@
+nail latest
+// E2E: the dates holidays and pay days are written as - the nth weekday of a
+// month, and the last one, which needs no knowledge of how long the month is.
+family_day:i = danger(time_nth_weekday_of_month(2026, 2, TIME_Weekday::Monday, TIME_Nth::Third));
+print(danger(time_format_custom(family_day, `%Y-%m-%d %A`)));
+
+thanksgiving:i = danger(time_nth_weekday_of_month(2026, 11, TIME_Weekday::Thursday, TIME_Nth::Fourth));
+print(danger(time_format_custom(thanksgiving, `%Y-%m-%d %A`)));
+
+last_friday:i = danger(time_nth_weekday_of_month(2026, 5, TIME_Weekday::Friday, TIME_Nth::Last));
+print(danger(time_format_custom(last_friday, `%Y-%m-%d %A`)));
+
+f no_such_day(err:e):i { r 0; }
+print(safe(time_nth_weekday_of_month(2026, 2, TIME_Weekday::Monday, TIME_Nth::Fifth), no_such_day));

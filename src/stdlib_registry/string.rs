@@ -310,5 +310,17 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "string_has_emoji" => "std_lib::string::has_emoji", (text: (&s)) -> b,
             "Returns true when the text holds at least one emoji character.",
             "flagged:b = string_has_emoji(username);";
+        "string_compare_natural" => "std_lib::string::compare_natural", (first: s, second: s) -> i,
+            "Compares two pieces of text the way a person reads names with numbers in them, reading a run of digits as the number it spells. Returns -1 when the first comes earlier, 1 when it comes later, 0 when they are the same text. array_sort_natural sorts a whole array this way.",
+            "order:i = string_compare_natural(`file2`, `file10`);";
+        "string_parse_number" => "std_lib::string::parse_number", (text: s) -> (f!e),
+            "Reads the number out of text a person wrote or a spreadsheet exported: a currency symbol, spaces, digit grouping and a trailing percent sign are all thrown away, and brackets around the whole amount mean it is negative. Text with a letter in it is an error rather than a guess.",
+            "amount:f = danger(string_parse_number(`$1,234.50`));";
+        "string_shell_split" => "std_lib::string::shell_split", (line: s) -> ([s]!e),
+            "Splits a command line into the words a shell would pass to a program, so process_run can be handed something a person typed. Quotes group words and a backslash protects the next character. A quote that is never closed is an error.",
+            "words:a:s = danger(string_shell_split(command_line));";
+        "string_shell_quote" => "std_lib::string::shell_quote", (word: s) -> s,
+            "Writes one word so a shell reads it as exactly this text, for a command line built out of values. Text a shell would already read whole comes back untouched.",
+            "safe:s = string_shell_quote(filename);";
     }
 }

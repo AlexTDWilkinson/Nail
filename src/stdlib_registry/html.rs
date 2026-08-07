@@ -37,5 +37,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "html_sanitize" [Ammonia] => "std_lib::html::sanitize", (dirty: s) -> s,
             "Cleans untrusted HTML so it is safe to serve: scripts, event handlers and javascript: links are removed, ordinary formatting is kept. Anything a person typed must pass through here - including markdown_to_html's rendering of it - before being put in a page.",
             "safe:s = html_sanitize(markdown_to_html(comment));";
+        "html_to_markdown" [Htmd] => "std_lib::html::to_markdown", (document: s) -> (s!e),
+            "The page as markdown, keeping headings, lists, links, emphasis and code and dropping the rest. The other direction from markdown_to_html, for a page fetched off the internet that has to be stored, diffed or searched. html_text is the one that leaves only the words.",
+            "notes:s = danger(html_to_markdown(page));";
     }
 }

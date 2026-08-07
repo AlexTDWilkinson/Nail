@@ -1,0 +1,22 @@
+nail latest
+// E2E: the array functions a listing page and a scheduler reach for - natural
+// order, pages, binary search, and the combining functions.
+files:a:s = [`file10`, `file2`, `file1`];
+print(array_sort_natural(files));
+
+posts:a:i = [1, 2, 3, 4, 5];
+print(danger(array_page(posts, 1, 2)));
+print(danger(array_page(posts, 3, 2)));
+print(danger(array_page(posts, 4, 2)));
+print(danger(math_page_count(5, 2)));
+print(danger(math_page_count(0, 20)));
+
+sorted_ids:a:i = [10, 20, 30, 40];
+print(danger(array_binary_search(sorted_ids, 30)));
+print(array_insertion_point(sorted_ids, 25));
+print(array_insert_sorted(sorted_ids, 25));
+
+print(danger(array_windows(posts, 2)));
+print(danger(array_combinations([1, 2, 3], 2)));
+print(danger(array_permutations([1, 2, 3])));
+print(danger(array_cartesian_product([`s`, `m`], [`red`])));

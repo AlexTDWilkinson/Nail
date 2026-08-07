@@ -43,6 +43,12 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "fs_size" [Tokio] => "std_lib::fs::size", (path: s) -> (i!e),
             "Returns how many bytes a file holds.",
             "bytes:i = danger(fs_size(`archive.zip`));";
+        "fs_dir_size" [Tokio] => "std_lib::fs::dir_size", (path: s) -> (i!e),
+            "Returns how many bytes everything under a directory adds up to, however deep - what du reports. The file sizes are added rather than the blocks they occupy, and links are not followed.",
+            "used:i = danger(fs_dir_size(`uploads`));";
+        "fs_files_equal" [Tokio] => "std_lib::fs::files_equal", (first_path: s, second_path: s) -> (b!e),
+            "Returns whether two files hold exactly the same bytes. Different lengths answer without reading either file, and files that differ early stop there rather than reading to the end.",
+            "same:b = danger(fs_files_equal(`build/out.js`, `dist/out.js`));";
         "fs_modified" [Tokio] => "std_lib::fs::modified", (path: s) -> (i!e),
             "Returns when a file was last changed, as a Unix timestamp in seconds to compare with time_now.",
             "changed:i = danger(fs_modified(`notes.txt`));";

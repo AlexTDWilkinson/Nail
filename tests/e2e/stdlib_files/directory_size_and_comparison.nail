@@ -1,0 +1,13 @@
+nail latest
+// E2E: how much a directory holds, and whether two files are the same bytes.
+danger(fs_create_dir(`tree/inner`));
+danger(fs_write(`tree/one.txt`, `12345`));
+danger(fs_write(`tree/inner/two.txt`, `1234567890`));
+print(danger(fs_dir_size(`tree`)));
+print(format_bytes(danger(fs_dir_size(`tree`))));
+
+danger(fs_write(`copy.txt`, `12345`));
+danger(fs_write(`different.txt`, `54321`));
+print(danger(fs_files_equal(`tree/one.txt`, `copy.txt`)));
+print(danger(fs_files_equal(`tree/one.txt`, `different.txt`)));
+print(danger(fs_files_equal(`tree/one.txt`, `tree/inner/two.txt`)));

@@ -43,6 +43,18 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "crypto_hmac_sha256" [Hmac, Sha2] => "std_lib::crypto::hmac_sha256", (key: s, message: s) -> s,
             "Returns the HMAC-SHA256 of a message under a secret key, as hex. Verifies webhook signatures and signs values that pass through a browser.",
             "signature:s = crypto_hmac_sha256(secret, payload);";
+        "crypto_signing_key" [Ed25519, Rand] => "std_lib::crypto::signing_key", () -> s,
+            "Makes a new Ed25519 signing key, as hex - the secret half, which must never be published. Signing is what HMAC cannot do: whoever checks a signature does not need the secret and so cannot forge one. Keep the key in a file the service user owns and read it with env_get.",
+            "secret:s = crypto_signing_key();";
+        "crypto_verifying_key" [Ed25519] => "std_lib::crypto::verifying_key", (signing_key: s) -> (s!e),
+            "The verifying key that goes with a signing key, as hex. This is the half to publish: it goes in the program that checks signatures, or in the documentation of an API other people call.",
+            "public:s = danger(crypto_verifying_key(secret));";
+        "crypto_sign" [Ed25519] => "std_lib::crypto::sign", (signing_key: s, message: s) -> (s!e),
+            "Signs a message with an Ed25519 signing key, as hex. The signature proves the message came from whoever holds that key and that not one character of it has changed since.",
+            "signature:s = danger(crypto_sign(secret, manifest));";
+        "crypto_verify_signature" [Ed25519] => "std_lib::crypto::verify_signature", (verifying_key: s, message: s, signature: s) -> (b!e),
+            "Whether the signature really is this message signed by the holder of that verifying key. A key or signature of the wrong length is an error rather than a false, because that is a mistake in the program and not a message that failed its check.",
+            "genuine:b = danger(crypto_verify_signature(public, manifest, signature));";
         "crypto_ulid" [Rand] => "std_lib::crypto::ulid", () -> (s!e),
             "Generates a ULID: 26 typable characters, sorted by the time it was made, with no hyphens. The identifier to put in a URL.",
             "id:s = danger(crypto_ulid());";

@@ -208,5 +208,8 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "math_erfc" => "std_lib::math::erfc", (value: f) -> f,
             "Returns the complementary error function 1 - erf, computed directly so the tiny tail values for large inputs keep their accuracy instead of cancelling to noise.",
             "tail:f = math_erfc(3.0);";
+        "math_page_count" => "std_lib::math::page_count", (total_items: i, per_page: i) -> (i!e),
+            "Returns how many pages a list of that many items fills, which is the last page number a listing can link to. A part-full last page counts, and an empty list is still one page.",
+            "pages:i = danger(math_page_count(total_posts, 20));";
     }
 }

@@ -196,5 +196,32 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "array_count_by" => "std_lib::array::count_by_keys", (array: [T], key: (fn(T) -> (K: i|s))) -> (h K i),
             "Returns how many elements share each key, which is array_group_by when only the sizes matter.",
             "per_author:h<s,i> = array_count_by(books, book_author);";
+        "array_sort_natural" => "std_lib::array::sort_natural", (array: [s]) -> [s],
+            "Sorts text the way a person reads names with numbers in them, so file2 comes before file10 instead of after it. Case is ignored, and names that differ only in case are settled by the text itself so the order never depends on the input order.",
+            "in_order:a:s = array_sort_natural(filenames);";
+        "array_binary_search" => "std_lib::array::binary_search", (array: (&[T]), item: T) -> (i!e),
+            "Returns where the item sits in an already sorted array, found by halving the range rather than walking it. Errors when the array does not contain it. An unsorted array gets a wrong answer rather than an error, so use array_index_of when the order is not known.",
+            "position:i = danger(array_binary_search(sorted_ids, 4096));";
+        "array_insertion_point" => "std_lib::array::insertion_point", (array: (&[T]), item: T) -> i,
+            "Returns the position the item would take in a sorted array, which is also how many elements come before it. Asking a sorted list of prices how many are under twenty, without a pass over the list.",
+            "under:i = array_insertion_point(sorted_prices, 2000);";
+        "array_insert_sorted" => "std_lib::array::insert_sorted", (array: [T], item: T) -> [T],
+            "Returns the sorted array with one more item in it, still sorted. Keeps a leader board in order as scores arrive, without sorting the whole thing again.",
+            "board:a:i = array_insert_sorted(board, new_score);";
+        "array_page" => "std_lib::array::page", (array: (&[T]), page: i, per_page: i) -> ([T]!e),
+            "Returns one page of the array, with pages numbered from 1. A page past the end is empty rather than an error, so a stale link shows nothing instead of breaking. Errors only when the page number or page size makes no sense.",
+            "this_page:a:Post = danger(array_page(posts, 2, 20));";
+        "array_windows" => "std_lib::array::windows", (array: (&[T]), size: i) -> ([[T]]!e),
+            "Returns every run of neighbouring elements of that size, one step apart, so [1, 2, 3] in twos gives [1, 2] and [2, 3]. What a moving average or a three-in-a-row check reads. array_chunk is the one that cuts into pieces that do not overlap.",
+            "pairs:a:a:i = danger(array_windows(readings, 2));";
+        "array_combinations" => "std_lib::array::combinations", (array: (&[T]), size: i) -> ([[T]]!e),
+            "Returns every way of choosing that many elements, order not counting. Refuses a request that would build more than a million arrays.",
+            "pairings:a:a:s = danger(array_combinations(players, 2));";
+        "array_permutations" => "std_lib::array::permutations", (array: (&[T])) -> ([[T]]!e),
+            "Returns every ordering of the elements. Ten elements have three and a half million orderings, so anything that large is refused rather than attempted.",
+            "orders:a:a:s = danger(array_permutations(stops));";
+        "array_cartesian_product" => "std_lib::array::cartesian_product", (first: (&[T]), second: (&[T])) -> ([[T]]!e),
+            "Returns every pairing of one element from each array, as two-element arrays, with the first array moving slowest. Sizes against colours, days against rooms.",
+            "variants:a:a:s = danger(array_cartesian_product(sizes, colours));";
     }
 }

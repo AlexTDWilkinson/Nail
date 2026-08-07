@@ -303,6 +303,44 @@ pub fn number_words(value: i64) -> String {
     return parts.join(" ");
 }
 
+/// The byte count a size written for people means: `1.5 KB` is 1536, `2 GB` is
+/// two gigabytes in bytes, `900` on its own is 900 bytes. This reads back what
+/// `format_bytes` writes, and also what a person types into a config file for a
+/// size limit, so a program can take `max_upload = 20 MB` and compare it with
+/// what `fs_size` returned.
+///
+/// The steps are 1024, matching `format_bytes`, and `KiB` is accepted as
+/// another spelling of `KB`. Case and the space do not matter.
+pub fn parse_bytes(text: String) -> Result<i64, String> {
+    const UNITS: [(&str, f64); 6] = [("b", 1.0), ("kb", 1024.0), ("mb", 1_048_576.0), ("gb", 1_073_741_824.0), ("tb", 1_099_511_627_776.0), ("pb", 1_125_899_906_842_624.0)];
+
+    let trimmed = text.trim().to_lowercase();
+    if trimmed.is_empty() {
+        return Err("format_parse_bytes: there is no size in an empty string".to_string());
+    }
+
+    let digits_end = trimmed.find(|character: char| !character.is_ascii_digit() && character != '.' && character != ',' && character != '-' && character != '+').unwrap_or(trimmed.len());
+    let (number, unit) = trimmed.split_at(digits_end);
+    // `1.5 KiB` and `1.5 kb` name the same size - the i is a spelling of the
+    // same 1024 step, not a different one.
+    let unit = unit.trim().replace("ib", "b");
+    let unit = if unit.is_empty() { "b" } else { unit.as_str() };
+
+    let scale = match UNITS.iter().find(|(name, _)| *name == unit) {
+        Some((_, scale)) => *scale,
+        None => return Err(format!("format_parse_bytes: `{}` is not a size this knows - use B, KB, MB, GB, TB or PB", text.trim())),
+    };
+
+    let value: f64 = number.trim().replace(',', "").parse().map_err(|_| format!("format_parse_bytes: `{}` does not start with a number", text.trim()))?;
+    let bytes = value * scale;
+    if !bytes.is_finite() || bytes.abs() >= i64::MAX as f64 {
+        return Err(format!("format_parse_bytes: `{}` is a larger size than a count of bytes can hold", text.trim()));
+    }
+    // A fraction of a byte is not a thing to have, so the count rounds the way
+    // a size written to one decimal place was rounded when it was written.
+    return Ok(bytes.round() as i64);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,5 +558,42 @@ mod tests {
             number_words(i64::MIN),
             "negative nine quintillion two hundred twenty-three quadrillion three hundred seventy-two trillion thirty-six billion eight hundred fifty-four million seven hundred seventy-five thousand eight hundred eight"
         );
+    }
+}
+
+#[cfg(test)]
+mod size_parsing_tests {
+    use super::*;
+
+    #[test]
+    fn a_size_reads_back_into_the_bytes_it_was_written_from() {
+        assert_eq!(parse_bytes("1.5 KB".to_string()).expect("a real size"), 1536);
+        assert_eq!(parse_bytes("512 B".to_string()).expect("a real size"), 512);
+        assert_eq!(parse_bytes("900".to_string()).expect("a real size"), 900, "no unit is bytes");
+        assert_eq!(parse_bytes("2gb".to_string()).expect("a real size"), 2_147_483_648);
+        assert_eq!(parse_bytes("1 KiB".to_string()).expect("a real size"), 1024, "KiB is another spelling of KB");
+        assert_eq!(parse_bytes("  20 MB  ".to_string()).expect("a real size"), 20_971_520);
+        assert_eq!(parse_bytes("-1 KB".to_string()).expect("a real size"), -1024);
+    }
+
+    #[test]
+    fn what_format_bytes_writes_is_what_parse_bytes_reads() {
+        for count in [0i64, 512, 1024, 1536, 1_048_576, 3_221_225_472] {
+            let written = bytes(count);
+            let read_back = parse_bytes(written.clone()).expect("our own writing");
+            // One decimal place is all format_bytes keeps, so the round trip is
+            // exact only to that - a tenth of the unit it chose.
+            let tolerance = (count as f64 * 0.05).max(1.0);
+            assert!((read_back - count).abs() as f64 <= tolerance, "{} wrote {} and read back {}", count, written, read_back);
+        }
+    }
+
+    #[test]
+    fn a_size_that_is_not_one_says_so() {
+        assert!(parse_bytes("".to_string()).unwrap_err().contains("empty"));
+        assert!(parse_bytes("MB".to_string()).unwrap_err().contains("does not start with a number"));
+        assert!(parse_bytes("lots".to_string()).unwrap_err().contains("not a size this knows"));
+        assert!(parse_bytes("5 furlongs".to_string()).unwrap_err().contains("not a size this knows"));
+        assert!(parse_bytes("99999 PB".to_string()).unwrap_err().contains("larger size than"));
     }
 }

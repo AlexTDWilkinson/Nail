@@ -1004,6 +1004,47 @@ impl TIME_Weekday {
     }
 }
 
+/// Which one of a weekday in a month a rule means. `Last` is its own answer
+/// rather than a count, because "the last Friday" is what the rule says and how
+/// many Fridays a month has depends on the month.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TIME_Nth {
+    First,
+    Second,
+    Third,
+    Fourth,
+    Fifth,
+    Last,
+}
+
+impl TIME_Nth {
+    /// How many of that weekday have gone by including this one, or None for
+    /// `Last`, which is counted from the end of the month instead.
+    fn count(self) -> Option<i64> {
+        return match self {
+            TIME_Nth::First => Some(1),
+            TIME_Nth::Second => Some(2),
+            TIME_Nth::Third => Some(3),
+            TIME_Nth::Fourth => Some(4),
+            TIME_Nth::Fifth => Some(5),
+            TIME_Nth::Last => None,
+        };
+    }
+
+    /// What to call it in an error, so the message says "a fifth" rather than
+    /// a number the caller never typed.
+    fn name(self) -> &'static str {
+        return match self {
+            TIME_Nth::First => "a first",
+            TIME_Nth::Second => "a second",
+            TIME_Nth::Third => "a third",
+            TIME_Nth::Fourth => "a fourth",
+            TIME_Nth::Fifth => "a fifth",
+            TIME_Nth::Last => "a last",
+        };
+    }
+}
+
 /// The next date strictly after the moment that falls on the given weekday,
 /// keeping the time of day. Strictly after means a Monday asked for the next
 /// Monday gets the one a week out, which is what "next Monday" means on any
@@ -1016,6 +1057,35 @@ pub fn next_weekday(timestamp: i64, weekday: TIME_Weekday) -> Result<i64, String
         days_ahead = 7;
     }
     return Ok(add_days(timestamp, days_ahead));
+}
+
+/// The date a rule like "the third Monday in January" or "the last Friday of
+/// the month" names, at midnight UTC. This is how holidays, pay days, standing
+/// meetings and billing dates are written down, and none of them can be worked
+/// out by adding days to anything.
+///
+/// A month with only four Mondays asked for its fifth is an error rather than
+/// the first Monday of the month after. `TIME_Nth::Last` never has that problem,
+/// which is why it is a choice of its own rather than a count.
+pub fn nth_weekday_of_month(year: i64, month: i64, weekday: TIME_Weekday, nth: TIME_Nth) -> Result<i64, String> {
+    if !(1..=12).contains(&month) {
+        return Err(format!("time_nth_weekday_of_month: {} is not a month", month));
+    }
+
+    let first_of_month = from_parts(year, month, 1, 0, 0, 0)?;
+    let days_in_this_month = days_in_month(year, month)?;
+    let first_weekday = to_datetime("time_nth_weekday_of_month", first_of_month)?.weekday().number_from_monday() as i64;
+    let first_matching_day = 1 + (weekday.number_from_monday() - first_weekday).rem_euclid(7);
+
+    let day = match nth.count() {
+        Some(count) => first_matching_day + (count - 1) * 7,
+        // Step back from the last one that fits inside the month.
+        None => first_matching_day + ((days_in_this_month - first_matching_day) / 7) * 7,
+    };
+    if day > days_in_this_month {
+        return Err(format!("time_nth_weekday_of_month: {}-{:02} does not have {} of that weekday in it", year, month, nth.name()));
+    }
+    return from_parts(year, month, day, 0, 0, 0);
 }
 
 #[cfg(test)]
@@ -1642,5 +1712,39 @@ mod zone_tests {
         let zones = list_zones();
         assert!(zones.iter().any(|z| z == "America/Edmonton"));
         assert!(zones.len() > 400);
+    }
+}
+
+#[cfg(test)]
+mod nth_weekday_tests {
+    use super::*;
+
+    fn date(year: i64, month: i64, day: i64) -> i64 {
+        return from_parts(year, month, day, 0, 0, 0).expect("a real date");
+    }
+
+    #[test]
+    fn a_rule_like_the_third_monday_names_a_real_date() {
+        // Family Day in Alberta, the third Monday in February 2026.
+        assert_eq!(nth_weekday_of_month(2026, 2, TIME_Weekday::Monday, TIME_Nth::Third).expect("a real rule"), date(2026, 2, 16));
+        // American Thanksgiving, the fourth Thursday in November 2026.
+        assert_eq!(nth_weekday_of_month(2026, 11, TIME_Weekday::Thursday, TIME_Nth::Fourth).expect("a real rule"), date(2026, 11, 26));
+        // The first of the month landing on the weekday asked for.
+        assert_eq!(nth_weekday_of_month(2026, 5, TIME_Weekday::Friday, TIME_Nth::First).expect("a real rule"), date(2026, 5, 1));
+    }
+
+    #[test]
+    fn the_last_one_is_found_without_knowing_the_length_of_the_month() {
+        assert_eq!(nth_weekday_of_month(2026, 5, TIME_Weekday::Friday, TIME_Nth::Last).expect("a real rule"), date(2026, 5, 29));
+        assert_eq!(nth_weekday_of_month(2024, 2, TIME_Weekday::Thursday, TIME_Nth::Last).expect("a real rule"), date(2024, 2, 29), "a leap day is still a Thursday");
+        assert_eq!(nth_weekday_of_month(2026, 2, TIME_Weekday::Saturday, TIME_Nth::Last).expect("a real rule"), date(2026, 2, 28));
+    }
+
+    #[test]
+    fn a_month_without_that_many_says_so_instead_of_spilling_over() {
+        // February 2026 has four Mondays, not five.
+        let missing = nth_weekday_of_month(2026, 2, TIME_Weekday::Monday, TIME_Nth::Fifth).unwrap_err();
+        assert!(missing.contains("does not have a fifth"), "got: {}", missing);
+        assert!(nth_weekday_of_month(2026, 13, TIME_Weekday::Monday, TIME_Nth::First).unwrap_err().contains("not a month"));
     }
 }

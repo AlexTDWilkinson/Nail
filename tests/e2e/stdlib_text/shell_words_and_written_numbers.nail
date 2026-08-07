@@ -1,0 +1,14 @@
+nail latest
+// E2E: reading what a person typed - a command line, an amount, a name with a
+// number in it.
+print(string_compare_natural(`file2`, `file10`));
+print(string_compare_natural(`file10`, `file2`));
+print(danger(string_parse_number(`$1,234.50`)));
+print(danger(string_parse_number(`(89.10)`)));
+print(danger(string_parse_number(`45%`)));
+print(danger(string_shell_split(`cp "my file.txt" /tmp`)));
+print(string_shell_quote(`my file.txt`));
+print(string_shell_quote(`plain.txt`));
+print(danger(format_parse_bytes(`1.5 KB`)));
+print(danger(format_parse_bytes(`20 MB`)));
+print(format_bytes(danger(format_parse_bytes(`2 GB`))));
