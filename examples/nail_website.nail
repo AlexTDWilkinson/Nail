@@ -12,7 +12,7 @@ nail latest
 //   website/startup_data.nail         site config, file reads, demo values computed at startup
 //   website/styles.nail               the page stylesheet
 //   website/page_sections.nail        the HTML builders, one function per section
-//   website/server_state.nail         page assembly, handler state, keep-warm ping
+//   website/server_state.nail         page assembly and handler state
 //   website/routes.nail               the request handler and its routes
 //
 // Below the inserts is the server wiring itself.

@@ -2,7 +2,7 @@
 
 Welcome to Nail - the programming language so simple, it's genius. Inspired by the wisdom of [grugbrain.dev](https://www.grugbrain.dev).
 
-🌐 **[Visit the Nail Website](https://nail-idtq.onrender.com/)** - Interactive examples, documentation, and philosophy (hosted on Render free tier - expect 30s cold start delay)
+🌐 **[Visit the Nail Website](https://nail.alex-wilkinson.ca/)** - Interactive examples, documentation, and philosophy, served by a Nail program
 
 More detailed info in the [Nail Language Spec](nail_language_spec.md).
 
@@ -79,7 +79,7 @@ Nail not baby anymore. Nail teenager with attitude:
 - ✅ **Type Checker:** Catches errors before runtime
 - ✅ **Transpiler:** Generates clean, async Rust code
 - ✅ **IDE:** Full terminal IDE with syntax highlighting
-- ✅ **Standard Library:** 500 functions across 50 modules, listed in full at [the website's library section](https://nail-idtq.onrender.com/#stdlib) or by calling `stdlib_functions()`
+- ✅ **Standard Library:** 1100 functions across 80 modules, listed in full at [the website's library section](https://nail.alex-wilkinson.ca/#stdlib) or by calling `stdlib_functions()`
 - ✅ **Compiler Binary:** `nailc` for standalone compilation
 
 ## 📝 Example Nail Code
@@ -252,7 +252,7 @@ nail/
 
 Nail welcomes grug contributions! Whether you're fixing bugs, adding features, or improving docs, we appreciate simple, clear code.
 
-**Note:** The website at https://nail-idtq.onrender.com/ automatically updates when changes are pushed to the main branch. Your contributions will be live within minutes!
+**Note:** The website at https://nail.alex-wilkinson.ca/ is itself a Nail program, `examples/nail_website.nail`. Edit that one file and run `./scripts/deploy.sh` to put your change live.
 
 See [CLAUDE.md](CLAUDE.md) for AI-assisted development guidelines.
 
