@@ -44,7 +44,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Sends a plain text message with files attached - the invoice, the export, the report just made. An attachment's empty file_name shows the reader the file's own name, and an empty mime_type is guessed from the extension.",
-        example: "danger(email_send_with_attachments(server, to, `Your invoice`, body, [EMAIL_Attachment { path: invoice_path, file_name: ``, mime_type: `` }]));",
+        example: "danger(email_send_with_attachments(server, to, `Your invoice`, body, [EMAIL_Attachment { path = invoice_path, file_name = ``, mime_type = `` }]));",
     });
 
     m.insert("email_default_server", StdlibFunction {

@@ -51,6 +51,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Feed:
         "feed_sitemap" => "std_lib::feed::build_sitemap", (urls: (&[s])) -> (s!e),
             "Builds the sitemap a search engine reads to learn which pages exist without following every link to find them, from a list of absolute URLs. Duplicates are dropped and the order given is kept. A relative URL is an error, because a sitemap is read with no page to be relative to.",
-            "map:s = danger(feed_sitemap(page_urls));";
+            "sitemap:s = danger(feed_sitemap(page_urls));";
     }
 }

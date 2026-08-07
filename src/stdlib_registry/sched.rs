@@ -17,7 +17,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: nail_type!((v!e)),
         diverging: false,
         description: "Runs jobs on their cron schedules, forever - each due moment calls the program's handle_job(name:s):v function with the job's name. Jobs run one at a time in this loop, so they never overlap. Blocks forever, so it runs in a spawn block beside the rest of the program. The error case is a cron expression that does not parse.",
-        example: "spawn { danger(sched_run([SCHED_Job { name: `cleanup`, cron: `0 3 * * *` }])); }",
+        example: "spawn { danger(sched_run([SCHED_Job { name = `cleanup`, cron = `0 3 * * *` }])); }",
     });
 
     simple_fns! { m, Sched:

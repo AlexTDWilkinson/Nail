@@ -84,7 +84,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::String)),
         diverging: false,
         description: "Serialize a value (struct, enum, or array) to a JSON string",
-        example: "json_serialize(my_struct)",
+        example: "text:s = danger(json_serialize(person));",
     });
 
 m.insert("json_deserialize", StdlibFunction {
@@ -103,6 +103,6 @@ m.insert("json_deserialize", StdlibFunction {
         return_type: NailDataTypeDescriptor::Result(Box::new(NailDataTypeDescriptor::TypeVar("T".to_string(), vec![]))),
         diverging: false,
         description: "Deserialize a JSON string to a value (struct, enum, or array)",
-        example: "person:Person = danger(json_deserialize(json_string))",
+        example: "person:Person = danger(json_deserialize(text));",
     });
 }

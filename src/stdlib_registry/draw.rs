@@ -37,7 +37,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "plot:s = draw_group(40.0, 20.0, shapes);";
         "draw_scale" => "std_lib::draw::scale", (value: f, from_low: f, from_high: f, to_low: f, to_high: f) -> (f!e),
             "Moves a value from one range into another - the arithmetic every chart needs. To plot upward on a screen whose y grows downward, pass the height as to_low and 0.0 as to_high.",
-            "y:f = danger(draw_scale(value, 0.0, 100.0, 300.0, 0.0));";
+            "plotted_y:f = danger(draw_scale(value, 0.0, 100.0, 300.0, 0.0));";
         "draw_arc" => "std_lib::draw::arc", (center_x: f, center_y: f, radius: f, start_degrees: f, end_degrees: f, color: s, stroke_width: f) -> (s!e),
             "An arc stroke along part of a circle, with 0 degrees at twelve o'clock and angles growing clockwise. A gauge is this arc twice - once faint for the track, once bright for the value.",
             "gauge:s = danger(draw_arc(100.0, 100.0, 80.0, 0.0, 270.0, `#2563eb`, 8.0));";

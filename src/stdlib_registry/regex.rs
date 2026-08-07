@@ -15,7 +15,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "first:s = danger(regex_find(`\\d+`, `abc123xyz`));";
         "regex_find_all" [Regex] => "std_lib::regex::find_all", (pattern: s, text: s) -> ([s]!e),
             "Returns all regex matches in the text. Errors if the pattern is invalid or nothing matches.",
-            "all:a:s = danger(regex_find_all(`\\d+`, `a1b2c3`));";
+            "numbers:a:s = danger(regex_find_all(`\\d+`, `a1b2c3`));";
         "regex_split" [Regex] => "std_lib::regex::split", (pattern: s, text: s) -> ([s]!e),
             "Splits the text by a regex pattern. Errors on an invalid pattern.",
             "words:a:s = danger(regex_split(`\\s+`, `hello world test`));";

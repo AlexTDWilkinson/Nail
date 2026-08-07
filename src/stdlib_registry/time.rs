@@ -144,7 +144,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "deadline:i = danger(time_parse_human(`in 2 days`, time_now()));";
         "time_cron_describe" [Chrono] => "std_lib::time::cron_describe", (expression: s) -> (s!e),
             "A five-field cron expression written out in words: 0 3 * * * reads every day at 03:00, and 0 9 * * 1-5 reads at 09:00 on weekdays. An expression beyond the vocabulary gets a faithful field-by-field reading rather than an error, and only an expression whose five fields do not parse is an error.",
-            "when:s = danger(time_cron_describe(`0 3 * * *`));";
+            "schedule:s = danger(time_cron_describe(`0 3 * * *`));";
         "time_parse_duration" => "std_lib::time::parse_duration", (text: s) -> (i!e),
             "A human duration - `90s`, `2h30m`, `1.5h`, `2 days` - as whole seconds. A bare number is already seconds. The other direction is time_format_duration.",
             "ttl:i = danger(time_parse_duration(`2h30m`));";
