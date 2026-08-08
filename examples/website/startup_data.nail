@@ -223,6 +223,14 @@ battery_rows:a:h<s,s> = [
 
 // Create navigation HTML
 nav_links:a:s = map item in nav_items {
-    y array_join([html`<a href="`, item.path, `" class="nav-link" hx-boost="true">`, item.name, html`</a>`], ``);
+    y nav_link_html(item.path, item.name);
 };
 nav_html:s = array_join(nav_links, ``);
+
+// The same navbar, for the pages that are not the home page. Their section
+// links have to name the home page as well as the section, because the
+// sections are not on the page the reader is looking at.
+away_nav_links:a:s = map item in nav_items {
+    y nav_link_html(away_from_home(item.path), item.name);
+};
+nav_html_away:s = array_join(away_nav_links, ``);

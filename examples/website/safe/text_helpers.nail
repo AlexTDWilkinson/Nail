@@ -15,6 +15,24 @@ f label_source_file(path:s, source:s):s {
     r array_join([`// ===== `, path, ` =====`, `\n`, source], ``);
 }
 
+// One link in the navbar.
+f nav_link_html(href:s, name:s):s {
+    r array_join([html`<a href="`, href, html`" class="nav-link" hx-boost="true">`, name, html`</a>`], ``);
+}
+
+// The navbar is built once and shown on more than one page. A link like
+// `#examples` names a section of the home page, so it only leads anywhere
+// while the reader is already on the home page: on any other page it points
+// at a section that is not there. This turns those into `/#examples`, which
+// names the home page and the section together and works from anywhere.
+// Paths that already name a page are left alone.
+f away_from_home(path:s):s {
+    if {
+        string_starts_with(path, `#`) -> { r array_join([`/`, path], ``); },
+        else -> { r path; }
+    }
+}
+
 // Microseconds as a human label: µs below a millisecond, otherwise
 // milliseconds with one decimal.
 f elapsed_label(elapsed_us:i):s {

@@ -30,7 +30,7 @@ f generate_navbar(nav_html:s):s {
     navbar_html:s = array_join([
         html`<nav class="navbar">
     <div class="nav-container">
-        <a href="#home" class="nav-brand">
+        <a href="/" class="nav-brand" aria-label="Nail home">
             <span style="font-size: 1.5rem;">🔨</span>
             <span>Nail</span>
         </a>
