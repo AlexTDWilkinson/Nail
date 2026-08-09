@@ -57,16 +57,13 @@ f generate_hero(hero_code:s):s {
     <h1 class="hero-title">Nail</h1>
     <p class="hero-tagline">Rust's speed, Python's ease, zero dependencies</p>
     <p class="hero-description">
-        A small language with a huge standard library. No null. No mutation. No package manager.
-        No unsafe. Errors you can't ignore, and iteration that runs in parallel whenever it's safe to.
+        A small language with a huge standard library. No null, no mutation, no package manager,
+        no unsafe. Errors you can't ignore. Iteration that runs in parallel when it is safe to.
     </p>
     <p class="hero-description">
-        Every file records the compiler that wrote it, so a program that compiled once compiles
-        forever. Program it once, run it forever.
-    </p>
-    <p class="hero-description">
-        Rust does the heavy lifting underneath: one command turns your file into a real program, so
-        you get Rust's speed and memory safety whether or not you know Rust.
+        One command turns your file into a Rust program, so it is as fast and as memory safe as
+        Rust whether or not you know Rust. Every file pins the compiler that wrote it, so what
+        compiled once compiles forever.
     </p>
     <div class="hero-actions">
         <a href="#start" class="btn btn-primary">Get started</a>
@@ -78,7 +75,7 @@ f generate_hero(hero_code:s):s {
         html`</pre>
     </div>
     <p style="color: var(--text-secondary);">
-        This page is a Nail program: server, syntax highlighting and compiler output, all of it.
+        This page is a Nail program: server, highlighting, compiler output, all of it.
         <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/nail_website.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
     </p>
 </section>`
@@ -100,7 +97,7 @@ f generate_whole_language(snippet_html:s, rust_line_count:i):s {
         <pre>{{{snippet}}}</pre>
     </div>
     <p class="sandbox-note">
-        This file compiles. The server checked it with its own compiler at startup, and it became
+        It compiles. This server checked it with its own compiler at startup, where it became
         {{rust_lines}} lines of Rust.
     </p>
 </section>`, values));
@@ -133,9 +130,9 @@ f generate_refusals(error_html:s, error_verdict:s, field_html:s, field_verdict:s
     r array_join([html`<section id="refusals" class="refusals">
     <div class="section-header">
         <h2>Bugs do not compile</h2>
-        <p>Three everyday mistakes. The errors are real: this server fed each file to its own
-           compiler at startup. The panes are editable, so fix a mistake and watch the same
-           compiler, running in your browser, change its verdict</p>
+        <p>Three everyday mistakes, refused by this server's own compiler at startup. The panes
+           are editable: fix one and the same compiler, running in your browser, changes its
+           verdict</p>
     </div>
     <div class="refusal-grid">`, panes, html`</div>
 </section>`], ``);
@@ -146,20 +143,20 @@ f generate_features():s {
         html`<div class="feature-card">
             <div class="feature-icon">🔒</div>
             <h3>Nothing changes behind your back</h3>
-            <p>Once a name has a value it keeps it. Nothing elsewhere can overwrite it, so there is
-               never a hunt for what did.</p>
+            <p>A name keeps its value. Nothing elsewhere can overwrite it, so there is never a
+               hunt for what did.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">👻</div>
             <h3>Nothing is ever empty</h3>
-            <p>No null, no undefined, no declared-but-unset. Every name has a real value from the
-               moment it exists.</p>
+            <p>No null, no undefined, no declared-but-unset. Every name holds a real value from
+               the moment it exists.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🔄</div>
             <h3>Say what you want, not how to loop</h3>
-            <p>map to change every item, filter to keep some, reduce to fold them into one. No
-               counters, so no off-by-one.</p>
+            <p>map changes every item, filter keeps some, reduce folds them into one. No counters,
+               so no off-by-one.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">⚡</div>
@@ -182,26 +179,25 @@ f generate_features():s {
         html`<div class="feature-card">
             <div class="feature-icon">🛡️</div>
             <h3>Foreign code runs sandboxed</h3>
-            <p>import puts downloaded code in a compile-time sandbox: no network, no disk,
-               no way to phone home. The compiler enforces it.</p>
+            <p>import sandboxes downloaded code at compile time: no network, no disk, no way to
+               phone home.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">📦</div>
             <h3>Batteries included</h3>
-            <p>A standard library with a thousand functions: servers, databases, stats, money,
-               geo. No package manager, nothing to install.</p>
+            <p>A thousand functions built in: servers, databases, stats, money, geo. Nothing to
+               install.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🗣️</div>
             <h3>Errors that explain themselves</h3>
-            <p>Every message says what broke, where, why, and how to fix it, in plain words. The
-               wording is pinned by tests.</p>
+            <p>Every message says what broke, where, why, and how to fix it. The wording is
+               pinned by tests.</p>
         </div>`,
         html`<div class="feature-card">
             <div class="feature-icon">🧳</div>
             <h3>One file becomes one binary</h3>
-            <p>Your program transpiles to Rust and builds into a single static executable.
-               Deploying is copying it.</p>
+            <p>Your program becomes Rust, then one static executable. Deploying is copying it.</p>
         </div>`
     ];
     
@@ -231,14 +227,16 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
            highlighting is Nail's own lexer, and every Rust panel is what the transpiler emitted.</p>
     </div>
 
-    <p style="color: var(--text-secondary); max-width: 56rem; margin: 0 auto 2rem;">
-        Nail has two blocks that run statements at the same time, and they attack different
-        bottlenecks. A c block is concurrency: one thread starts every wait at once, so it
-        wins when the slow part is the outside world (disks, networks, timers). A p block is
-        parallelism: every statement gets its own CPU core, so it wins when the slow part is
-        your own computation. Overlapping waits is nearly free, multiplying work takes more
-        hardware. That is the whole difference.
-    </p>
+    <div style="color: var(--text-secondary); max-width: 56rem; margin: 0 auto 2rem;">
+        <p>Two blocks run statements at the same time, against different bottlenecks:</p>
+        <ul class="point-list">
+            <li><strong>c</strong> is concurrency: one thread starts every wait at once. It wins
+                when the slow part is the outside world (disks, networks, timers).</li>
+            <li><strong>p</strong> is parallelism: every statement gets its own core. It wins
+                when the slow part is your own computation.</li>
+        </ul>
+        <p>Overlapping waits is nearly free. Multiplying work takes more hardware.</p>
+    </div>
 
     <div style="display: grid; gap: 2rem; grid-template-columns: minmax(0, 1fr);">
         <div>
@@ -258,15 +256,12 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
             </details>
             <pre id="concurrent-output" class="run-output" style="display: none;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
-                Everything inside c.../c starts at once and the block ends when all of it finishes.
-                One thread juggles all three reads: while one waits on the disk the others make
-                progress, so three waits cost one. The compiler emits tokio::join!, which is a
-                hand-built Promise.all in JavaScript or goroutines plus a WaitGroup in Go. What a
-                c block cannot do is make computation faster, since there is still only one thread
-                computing. Its job is to stack waiting on top of waiting. Why not just use p here?
-                An OS thread costs megabytes of stack and kernel scheduling, and a thread that
-                sleeps on a disk read wastes all of that. A c task waits for close to free, so c
-                scales to thousands of simultaneous waits where threads would choke. Past /c the
+                Everything inside c.../c starts at once and the block ends when all of it
+                finishes, so three waits cost one. The compiler emits tokio::join!, the same idea
+                as Promise.all in JavaScript or goroutines plus a WaitGroup in Go. It cannot make
+                computation faster: one thread is still doing the computing. Why not p here? An OS
+                thread costs megabytes of stack to sit asleep on a disk read, while a c task waits
+                for close to free, so c scales to thousands of simultaneous waits. Past /c the
                 values are ordinary and immutable, with no await left to forget.
             </p>
         </div>
@@ -288,13 +283,12 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
             </details>
             <pre id="parallel-output" class="run-output" style="display: none;"></pre>
             <p style="color: var(--text-secondary); margin-top: 1rem;">
-                Each statement in p.../p gets its own OS thread on its own core, joined at /p, so
-                every value below the block is ready. This is the part c cannot do: three
-                computations happening in the same instant, so the block takes as long as its
-                slowest statement instead of the sum of all three. Spawning threads only pays off
-                because these jobs burn CPU instead of waiting. No locks, because there is nothing
-                mutable to lock. Rule of thumb: c when the bottleneck is waiting, p when the
-                bottleneck is computing.
+                Each statement in p.../p gets its own thread on its own core, joined at /p, so
+                every value below the block is ready. Three computations happen in the same
+                instant, so the block costs its slowest statement instead of the sum. Threads only
+                pay off because these jobs burn CPU instead of waiting. No locks, because there is
+                nothing mutable to lock. Rule of thumb: c when the bottleneck is waiting, p when
+                it is computing.
             </p>
         </div>
         
@@ -317,7 +311,7 @@ f generate_examples(concurrent_example:s, parallel_example:s, error_example:s, c
             <p style="color: var(--text-secondary); margin-top: 1rem;">
                 divide returns i!e, an integer or an error, and Nail will not compile code that
                 ignores the error half. Handle it with safe() and a fallback, or accept the crash
-                with danger(). Every error path is written down, and the compiler checks that it is.
+                with danger(). Every error path is written down, and the compiler checks it.
             </p>
         </div>
     </div>
@@ -338,39 +332,33 @@ f generate_get_started():s {
 # Opens the file in Nail's own IDE
 nail hello.nail</pre></div>
         <p>
-            That installs <strong>nail</strong>, the only command there is and the only thing on
-            your PATH. Open a Nail file with it and it reads which version the file was written for,
-            downloads exactly that version if you do not have it, and hands
-            the file over. The compiler, the editor, a pinned Rust toolchain and every library
-            already built come down in one piece, so the first program compiles in seconds and
-            everything after that works with the network unplugged.
+            <strong>nail</strong> is the only command and the only thing on your PATH. It reads
+            which version a file was written for, downloads exactly that version if you do not
+            have it, and opens the file. The compiler, the editor, a pinned Rust toolchain and
+            every library already built come down in one piece, so the first program compiles in
+            seconds and everything after that works with the network unplugged.
         </p>
         <p>
-            Prefer to see what you are running first? Take the
-            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/bundle/install.sh" style="color: var(--primary); text-decoration: underline;">install script</a>
-            and read it, or build from source with <span class="inline-code">git clone</span> and
-            <span class="inline-code">cargo run</span>. Linux is the supported platform for the
-            tools. The programs you build are static binaries and run anywhere.
+            The editor comes with it and runs the real compiler over your file as you type, so an
+            error is underlined where it is instead of guessed at by a plugin:
         </p>
+        <ul class="point-list">
+            <li><strong>F7</strong> compiles what you are looking at into a release binary</li>
+            <li><strong>F1</strong> documents the function under the cursor</li>
+            <li>Ctrl+S saves, Ctrl+F finds, F6 changes the theme</li>
+        </ul>
         <p>
-            There is no editor to choose. Nail ships one, and it runs the real compiler over your file
-            as you type, so an error is underlined where it actually is instead of being guessed at by
-            a plugin. <strong>F7</strong> compiles what you are looking at into a release binary,
-            <strong>F1</strong> documents the function under the cursor, Ctrl+S saves, Ctrl+F finds,
-            F6 changes the theme.
-        </p>
-        <p>
-            That standardisation is the feature. Nothing to configure, no language server to keep in
-            sync, no formatter to argue about, no plugin that quietly disagrees with the compiler.
-            The same compiler, as <strong>nailc</strong>, is what your build scripts call, and it is
-            the version your file asked for rather than whichever one happens to be newest.
+            Nothing to configure: no language server to keep in sync, no formatter to argue about,
+            no plugin that quietly disagrees with the compiler. Build scripts call that same
+            compiler as <strong>nailc</strong>, at the version the file asked for rather than
+            whichever is newest.
         </p>
         <p style="font-size: 0.95rem;">
-            One command turns your file into a program you can run: Nail writes the Rust, picks the
-            libraries it needs, and hands it to Rust to build. Nothing to configure. Rust is doing the
-            work underneath, so your program is as fast as Rust and runs anywhere Rust runs, and you
-            can read the Rust it wrote whenever you want to. Linux is the supported platform for the
-            editor itself.
+            Read the
+            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/bundle/install.sh" style="color: var(--primary); text-decoration: underline;">install script</a>
+            first if you would rather, or build from source with <code>git clone</code>
+            and <code>cargo run</code>. Linux is the supported platform for the
+            tools. The programs you build are static binaries and run anywhere.
         </p>
         <p style="font-size: 0.95rem;">
             The <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md" target="_blank" style="color: var(--primary); text-decoration: underline;">language specification</a>
@@ -396,9 +384,9 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
         shot_error,
         html`</pre></div>
         <p class="ide-caption">
-            The editor runs the real lexer, parser and type checker over the buffer as you edit, and
-            marks the problem inline on the line that caused it. There is only one implementation of
-            the language, and this is it.
+            The editor runs the real lexer, parser and type checker as you edit, and marks the
+            problem on the line that caused it. There is one implementation of the language, and
+            this is it.
         </p>
 
         <h3>Completions come from the standard library, with signatures</h3>
@@ -406,8 +394,8 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
         shot_complete,
         html`</pre></div>
         <p class="ide-caption">
-            Every function in Nail ships with the language, so the editor can offer all of them with
-            full types. There is no index to build and nothing to keep in sync.
+            Every function ships with the language, so the editor offers all of them with full
+            types. No index to build, nothing to keep in sync.
         </p>
 
         <h3>Embedded languages stay readable</h3>
@@ -415,17 +403,15 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
         tagged_code,
         html`</pre></div>
         <p class="ide-caption">
-            A web program is mostly long strings of other languages. Tag one with the language it
-            holds - <code>html\`&lt;p&gt;hi&lt;/p&gt;\`</code>, or <code>css</code>, <code>sql</code>,
-            <code>yaml</code> - and the editor and this page both colour it as what it is: element
-            names apart from attributes, keywords apart from values, comments dimmed. A tag whose
-            string runs over many lines keeps its place across the breaks, so an open
-            <code>&lt;div</code>, a CSS block or a <code>/* ... */</code> still reads correctly on
-            the line after it.
+            A web program is mostly long strings of other languages. Tag one with what it holds -
+            <code>html\`&lt;p&gt;hi&lt;/p&gt;\`</code>, or <code>css</code>, <code>sql</code>,
+            <code>yaml</code> - and the editor and this page both colour it as that language. The
+            colouring keeps its place across line breaks, so an open <code>&lt;div</code>, a CSS
+            block or a <code>/* ... */</code> still reads correctly on the next line.
         </p>
         <p class="ide-caption">
-            The tag means nothing to the compiler: same type, same escapes, same Rust out the other
-            end. It is a note to whoever is reading. These are the tags the two highlighters know:
+            The tag means nothing to the compiler: same type, same escapes, same Rust out the
+            other end. It is a note to whoever is reading. The tags both highlighters know:
         </p>
         <div class="lang-tags">
             <div class="lang-row"><span class="lang-name">Markup</span><span class="lang-list"><code>html</code> <code>htm</code> <code>xhtml</code> <code>svg</code> <code>xml</code> <code>rss</code> <code>atom</code></span></div>
@@ -438,10 +424,10 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
             <div class="lang-row"><span class="lang-name">Prose</span><span class="lang-list"><code>md</code> <code>markdown</code></span></div>
         </div>
         <p class="ide-caption">
-            The compiler keeps no list of languages, so a tag from outside this table still lexes and
-            still compiles - its string simply keeps one plain colour rather than being run through
-            the wrong tokenizer. Nothing here is a plugin: one scanner covers everything built out of
-            words, strings and comments, and each language is a row in its table.
+            The compiler keeps no list of languages, so a tag from outside this table still
+            compiles, its string simply keeps one plain colour. Nothing here is a plugin: one
+            scanner covers everything built out of words, strings and comments, and each language
+            is a row in its table.
         </p>
 
         <h3>F1 documents whatever is under the cursor</h3>
@@ -449,7 +435,7 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
         shot_docs,
         html`</pre></div>
         <p class="ide-caption">
-            Documentation lives in the same registry the compiler type checks against, so it cannot
+            Documentation lives in the registry the compiler type checks against, so it cannot
             drift out of date.
         </p>
     </div>
@@ -467,7 +453,7 @@ f generate_performance():s {
     <div class="philosophy-content">
         <div class="perf-card">
             <p style="margin-bottom: 0.75rem;"><strong>Uses every core, automatically:</strong></p>
-            <ul style="margin: 0 0 1rem 1.5rem;">
+            <ul class="point-list">
                 <li><strong>map</strong> and <strong>filter</strong>: spread across all cores</li>
                 <li><strong>find</strong>, <strong>all</strong>, <strong>any</strong>: every core searches, everyone stops at the answer</li>
                 <li><strong>sum</strong>, <strong>min</strong>, <strong>max</strong>: split across cores once the array is big enough to be worth it</li>
@@ -475,21 +461,20 @@ f generate_performance():s {
                 <li><strong>c blocks</strong>: three file reads take as long as the slowest one, instead of all three added together</li>
                 <li><strong>reduce</strong>: only when the compiler can prove it is safe, below</li>
             </ul>
-            <p style="margin: 0.75rem 0 0 0;"><strong>Never:</strong> <strong>each</strong>, which exists to
-                run side effects that happen in the order you wrote them, and <strong>scan</strong>,
-                where every value depends on the ones before it.</p>
+            <p style="margin: 0.75rem 0 0 0;"><strong>Never:</strong> <strong>each</strong>, whose
+                side effects happen in the order you wrote them, and <strong>scan</strong>, where
+                every value depends on the ones before it.</p>
         </div>
 
         <p style="margin-top: 2rem;">
             A hand-written loop is opaque, so it runs in order. A named operation carries its own
-            rules: <strong>sum</strong> says order does not matter, and that is what lets it spread
+            rules: <strong>sum</strong> says order does not matter, which is what lets it spread
             across cores.
         </p>
         <p>
-            <strong>reduce</strong> parallelizes only when the compiler can prove regrouping cannot
-            change the answer: integer addition and multiplication, min, max. Subtraction, division
-            and floats stay in order, and there is no flag to override that, because a wrong promise
-            is a silently wrong number.
+            <strong>reduce</strong> parallelizes only where regrouping cannot change the answer:
+            integer addition and multiplication, min, max. Subtraction, division and floats stay in
+            order, with no flag to override it, because a wrong promise is a silently wrong number.
         </p>
         <p>
             Threads are not free, so parallelism switches on above a measured size:
@@ -519,14 +504,14 @@ f generate_performance():s {
             </table>
         </div>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            24-core machine, i64 elements: the cheapest case, so the hardest to win. Costlier comparisons
-            cross over sooner: minimum of a million strings is 2.69x at a fifth of that size. On one core
-            Nail skips the parallel path entirely.
+            24-core machine, i64 elements: the cheapest case, so the hardest to win. Costlier
+            comparisons cross over sooner (minimum of a million strings is 2.69x at a fifth of that
+            size). On one core Nail skips the parallel path entirely.
         </p>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            Microbenchmarks of single operations, not whole programs. Most software waits on I/O and
-            gains nothing here. With nothing to parallelize, Nail emits the sequential Rust you would
-            have written anyway.
+            Microbenchmarks of single operations, not whole programs. Most software waits on I/O
+            and gains nothing here, where Nail emits the sequential Rust you would have written
+            anyway.
         </p>
         <div class="bench-wrap">
             <table class="bench-table">
@@ -564,20 +549,34 @@ f generate_profiling(shot_timings:s):s {
     </div>
     <div class="philosophy-content">
         <p>
-            The table below is not a benchmark. It is the live profiler dump of the Nail program
-            serving you this page: every function it has run since it started, counted and timed,
-            refreshed as you watch. Recording a call costs about 30 nanoseconds. A build that
-            should run dark uses <code>nailc --no-profile</code>.
+            Not a benchmark: the live profiler dump of the Nail program serving you this page,
+            every function it has run since it started, counted and timed, refreshed as you watch.
+            Recording a call costs about 30 nanoseconds, and <code>nailc --no-profile</code> builds
+            without it.
         </p>
-        <div hx-get="/profile-live" hx-trigger="load, every 2s" hx-swap="innerHTML"></div>
+        <div id="profile-live" hx-get="/profile-live" hx-trigger="intersect once, every 2s [nailProfileWatched(this)]" hx-swap="innerHTML">
+            <p style="opacity: 0.7;">Reading the profiler dump...</p>
+        </div>
+        <script>
+// This table is the only thing on the site that asks the server for work on a
+// timer, and building it is by far the busiest thing the server does. So the
+// timer only fires while a reader can actually see the table: not in a
+// background tab, not while the section is scrolled off screen. A page left
+// open on another section costs the server nothing.
+function nailProfileWatched(pane) {
+    if (document.visibilityState !== 'visible') { return false; }
+    var box = pane.getBoundingClientRect();
+    return box.bottom > 0 && box.top < window.innerHeight;
+}
+        </script>
         <h3 style="margin-top: 2.5rem;">The same numbers, pinned in the IDE</h3>
         <div class="ide-shot"><pre>`,
         shot_timings,
         html`</pre></div>
         <p class="ide-caption">
-            A real frame from the editor. Each function declaration wears the timings its last
-            run measured: total, share of wall time, average with call count, and max. Edit the
-            file and the numbers dim as stale until the next run.
+            A real frame from the editor. Each function wears its last run's timings: total, share
+            of wall time, average with call count, max. Edit the file and they dim as stale until
+            the next run.
         </p>
         <h3 style="margin-top: 2.5rem;">And every run answers on the way out</h3>
         <div class="code-example"><span class="code-label">a program closing, printed by itself</span><pre>── nail timing sheet ──
@@ -588,9 +587,9 @@ factorial                 12      5.2µs      437ns      781ns    0.0%
 program wall time 18.2ms, it could run 55.0 times a second. Times are cumulative, a caller includes its callees. A share over 100% means that function ran on several cores at once.</pre></div>
         <p class="ide-caption">
             Real output from examples/profiling_demo.nail. The last line is the whole program as
-            one number: over 60 runs a second reads as instant, single digits reads as sluggish.
-            The 2304% share is not a bug, it is is_prime running across every core at once, which
-            the compiler parallelized on its own. Games close with one more line, like
+            one number: over 60 runs a second reads as instant, single digits as sluggish. The
+            2304% share is is_prime running across every core at once, parallelized by the
+            compiler. Games close with one more line, like
             <code>56 fps shown, 513 fps possible, 1.95ms of real work per frame</code>.
         </p>
     </div>
@@ -664,12 +663,12 @@ f generate_mcp(mcp_source:s):s {
         html`</pre>
     </div>
     <p style="color: var(--text-secondary); margin-top: 1rem;">
-        Declare the tools, write handle_tool, call mcp_serve. One command compiles this file into a
-        single static binary that plugs into Claude Code or Claude Desktop, with no runtime to
-        install and no dependencies to resolve. Stdout carries the protocol, the log functions
-        write to stderr so they stay out of its way, and an error you return becomes a tool error
-        the model can read and act on. The usual setup for this is a Node or Python project with a
-        package manager between you and running it. Here it is a file.
+        Declare the tools, write handle_tool, call mcp_serve. One command compiles this file into
+        a static binary that plugs into Claude Code or Claude Desktop, with no runtime to install
+        and no dependencies to resolve. Stdout carries the protocol, the log functions write to
+        stderr so they stay out of its way, and an error you return becomes a tool error the model
+        can act on. Elsewhere this is a Node or Python project with a package manager in front of
+        it. Here it is a file.
     </p>
 </section>`
     ], ``);
@@ -715,16 +714,15 @@ f generate_import_section(helper_html:s, entry_html:s, verdict_html:s):s {
         <pre>{{{verdict}}}</pre>
     </div>
     <p class="sandbox-note">
-        Not a mock. At startup this server handed the two files above to its own compiler and
+        Not a mock: at startup this server handed the two files above to its own compiler and
         printed the refusal it got back. The sandbox holds through every function the file
         reaches, so nothing gets laundered through a helper.
     </p>
     <p class="sandbox-note">
-        import is the default and it sandboxes what it brings in, so a stranger's file
-        never needs your trust. import_dangerous is for your own files and trusts them
-        completely, which is why its name makes you say so. A package repository for Nail
-        would be a shelf of plain files imported like this: nothing to resolve, nothing to
-        update, nothing to lock.
+        import is the default, so a stranger's file never needs your trust. import_dangerous is
+        for your own files and trusts them completely, which is why its name makes you say so. A
+        package repository for Nail would be a shelf of plain files imported like this: nothing to
+        resolve, nothing to lock.
     </p>
 </section>`, values));
 }
@@ -741,7 +739,7 @@ f generate_stdlib_teaser(function_count:i, module_count:i, rows:a:h<s,s>):s {
     <style>.battery-row { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; align-items: baseline; padding: 0.5rem 0; } .battery-answer { color: var(--success); font-weight: 600; }</style>
     <div class="section-header">
         <h2>Standard library</h2>
-        <p>{{function_count}} functions across {{module_count}} modules, all built in. Every answer below was computed by this server at startup, by running the expression on its left</p>
+        <p>{{function_count}} functions across {{module_count}} modules, all built in. This server computed every answer below at startup, by running the expression on its left</p>
     </div>
     {{{entries}}}
     <div class="stdlib-controls" style="margin-top: 2rem;">
@@ -787,10 +785,10 @@ f generate_stdlib_page(page_title:s, page_description:s, functions:a:STDLIB_Func
         <p>{{function_count}} functions across {{module_count}} modules, all built in</p>
     </div>
     <p class="stdlib-intro">
-        No package manager: what ships with the compiler is what you can call. This page asked
-        the compiler serving it for the list, so it cannot be out of date. Need something that
-        is not here? Copy it in, that is the whole installation, and whatever everyone keeps
-        reaching for gets added to this list.
+        No package manager: what ships with the compiler is what you can call. This page asked the
+        compiler serving it for the list, so it cannot be out of date. Need something that is not
+        here? Copy it in, that is the whole installation, and what everyone keeps reaching for
+        gets added to this list.
     </p>
     <div class="stdlib-controls">
         <button class="btn btn-secondary stdlib-toggle" onclick="var open=this.dataset.open!=='1';document.querySelectorAll('#stdlib .stdlib-module').forEach(function(d){d.open=open});this.dataset.open=open?'1':'0';this.textContent=open?'Collapse all':'Expand all'">Expand all</button>
@@ -834,7 +832,7 @@ f generate_author(avatar_base64:s):s {
             Nail drops those features instead of giving me better tools for surviving them.
         </p>
         <p>
-            This page is a Nail program. One command turned it into the server you are reading it from. I also made
+            One command turned this page into the server you are reading it from. I also made
             <a href="https://sul.alex-wilkinson.ca" target="_blank">Simple Universal Language</a>,
             a spoken and written language built to still reach people who cannot see or hear it.
         </p>
@@ -1001,19 +999,18 @@ f generate_games_section():s {
     <div class="section-header">
         <h2>Games, compiled to your browser</h2>
         <p>
-            Every frame below is a Nail program, built with <code>nailc --target=wasm</code>.
-            The same source files open native windows on a desktop. Click a game to give
-            it your keyboard.
+            Every frame below is a Nail program, built with <code>nailc --target=wasm</code>. The
+            same source files open native windows on a desktop. Click a game to give it your
+            keyboard.
         </p>
     </div>
     <div style="display: flex; flex-direction: column; gap: 2.5rem; align-items: center;">
         <div style="width: 100%; max-width: 940px;">
             <h3 style="margin: 0 0 0.5rem 0;">Platformer</h3>
             <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
-                Click it, then arrows or A and D move, Space jumps, R starts the level over. On a
-                phone the pads in the corners do the same, and every screen between levels leaves
-                on a touch anywhere. Five levels of pits, coins, spikes and things that walk and
-                fly, all pure functions over one struct, with sound.
+                Click it, then arrows or A and D move, Space jumps, R restarts the level. On a
+                phone, the corner pads. Five levels of pits, coins, spikes and things that walk
+                and fly, all pure functions over one struct, with sound.
                 <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/platformer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
             </p>
             <iframe src="/games/platformer-embed" title="Platformer written in Nail" style="width: 100%; aspect-ratio: 800 / 600; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
@@ -1021,10 +1018,9 @@ f generate_games_section():s {
         <div style="width: 100%; max-width: 940px;">
             <h3 style="margin: 0 0 0.5rem 0;">3D model viewer</h3>
             <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
-                Drag to orbit, scroll to zoom, or on a phone drag and pinch. The monument is a
-                glTF file the program fetches,
-                projected and lit by the standard library on the CPU - no graphics card, no
-                JavaScript renderer.
+                Drag to orbit, scroll to zoom, or drag and pinch on a phone. The monument is a
+                glTF file the program fetches, projected and lit by the standard library on the
+                CPU: no graphics card, no JavaScript renderer.
                 <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/model_viewer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
             </p>
             <iframe src="/games/viewer-embed" title="3D model viewer written in Nail" style="width: 100%; aspect-ratio: 900 / 640; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
@@ -1096,9 +1092,9 @@ f generate_downloads_page(releases_tsv:s, nav_html:s):s {
     <div class="philosophy-content">
         <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh</pre></div>
         <p>
-            That installs nail, and nail is all you need. Open any Nail file with it and it
-            reads the version on the file's first line, downloads exactly that version if this
-            machine does not have it, and hands the file over. You never pick a version by hand.
+            nail is all you need. It reads the version on a file's first line, downloads exactly
+            that version if this machine does not have it, and hands the file over. You never pick
+            a version by hand.
         </p>
         <div class="code-example"><span class="code-label">Shell</span><pre>nail new hello        # create a file, ready to compile
 nail hello            # open it in the editor
@@ -1108,15 +1104,15 @@ nail install 0.1.0    # a specific version, on purpose
 nail gc               # reclaim disk from versions you stopped using</pre></div>
         <h3>Every release</h3>
         <p>
-            Each of these is a complete toolchain: the compiler, the editor, a pinned Rust
-            toolchain, every library already built, and a warm build cache. Nothing else has to be
-            on the machine, and nothing is downloaded again afterwards. That is why they are large.
+            Each is a complete toolchain: the compiler, the editor, a pinned Rust toolchain, every
+            library already built, and a warm build cache. That is why they are large, and why
+            nothing else has to be on the machine.
         </p>
         {{{rows}}}
         <p style="font-size: 0.95rem; color: var(--text-secondary); margin-top: 1.5rem;">
-            Linux x86_64, on a distribution using glibc (Ubuntu, Debian, Fedora, Arch). The
-            programs you build are static binaries and run anywhere, including in empty
-            containers. Versions before 1.0 may be withdrawn.
+            Linux x86_64, on a glibc distribution (Ubuntu, Debian, Fedora, Arch). The programs you
+            build are static binaries and run anywhere, including in empty containers. Versions
+            before 1.0 may be withdrawn.
         </p>
     </div>
 </section>`, values));

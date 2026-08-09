@@ -91,6 +91,17 @@ f generate_css():s {
 
     ::-webkit-scrollbar-thumb:hover {
         background: rgba(255,255,255,0.22);
+    }
+
+    /* Prose that reads better as points than as a paragraph. One rule, so
+       every section's list is spaced the same. */
+    .point-list {
+        margin: 1rem 0 1.25rem 1.25rem;
+        padding: 0;
+    }
+
+    .point-list li {
+        margin-bottom: 0.5rem;
     }`;
 
     navbar_styles:s = css`
