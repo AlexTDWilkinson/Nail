@@ -596,6 +596,11 @@ program wall time 18.2ms, it could run 55.0 times a second. Times are cumulative
 </section>`], ``);
 }
 
+// Versioning is the part of Nail that readers say they cannot picture, so this
+// section is written as a walkthrough rather than a summary: a real file, the
+// real terminal output of each command, and a table of exactly what changed on
+// disk. "Move a file to a newer version" means one thing, and it is spelled out
+// rather than implied.
 f generate_versioning():s {
     r html`<section id="versioning" class="philosophy">
     <div class="section-header">
@@ -604,46 +609,158 @@ f generate_versioning():s {
     </div>
     <div class="philosophy-content">
         <p>
-            Every Nail file records the compiler it was written for, on its first line. The IDE
-            stamps it on save, so you never type it. nail reads it, fetches exactly that version
-            if the machine does not have it, and hands the file over. Old code keeps working
-            because nothing drags it forward.
+            Line one of every Nail file names the compiler that wrote it. It is part of the file,
+            so it travels wherever the file goes: into git, into a zip, onto a laptop five years
+            from now.
         </p>
-        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Nail</span><pre>nail 0.1.0</pre></div>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">report.nail</span><pre>nail 0.1.0
+
+total:i = array_sum([3, 4, 5]);
+print(string_from(total));</pre></div>
         <p>
-            A version number is enough on its own, which is unusual. Everywhere else a compiler
-            version does not pin what a program builds against, so a lock file has to carry the
-            rest. Nail has no package manager and a closed set of libraries: everything a program
-            can call ships with the compiler, already vendored and already built. Pin the
-            compiler and you have pinned every byte underneath it. There is nothing else to lock.
+            The command that runs it never mentions a version. nail reads line one, makes sure that
+            exact compiler is on the machine, downloads it if it is not, and hands the file over.
+        </p>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal, the first time this machine sees 0.1.0</span><pre>$ nail run report.nail
+nail: 0.1.0 is not installed, fetching it
+  Nail 0.1.0 [████████████████████████] 100%  774.2 MB / 774.2 MB  22.4 MB/s
+unpacking
+Nail 0.1.0 installed
+12</pre></div>
+        <p>
+            The nail on your PATH is not the compiler. It is a small program that owns the set of
+            installed versions and picks one per file. Versions sit side by side under
+            /opt/nail/versions and never see each other, so opening an old file installs the
+            compiler that file asks for and changes nothing about any other file on the machine.
+            There is no global default to move and no project to migrate first.
+        </p>
+        <h3 style="margin-top: 2.5rem;">Why the version number is the whole lock file</h3>
+        <p>
+            Elsewhere a compiler version is the start of the story, and a lock file carries the
+            hundreds of package versions it does not pin. Nail has no package manager and a closed
+            set of libraries, all shipped inside the release, already vendored and built. Pin the
+            compiler and every byte underneath it is pinned too. Nothing is resolved at build time,
+            so there is nothing left to write down.
+        </p>
+        <h3 style="margin-top: 2.5rem;">The three things line one can say</h3>
+        <table class="release-table">
+            <thead><tr><th>Line one</th><th>What happens</th><th>Who writes it</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><code>nail 0.1.0</code></td>
+                    <td>Compiled by 0.1.0 and nothing else, today and in ten years</td>
+                    <td>The editor, on save. <code>nail new</code>, on create</td>
+                </tr>
+                <tr>
+                    <td><code>nail latest</code></td>
+                    <td>Not settled yet. Every open asks what the newest release is, and fetches it
+                        if it is new</td>
+                    <td>You, by hand, for code you are still writing</td>
+                </tr>
+                <tr>
+                    <td>nothing at all</td>
+                    <td>An error. The compiler refuses a file that has not said what built it</td>
+                    <td>Nobody</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>
+            No ranges, no carets, no "any 0.3.x". A range means the same file compiling differently
+            next year, which is the drift this exists to prevent, so the grammar cannot express
+            one. The missing line is an error for the same reason: any default would quietly mean
+            "whatever is newest".
+        </p>
+        <h3 style="margin-top: 2.5rem;">nail which: what compiles this file, and why</h3>
+        <p>
+            Resolution is never a guess you have to make. Ask, and you get the version, the reason
+            it was chosen, and the exact binary that would run.
+        </p>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal</span><pre>$ nail which report.nail
+report.nail pins 0.1.0
+/opt/nail/versions/0.1.0/bin/nail
+
+$ nail which scratch.nail
+scratch.nail says \`nail latest\`, newest installed is 0.1.1
+/opt/nail/versions/0.1.1/bin/nail</pre></div>
+        <h3 style="margin-top: 2.5rem;">nail fetch: take a whole project offline</h3>
+        <p>
+            A checkout can pin several versions at once, because one file was frozen last year and
+            another moved last week. nail fetch walks a directory, reads line one of every Nail
+            file under it, and installs every version it finds. When it finishes, every file in
+            that tree opens with the network unplugged.
+        </p>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal</span><pre>$ nail fetch .
+41 Nail files, pinning 2 version(s), 1 missing
+  Nail 0.1.1 [████████████████████████] 100%  800.2 MB / 800.2 MB  22.4 MB/s
+unpacking
+Nail 0.1.1 installed
+
+$ nail fetch .
+41 Nail files, pinning 2 version(s), 0 missing
+nothing to fetch</pre></div>
+        <h3 style="margin-top: 2.5rem;">nail update: moving a file forward</h3>
+        <p>
+            Moving a file to a newer Nail means exactly one thing: rewriting line one. The rest of
+            the file is untouched, and no other file is affected. What makes it safe is the order
+            of events. nail update installs the version being moved to, compiles each file against
+            it, and rewrites line one only for the files that pass. A file that no longer compiles
+            keeps the line it had and keeps working, exactly as it did before the command ran.
         </p>
         <p>
-            Files you are still working on say <strong>nail latest</strong> instead, meaning the
-            newest version on this machine. Source you ship carries a number. There is no third
-            option: no ranges, no carets, no "any 0.3.x". A range would mean the same file
-            compiling differently next year, which is the whole thing being avoided, so the
-            grammar simply cannot express one.
+            Without --yes nothing is written. It is a list of what would be attempted.
         </p>
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal</span><pre>$ nail update .
+3 file(s) would move to 0.1.1
+  ./legacy.nail
+  ./main.nail
+  ./report.nail
+
+nothing changed. Add --yes to check each file and restamp the ones that pass
+
+$ nail update . --yes
+3 file(s) would move to 0.1.1
+2 file(s) moved to 0.1.1
+1 file(s) do not compile under 0.1.1 and were left alone:
+  ./legacy.nail</pre></div>
+        <p>And on disk, that is the whole of it:</p>
+        <table class="release-table">
+            <thead><tr><th>File</th><th>Line one before</th><th>Line one after</th><th>Why</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><code>main.nail</code></td>
+                    <td><code>nail 0.1.0</code></td>
+                    <td><code>nail 0.1.1</code></td>
+                    <td>Compiled cleanly under 0.1.1</td>
+                </tr>
+                <tr>
+                    <td><code>report.nail</code></td>
+                    <td><code>nail 0.1.0</code></td>
+                    <td><code>nail 0.1.1</code></td>
+                    <td>Compiled cleanly under 0.1.1</td>
+                </tr>
+                <tr>
+                    <td><code>legacy.nail</code></td>
+                    <td><code>nail 0.1.0</code></td>
+                    <td><code>nail 0.1.0</code></td>
+                    <td>0.1.1 rejected it, so it was left alone and still builds with 0.1.0</td>
+                </tr>
+                <tr>
+                    <td><code>scratch.nail</code></td>
+                    <td><code>nail latest</code></td>
+                    <td><code>nail latest</code></td>
+                    <td>Tracks the newest release already, so there is nothing to move</td>
+                </tr>
+            </tbody>
+        </table>
         <p>
-            The line is required, and leaving it out is an error rather than a default. A file
-            that compiles against whatever happens to be newest is precisely the drift being
-            prevented, and an implicit fallback here would be the same shape as a null, which
-            this language does not have either. You never type it: the editor writes it when you
-            save, and <span class="inline-code">nail new</span> creates a file with it already
-            in place.
+            legacy.nail is not a problem to be solved before the others can move. Fix it and run
+            the command again, or leave it on 0.1.0 for as long as it is useful. Migration is a
+            per-file choice, and it is always a choice. <code>--to=0.1.4</code> moves to a named
+            version rather than the newest installed one.
         </p>
-        <p>
-            Migration is a choice and never a requirement. <strong>nail update</strong> compiles
-            each file against the newer version first and only moves the ones that pass. Anything
-            that would break keeps its old pin and keeps working, for as long as you like.
-        </p>
-        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Shell</span><pre>nail which report       # which compiler runs, and why
-nail fetch .            # grab every version this project pins, then go offline
-nail update . --yes     # move the files that still compile, leave the rest</pre></div>
         <p style="font-size: 0.95rem; color: var(--text-secondary);">
-            A release is one file on one box, served over HTTPS, and a version number names
-            exactly one of them. There is no index to go stale, no package registry to resolve
-            against, and nothing to look up.
+            A release is one file on one box, served over HTTPS, and a version number names exactly
+            one of them. No index to go stale, no registry to resolve against.
         </p>
     </div>
 </section>`;

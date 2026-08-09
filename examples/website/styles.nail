@@ -57,7 +57,7 @@ f generate_css():s {
         font-family: var(--font-mono);
     }
 
-    p code, li code {
+    p code, li code, td code {
         background: rgba(255,255,255,0.07);
         border: 1px solid var(--border);
         border-radius: 0.3rem;
