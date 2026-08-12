@@ -716,6 +716,25 @@ f generate_css():s {
         margin-bottom: 0;
     }
 
+    /* Same reset, same problem: a heading with nothing above it reads as part
+       of the paragraph it follows. The pages that need this are the ones that
+       answer several questions in a row, like downloads. */
+    .philosophy-content h3 {
+        font-size: 1.35rem;
+        color: var(--text-primary);
+        margin-top: 3rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .philosophy-content h3:first-child {
+        margin-top: 0;
+    }
+
+    .philosophy-content a {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
     .philosophy-quote {
         background: var(--bg-primary);
         border: 1px solid var(--border);
