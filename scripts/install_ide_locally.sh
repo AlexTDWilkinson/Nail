@@ -6,8 +6,8 @@
 #   ./scripts/install_ide_locally.sh nailc    # the compiler as well
 #   ./scripts/install_ide_locally.sh all      # IDE, compiler and launcher
 #
-# `/usr/local/bin/nail` is only the launcher: it reads a file's version line
-# and execs the IDE out of /opt/nail/versions/<version>/bin. That copy is what
+# The nail on your PATH is only the launcher: it reads a file's version line
+# and execs the IDE out of <store>/versions/<version>/bin. That copy is what
 # the editor actually runs, which is why rebuilding alone changes nothing.
 #
 # This is the developer's shortcut, not a release. A release is built by
@@ -27,7 +27,18 @@ case "$WHAT" in
 esac
 
 VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
-ROOT="${NAIL_ROOT:-/opt/nail}"
+
+# The same order nail itself uses: whatever was asked for, then a home install,
+# then a machine-wide one. A home install is the default now, so looking only
+# in /opt would miss most of them.
+USER_STORE="${XDG_DATA_HOME:-$HOME/.local/share}/nail"
+if [ -n "${NAIL_ROOT:-}" ]; then
+	ROOT="$NAIL_ROOT"
+elif [ -d "$USER_STORE/versions/$VERSION" ]; then
+	ROOT="$USER_STORE"
+else
+	ROOT=/opt/nail
+fi
 VERSION_DIR="$ROOT/versions/$VERSION"
 
 if [ ! -d "$VERSION_DIR/bin" ]; then

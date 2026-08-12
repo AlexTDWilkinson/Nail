@@ -327,10 +327,18 @@ f generate_get_started():s {
         <p>One download. No Rust to install, no C compiler, nothing else on the machine.</p>
     </div>
     <div class="philosophy-content">
-        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh
+        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sh
 
 # Opens the file in Nail's own IDE
 nail hello.nail</pre></div>
+        <p>
+            That installs into your home directory. It asks for no administrator rights, writes
+            nothing outside <code>~/.local</code>, and <code>rm -rf ~/.local/share/nail</code>
+            is the uninstaller. A language is not a decision about your machine, so it does not
+            get to make one. Pipe it into <code>sudo sh</code> instead and it installs to
+            <code>/opt/nail</code> for everyone on the machine, which is worth doing on a box
+            with several users and is otherwise unnecessary.
+        </p>
         <p>
             <strong>nail</strong> is the only command and the only thing on your PATH. It reads
             which version a file was written for, downloads exactly that version if you do not
@@ -354,11 +362,15 @@ nail hello.nail</pre></div>
             whichever is newest.
         </p>
         <p style="font-size: 0.95rem;">
-            Read the
+            The
             <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/bundle/install.sh" style="color: var(--primary); text-decoration: underline;">install script</a>
-            first if you would rather, or build from source with <code>git clone</code>
-            and <code>cargo run</code>. Linux is the supported platform for the
-            tools. The programs you build are static binaries and run anywhere.
+            is there to read, though reading it proves less than it looks like: a server can
+            serve one thing to a pipe and another to a browser, and what it fetches is a
+            compiled toolchain either way. The claim worth having is the one you can check
+            afterwards, which is that all of it is in a directory you own and deleting that
+            directory is the end of it. Or skip the script and build from source with
+            <code>git clone</code> and <code>cargo run</code>. Linux is the supported platform
+            for the tools. The programs you build are static binaries and run anywhere.
         </p>
         <p style="font-size: 0.95rem;">
             The <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md" target="_blank" style="color: var(--primary); text-decoration: underline;">language specification</a>
@@ -629,8 +641,8 @@ Nail 0.1.0 installed
 12</pre></div>
         <p>
             The nail on your PATH is not the compiler. It is a small program that owns the set of
-            installed versions and picks one per file. Versions sit side by side under
-            /opt/nail/versions and never see each other, so opening an old file installs the
+            installed versions and picks one per file. Versions sit side by side in a directory
+            you own and never see each other, so opening an old file installs the
             compiler that file asks for and changes nothing about any other file on the machine.
             There is no global default to move and no project to migrate first.
         </p>
@@ -677,11 +689,11 @@ Nail 0.1.0 installed
         </p>
         <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal</span><pre>$ nail which report.nail
 report.nail pins 0.1.0
-/opt/nail/versions/0.1.0/bin/nail
+/home/you/.local/share/nail/versions/0.1.0/bin/nail
 
 $ nail which scratch.nail
 scratch.nail says \`nail latest\`, newest installed is 0.1.1
-/opt/nail/versions/0.1.1/bin/nail</pre></div>
+/home/you/.local/share/nail/versions/0.1.1/bin/nail</pre></div>
         <h3 style="margin-top: 2.5rem;">nail fetch: take a whole project offline</h3>
         <p>
             A checkout can pin several versions at once, because one file was frozen last year and
@@ -1207,11 +1219,12 @@ f generate_downloads_page(releases_tsv:s, nav_html:s):s {
         <p>You do not normally need this page. nail fetches the version a file asks for, by itself</p>
     </div>
     <div class="philosophy-content">
-        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh</pre></div>
+        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sh</pre></div>
         <p>
             nail is all you need. It reads the version on a file's first line, downloads exactly
             that version if this machine does not have it, and hands the file over. You never pick
-            a version by hand.
+            a version by hand. Everything lands in your home directory and needs no administrator
+            rights, so a release you download is only ever yours to run.
         </p>
         <div class="code-example"><span class="code-label">Shell</span><pre>nail new hello        # create a file, ready to compile
 nail hello            # open it in the editor

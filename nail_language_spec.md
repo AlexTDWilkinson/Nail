@@ -1143,9 +1143,10 @@ restamp.
 ### Distribution
 
 Nail ships as **one immutable bundle per release**, installed at
-`/opt/nail/versions/<version>`. The promise: download, install, open, it works.
-Offline. No Rust installation, no C compiler, no crates.io, nothing else on the
-machine.
+`<store>/versions/<version>`. The store is `~/.local/share/nail` by default and
+`/opt/nail` for a machine-wide install. The promise: download, install, open, it
+works. Offline. No Rust installation, no C compiler, no crates.io, nothing else
+on the machine, and no administrator rights.
 
 The bundle contains everything a build touches:
 
@@ -1160,11 +1161,15 @@ The bundle contains everything a build touches:
 
 Design decisions and why:
 
-- **Per-version fixed path.** Cargo's build fingerprints embed absolute paths,
-  so a bundle's warm cache is only valid at the path it was warmed at. The
-  version is known when the bundle is built, so building at
-  `/opt/nail/versions/<version>` and installing to the same place keeps the
-  shipped cache valid while letting many versions live side by side.
+- **Relocated on install.** Cargo's build fingerprints embed absolute paths, so
+  a bundle's warm cache is only valid at the path it was warmed at, and the
+  release machine's path is not the user's. Two settings in `cargo-home/config.toml`
+  hold that path (the vendored sources and the linker) and the launcher rewrites
+  both as it installs, reading the path the bundle was built at back out of that
+  same file. The warm cache does not survive the move, so the launcher spends it
+  once by building one throwaway program while the person is still waiting on the
+  install, rather than leaving the cost in front of their first real build. An
+  install at the path the bundle was built at skips both steps.
 - **Full copy per version.** No layer sharing between versions. A pinned
   version must never meet a rustc it was not built against, and paying the full
   download size per version is the correct price for that.
@@ -1237,7 +1242,9 @@ download to restore is worse than nagging.
 
 `bundle/build_bundle.sh` assembles and warms a bundle (the only step needing
 network and a musl C compiler, a build-machine concern), `bundle/install.sh` is
-the one-time bootstrap that installs the launcher and hands `/opt/nail` to the user,
+the one-time bootstrap that installs the launcher and hands the store to the user
+(into their home directory by default, needing no root at all, and into `/opt/nail`
+when run under sudo),
 and `bundle/test_bundle.sh` is the release gate: on a machine with no Rust, no
 cc and no network, compile and run a Nail program using only the bundle. A
 release that fails the gate does not ship. `deploy/releases.sh` uploads a built

@@ -116,7 +116,7 @@ EOF
 # Regenerate the download page's list and the routes, without republishing.
 if [[ "${1:-}" == "--refresh" ]]; then
 	# The launcher is version independent, so it can be replaced without
-	# republishing a release. This is also what stops `curl | sudo sh` handing
+	# republishing a release. This is also what stops `curl | sh` handing
 	# someone an older launcher than the one that is current.
 	build_launcher
 	if [[ -x target/release/nail-launcher ]]; then

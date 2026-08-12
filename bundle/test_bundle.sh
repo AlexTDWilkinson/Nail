@@ -7,14 +7,17 @@
 set -euo pipefail
 
 # Versions live side by side, so with no NAIL_HOME the gate runs against the
-# newest one installed.
-ROOT="${NAIL_HOME:-$(ls -d /opt/nail/versions/*/ 2>/dev/null | sort -V | tail -1)}"
+# newest one installed. A store in the user's home is the default install, so
+# that is looked at first, with the machine-wide one behind it.
+STORE="${XDG_DATA_HOME:-$HOME/.local/share}/nail"
+[ -d "$STORE/versions" ] || STORE=/opt/nail
+ROOT="${NAIL_HOME:-$(ls -d "$STORE"/versions/*/ 2>/dev/null | sort -V | tail -1)}"
 ROOT="${ROOT%/}"
 TARGET=x86_64-unknown-linux-musl
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-[ -n "$ROOT" ] && [ -x "$ROOT/bin/nailc" ] || { echo "FAIL: no bundle at ${ROOT:-/opt/nail/versions}" >&2; exit 1; }
+[ -n "$ROOT" ] && [ -x "$ROOT/bin/nailc" ] || { echo "FAIL: no bundle at ${ROOT:-$STORE/versions}" >&2; exit 1; }
 
 # Same steps the IDE build thread performs, with the same scrubbed env.
 mkdir -p "$WORK/src"
@@ -53,11 +56,11 @@ fi
 
 # The other half of the promise: a file that pins this version must reach this
 # version's compiler through the launcher, with no network involved.
-if [ -x /opt/nail/bin/nail ]; then
+if [ -x "$STORE/bin/nail" ]; then
     VERSION="$(basename "$ROOT")"
     printf 'nail %s\n' "$VERSION" > "$WORK/pinned.nail"
     cat "$(dirname "$0")/hello.nail" >> "$WORK/pinned.nail"
-    RESOLVED="$(/opt/nail/bin/nail which "$WORK/pinned.nail")"
+    RESOLVED="$("$STORE/bin/nail" which "$WORK/pinned.nail")"
     case "$RESOLVED" in
         *"pins $VERSION"*) echo "nail resolves the version line to $VERSION" ;;
         *) echo "FAIL: nail did not resolve the version line: $RESOLVED" >&2; exit 1 ;;

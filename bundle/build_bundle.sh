@@ -3,11 +3,12 @@
 # pinned Rust toolchain, vendored crate sources, the nail crate source, and a
 # pre-warmed build cache - then tars it for distribution.
 #
-# Must be built AT the final install path (/opt/nail/versions/<version>):
-# cargo fingerprints embed absolute paths, and building at the final path is
-# what makes the shipped warm cache valid on user machines. Many versions live
-# side by side, and the version is known here at build time, so a per-version
-# path is still a fixed path.
+# Cargo fingerprints embed absolute paths, so the warm cache shipped in here is
+# only valid at the path it was warmed at. A machine that installs to that same
+# path gets it for free. Every other machine has the launcher rewrite the two
+# settings that hold the path and spend one build re-warming, which is why this
+# no longer has to be built at the place it will be installed. Many versions
+# live side by side either way.
 #
 # Build-machine requirements (users need none of this):
 #   - network access (crates.io + static.rust-lang.org)
