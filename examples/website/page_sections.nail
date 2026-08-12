@@ -1246,32 +1246,21 @@ f generate_downloads_page(releases_tsv:s, nav_html:s):s {
 # Opens the file in Nail's own IDE
 nail hello.nail</pre></div>
         <p>
-            Start there. nail reads the version on a file's first line, downloads exactly that
-            version if this machine does not have it, and hands the file over, so you never pick
-            one by hand and never need what is below.
+            That is the whole install, and it is all most people ever need.
             <a href="/#start" style="color: var(--primary); text-decoration: underline;">Get started</a>
-            has the rest, including the machine-wide install.
+            has the rest.
         </p>
-        <h3>Every release</h3>
+        <h3 style="margin-top: 2.5rem;">If you want one version on purpose</h3>
         <p>
-            Each is a complete toolchain: the compiler, the editor, a pinned Rust toolchain, every
-            library already built, and a warm build cache. That is why they are large, and why
-            nothing else has to be on the machine.
+            Because you are opening a file that asks for it, or carrying it to a machine with no
+            network.
         </p>
+        <div class="code-example"><span class="code-label">Shell</span><pre>nail install 0.1.0                            # by name
+nail import nail-0.1.0-linux-x86_64.tar.xz    # from a file you downloaded below</pre></div>
         {{{rows}}}
-        <h3 style="margin-top: 2.5rem;">For a machine that cannot reach this one</h3>
-        <p>
-            That is what the files above are for, and it is the reason they are offered at all.
-            Download one on a machine with a network, carry it to the one without, and install it
-            from the file. A release is built in one place and works wherever it lands, so the two
-            machines do not have to keep their versions anywhere in particular, or agree with each
-            other about where that is.
-        </p>
-        <div class="code-example"><span class="code-label">Shell</span><pre>nail import nail-0.1.0-linux-x86_64.tar.xz    # install from a file you carried
-nail install 0.1.0                            # or fetch one straight off the network
-nail list                                     # what is installed, how big, last used
-nail gc                                       # reclaim disk from versions you stopped using</pre></div>
         <p style="font-size: 0.95rem; color: var(--text-secondary); margin-top: 1.5rem;">
+            Each one is a whole toolchain, compiler and editor and Rust and every library already
+            built, which is why they are large and why nothing else has to be on the machine.
             Linux x86_64, on a glibc distribution (Ubuntu, Debian, Fedora, Arch). The programs you
             build are static binaries and run anywhere, including in empty containers. Versions
             before 1.0 may be withdrawn.
