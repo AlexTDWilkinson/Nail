@@ -646,10 +646,13 @@ fn install(store: &Store, version: &Version) -> Fallible<()> {
 fn permission_hint(store: &Store) -> String {
     if store.is_system() {
         return format!(
-            "That store belongs to the whole machine. Either take it over with\n  \
+            "That store is the machine-wide one, and it belongs to whoever installed it.\n\
+             Either ask them to install this version, take the store over with\n  \
              sudo chown -R $USER {}\n\
-             or unset it and let nail keep versions in your home directory instead.",
-            store.root.display()
+             or install nail for yourself, which needs nobody's permission:\n  \
+             curl -fsSL {}/install | sh",
+            store.root.display(),
+            store.origin
         );
     }
     return format!("That directory is your own, so something has changed the permissions on {}.", store.root.display());

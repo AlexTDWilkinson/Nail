@@ -335,9 +335,31 @@ nail hello.nail</pre></div>
             That installs into your home directory. It asks for no administrator rights, writes
             nothing outside <code>~/.local</code>, and <code>rm -rf ~/.local/share/nail</code>
             is the uninstaller. A language is not a decision about your machine, so it does not
-            get to make one. Pipe it into <code>sudo sh</code> instead and it installs to
-            <code>/opt/nail</code> for everyone on the machine, which is worth doing on a box
-            with several users and is otherwise unnecessary.
+            get to make one.
+        </p>
+        <h3 style="margin-top: 2.5rem;">Or install it for the whole machine</h3>
+        <p>
+            Same script, run as root. It installs to <code>/opt/nail</code> instead, and hands
+            that directory to the user who ran it, so nothing afterwards needs root again.
+        </p>
+        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh</pre></div>
+        <p>What that buys, and only this:</p>
+        <ul class="point-list">
+            <li><strong>nail on PATH for everyone</strong>, through <code>/usr/local/bin</code>:
+                root shells, cron jobs, build agents and accounts that never log in
+                interactively. The home install goes in <code>~/.local/bin</code>, which most
+                systems add at login but nothing else can count on</li>
+            <li><strong>.nail files get their icon and their open-with entry for every account</strong>,
+                not only yours</li>
+            <li><strong>Gigabytes land outside your home directory</strong>, which matters where
+                home is a network mount, a small partition, or something a backup copies nightly</li>
+        </ul>
+        <p>
+            What it does not buy is a toolchain several people share. The store is handed to
+            whoever ran the install, and so is the build cache inside it, so everyone else can
+            run what is there but cannot build with it or add a version. A second person writing
+            Nail on the same machine wants their own home install, which is the default and
+            costs them nothing.
         </p>
         <p>
             <strong>nail</strong> is the only command and the only thing on your PATH. It reads
@@ -1226,6 +1248,12 @@ f generate_downloads_page(releases_tsv:s, nav_html:s):s {
             a version by hand. Everything lands in your home directory and needs no administrator
             rights, so a release you download is only ever yours to run.
         </p>
+        <p>
+            Add sudo to put it in <code>/opt/nail</code> instead, which is worth doing when nail
+            has to be on PATH for accounts that never log in, like cron jobs and build agents, or
+            when your home directory is a network mount you would rather keep gigabytes off:
+        </p>
+        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh</pre></div>
         <div class="code-example"><span class="code-label">Shell</span><pre>nail new hello        # create a file, ready to compile
 nail hello            # open it in the editor
 nail run hello        # compile it and run it
