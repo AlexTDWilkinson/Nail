@@ -703,6 +703,19 @@ f generate_css():s {
         color: var(--text-secondary);
     }
 
+    /* The reset at the top of this file zeroes every margin, and these sections
+       held one paragraph at a time between code blocks and lists, which bring
+       their own. So two paragraphs in a row had nothing at all between them and
+       read as one block. Adjacent margins collapse, so the 2rem a code block
+       already carries still wins where a paragraph sits next to one. */
+    .philosophy-content p {
+        margin-bottom: 1.5rem;
+    }
+
+    .philosophy-content p:last-child {
+        margin-bottom: 0;
+    }
+
     .philosophy-quote {
         background: var(--bg-primary);
         border: 1px solid var(--border);

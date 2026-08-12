@@ -1241,25 +1241,13 @@ f generate_downloads_page(releases_tsv:s, nav_html:s):s {
         <p>You do not normally need this page. nail fetches the version a file asks for, by itself</p>
     </div>
     <div class="philosophy-content">
-        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sh</pre></div>
         <p>
-            nail is all you need. It reads the version on a file's first line, downloads exactly
-            that version if this machine does not have it, and hands the file over. You never pick
-            a version by hand. Everything lands in your home directory and needs no administrator
-            rights, so a release you download is only ever yours to run.
+            nail reads the version on a file's first line, downloads exactly that version if this
+            machine does not have it, and hands the file over. You never pick a version by hand,
+            which is why this page is here for reference rather than for use. Installing nail
+            itself is one line and it is on
+            <a href="/#start" style="color: var(--primary); text-decoration: underline;">Get started</a>.
         </p>
-        <p>
-            Add sudo to put it in <code>/opt/nail</code> instead, which is worth doing when nail
-            has to be on PATH for accounts that never log in, like cron jobs and build agents, or
-            when your home directory is a network mount you would rather keep gigabytes off:
-        </p>
-        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh</pre></div>
-        <div class="code-example"><span class="code-label">Shell</span><pre>nail new hello        # create a file, ready to compile
-nail hello            # open it in the editor
-nail run hello        # compile it and run it
-nail list             # what is installed, how big, last used
-nail install 0.1.0    # a specific version, on purpose
-nail gc               # reclaim disk from versions you stopped using</pre></div>
         <h3>Every release</h3>
         <p>
             Each is a complete toolchain: the compiler, the editor, a pinned Rust toolchain, every
@@ -1267,6 +1255,21 @@ nail gc               # reclaim disk from versions you stopped using</pre></div>
             nothing else has to be on the machine.
         </p>
         {{{rows}}}
+        <h3 style="margin-top: 2.5rem;">Taking a version by hand</h3>
+        <p>
+            Two reasons to be on this page. Either you want a particular version on a machine
+            before anything asks for it, or the machine that needs it has no network and you are
+            carrying the file to it yourself.
+        </p>
+        <div class="code-example"><span class="code-label">Shell</span><pre>nail install 0.1.0                            # fetch one, on purpose
+nail import nail-0.1.0-linux-x86_64.tar.xz    # install one from the file above
+nail list                                     # what is installed, how big, last used
+nail gc                                       # reclaim disk from versions you stopped using</pre></div>
+        <p>
+            A release is built somewhere else and works wherever it lands, so a file downloaded
+            here installs into whichever store the machine keeps, without either of them having
+            to agree in advance.
+        </p>
         <p style="font-size: 0.95rem; color: var(--text-secondary); margin-top: 1.5rem;">
             Linux x86_64, on a glibc distribution (Ubuntu, Debian, Fedora, Arch). The programs you
             build are static binaries and run anywhere, including in empty containers. Versions
