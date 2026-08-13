@@ -1266,8 +1266,7 @@ nail hello.nail</pre></div>
         <h3>A version, as a file</h3>
         <p>
             For the machine with no network. Download it here, carry it over, install it from
-            the file. A release carries no trace of where it was built, so it lands wherever
-            that machine keeps its versions.
+            the file.
         </p>
         {{{rows}}}
         <div class="code-example"><span class="code-label">Shell</span><pre>nail import nail-{{example}}-linux-x86_64.tar.xz</pre></div>
