@@ -932,23 +932,41 @@ f generate_css():s {
         line-height: 1.8;
     }
 
+    /* Each pane is code over verdict. Subgrid puts every code box in one
+       shared row and every verdict in another, so the three columns line up
+       at the same heights instead of each pane ending wherever its text ran
+       out. Browsers without subgrid still equalize whole panes. */
     .refusal-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 1.5rem;
+        column-gap: 1.5rem;
+        row-gap: 1rem;
     }
 
     .refusal-pane {
         min-width: 0;
+        display: grid;
+        grid-template-rows: subgrid;
+        grid-row: span 2;
     }
 
     .refusal-pane .code-example {
-        margin: 0 0 1rem;
+        margin: 0;
     }
 
     @media (max-width: 1000px) {
         .refusal-grid {
             grid-template-columns: 1fr;
+            row-gap: 1.5rem;
+        }
+
+        .refusal-pane {
+            display: block;
+            grid-row: auto;
+        }
+
+        .refusal-pane .code-example {
+            margin: 0 0 1rem;
         }
     }
 

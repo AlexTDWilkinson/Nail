@@ -141,6 +141,7 @@ lookup:s = sql\`SELECT name FROM users WHERE active = 1;\`;
 settings:s = yaml\`service: nail   # what runs here\`;
 manifest:s = toml\`[package]\`;
 behaviour:s = js\`const total = items.map(double);\`;
+shader:s = wgsl\`@fragment fn glow() -> @location(0) vec4<f32> { return vec4<f32>(hue, 1.0); }\`;
 release:s = md\`## Out **today**\`;
 plain:s = \`no tag, no change\`;`;
 tagged_snippet_html:s = code_highlight_html(tagged_snippet);

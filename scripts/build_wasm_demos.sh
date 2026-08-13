@@ -39,6 +39,7 @@ build_demo() {
 
 build_demo platformer examples/platformer.nail
 build_demo viewer examples/model_viewer.nail
+build_demo monolith examples/monolith_field.nail
 
 # The viewer program loads monument.glb from beside its source file. In the
 # browser the same path is fetched as a URL against the embed page's

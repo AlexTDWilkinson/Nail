@@ -39,6 +39,14 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 headers = headers
             };
         },
+        request.path == `/games/monolith-embed` -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `page_monolith_embed`)),
+                content_type = `text/html; charset=utf-8`,
+                headers = headers
+            };
+        },
         request.path == `/downloads` -> {
             r HTTP_Response {
                 status = 200,

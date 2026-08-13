@@ -1,0 +1,364 @@
+nail latest
+// A field of meshes drawn by the graphics card: 81 towers rising and
+// falling in a wave, a ring of pillars, an orb circling overhead, fog
+// swallowing the far edge, and a checkerboard floor with real perspective.
+//
+// Drag to orbit, scroll to zoom, click a tower to claim it, Esc quits.
+//
+// The whole scene is one shape. view builds an array of GAME3D_Draw values
+// and hands them to game3d_scene with a camera and an environment, and the
+// backend renders them with a depth buffer on the graphics card, or falls
+// back to sorted triangles on the CPU when there is none. The HUD text
+// after the scene shape draws over it, which is what being later in the
+// frame means.
+
+struct Field {
+    yaw:f,
+    pitch:f,
+    distance:f,
+    last_mouse_x:f,
+    last_mouse_y:f,
+    was_down:b,
+    clock_ms:f,
+    picked:i,
+    done:b,
+    ground:i,
+    block:i,
+    ball:i,
+    pillar:i,
+    sea:i,
+    sun_shader:GAME3D_Shader,
+    water_shader:GAME3D_Shader
+}
+
+f camera_of(state:Field):GAME3D_Camera {
+    // The eye orbits the middle of the field: yaw walks around it, pitch
+    // tilts above and below, distance is the zoom.
+    flat:f = math_cos(state.pitch) * state.distance;
+    r GAME3D_Camera {
+        position_x = math_sin(state.yaw) * flat,
+        position_y = 1.0 + (math_sin(state.pitch) * state.distance),
+        position_z = 0.0 - (math_cos(state.yaw) * flat),
+        target_x = 0.0,
+        target_y = 1.0,
+        target_z = 0.0,
+        field_of_view = 55.0,
+        viewport_width = 900.0,
+        viewport_height = 640.0
+    };
+}
+
+f tower_across(index:i):f {
+    r (danger(float_from(index % 9)) - 4.0) * 2.2;
+}
+
+f tower_away(index:i):f {
+    r (danger(float_from(index / 9)) - 4.0) * 2.2;
+}
+
+f tower_height(state:Field, index:i):f {
+    across:f = tower_across(index);
+    away:f = tower_away(index);
+    wave:f = math_sin((state.clock_ms * 0.0012) + ((across + away) * 0.35));
+    r 1.5 + (wave * 0.7) + (((across * across) + (away * away)) * 0.015);
+}
+
+f towers(state:Field):a:GAME3D_Draw {
+    palette:a:s = [`#5c6bc0`, `#26a69a`, `#ef6c00`, `#8d6e63`, `#78909c`];
+    r map index in array_range(0, 81) {
+        height:f = tower_height(state, index);
+        paint:s = if {
+            index == state.picked -> { r `#e53935`; },
+            else -> { r danger(array_get(palette, (index % 9 + ((index / 9) * 2)) % 5)); }
+        };
+        placed:GAME3D_Draw = game3d_draw(state.block, tower_across(index), height / 2.0, tower_away(index));
+        y game3d_draw_tinted(game3d_draw_scaled(placed, 0.9, height, 0.9), paint);
+    };
+}
+
+f pillars(state:Field):a:GAME3D_Draw {
+    r map index in array_range(0, 12) {
+        angle:f = danger(float_from(index)) * 0.5236;
+        placed:GAME3D_Draw = game3d_draw(state.pillar, math_cos(angle) * 13.0, 2.5, math_sin(angle) * 13.0);
+        y game3d_draw_tinted(game3d_draw_scaled(placed, 1.4, 5.0, 1.4), `#455a64`);
+    };
+}
+
+// The orb is also the sun: the scene's light points at wherever it is,
+// so every face in the field relights as it circles. Its spot is three
+// little functions because the light and the drawn sphere both need it.
+f orb_across(state:Field):f {
+    r math_cos(state.clock_ms * 0.0006) * 6.0;
+}
+
+f orb_height(state:Field):f {
+    r 4.5 + math_sin(state.clock_ms * 0.0012);
+}
+
+f orb_away(state:Field):f {
+    r math_sin(state.clock_ms * 0.0006) * 6.0;
+}
+
+f orb(state:Field):a:GAME3D_Draw {
+    placed:GAME3D_Draw = game3d_draw(state.ball, orb_across(state), orb_height(state), orb_away(state));
+    // The sun is a shader this file wrote: full glow keeps it emissive on
+    // the CPU fallback, and the WGSL boils it - white core, gold middle,
+    // deep orange rim, churning on the clock.
+    dressed:GAME3D_Draw = game3d_draw_glowing(game3d_draw_tinted(game3d_draw_scaled(placed, 1.6, 1.6, 1.6), `#fdd835`), 1.0);
+    r [game3d_draw_shaded(dressed, state.sun_shader)];
+}
+
+// The atmosphere the sun's surface cannot paint: a halo of soft alpha
+// circles laid over the scene at wherever the sun lands on screen this
+// frame, sized by how close it is. Ordinary 2D shapes doing a shader's
+// job, which is what painter's order is for.
+f sun_halo(state:Field, camera:GAME3D_Camera):a:GAME_Shape {
+    spot:GAME3D_ScreenPoint = game3d_project(camera, orb_across(state), orb_height(state), orb_away(state));
+    if {
+        spot.visible -> {
+            // The drawn disc's own screen radius, so the bright inner glow
+            // starts right at its edge instead of hiding underneath it.
+            disc:f = math_clamp(500.0 / math_max(spot.depth, 1.0), 10.0, 120.0);
+            r [
+                game_circle(spot.screen_x, spot.screen_y, disc * 3.4, `#ff8f0007`),
+                game_circle(spot.screen_x, spot.screen_y, disc * 2.7, `#ff9d120d`),
+                game_circle(spot.screen_x, spot.screen_y, disc * 2.2, `#ffab2414`),
+                game_circle(spot.screen_x, spot.screen_y, disc * 1.8, `#ffbe401e`),
+                game_circle(spot.screen_x, spot.screen_y, disc * 1.5, `#ffd05c2c`),
+                game_circle(spot.screen_x, spot.screen_y, disc * 1.28, `#ffe4903e`),
+                game_circle(spot.screen_x, spot.screen_y, disc * 1.12, `#fff3c455`),
+                game_circle(spot.screen_x, spot.screen_y, disc * 1.02, `#fffbe870`)
+            ];
+        },
+        else -> { r []; }
+    }
+}
+
+f picked_label(state:Field, camera:GAME3D_Camera):a:GAME_Shape {
+    if {
+        state.picked < 0 -> { r []; },
+        else -> {
+            // The label follows its tower through the 3D world by asking
+            // where that spot lands on the screen this frame.
+            top:f = tower_height(state, state.picked) + 0.5;
+            spot:GAME3D_ScreenPoint = game3d_project(camera, tower_across(state.picked), top, tower_away(state.picked));
+            if {
+                spot.visible -> {
+                    r [game_text(string_concat([`tower `, string_from(state.picked)]), spot.screen_x - 28.0, spot.screen_y - 24.0, 16.0, `#ffffff`)];
+                },
+                else -> { r []; }
+            }
+        }
+    }
+}
+
+f view(state:Field):GAME_Frame {
+    camera:GAME3D_Camera = camera_of(state);
+    // The light direction points toward the orb, so the sun is wherever
+    // the orb is this frame: real-time lighting, recomputed per face on
+    // the graphics card.
+    sky:GAME3D_Environment = GAME3D_Environment {
+        light_x = orb_across(state),
+        light_y = orb_height(state),
+        light_z = orb_away(state),
+        light_color = `#ffe8c0`,
+        ambient = 0.28,
+        fog_color = `#101018`,
+        fog_near = 14.0,
+        fog_far = 52.0
+    };
+    // The island's checkerboard reaches eleven units out, so the shoreline
+    // sits just past the pillar ring and the rolling water is in plain
+    // sight instead of drowned in the fog band.
+    floor:GAME3D_Draw = game3d_draw_scaled(game3d_draw(state.ground, 0.0, 0.0, 0.0), 22.0, 1.0, 22.0);
+    // An ocean around the island: one flat plane scaled to the horizon,
+    // rolled, glinted and paled per pixel by this file's own water shader.
+    // It sits just below the checkerboard so the island stands out of it.
+    ocean:GAME3D_Draw = game3d_draw_shaded(
+        game3d_draw_tinted(game3d_draw_scaled(game3d_draw(state.sea, 0.0, -0.22, 0.0), 400.0, 1.0, 400.0), `#1e4d7a`),
+        state.water_shader
+    );
+    standing:a:GAME3D_Draw = array_concat(towers(state), pillars(state));
+    draws:a:GAME3D_Draw = array_concat(array_concat([ocean, floor], standing), orb(state));
+    world:GAME_Shape = game3d_scene(camera, sky, draws);
+
+    title:GAME_Shape = game_text(`an ocean, a sun and ninety five meshes, one scene shape, on the graphics card`, 20.0, 18.0, 18.0, `#e0e0e0`);
+    help:GAME_Shape = game_text(`drag to orbit, scroll to zoom, click a tower, Esc quits`, 20.0, 608.0, 16.0, `#757575`);
+    shapes:a:GAME_Shape = array_concat(array_concat([world], sun_halo(state, camera)), array_concat([title, help], picked_label(state, camera)));
+
+    r GAME_Frame { shapes = shapes, background = `#101018`, quit = state.done };
+}
+
+// Clicking the sky claims nothing, and that is not an error worth stopping
+// for: the miss becomes the no-tower value.
+f missed(err:e):i {
+    r -1;
+}
+
+f moved(state:Field, input:GAME_Input, yaw:f, pitch:f, distance:f, picked:i, done:b):Field {
+    r Field {
+        yaw = yaw,
+        pitch = pitch,
+        distance = distance,
+        last_mouse_x = input.mouse_x,
+        last_mouse_y = input.mouse_y,
+        was_down = input.mouse_down,
+        clock_ms = state.clock_ms + input.delta_ms,
+        picked = picked,
+        done = done,
+        ground = state.ground,
+        block = state.block,
+        ball = state.ball,
+        pillar = state.pillar,
+        sea = state.sea,
+        sun_shader = state.sun_shader,
+        water_shader = state.water_shader
+    };
+}
+
+f update(state:Field, input:GAME_Input):Field {
+    if {
+        array_contains(input.keys_pressed, `Esc`) -> {
+            r moved(state, input, state.yaw, state.pitch, state.distance, state.picked, true);
+        },
+        else -> {
+            // Dragging orbits, idling drifts slowly, the wheel zooms.
+            yaw:f = if {
+                input.mouse_down -> { r state.yaw + ((input.mouse_x - state.last_mouse_x) * 0.008); },
+                else -> { r state.yaw + (0.00015 * input.delta_ms); }
+            };
+            pitch:f = if {
+                input.mouse_down -> { r math_clamp(state.pitch + ((input.mouse_y - state.last_mouse_y) * 0.008), 0.08, 1.25); },
+                else -> { r state.pitch; }
+            };
+            distance:f = math_clamp(state.distance - (input.scroll * 0.8), 4.0, 26.0);
+            // The moment the button goes down is a claim: the ray under the
+            // mouse asks the towers which of them it hit.
+            pressed:b = input.mouse_down && (state.was_down == false);
+            picked:i = if {
+                pressed -> {
+                    aim:GAME3D_Ray = game3d_ray(camera_of(state), input.mouse_x, input.mouse_y);
+                    r safe(game3d_pick(aim, towers(state)), missed);
+                },
+                else -> { r state.picked; }
+            };
+            r moved(state, input, yaw, pitch, distance, picked, false);
+        }
+    }
+}
+
+config:GAME_Config = GAME_Config { title = `Nail monolith field`, width = 900, height = 640, target_fps = 120, pixel_size = 1, physics_hz = 0 };
+ground:i = danger(game3d_mesh_ground(`#1d2430`, `#141a24`, 12));
+block:i = danger(game3d_mesh_cube());
+ball:i = danger(game3d_mesh_sphere(`white`, 20));
+pillar:i = danger(game3d_mesh_cylinder(`white`, 18));
+sea:i = danger(game3d_mesh_plane(`white`));
+
+// The sun's surface, in WGSL. game3d_shader compiles it at load, so a typo
+// here stops the program with the shader compiler's message before any
+// window opens. Where the surface faces the camera it burns toward white
+// heat, and the whole thing simmers on the clock.
+sun_wgsl:s = wgsl`// The standard star-surface recipe (the one every good Shadertoy sun
+// uses, written fresh here): fractal noise over the sphere makes the
+// convection granules, warping the noise by itself makes the dark
+// filaments, limb darkening cools the rim, and a heat ramp runs
+// ember, orange, gold, white.
+fn hash(spot: vec3<f32>) -> f32 {
+    return fract(sin(dot(spot, vec3<f32>(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
+fn noise(spot: vec3<f32>) -> f32 {
+    let cell = floor(spot);
+    let part = fract(spot);
+    let eased = part * part * (3.0 - 2.0 * part);
+    let floor_layer = mix(
+        mix(hash(cell), hash(cell + vec3<f32>(1.0, 0.0, 0.0)), eased.x),
+        mix(hash(cell + vec3<f32>(0.0, 1.0, 0.0)), hash(cell + vec3<f32>(1.0, 1.0, 0.0)), eased.x),
+        eased.y);
+    let ceiling_layer = mix(
+        mix(hash(cell + vec3<f32>(0.0, 0.0, 1.0)), hash(cell + vec3<f32>(1.0, 0.0, 1.0)), eased.x),
+        mix(hash(cell + vec3<f32>(0.0, 1.0, 1.0)), hash(cell + vec3<f32>(1.0, 1.0, 1.0)), eased.x),
+        eased.y);
+    return mix(floor_layer, ceiling_layer, eased.z);
+}
+
+fn fbm(spot: vec3<f32>) -> f32 {
+    var total = 0.0;
+    var amplitude = 0.5;
+    var sample = spot;
+    for (var octave = 0; octave < 5; octave = octave + 1) {
+        total = total + noise(sample) * amplitude;
+        sample = sample * 2.02;
+        amplitude = amplitude * 0.5;
+    }
+    return total;
+}
+
+fn shade(surface: NAIL_Surface) -> vec4<f32> {
+    // The noise domain rides the normal, not the position, so the
+    // pattern stays pinned to the surface while the sun orbits, and the
+    // clock drifts it so the surface churns.
+    let drift = vec3<f32>(surface.time * 0.10, surface.time * 0.06, surface.time * 0.08);
+    let spot = surface.normal * 3.4 + drift;
+    let warp = fbm(spot + vec3<f32>(11.3, 5.7, 2.9));
+    let granules = fbm(spot + vec3<f32>(warp * 1.4));
+    // Overexposed like a lightbulb: most of the facing disc saturates to
+    // white, the granulation only survives near the rim where the heat
+    // falls off.
+    let core = pow(max(dot(surface.normal, surface.toward_eye), 0.0), 0.8);
+    let heat = clamp(core * (0.85 + 0.5 * granules) + 0.22, 0.0, 1.0);
+    let ember = vec3<f32>(0.75, 0.22, 0.03);
+    let gold = vec3<f32>(1.0, 0.82, 0.35);
+    let white = vec3<f32>(1.0, 1.0, 0.97);
+    var color = mix(ember, gold, smoothstep(0.1, 0.5, heat));
+    color = mix(color, white, smoothstep(0.5, 0.85, heat));
+    return vec4<f32>(color, 1.0);
+}`;
+sun_shader:GAME3D_Shader = danger(game3d_shader(sun_wgsl));
+
+// The ocean's surface: two crossing swells tip the normal per pixel so one
+// flat plane rolls, the light glints off the ripples toward the eye, and
+// grazing angles wash toward sky. surface.time is what keeps it moving.
+water_wgsl:s = wgsl`fn wave_tilt(spot: vec2<f32>, phase: f32) -> vec2<f32> {
+    let lean_x = sin(spot.x * 1.7 + phase) * 0.6 + sin(spot.x * 0.31 + spot.y * 0.7 + phase * 0.6) * 0.4;
+    let lean_z = cos(spot.y * 1.3 + phase * 0.8) * 0.6 + cos(spot.x * 0.5 + spot.y * 0.27 + phase * 0.5) * 0.4;
+    return vec2<f32>(lean_x, lean_z);
+}
+
+fn shade(surface: NAIL_Surface) -> vec4<f32> {
+    let phase = surface.time * 1.8;
+    let tip = wave_tilt(surface.world_position.xz, phase);
+    let normal = normalize(surface.normal + vec3<f32>(tip.x, 0.0, tip.y) * 0.35);
+    let facing = max(dot(normal, surface.light), 0.0);
+    let shaded = surface.ambient + (1.0 - surface.ambient) * facing;
+    var color = surface.color * (0.2 + shaded) * surface.light_color;
+    let mirrored = reflect(-surface.light, normal);
+    let glint = pow(max(dot(mirrored, surface.toward_eye), 0.0), 32.0) * 1.3;
+    color = color + surface.light_color * glint;
+    let grazing = pow(1.0 - max(dot(normal, surface.toward_eye), 0.0), 3.0) * 0.45;
+    color = mix(color, vec3<f32>(0.85, 0.92, 1.0), grazing);
+    return vec4<f32>(color, 1.0);
+}`;
+water_shader:GAME3D_Shader = danger(game3d_shader(water_wgsl));
+
+start:Field = Field {
+    yaw = 0.7,
+    pitch = 0.5,
+    distance = 16.0,
+    last_mouse_x = 0.0,
+    last_mouse_y = 0.0,
+    was_down = false,
+    clock_ms = 0.0,
+    picked = -1,
+    done = false,
+    ground = ground,
+    block = block,
+    ball = ball,
+    pillar = pillar,
+    sea = sea,
+    sun_shader = sun_shader,
+    water_shader = water_shader
+};
+
+final_state:Field = danger(game_run(config, start));
+print(`the field is quiet now`);

@@ -380,8 +380,8 @@ nail hello.nail</pre></div>
         <p>
             Nothing to configure: no language server to keep in sync, no formatter to argue about,
             no plugin that quietly disagrees with the compiler. Build scripts call that same
-            compiler as <strong>nailc</strong>, at the version the file asked for rather than
-            whichever is newest.
+            compiler through <strong>nail build</strong> and <strong>nail check</strong>, at the
+            version the file asked for rather than whichever is newest.
         </p>
         <p style="font-size: 0.95rem;">
             The
@@ -454,6 +454,7 @@ f generate_ide(shot_error:s, shot_complete:s, shot_docs:s, tagged_code:s):s {
             <div class="lang-row"><span class="lang-name">SQL</span><span class="lang-list"><code>sql</code> <code>postgres</code> <code>postgresql</code> <code>mysql</code> <code>sqlite</code></span></div>
             <div class="lang-row"><span class="lang-name">Shell</span><span class="lang-list"><code>sh</code> <code>bash</code> <code>zsh</code> <code>shell</code> <code>dockerfile</code></span></div>
             <div class="lang-row"><span class="lang-name">Languages</span><span class="lang-list"><code>py</code> <code>rb</code> <code>rs</code> <code>go</code> <code>java</code> <code>cs</code> <code>c</code> <code>cpp</code> <code>php</code> <code>swift</code> <code>kt</code> <code>lua</code> <code>graphql</code></span></div>
+            <div class="lang-row"><span class="lang-name">Shaders</span><span class="lang-list"><code>wgsl</code></span></div>
             <div class="lang-row"><span class="lang-name">Configuration</span><span class="lang-list"><code>yaml</code> <code>yml</code> <code>toml</code> <code>ini</code> <code>cfg</code> <code>conf</code> <code>properties</code></span></div>
             <div class="lang-row"><span class="lang-name">Prose</span><span class="lang-list"><code>md</code> <code>markdown</code></span></div>
         </div>
@@ -647,7 +648,7 @@ f generate_versioning():s {
             so it travels wherever the file goes: into git, into a zip, onto a laptop five years
             from now.
         </p>
-        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">report.nail</span><pre>nail 0.1.0
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">my_app.nail</span><pre>nail 0.1.0
 
 total:i = array_sum([3, 4, 5]);
 print(string_from(total));</pre></div>
@@ -655,12 +656,16 @@ print(string_from(total));</pre></div>
             The command that runs it never mentions a version. nail reads line one, makes sure that
             exact compiler is on the machine, downloads it if it is not, and hands the file over.
         </p>
-        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal, the first time this machine sees 0.1.0</span><pre>$ nail run report.nail
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal, the first time this machine sees 0.1.0</span><pre>$ nail run my_app.nail
 nail: 0.1.0 is not installed, fetching it
   Nail 0.1.0 [████████████████████████] 100%  774.2 MB / 774.2 MB  22.4 MB/s
 unpacking
 Nail 0.1.0 installed
 12</pre></div>
+        <p>
+            The 12 on the last line is the program's own output: array_sum([3, 4, 5]) is 12.
+            The install happened on the way to running the file, not as a step of its own.
+        </p>
         <p>
             The nail on your PATH is not the compiler. It is a small program that owns the set of
             installed versions and picks one per file. Versions sit side by side in a directory
@@ -676,7 +681,7 @@ Nail 0.1.0 installed
             compiler and every byte underneath it is pinned too. Nothing is resolved at build time,
             so there is nothing left to write down.
         </p>
-        <h3 style="margin-top: 2.5rem;">The three things line one can say</h3>
+        <h3 style="margin-top: 2.5rem;">The three states of line one</h3>
         <table class="release-table">
             <thead><tr><th>Line one</th><th>What happens</th><th>Who writes it</th></tr></thead>
             <tbody>
@@ -692,7 +697,7 @@ Nail 0.1.0 installed
                     <td>You, by hand, for code you are still writing</td>
                 </tr>
                 <tr>
-                    <td>nothing at all</td>
+                    <td>Missing</td>
                     <td>An error. The compiler refuses a file that has not said what built it</td>
                     <td>Nobody</td>
                 </tr>
@@ -709,12 +714,12 @@ Nail 0.1.0 installed
             Resolution is never a guess you have to make. Ask, and you get the version, the reason
             it was chosen, and the exact binary that would run.
         </p>
-        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal</span><pre>$ nail which report.nail
-report.nail pins 0.1.0
+        <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal</span><pre>$ nail which my_app.nail
+my_app.nail pins 0.1.0
 /home/you/.local/share/nail/versions/0.1.0/bin/nail
 
-$ nail which scratch.nail
-scratch.nail says \`nail latest\`, newest installed is 0.1.1
+$ nail which work_in_progress.nail
+work_in_progress.nail says \`nail latest\`, newest installed is 0.1.1
 /home/you/.local/share/nail/versions/0.1.1/bin/nail</pre></div>
         <h3 style="margin-top: 2.5rem;">nail fetch: take a whole project offline</h3>
         <p>
@@ -735,19 +740,26 @@ nothing to fetch</pre></div>
         <h3 style="margin-top: 2.5rem;">nail update: moving a file forward</h3>
         <p>
             Moving a file to a newer Nail means exactly one thing: rewriting line one. The rest of
-            the file is untouched, and no other file is affected. What makes it safe is the order
-            of events. nail update installs the version being moved to, compiles each file against
-            it, and rewrites line one only for the files that pass. A file that no longer compiles
+            the file is untouched, and no other file is affected. Nothing does this on its own. A
+            pinned file is compiled by its pin and by nothing else, even when a newer compiler
+            would accept it, because compiling cleanly is not proof the program still behaves
+            exactly as it was written. There is no auto upgrade path, only an edit you asked for.
+        </p>
+        <p>
+            nail update installs the version being moved to, compiles each file against it, and
+            rewrites line one only for the files that pass. The check is a filter, not a
+            guarantee: it stops the files the new version rejects outright. A file that fails
             keeps the line it had and keeps working, exactly as it did before the command ran.
+            The files that do move are yours to test under their new pin.
         </p>
         <p>
             Without --yes nothing is written. It is a list of what would be attempted.
         </p>
         <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal</span><pre>$ nail update .
 3 file(s) would move to 0.1.1
-  ./legacy.nail
   ./main.nail
-  ./report.nail
+  ./my_app.nail
+  ./my_old_app.nail
 
 nothing changed. Add --yes to check each file and restamp the ones that pass
 
@@ -755,7 +767,7 @@ $ nail update . --yes
 3 file(s) would move to 0.1.1
 2 file(s) moved to 0.1.1
 1 file(s) do not compile under 0.1.1 and were left alone:
-  ./legacy.nail</pre></div>
+  ./my_old_app.nail</pre></div>
         <p>And on disk, that is the whole of it:</p>
         <table class="release-table">
             <thead><tr><th>File</th><th>Line one before</th><th>Line one after</th><th>Why</th></tr></thead>
@@ -764,22 +776,23 @@ $ nail update . --yes
                     <td><code>main.nail</code></td>
                     <td><code>nail 0.1.0</code></td>
                     <td><code>nail 0.1.1</code></td>
-                    <td>Compiled cleanly under 0.1.1</td>
+                    <td>Compiles under 0.1.1, so the move you asked for went ahead</td>
                 </tr>
                 <tr>
-                    <td><code>report.nail</code></td>
+                    <td><code>my_app.nail</code></td>
                     <td><code>nail 0.1.0</code></td>
                     <td><code>nail 0.1.1</code></td>
-                    <td>Compiled cleanly under 0.1.1</td>
+                    <td>Compiles under 0.1.1, so the move you asked for went ahead</td>
                 </tr>
                 <tr>
-                    <td><code>legacy.nail</code></td>
+                    <td><code>my_old_app.nail</code></td>
                     <td><code>nail 0.1.0</code></td>
                     <td><code>nail 0.1.0</code></td>
-                    <td>0.1.1 rejected it, so it was left alone and still builds with 0.1.0</td>
+                    <td>0.1.1 rejects it, so the move was refused. Line one untouched, and it
+                        opens with 0.1.0 exactly as before</td>
                 </tr>
                 <tr>
-                    <td><code>scratch.nail</code></td>
+                    <td><code>work_in_progress.nail</code></td>
                     <td><code>nail latest</code></td>
                     <td><code>nail latest</code></td>
                     <td>Tracks the newest release already, so there is nothing to move</td>
@@ -787,7 +800,7 @@ $ nail update . --yes
             </tbody>
         </table>
         <p>
-            legacy.nail is not a problem to be solved before the others can move. Fix it and run
+            my_old_app.nail is not a problem to be solved before the others can move. Fix it and run
             the command again, or leave it on 0.1.0 for as long as it is useful. Migration is a
             per-file choice, and it is always a choice. <code>--to=0.1.4</code> moves to a named
             version rather than the newest installed one.
@@ -1161,7 +1174,9 @@ f generate_games_section():s {
             <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
                 Click it, then arrows or A and D move, Space jumps, R restarts the level. On a
                 phone, the corner pads. Five levels of pits, coins, spikes and things that walk
-                and fly, all pure functions over one struct, with sound.
+                and fly, all pure functions over one struct, with sound. Every rectangle, circle
+                and glyph is an instanced quad your graphics card draws through WebGL2, with the
+                CPU rasterizer as the fallback.
                 <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/platformer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
             </p>
             <iframe src="/games/platformer-embed" title="Platformer written in Nail" style="width: 100%; aspect-ratio: 800 / 600; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
@@ -1171,10 +1186,25 @@ f generate_games_section():s {
             <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
                 Drag to orbit, scroll to zoom, or drag and pinch on a phone. The monument is a
                 glTF file the program fetches, projected and lit by the standard library on the
-                CPU: no graphics card, no JavaScript renderer.
+                CPU: no JavaScript renderer, every triangle placed by your program.
                 <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/model_viewer.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
             </p>
             <iframe src="/games/viewer-embed" title="3D model viewer written in Nail" style="width: 100%; aspect-ratio: 900 / 640; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
+        </div>
+        <div style="width: 100%; max-width: 940px;">
+            <h3 style="margin: 0 0 0.5rem 0;">Monolith field, on the graphics card</h3>
+            <p style="margin: 0 0 0.75rem 0; opacity: 0.8;">
+                Drag to orbit, scroll to zoom, click a tower to claim it. One scene shape holding
+                an island of towers in a rolling ocean: instanced draws, a real depth buffer,
+                fog, mouse picking, and real-time lighting - the glowing orb is the sun, and
+                every face relights as it circles - rendered by your graphics card through
+                WebGL2. The sun's fire and the rolling water are WGSL shaders the program
+                itself carries as strings and loads through game3d_shader, compiled and
+                checked the moment they load. The same program opens a native window on
+                Vulkan. When no card answers, the same scene falls back to the CPU.
+                <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/monolith_field.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
+            </p>
+            <iframe src="/games/monolith-embed" title="GPU rendered 3D scene written in Nail" style="width: 100%; aspect-ratio: 900 / 640; border: 1px solid var(--border); border-radius: 0.75rem; background: #101018;"></iframe>
         </div>
     </div>
 </section>`;

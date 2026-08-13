@@ -59,6 +59,10 @@ hashmap_set(state, `page_viewer_embed`, generate_game_embed_page(
     `A 3D model viewer, written in Nail`,
     `/wasm/viewer/pkg/viewer_wasm.js`
 ));
+hashmap_set(state, `page_monolith_embed`, generate_game_embed_page(
+    `A field of meshes on the graphics card, written in Nail`,
+    `/wasm/monolith/pkg/monolith_wasm.js`
+));
 
 // Routes for running examples. The outputs are built from values this server
 // actually computed at startup by executing the same code the examples show.

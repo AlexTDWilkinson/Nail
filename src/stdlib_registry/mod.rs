@@ -1529,6 +1529,82 @@ lazy_static! {
             }
         });
 
+        m.insert("GAME3D_Draw", StdlibTypeInfo {
+            name: "GAME3D_Draw".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("mesh".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("position_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("position_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("position_z".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("rotation_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("rotation_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("rotation_z".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("scale_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("scale_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("scale_z".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("tint".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("glow".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("shader".to_string(), NailDataTypeDescriptor::Int);
+                fields.insert("param_a".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("param_b".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("param_c".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("param_d".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        m.insert("GAME3D_Environment", StdlibTypeInfo {
+            name: "GAME3D_Environment".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("light_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("light_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("light_z".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("light_color".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("ambient".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("fog_color".to_string(), NailDataTypeDescriptor::String);
+                fields.insert("fog_near".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("fog_far".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        m.insert("GAME3D_ScreenPoint", StdlibTypeInfo {
+            name: "GAME3D_ScreenPoint".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("screen_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("screen_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("depth".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("visible".to_string(), NailDataTypeDescriptor::Boolean);
+                fields
+            }
+        });
+
+        m.insert("GAME3D_Ray", StdlibTypeInfo {
+            name: "GAME3D_Ray".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("origin_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("origin_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("origin_z".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("direction_x".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("direction_y".to_string(), NailDataTypeDescriptor::Float);
+                fields.insert("direction_z".to_string(), NailDataTypeDescriptor::Float);
+                fields
+            }
+        });
+
+        m.insert("GAME3D_Shader", StdlibTypeInfo {
+            name: "GAME3D_Shader".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("handle".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
         // The linear algebra structs. A vector is its components and nothing
         // else, so a program can build one as a literal and read x and y back
         // without going through a function.
@@ -2241,6 +2317,11 @@ mod stdlib_types_drift_tests {
             assert_matches_registry::<crate::parser::std_lib::game::GAME_Frame>("GAME_Frame");
             assert_matches_registry::<crate::parser::std_lib::game::GAME_Input>("GAME_Input");
             assert_matches_registry::<crate::parser::std_lib::game3d::GAME3D_Camera>("GAME3D_Camera");
+            assert_matches_registry::<crate::parser::std_lib::game3d::GAME3D_Draw>("GAME3D_Draw");
+            assert_matches_registry::<crate::parser::std_lib::game3d::GAME3D_Environment>("GAME3D_Environment");
+            assert_matches_registry::<crate::parser::std_lib::game3d::GAME3D_ScreenPoint>("GAME3D_ScreenPoint");
+            assert_matches_registry::<crate::parser::std_lib::game3d::GAME3D_Ray>("GAME3D_Ray");
+            assert_matches_registry::<crate::parser::std_lib::game3d::GAME3D_Shader>("GAME3D_Shader");
         }
         #[cfg(feature = "valkey")]
         assert_matches_registry::<crate::parser::std_lib::valkey::DB_Valkey>("DB_Valkey");
@@ -2274,7 +2355,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "HTTP_Events", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input", "GAME3D_Camera"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "HTTP_Events", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input", "GAME3D_Camera", "GAME3D_Draw", "GAME3D_Environment", "GAME3D_ScreenPoint", "GAME3D_Ray", "GAME3D_Shader"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }

@@ -22,12 +22,13 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-/// How the window starts out. A `target_fps` of 0 means unpaced - the loop
-/// runs as fast as update and view come back. `pixel_size` is how many
-/// screen pixels one drawn pixel covers: 1 is full resolution, 2 draws at
-/// half size and scales up chunky, which quarters the pixels the CPU
-/// rasterizer has to fill. Coordinates in the game stay in window pixels
-/// whatever the value.
+/// How the window starts out. `target_fps` caps how often the loop runs,
+/// and 120 is the ceiling: 0 means "as fast as makes sense", which is that
+/// same 120, because frames nobody's screen can show are just heat.
+/// `pixel_size` is how many screen pixels one drawn pixel covers: 1 is
+/// full resolution, 2 draws at half size and scales up chunky, which
+/// quarters the pixels the CPU rasterizer has to fill. Coordinates in the
+/// game stay in window pixels whatever the value.
 ///
 /// `physics_hz` is how many times a second `update` runs. At 0 it runs once
 /// a frame and is handed however long that frame really took, which is
@@ -97,7 +98,7 @@ pub struct GAME_Input {
     pub touches: Vec<f64>,
 }
 
-fn blank(kind: &str) -> GAME_Shape {
+pub(crate) fn blank(kind: &str) -> GAME_Shape {
     return GAME_Shape {
         kind: kind.to_string(),
         x_coordinate: 0.0,
@@ -246,7 +247,7 @@ fn font() -> Result<&'static fontdue::Font, String> {
 
 /// Turns a colour string into an actual colour, accepting `#rgb`, `#rrggbb`,
 /// `#rrggbbaa` and a handful of plain English names.
-fn parse_color(name: &str) -> Result<tiny_skia::Color, String> {
+pub(crate) fn parse_color(name: &str) -> Result<tiny_skia::Color, String> {
     let named = match name {
         "black" => Some((0x00, 0x00, 0x00)),
         "white" => Some((0xff, 0xff, 0xff)),
@@ -294,10 +295,23 @@ fn pixel_size_of(config: &GAME_Config) -> u32 {
     return config.pixel_size.clamp(1, 8) as u32;
 }
 
+/// One sprite's pixels, premultiplied RGBA, for the graphics card path to
+/// upload once. None when no sprite has that number.
+pub(crate) fn sprite_pixels(handle: i64) -> Option<(Vec<u8>, u32, u32)> {
+    let store = sprites().lock().ok()?;
+    let pixmap = store.get(&handle)?;
+    return Some((pixmap.data().to_vec(), pixmap.width(), pixmap.height()));
+}
+
+/// The built-in font, for the graphics card path's glyph atlas.
+pub(crate) fn game_font() -> Result<&'static fontdue::Font, String> {
+    return font();
+}
+
 /// A shape's loose bounding box, for skipping what is not on screen. None
 /// means the bounds are unknown (text and unscaled sprites) and the shape
 /// always draws.
-fn shape_bounds(shape: &GAME_Shape) -> Option<(f64, f64, f64, f64)> {
+pub(crate) fn shape_bounds(shape: &GAME_Shape) -> Option<(f64, f64, f64, f64)> {
     match shape.kind.as_str() {
         "rect" | "sprite_scaled" => Some((shape.x_coordinate, shape.y_coordinate, shape.x_coordinate + shape.width, shape.y_coordinate + shape.height)),
         "rect_outline" => {
@@ -321,11 +335,34 @@ fn shape_bounds(shape: &GAME_Shape) -> Option<(f64, f64, f64, f64)> {
     }
 }
 
+/// Fills one triangle shape into the pixmap. The 2D triangle branch and
+/// every triangle of an expanded 3D scene come through here.
+fn fill_triangle(pixmap: &mut tiny_skia::Pixmap, shape: &GAME_Shape, anti_alias: bool, transform: tiny_skia::Transform) -> Result<(), String> {
+    let mut builder = tiny_skia::PathBuilder::new();
+    builder.move_to(shape.x_coordinate as f32, shape.y_coordinate as f32);
+    builder.line_to(shape.end_x as f32, shape.end_y as f32);
+    builder.line_to(shape.third_x as f32, shape.third_y as f32);
+    builder.close();
+    let Some(path) = builder.finish() else { return Ok(()) };
+    let mut paint = tiny_skia::Paint::default();
+    paint.set_color(parse_color(&shape.color)?);
+    paint.anti_alias = anti_alias;
+    pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, transform, None);
+    return Ok(());
+}
+
 /// Paints one frame's shapes into the pixmap. Shapes speak window pixels
 /// whatever `pixel_size` says, the scale transform is what maps them onto
 /// the possibly smaller pixmap.
-fn rasterize(pixmap: &mut tiny_skia::Pixmap, mut overlay: Option<&mut tiny_skia::Pixmap>, frame: &GAME_Frame, pixel_size: u32) -> Result<(), String> {
+fn rasterize(pixmap: &mut tiny_skia::Pixmap, overlay: Option<&mut tiny_skia::Pixmap>, frame: &GAME_Frame, pixel_size: u32) -> Result<(), String> {
     pixmap.fill(parse_color(&frame.background)?);
+    return rasterize_shapes(pixmap, overlay, &frame.shapes, pixel_size);
+}
+
+/// Paints a run of shapes into the pixmap, over whatever is already there.
+/// The whole-frame path above fills the background first, the graphics
+/// card path hands in transparent layers one run at a time.
+pub(crate) fn rasterize_shapes(pixmap: &mut tiny_skia::Pixmap, mut overlay: Option<&mut tiny_skia::Pixmap>, shapes: &[GAME_Shape], pixel_size: u32) -> Result<(), String> {
     let scale = 1.0 / pixel_size as f32;
     let logical_width = (pixmap.width() * pixel_size) as f64;
     let logical_height = (pixmap.height() * pixel_size) as f64;
@@ -334,7 +371,7 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, mut overlay: Option<&mut tiny_skia:
     // instead of pixel art, so above pixel_size 1 the edges go crisp.
     let anti_alias = pixel_size == 1;
 
-    for shape in &frame.shapes {
+    for shape in shapes {
         // A scrolling game hands over its whole world every frame, parallax
         // layers included, and most of it is off screen. Skipping here is
         // cheaper than letting the rasterizer clip path by path.
@@ -380,16 +417,19 @@ fn rasterize(pixmap: &mut tiny_skia::Pixmap, mut overlay: Option<&mut tiny_skia:
                 pixmap.stroke_path(&path, &paint, &stroke, identity, None);
             }
             "triangle" => {
-                let mut builder = tiny_skia::PathBuilder::new();
-                builder.move_to(shape.x_coordinate as f32, shape.y_coordinate as f32);
-                builder.line_to(shape.end_x as f32, shape.end_y as f32);
-                builder.line_to(shape.third_x as f32, shape.third_y as f32);
-                builder.close();
-                let Some(path) = builder.finish() else { continue };
-                let mut paint = tiny_skia::Paint::default();
-                paint.set_color(parse_color(&shape.color)?);
-                paint.anti_alias = anti_alias;
-                pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, identity, None);
+                fill_triangle(pixmap, shape, anti_alias, identity)?;
+            }
+            "scene3d" => {
+                // The CPU fallback for a whole 3D scene: expand it to
+                // painter-ordered triangles on the spot. Each scene is
+                // taken out of its store as it draws, which is also what
+                // keeps the store from growing across frames.
+                let Some(data) = super::game3d::take_scene(shape.sprite) else {
+                    return Err("game_run: a scene3d shape refers to a scene that was already drawn - game3d_scene makes a fresh one each frame".to_string());
+                };
+                for triangle in super::game3d::expand_scene(&data)? {
+                    fill_triangle(pixmap, &triangle, anti_alias, identity)?;
+                }
             }
             "text" => {
                 match overlay.as_deref_mut() {
@@ -521,6 +561,20 @@ where
     let width = u32::try_from(config.width).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a width a {} can have", config.width, backend::SURFACE_NOUN))?;
     let height = u32::try_from(config.height).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a height a {} can have", config.height, backend::SURFACE_NOUN))?;
 
+    // 120 frames a second is the ceiling whatever the config asks: an
+    // unpaced game would otherwise spin the machine drawing frames no
+    // screen shows. The browser backend paces by requestAnimationFrame and
+    // ignores this.
+    let paced_fps = if config.target_fps <= 0 { 120 } else { config.target_fps.min(120) };
+
+    // Every game carries a frame counter in its top right corner, on
+    // whichever renderer is drawing. NAIL_GAME_NO_FPS=1 hides it.
+    #[cfg(not(target_arch = "wasm32"))]
+    let show_fps = !std::env::var("NAIL_GAME_NO_FPS").map(|value| value == "1").unwrap_or(false);
+    #[cfg(target_arch = "wasm32")]
+    let show_fps = true;
+    let mut smoothed_fps = 0.0_f64;
+
     let mut backend = backend::Backend::create(&config, width, height).await?;
     let pixel_size = pixel_size_of(&config);
     let mut pixmap = tiny_skia::Pixmap::new((width / pixel_size).max(1), (height / pixel_size).max(1)).ok_or_else(|| "game_run: could not make the frame".to_string())?;
@@ -623,21 +677,33 @@ where
         // a frame, or the part way point between the last two steps when it
         // runs at its own rate.
         let drawn = if step_ms > 0.0 { blend(previous_state.clone(), state.clone(), (banked_ms / step_ms).clamp(0.0, 1.0)).await } else { state.clone() };
-        let frame = view(drawn).await;
+        let mut frame = view(drawn).await;
+        if show_fps {
+            // Smoothed over recent frames, so the number reads instead of
+            // flickering. The shapes ride the frame itself, which is what
+            // puts them on whichever renderer is drawing.
+            let this_frame = 1000.0 / elapsed_ms.max(0.1);
+            smoothed_fps = if smoothed_fps <= 0.0 { this_frame } else { smoothed_fps * 0.92 + this_frame * 0.08 };
+            let corner = width as f64 - 78.0;
+            frame.shapes.push(rect(corner - 6.0, 6.0, 78.0, 24.0, "#00000090".to_string()));
+            frame.shapes.push(text(format!("{:>3.0} fps", smoothed_fps.min(999.0)), corner, 9.0, 16.0, "#7fdc7f".to_string()));
+        }
         if let Some(full) = overlay.as_mut() {
             full.fill(tiny_skia::Color::TRANSPARENT);
         }
-        rasterize(&mut pixmap, overlay.as_mut(), &frame, pixel_size)?;
-        backend.present(&pixmap, overlay.as_ref())?;
+        backend.render(&frame, &mut pixmap, overlay.as_mut(), pixel_size).await?;
+        // A scene the frame built but never put in a shape would otherwise
+        // sit in the store forever.
+        super::game3d::sweep_scenes();
         let used_ms = backend.now_ms() - frame_start_ms;
         frames += 1;
         work_ms += used_ms;
         if frame.quit {
-            backend.report_close(frames, work_ms, backend.now_ms() - started_ms, config.target_fps);
+            backend.report_close(frames, work_ms, backend.now_ms() - started_ms, paced_fps);
             return Ok(state);
         }
 
-        backend.pace(used_ms, config.target_fps).await?;
+        backend.pace(used_ms, paced_fps).await?;
     }
 }
 
@@ -797,10 +863,25 @@ mod native_backend {
         return Poll { close_requested, ready, keys_down: Vec::new(), keys_pressed: Vec::new(), mouse_x: 0.0, mouse_y: 0.0, mouse_down: false, mouse_right: false, scroll: 0.0, touches: Vec::new() };
     }
 
+    /// A note for the person at the terminal, never for captured output.
+    fn announce(line: &str) {
+        use std::io::IsTerminal;
+        if std::io::stderr().is_terminal() {
+            eprintln!("{}", line);
+        }
+    }
+
     pub struct Backend {
         event_loop: EventLoop<()>,
         app: App,
         epoch: Instant,
+        /// The graphics card path, once it comes up. None either before the
+        /// first frame or because the machine has nothing to offer, in
+        /// which case the CPU rasterizer below carries the game.
+        gpu: Option<super::super::game_gpu::GpuRenderer>,
+        gpu_settled: bool,
+        /// When the next frame is due, an absolute schedule the pacer keeps.
+        next_frame_at: Option<Instant>,
     }
 
     impl Backend {
@@ -810,7 +891,55 @@ mod native_backend {
             let event_loop = EventLoop::new().map_err(|e| format!("game_run: could not talk to the display - a game needs a desktop to draw on: {}", e))?;
             event_loop.set_control_flow(ControlFlow::Poll);
             let app = App::new(config.title.clone(), width, height);
-            return Ok(Backend { event_loop, app, epoch: Instant::now() });
+            return Ok(Backend { event_loop, app, epoch: Instant::now(), gpu: None, gpu_settled: false, next_frame_at: None });
+        }
+
+        /// Draws one frame, on the graphics card when there is one and on
+        /// the CPU when there is not. The first frame with a window decides
+        /// which, and `NAIL_GAME_CPU=1` in the environment forces the CPU
+        /// for comparing the two or dodging a broken driver.
+        pub async fn render(&mut self, frame: &GAME_Frame, pixmap: &mut tiny_skia::Pixmap, mut overlay: Option<&mut tiny_skia::Pixmap>, pixel_size: u32) -> Result<(), String> {
+            if !self.gpu_settled {
+                if let Some(window) = self.app.window.clone() {
+                    self.gpu_settled = true;
+                    if std::env::var("NAIL_GAME_CPU").map(|value| value == "1").unwrap_or(false) {
+                        announce("game renderer: the CPU, because NAIL_GAME_CPU is set");
+                    } else {
+                        let target = super::super::game_gpu::RenderTarget::Window(window.clone());
+                        match super::super::game_gpu::GpuRenderer::create(target, self.app.width, self.app.height, pixel_size).await {
+                            Ok(mut renderer) => {
+                                let real = window.inner_size();
+                                renderer.resize_surface(real.width.max(1), real.height.max(1));
+                                announce(&format!("game renderer: {}", renderer.describe()));
+                                self.gpu = Some(renderer);
+                            }
+                            Err(super::super::game_gpu::GpuFrameError::Device(why)) | Err(super::super::game_gpu::GpuFrameError::Program(why)) => {
+                                announce(&format!("game renderer: the CPU, because {}", why));
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(gpu) = self.gpu.as_mut() {
+                if let Some(window) = self.app.window.as_ref() {
+                    let real = window.inner_size();
+                    gpu.resize_surface(real.width.max(1), real.height.max(1));
+                }
+                match gpu.render_frame(frame, pixel_size) {
+                    Ok(()) => return Ok(()),
+                    Err(super::super::game_gpu::GpuFrameError::Program(why)) => return Err(why),
+                    Err(super::super::game_gpu::GpuFrameError::Device(why)) => {
+                        // The card died under a running game. Its scenes
+                        // went with this half-drawn frame, so skip it and
+                        // let the CPU draw from the next one.
+                        announce(&format!("game renderer: falling back to the CPU, because {}", why));
+                        self.gpu = None;
+                        return Ok(());
+                    }
+                }
+            }
+            rasterize(pixmap, overlay.as_deref_mut(), frame, pixel_size)?;
+            return self.present(pixmap, overlay.as_deref());
         }
 
         /// Pumps winit once and hands back what the player did. A startup
@@ -899,12 +1028,35 @@ mod native_backend {
         /// Sleeps out whatever the frame budget left over, so the loop lands
         /// on `target_fps`. Waiting is async sleep, so the runtime this
         /// shares a thread with keeps serving whatever else the program spawned.
-        pub async fn pace(&mut self, frame_work_ms: f64, target_fps: i64) -> Result<(), String> {
+        pub async fn pace(&mut self, _frame_work_ms: f64, target_fps: i64) -> Result<(), String> {
             if target_fps > 0 {
-                let budget_ms = 1000.0 / target_fps as f64;
-                if frame_work_ms < budget_ms {
-                    tokio::time::sleep(Duration::from_secs_f64((budget_ms - frame_work_ms) / 1000.0)).await;
+                let budget = Duration::from_secs_f64(1.0 / target_fps as f64);
+                let now = Instant::now();
+                // An absolute schedule, not "sleep the leftover": sleeping
+                // the leftover adds the sleep's overshoot and the loop's own
+                // overhead to every frame, which is how a 60 cap read 56.
+                let deadline = match self.next_frame_at {
+                    Some(planned) if planned <= now => {
+                        // Running behind. Draw immediately and restart the
+                        // schedule rather than sleeping or chasing the debt.
+                        self.next_frame_at = Some(now + budget);
+                        return Ok(());
+                    }
+                    Some(planned) if planned <= now + budget => planned,
+                    _ => now + budget,
+                };
+                // Sleep to within two milliseconds of the deadline, then
+                // spin the rest: the OS wakes a sleeper about a timer tick
+                // late, the spin is exact.
+                if let Some(coarse) = deadline.checked_sub(Duration::from_millis(2)) {
+                    if coarse > now {
+                        tokio::time::sleep(coarse - now).await;
+                    }
                 }
+                while Instant::now() < deadline {
+                    std::hint::spin_loop();
+                }
+                self.next_frame_at = Some(deadline + budget);
             } else {
                 // Unpaced still has to yield, or a fast game starves the runtime.
                 tokio::task::yield_now().await;
@@ -1102,7 +1254,12 @@ mod web_backend {
     pub struct Backend {
         window: web_sys::Window,
         canvas: web_sys::HtmlCanvasElement,
-        context: web_sys::CanvasRenderingContext2d,
+        /// The 2d context, taken only when the CPU path actually draws. A
+        /// canvas hands out one kind of context in its life, so the card
+        /// path must be given its chance before anything touches 2d.
+        context: Option<web_sys::CanvasRenderingContext2d>,
+        gpu: Option<super::super::game_gpu::GpuRenderer>,
+        gpu_settled: bool,
         input: Rc<RefCell<WebInput>>,
         straight: Vec<u8>,
         width: u32,
@@ -1152,13 +1309,6 @@ mod web_backend {
             set_style(&style, CanvasStyle::Width, &format!("{}px", width));
             set_style(&style, CanvasStyle::Height, &format!("{}px", height));
             set_style(&style, CanvasStyle::TouchAction, TouchAction::Off.value());
-            let context: web_sys::CanvasRenderingContext2d = canvas
-                .get_context("2d")
-                .ok()
-                .flatten()
-                .ok_or_else(|| "game_run: the canvas would not give a 2d context".to_string())?
-                .dyn_into()
-                .map_err(|_| "game_run: the canvas would not give a 2d context".to_string())?;
 
             let input = Rc::new(RefCell::new(WebInput::default()));
 
@@ -1303,7 +1453,54 @@ mod web_backend {
 
             next_frame(&window).await?;
 
-            return Ok(Backend { window, canvas, context, input, straight, width, height, keydown, keyup, mousemove, mousedown, mouseup, wheel, touch_start, touch_move, touch_end });
+            return Ok(Backend { window, canvas, context: None, gpu: None, gpu_settled: false, input, straight, width, height, keydown, keyup, mousemove, mousedown, mouseup, wheel, touch_start, touch_move, touch_end });
+        }
+
+        /// Draws one frame, on the graphics card through WebGL2 when the
+        /// browser offers it, on the canvas's 2d context when it does not.
+        pub async fn render(&mut self, frame: &GAME_Frame, pixmap: &mut tiny_skia::Pixmap, mut overlay: Option<&mut tiny_skia::Pixmap>, pixel_size: u32) -> Result<(), String> {
+            if !self.gpu_settled {
+                self.gpu_settled = true;
+                match self.try_gpu(pixel_size).await {
+                    Ok(renderer) => {
+                        web_sys::console::log_1(&format!("nail game renderer: {}", renderer.describe()).into());
+                        self.gpu = Some(renderer);
+                    }
+                    Err(why) => {
+                        web_sys::console::log_1(&format!("nail game renderer: the CPU, because {}", why).into());
+                    }
+                }
+            }
+            if let Some(gpu) = self.gpu.as_mut() {
+                return match gpu.render_frame(frame, pixel_size) {
+                    Ok(()) => Ok(()),
+                    Err(super::super::game_gpu::GpuFrameError::Program(why)) => Err(why),
+                    // The canvas gave its one context to WebGL and cannot
+                    // hand out a 2d one now, so a dead context ends the
+                    // game honestly instead of showing a frozen picture.
+                    Err(super::super::game_gpu::GpuFrameError::Device(why)) => Err(format!("game_run: the browser's graphics context failed: {}", why)),
+                };
+            }
+            rasterize(pixmap, overlay.as_deref_mut(), frame, pixel_size)?;
+            return self.present(pixmap, overlay.as_deref());
+        }
+
+        /// Tries the whole card path on a throwaway canvas first. Only when
+        /// the browser proves it can do WebGL2 end to end does the real
+        /// canvas commit to it - a canvas only ever gives out one kind of
+        /// context, and a failed try must leave 2d available.
+        async fn try_gpu(&self, pixel_size: u32) -> Result<super::super::game_gpu::GpuRenderer, String> {
+            let describe = |problem: super::super::game_gpu::GpuFrameError| match problem {
+                super::super::game_gpu::GpuFrameError::Device(why) | super::super::game_gpu::GpuFrameError::Program(why) => why,
+            };
+            let document = self.window.document().ok_or_else(|| "the page has no document".to_string())?;
+            let probe: web_sys::HtmlCanvasElement = document
+                .create_element("canvas")
+                .ok()
+                .and_then(|element| element.dyn_into().ok())
+                .ok_or_else(|| "could not make a canvas to probe with".to_string())?;
+            super::super::game_gpu::GpuRenderer::create(super::super::game_gpu::RenderTarget::Canvas(probe), self.width, self.height, pixel_size).await.map_err(describe)?;
+            return super::super::game_gpu::GpuRenderer::create(super::super::game_gpu::RenderTarget::Canvas(self.canvas.clone()), self.width, self.height, pixel_size).await.map_err(describe);
         }
 
         /// Hands back what the DOM listeners collected since the last poll.
@@ -1376,8 +1573,20 @@ mod web_backend {
                     (pixmap.width(), pixmap.height())
                 }
             };
+            if self.context.is_none() {
+                let context: web_sys::CanvasRenderingContext2d = self
+                    .canvas
+                    .get_context("2d")
+                    .ok()
+                    .flatten()
+                    .ok_or_else(|| "game_run: the canvas would not give a 2d context".to_string())?
+                    .dyn_into()
+                    .map_err(|_| "game_run: the canvas would not give a 2d context".to_string())?;
+                self.context = Some(context);
+            }
+            let context = self.context.as_ref().expect("just filled");
             let image = web_sys::ImageData::new_with_u8_clamped_array_and_sh(Clamped(&self.straight), image_width, image_height).map_err(|_| "game_run: could not build the frame image".to_string())?;
-            if self.context.put_image_data(&image, 0.0, 0.0).is_err() {
+            if context.put_image_data(&image, 0.0, 0.0).is_err() {
                 return Err("game_run: could not put the frame on the canvas".to_string());
             }
             return Ok(());

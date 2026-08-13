@@ -114,6 +114,15 @@ crossterm = "0.28"
 dirs = "5"
 winit = { version = "0.30", optional = true }
 softbuffer = { version = "0.4", optional = true }
+# The graphics card path for games: pure Rust down to the driver, Vulkan or
+# GL on a desktop, WebGL2 in a browser (the extra feature in the wasm block
+# below). The CPU rasterizer stays as the fallback when no card answers.
+wgpu = { version = "24", optional = true }
+bytemuck = { version = "1", optional = true }
+# naga is wgpu's own shader compiler, pulled in directly so game3d_shader can
+# validate a program's WGSL the moment it loads, with the compiler's real
+# error message, instead of failing at first draw.
+naga = { version = "24", features = ["wgsl-in"], optional = true }
 # The browser has its own audio machinery, so rodio and the cpal stack under
 # it stay out of the wasm dependency graph entirely. The `audio` feature still
 # names dep:rodio, which cargo treats as a no-op on targets without it.
@@ -131,6 +140,11 @@ getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
+# In a browser wgpu speaks WebGL2, the one graphics API every browser has.
+# Same optional deps as above, this only turns the backend on for wasm.
+wgpu = { version = "24", features = ["webgl"], optional = true }
+bytemuck = { version = "1", optional = true }
+naga = { version = "24", features = ["wgsl-in"], optional = true }
 web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "CssStyleDeclaration", "HtmlCanvasElement", "CanvasRenderingContext2d", "HtmlAudioElement", "ImageData", "KeyboardEvent", "MouseEvent", "WheelEvent", "TouchEvent", "TouchList", "Touch", "DomRect", "EventTarget", "console", "Performance", "Response", "AudioContext", "BaseAudioContext", "AudioNode", "AudioScheduledSourceNode", "AudioParam", "AudioDestinationNode", "OscillatorNode", "OscillatorType", "GainNode"] }
 
 [features]
@@ -151,4 +165,4 @@ postgres = ["dep:tokio-postgres"]
 image = ["dep:image"]
 pdf = ["dep:printpdf", "dep:pdf-extract"]
 xlsx = ["dep:calamine", "dep:rust_xlsxwriter"]
-game = ["dep:winit", "dep:softbuffer", "dep:tiny-skia", "dep:fontdue", "dep:gltf"]
+game = ["dep:winit", "dep:softbuffer", "dep:tiny-skia", "dep:fontdue", "dep:gltf", "dep:wgpu", "dep:bytemuck", "dep:naga"]

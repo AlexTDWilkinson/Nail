@@ -127,6 +127,7 @@ The highlighters that ship with Nail - the editor's colorizer and
 | SQL | `sql`, `postgres`, `postgresql`, `mysql`, `sqlite` |
 | Shell | `sh`, `bash`, `zsh`, `shell`, `dockerfile` |
 | Other languages | `py`, `python`, `rb`, `ruby`, `rs`, `rust`, `go`, `golang`, `java`, `cs`, `csharp`, `c`, `h`, `cpp`, `cc`, `hpp`, `cxx`, `php`, `swift`, `kt`, `kotlin`, `lua`, `graphql`, `gql` |
+| Shaders | `wgsl` |
 | Configuration | `yaml`, `yml`, `toml`, `ini`, `cfg`, `conf`, `properties` |
 | Markdown | `md`, `markdown` |
 

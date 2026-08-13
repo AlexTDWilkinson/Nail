@@ -46,6 +46,7 @@ pub enum Dialect {
     Kotlin,
     Lua,
     GraphQl,
+    Wgsl,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -265,6 +266,27 @@ fn syntax(dialect: Dialect) -> &'static Syntax {
             ],
             case_insensitive: false,
             sigils: &['$'],
+            capitals_are_types: true,
+        },
+        Dialect::Wgsl => &Syntax {
+            line_comments: SLASH_COMMENTS,
+            block_comment: C_BLOCK,
+            // WGSL has no string literals, so nothing opens one.
+            quotes: &[],
+            // The built-in types sit in the keyword list, the way C's do: WGSL
+            // spells its types in lowercase, so the capital convention below
+            // only reaches the shader's own structs.
+            keywords: &[
+                "alias", "array", "atomic", "bool", "break", "case", "const", "const_assert", "continue", "continuing", "default", "diagnostic", "discard", "else", "enable", "f16", "f32",
+                "false", "fn", "for", "function", "i32", "if", "let", "loop", "mat2x2", "mat2x3", "mat2x4", "mat3x2", "mat3x3", "mat3x4", "mat4x2", "mat4x3", "mat4x4", "override", "private",
+                "ptr", "read", "read_write", "requires", "return", "sampler", "sampler_comparison", "storage", "struct", "switch", "texture_2d", "texture_2d_array", "texture_3d",
+                "texture_cube", "texture_cube_array", "texture_depth_2d", "texture_multisampled_2d", "texture_storage_2d", "true", "u32", "uniform", "var", "vec2", "vec2f", "vec2h", "vec2i",
+                "vec2u", "vec3", "vec3f", "vec3h", "vec3i", "vec3u", "vec4", "vec4f", "vec4h", "vec4i", "vec4u", "while", "workgroup", "write",
+            ],
+            case_insensitive: false,
+            // `@vertex`, `@group(0)`, `@location(0)`: an attribute is one
+            // piece, the same way a shell variable is.
+            sigils: &['@'],
             capitals_are_types: true,
         },
     };
@@ -537,6 +559,19 @@ mod tests {
     fn a_rust_lifetime_does_not_open_a_string() {
         let out = pieces(Dialect::Rust, "fn name<'a>(text: &'a str) -> &'a str { text }");
         assert!(!out.iter().any(|(_, piece)| *piece == Piece::Value), "a lifetime is not a string, got {:?}", out);
+    }
+
+    #[test]
+    fn a_wgsl_shader_reads_as_attributes_types_and_its_own_structs() {
+        let out = pieces(Dialect::Wgsl, "@fragment\nfn fs_main(in: VertexOut) -> @location(0) vec4<f32> { return scene.fog_color; }");
+        assert!(out.contains(&("@fragment".to_string(), Piece::Attribute)), "got {:?}", out);
+        assert!(out.contains(&("@location".to_string(), Piece::Attribute)), "got {:?}", out);
+        assert!(out.contains(&("fn".to_string(), Piece::Keyword)), "got {:?}", out);
+        assert!(out.contains(&("vec4".to_string(), Piece::Keyword)), "got {:?}", out);
+        assert!(out.contains(&("f32".to_string(), Piece::Keyword)), "got {:?}", out);
+        assert!(out.contains(&("fs_main".to_string(), Piece::Function)), "got {:?}", out);
+        assert!(out.contains(&("VertexOut".to_string(), Piece::Element)), "got {:?}", out);
+        assert!(out.contains(&("fog_color".to_string(), Piece::Attribute)), "a member after a dot, got {:?}", out);
     }
 
     #[test]

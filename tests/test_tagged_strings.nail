@@ -27,6 +27,11 @@ config:s = toml`name = "nail"`;
 print(query);
 print(config);
 
+// A shader is a string like any other. The wgsl tag is what tells the
+// highlighters to color the body as WGSL.
+shader:s = wgsl`@fragment fn glow() -> @location(0) vec4<f32> { return vec4<f32>(0.5, 0.9, 0.6, 1.0); }`;
+print(shader);
+
 // Tagged strings are plain strings: they concatenate, join and compare.
 joined:s = array_join([opening, closing], ``);
 print(joined);

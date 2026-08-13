@@ -88,6 +88,7 @@ fn dialect_for_tag(tag: &str) -> Option<generic::Dialect> {
         "kt" | "kotlin" => Some(generic::Dialect::Kotlin),
         "lua" => Some(generic::Dialect::Lua),
         "graphql" | "gql" => Some(generic::Dialect::GraphQl),
+        "wgsl" => Some(generic::Dialect::Wgsl),
         _ => None,
     };
 }
@@ -138,6 +139,7 @@ mod tests {
         assert!(matches!(state_for_tag("css"), Some(State::Css(_))));
         assert!(matches!(state_for_tag("ts"), Some(State::Generic(_))));
         assert!(matches!(state_for_tag("sql"), Some(State::Generic(_))));
+        assert!(matches!(state_for_tag("wgsl"), Some(State::Generic(_))));
         assert!(matches!(state_for_tag("yaml"), Some(State::Yaml(_))));
         assert!(matches!(state_for_tag("toml"), Some(State::Toml(_))));
         assert!(matches!(state_for_tag("md"), Some(State::Markdown(_))));
@@ -162,6 +164,7 @@ mod tests {
             ("toml", "# config\n[package]\nname = \"nail\"\nedition = 2024\n"),
             ("md", "# Title\n\nSome *emphasis* and a [link](https://nail.dev).\n\n- one\n"),
             ("graphql", "query Posts($first: Int) {\n  posts(first: $first) { id title }\n}"),
+            ("wgsl", "@group(0) @binding(0) var<uniform> scene: SceneUniform;\n// glow\nfn tint() -> vec4<f32> { return vec4<f32>(1.0); }"),
         ];
         for (tag, source) in sources {
             let rebuilt: String = pieces(tag, source).into_iter().map(|(text, _)| text).collect();

@@ -48,6 +48,8 @@ pub mod fs;
 pub mod game;
 #[cfg(feature = "game")]
 pub mod game3d;
+#[cfg(feature = "game")]
+pub(crate) mod game_gpu;
 pub mod geo;
 pub mod hashmap;
 pub mod hex;
