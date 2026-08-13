@@ -1,11 +1,11 @@
-use crate::common::CodeSpan;
+use crate::common::{CodeSpan, SourceFile, SourceMap};
 use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::fs;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 //  static the alphabet in lower and uppercase and 0-9
 
@@ -339,25 +339,76 @@ pub enum ImportMode {
     Keep,
 }
 
+/// A lexed program: the token stream with every import spliced in, plus the
+/// source map that says which file each program line belongs to. Imported
+/// files are numbered into their own line ranges past the end of the entry
+/// file, so no two files' spans can collide and every error can name the
+/// file it is actually in.
+pub struct LexedProgram {
+    pub tokens: Vec<Token>,
+    pub source_map: SourceMap,
+}
+
+/// Everything one lex of a program accumulates across imports. The stack
+/// catches true cycles; the spliced set makes imports idempotent, so a diamond
+/// (two files importing the same third) splices it once instead of failing on
+/// duplicate definitions.
+struct ImportCtx {
+    /// Files currently being spliced, importer-first. Importing one again is a cycle.
+    stack: HashSet<PathBuf>,
+    /// Files already spliced once, with the capability they were spliced under
+    /// (true = sandboxed import()). Importing one again splices nothing, and
+    /// importing it under the other capability is an error.
+    spliced: HashMap<PathBuf, bool>,
+    /// The next free program line, so every imported file gets its own range.
+    next_base: usize,
+    map: SourceMap,
+}
+
 pub fn lexer(input: &str) -> Vec<Token> {
-    lexer_with_context(input, None)
+    lex_program(input, None).tokens
 }
 
 pub fn lexer_with_context(input: &str, current_file: Option<&Path>) -> Vec<Token> {
+    lex_program(input, current_file).tokens
+}
+
+/// Lex a whole program starting from its entry file, keeping the source map.
+/// This is the entry point for anything that reports errors: the map is what
+/// turns a program line back into a file and that file's own line number.
+pub fn lex_program(input: &str, entry_path: Option<&Path>) -> LexedProgram {
+    let entry_lines = input.lines().count();
+    let display_path = entry_path.map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "<buffer>".to_string());
+    let mut ctx = ImportCtx {
+        stack: HashSet::new(),
+        spliced: HashMap::new(),
+        next_base: entry_lines,
+        map: SourceMap {
+            files: vec![SourceFile { path: display_path, base: 0, lines: entry_lines, content: input.to_string(), imported_at: 0 }],
+        },
+    };
+    // The entry is on the stack for the whole lex, so a file importing its
+    // own entry is reported as the cycle it is.
+    if let Some(path) = entry_path {
+        if let Ok(canonical) = path.canonicalize() {
+            ctx.stack.insert(canonical.clone());
+            ctx.spliced.insert(canonical, false);
+        }
+    }
     let mut state = LexerState { line: 1, column: 1 };
-    let mut included_files = HashSet::new();
-    lexer_inner(input, &mut state, current_file, &mut included_files, ImportMode::Expand)
+    let tokens = lexer_inner(input, &mut state, entry_path, &mut ctx, ImportMode::Expand, false);
+    LexedProgram { tokens, source_map: ctx.map }
 }
 
 /// Lex one file's own text: import lines stay ordinary tokens, so every span
 /// belongs to the text that was handed in. For highlighting and formatting.
 pub fn lexer_without_imports(input: &str) -> Vec<Token> {
     let mut state = LexerState { line: 1, column: 1 };
-    let mut included_files = HashSet::new();
-    lexer_inner(input, &mut state, None, &mut included_files, ImportMode::Keep)
+    let mut ctx = ImportCtx { stack: HashSet::new(), spliced: HashMap::new(), next_base: 0, map: SourceMap::default() };
+    lexer_inner(input, &mut state, None, &mut ctx, ImportMode::Keep, false)
 }
 
-fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>, included_files: &mut HashSet<PathBuf>, import_mode: ImportMode) -> Vec<Token> {
+fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>, ctx: &mut ImportCtx, import_mode: ImportMode, in_sandbox: bool) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
 
     // The version version line and any shebang above it are addressed to the launcher, not
@@ -473,6 +524,9 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                 // SandboxEnd markers so later stages know the code is untrusted.
                 if import_mode == ImportMode::Expand && (lexer_output.token_type == TokenType::ImportKeyword || lexer_output.token_type == TokenType::ImportDangerousKeyword) {
                     let sandboxed = lexer_output.token_type == TokenType::ImportKeyword;
+                    // Inside a sandboxed import the whole subtree has to stay
+                    // sandboxed, or the sandbox would prove nothing.
+                    let forbidden = in_sandbox && lexer_output.token_type == TokenType::ImportDangerousKeyword;
                     // Skip whitespace
                     while let Some(&c) = chars.peek() {
                         if c.is_whitespace() {
@@ -534,8 +588,19 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                     state.column += 1;
                                     
                                     // Now handle the file inclusion
-                                    match handle_import(&filepath, current_file, included_files, state) {
-                                        Ok(inserted_tokens) => {
+                                    if forbidden {
+                                        tokens.push(Token {
+                                            token_type: TokenType::LexerError("import_dangerous is not allowed inside a sandboxed import: a file brought in with import() can only use import() itself".to_string()),
+                                            code_span: CodeSpan {
+                                                start_line: lexer_output.start_line,
+                                                end_line: state.line,
+                                                start_column: lexer_output.start_column,
+                                                end_column: state.column
+                                            },
+                                        });
+                                    } else {
+                                    match handle_import(&filepath, current_file, ctx, state, sandboxed || in_sandbox) {
+                                        Ok(Some(inserted_tokens)) => {
                                             // An import_dangerous nested inside an imported
                                             // file already lands between the outer markers,
                                             // so the whole subtree is sandboxed either way.
@@ -553,17 +618,21 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                                 });
                                             }
                                         }
+                                        // Already spliced by an earlier import: an import
+                                        // is idempotent, so there is nothing to insert.
+                                        Ok(None) => {}
                                         Err(error) => {
                                             tokens.push(Token {
                                                 token_type: TokenType::LexerError(format!("Import error: {}", error)),
-                                                code_span: CodeSpan { 
-                                                    start_line: lexer_output.start_line, 
-                                                    end_line: state.line, 
-                                                    start_column: lexer_output.start_column, 
-                                                    end_column: state.column 
+                                                code_span: CodeSpan {
+                                                    start_line: lexer_output.start_line,
+                                                    end_line: state.line,
+                                                    start_column: lexer_output.start_column,
+                                                    end_column: state.column
                                                 },
                                             });
                                         }
+                                    }
                                     }
                                 } else {
                                     tokens.push(Token {
@@ -1954,12 +2023,18 @@ fn lex_enum_variant(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mu
     }
 }
 
+/// Splice an imported file into the program. Ok(Some(tokens)) is a first
+/// import, Ok(None) means the file is already part of the program and an
+/// import is idempotent. A file importing a file that is still being spliced
+/// is a cycle, and a file reached through both import() and
+/// import_dangerous() has no one capability, so both are errors.
 fn handle_import(
     filepath: &str,
     current_file: Option<&Path>,
-    included_files: &mut HashSet<PathBuf>,
+    ctx: &mut ImportCtx,
     state: &LexerState,
-) -> Result<Vec<Token>, String> {
+    sandboxed: bool,
+) -> Result<Option<Vec<Token>>, String> {
     // Resolve the path relative to the current file
     let resolved_path = if let Some(current) = current_file {
         if let Some(parent) = current.parent() {
@@ -1970,28 +2045,60 @@ fn handle_import(
     } else {
         PathBuf::from(filepath)
     };
-    
+
     // Get canonical path to handle symlinks and relative paths
     let canonical_path = resolved_path.canonicalize()
         .map_err(|e| format!("Cannot resolve path '{}': {}", filepath, e))?;
-    
-    // Check for circular includes
-    if !included_files.insert(canonical_path.clone()) {
-        return Err(format!("Circular include detected: '{}'", filepath));
+
+    // A file that is still in the middle of being spliced cannot be imported
+    // again underneath itself
+    if ctx.stack.contains(&canonical_path) {
+        return Err(format!("Circular import detected: '{}'", filepath));
     }
-    
+
+    if let Some(&was_sandboxed) = ctx.spliced.get(&canonical_path) {
+        if was_sandboxed != sandboxed {
+            return Err(format!(
+                "'{}' is imported both with import() and import_dangerous(). One file has one capability, so pick one form for it everywhere",
+                filepath
+            ));
+        }
+        return Ok(None);
+    }
+
     // Read the file
     let content = fs::read_to_string(&canonical_path)
         .map_err(|e| format!("Cannot read file '{}': {}", filepath, e))?;
-    
+
+    // Give the file its own range of program lines, just past everything
+    // lexed so far, and remember which import brought it in
+    let lines = content.lines().count();
+    let base = ctx.next_base;
+    ctx.next_base += lines;
+    // Show the file the way the user would name it: relative to the working
+    // directory when it is under it, the resolved path otherwise
+    let display_path = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| canonical_path.strip_prefix(&cwd).ok().map(|p| p.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| resolved_path.to_string_lossy().into_owned());
+    ctx.map.files.push(SourceFile {
+        path: display_path,
+        base,
+        lines,
+        content: content.clone(),
+        imported_at: state.line,
+    });
+
+    ctx.stack.insert(canonical_path.clone());
+    ctx.spliced.insert(canonical_path.clone(), sandboxed);
+
     // Lex the included file with its own context
-    let mut sub_state = LexerState { line: state.line, column: 1 };
-    let tokens = lexer_inner(&content, &mut sub_state, Some(&canonical_path), included_files, ImportMode::Expand);
-    
-    // Remove the file from included set after processing (allows same file in different branches)
-    included_files.remove(&canonical_path);
-    
-    Ok(tokens)
+    let mut sub_state = LexerState { line: base + 1, column: 1 };
+    let tokens = lexer_inner(&content, &mut sub_state, Some(&canonical_path), ctx, ImportMode::Expand, sandboxed);
+
+    ctx.stack.remove(&canonical_path);
+
+    Ok(Some(tokens))
 }
 
 fn is_double_character_token(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {

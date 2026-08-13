@@ -3029,14 +3029,21 @@ mod tests {
     }
 
     #[test]
-    fn test_import_sandboxes_nested_import_dangerous() {
-        // The sandboxed file plain-inserts another file whose function reads the
-        // disk. The whole subtree is sandboxed, so the read is still rejected.
+    fn test_import_rejects_nested_import_dangerous() {
+        // The sandboxed file tries to bring another file in with
+        // import_dangerous. A sandboxed import has to stay sandboxed all the
+        // way down, so the attempt itself is the error, at lex time, rather
+        // than a silent demotion of the dangerous import to sandboxed.
         let code = "import(`tests/test_import_fixture_nested.nail`)\n\
                     value:s = sandboxed_wrapper();\n\
                     print(value);";
-        let errors = check_errors(code);
-        assert!(errors.iter().any(|message| message.contains("Sandboxed code brought in by import cannot access 'fs_read'")), "Expected the nested plain insert to stay sandboxed, got: {:?}", errors);
+        let tokens = lexer(code);
+        let lexer_errors = crate::lexer::collect_lexer_errors(&tokens);
+        assert!(
+            lexer_errors.iter().any(|error| error.message.contains("import_dangerous is not allowed inside a sandboxed import")),
+            "Expected the nested import_dangerous to be rejected, got: {:?}",
+            lexer_errors
+        );
     }
 
     #[test]

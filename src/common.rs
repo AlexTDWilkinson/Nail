@@ -150,21 +150,26 @@ impl CodeError {
     /// Lines and columns in CodeSpan are 1-based; a 0 line means the span is
     /// unknown and the snippet is omitted.
     pub fn render(&self, filename: &str, source: &str) -> String {
+        self.render_with_map(&SourceMap::single(filename, source))
+    }
+
+    /// Same rendering, but for a program assembled out of imports: the span's
+    /// line is looked up in the source map, so the pointer names the file the
+    /// error is actually in, at that file's own line number.
+    pub fn render_with_map(&self, map: &SourceMap) -> String {
         let mut out = String::new();
         out.push_str(&format!("error: {}\n", self.message));
 
-        let line_no = self.code_span.start_line;
-        let source_line = if line_no >= 1 { source.lines().nth(line_no - 1) } else { None };
-
-        match source_line {
-            Some(text) => {
-                out.push_str(&format!("  --> {}:{}:{}\n", filename, line_no, self.code_span.start_column));
+        match map.resolve(self.code_span.start_line) {
+            Some((file, line_no)) if file.content.lines().nth(line_no - 1).is_some() => {
+                let text = file.content.lines().nth(line_no - 1).unwrap();
+                out.push_str(&format!("  --> {}:{}:{}\n", file.path, line_no, self.code_span.start_column));
                 let gutter = line_no.to_string().len().max(2);
                 out.push_str(&format!("{:>width$} |\n", "", width = gutter));
                 out.push_str(&format!("{:>width$} | {}\n", line_no, text, width = gutter));
 
                 let col = self.code_span.start_column.max(1);
-                let underline_len = if self.code_span.end_line == line_no && self.code_span.end_column > self.code_span.start_column {
+                let underline_len = if self.code_span.end_line == self.code_span.start_line && self.code_span.end_column > self.code_span.start_column {
                     self.code_span.end_column - self.code_span.start_column
                 } else {
                     1
@@ -173,8 +178,8 @@ impl CodeError {
                 let pad: String = text.chars().take(col - 1).map(|c| if c == '\t' { '\t' } else { ' ' }).collect();
                 out.push_str(&format!("{:>width$} | {}{}\n", "", pad, "^".repeat(underline_len), width = gutter));
             }
-            None => {
-                out.push_str(&format!("  --> {}\n", filename));
+            _ => {
+                out.push_str(&format!("  --> {}\n", map.entry().path));
             }
         }
 
@@ -201,5 +206,109 @@ impl Default for CodeSpan {
             end_line: 0,
             end_column: 0,
         }
+    }
+}
+
+/// One file of a lexed program. Spans carry no file of their own; instead
+/// every file owns a range of the program's line numbers, `base + 1 ..= base +
+/// lines`, and a span's line is mapped back through the SourceMap to the file
+/// it came from. The entry file has base 0, so for a program with no imports
+/// the numbers are the file's own and nothing changes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceFile {
+    /// The path a human should see: the entry file as it was named on the
+    /// command line, an imported file as its import path resolved.
+    pub path: String,
+    /// This file's lines n are program lines base + n.
+    pub base: usize,
+    /// How many lines the file has, version line included.
+    pub lines: usize,
+    /// The file's full text, for error snippets.
+    pub content: String,
+    /// Program line of the import statement that spliced this file in.
+    /// 0 for the entry file.
+    pub imported_at: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SourceMap {
+    pub files: Vec<SourceFile>,
+}
+
+impl SourceMap {
+    /// A map for a bare single file, so single-file tools and the old
+    /// render() path keep working unchanged.
+    pub fn single(path: &str, content: &str) -> SourceMap {
+        SourceMap {
+            files: vec![SourceFile { path: path.to_string(), base: 0, lines: content.lines().count(), content: content.to_string(), imported_at: 0 }],
+        }
+    }
+
+    pub fn entry(&self) -> &SourceFile {
+        &self.files[0]
+    }
+
+    /// The file owning this program line, and the 1-based line inside it.
+    pub fn resolve(&self, program_line: usize) -> Option<(&SourceFile, usize)> {
+        if program_line == 0 {
+            return None;
+        }
+        self.files.iter().find(|f| program_line > f.base && program_line <= f.base + f.lines).map(|f| (f, program_line - f.base))
+    }
+
+    /// True when this program line belongs to the entry file itself.
+    pub fn is_entry_line(&self, program_line: usize) -> bool {
+        matches!(self.resolve(program_line), Some((file, _)) if file.base == 0)
+    }
+
+    /// Walk import statements outward until the line lands in the entry file:
+    /// the line a single-file view should pin a foreign error to.
+    pub fn anchor_in_entry(&self, mut program_line: usize) -> usize {
+        for _ in 0..=self.files.len() {
+            match self.resolve(program_line) {
+                Some((file, real)) if file.base == 0 => return real,
+                Some((file, _)) => program_line = file.imported_at,
+                None => return 1,
+            }
+        }
+        1
+    }
+}
+
+#[cfg(test)]
+mod source_map_tests {
+    use super::*;
+
+    fn map() -> SourceMap {
+        SourceMap {
+            files: vec![
+                SourceFile { path: "entry.nail".into(), base: 0, lines: 10, content: String::new(), imported_at: 0 },
+                SourceFile { path: "a.nail".into(), base: 10, lines: 5, content: String::new(), imported_at: 3 },
+                // b is imported from line 12, which is line 2 of a
+                SourceFile { path: "b.nail".into(), base: 15, lines: 5, content: String::new(), imported_at: 12 },
+            ],
+        }
+    }
+
+    #[test]
+    fn resolves_lines_to_owning_files() {
+        let m = map();
+        assert_eq!(m.resolve(0), None);
+        assert_eq!(m.resolve(1).map(|(f, l)| (f.path.as_str(), l)), Some(("entry.nail", 1)));
+        assert_eq!(m.resolve(10).map(|(f, l)| (f.path.as_str(), l)), Some(("entry.nail", 10)));
+        assert_eq!(m.resolve(11).map(|(f, l)| (f.path.as_str(), l)), Some(("a.nail", 1)));
+        assert_eq!(m.resolve(15).map(|(f, l)| (f.path.as_str(), l)), Some(("a.nail", 5)));
+        assert_eq!(m.resolve(16).map(|(f, l)| (f.path.as_str(), l)), Some(("b.nail", 1)));
+        assert_eq!(m.resolve(21), None);
+    }
+
+    #[test]
+    fn anchors_foreign_lines_at_their_import_statement() {
+        let m = map();
+        assert_eq!(m.anchor_in_entry(7), 7);
+        assert_eq!(m.anchor_in_entry(12), 3);
+        // b came in through a, so the anchor walks a's own import too
+        assert_eq!(m.anchor_in_entry(17), 3);
+        assert_eq!(m.anchor_in_entry(999), 1);
     }
 }

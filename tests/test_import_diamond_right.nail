@@ -1,0 +1,7 @@
+nail latest
+// The other side of the import diamond, importing the same shared file.
+import(`test_import_diamond_shared.nail`)
+
+f diamond_right():s {
+    r diamond_shout(`right`);
+}

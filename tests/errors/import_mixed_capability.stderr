@@ -1,0 +1,5 @@
+error: Import error: '../test_import_helper.nail' is imported both with import() and import_dangerous(). One file has one capability, so pick one form for it everywhere
+  --> tests/errors/import_mixed_capability.nail:5:1
+   |
+ 5 | import(`../test_import_helper.nail`)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,4 @@
+nail latest
+// A file that imports a file that imports this one again. The second import
+// has to be reported as the cycle it is, not spliced forever.
+import(`../import_cycle_helper.nail`)

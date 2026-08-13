@@ -31,11 +31,11 @@ Generated files to watch for and delete:
 
 This is non-negotiable to maintain language stability and prevent regressions.
 
-A clean run currently reports 570/570 lexer/parser, 569/569 type checker and
-550/550 transpiler, with zero failures. Those counts are every `.nail` file in
+A clean run currently reports 574/574 lexer/parser, 573/573 type checker and
+554/554 transpiler, with zero failures. Those counts are every `.nail` file in
 the repository, from the one shared list in `test_nail_files.sh`, rather than
-the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1322 passing
-(1340 with `--features "game audio"`), `cargo test --bin nail` reports 1328
+the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1325 passing
+(1343 with `--features "game audio"`), `cargo test --bin nail` reports 1344
 (the library's tests plus the editor's own), and `./test_e2e.sh` reports 376
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
@@ -45,7 +45,7 @@ The server tests in `parser::std_lib::net` and the watch tests in
 at once will fail each other. Re-run those alone before believing a failure.
 
 `./test_launcher.sh` reports 49 checks passing, and
-`./test_error_messages.sh` reports 25 passed, 0 failed.
+`./test_error_messages.sh` reports 28 passed, 0 failed.
 
 `./test_doc_examples.sh` compiles all 1166 registry examples and runs the 1033
 that can run unattended. The rest are named, with the reason, in

@@ -260,7 +260,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             let tabs = Tabs::new(tab_titles)
                 .block(Block::default().borders(Borders::ALL).title(file_title))
                 .select(editor.tab_index)
-                .style(Style::default().fg(editor.theme.default))
+                .style(Style::default().fg(editor.theme.default).bg(editor.theme.background))
                 .highlight_style(Style::default().fg(editor.theme.operator));
             f.render_widget(tabs, chunks[0]);
 
@@ -323,7 +323,12 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 width: content_area.width.saturating_sub(2),
                 height: content_area.height.saturating_sub(2),
             };
-            editor.view = crate::ViewLayout { tabs: chunks[0], text: text_area };
+            let minimap_area = match (editor.show_minimap, editor.show_line_numbers) {
+                (true, true) => content_layout[2],
+                (true, false) => content_layout[1],
+                (false, _) => Rect::default(),
+            };
+            editor.view = crate::ViewLayout { tabs: chunks[0], text: text_area, minimap: minimap_area };
 
             // Slide the view to wherever the cursor went, but only when it
             // went somewhere: the scroll keys and the wheel move the page
@@ -382,12 +387,12 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                     
                     // Apply current line background highlighting
                     if is_current_line {
-                        span_style = span_style.bg(Color::Rgb(40, 40, 40)); // Dark gray background for current line
+                        span_style = span_style.bg(editor.theme.current_line_bg);
                     }
-                    
+
                     // Apply error line background highlighting (overrides current line)
                     if has_error_line {
-                        span_style = span_style.bg(Color::Rgb(60, 20, 20)); // Dark red background for error line
+                        span_style = span_style.bg(editor.theme.error_line_bg);
                     }
                     
                     for ch in text.chars() {
@@ -398,7 +403,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                         }
                         
                         let mut style = span_style;
-                        
+
                         // Add indentation guides
                         if editor.show_indentation_guides && ch == ' ' {
                             // Calculate indentation level based on line content (with bounds check)
@@ -424,7 +429,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                                 },
                                 '\t' => {
                                     // Show tabs as arrows - replace the character
-                                    style = style.fg(Color::Red);
+                                    style = style.fg(editor.theme.danger);
                                 },
                                 _ => {}
                             }
@@ -434,7 +439,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                                 let line_content = &current_tab.content[actual_line_idx];
                                 let trimmed_len = line_content.trim_end().len();
                                 if char_pos >= trimmed_len && (ch == ' ' || ch == '\t') {
-                                    style = style.bg(Color::Red).fg(Color::White);
+                                    style = style.bg(editor.theme.danger).fg(editor.theme.on_emphasis);
                                 }
                             }
                         }
@@ -465,11 +470,11 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                             if actual_line_idx == line && char_pos >= start && char_pos < end {
                                 if match_idx == editor.current_match_index {
                                     // Current match - bright highlight
-                                    style = style.bg(Color::Yellow).fg(Color::Black);
+                                    style = style.bg(editor.theme.search_match_bg).fg(editor.theme.search_match_fg);
                                     is_current_match = true;
                                 } else {
                                     // Other matches - dim highlight
-                                    style = style.bg(Color::DarkGray).fg(Color::White);
+                                    style = style.bg(editor.theme.search_other_bg).fg(editor.theme.search_other_fg);
                                 }
                                 break;
                             }
@@ -496,7 +501,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                             };
                             
                             if is_selected {
-                                style = style.bg(Color::Blue).fg(Color::White);
+                                style = style.bg(editor.theme.selection_bg).fg(editor.theme.selection_fg);
                             }
                         }
                         
@@ -509,14 +514,14 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                             if current_pos == cursor_pos || Some(current_pos) == editor.matching_bracket_pos {
                                 // Check if this is actually a bracket character
                                 if matches!(ch, '(' | ')' | '[' | ']' | '{' | '}') {
-                                    style = style.bg(Color::Magenta).fg(Color::White).add_modifier(Modifier::BOLD);
+                                    style = style.bg(editor.theme.bracket_match_bg).fg(editor.theme.on_emphasis).add_modifier(Modifier::BOLD);
                                 }
                             }
                         }
                         
-                        // Apply cursor highlighting (make cursor position white)
+                        // Apply cursor highlighting so the cursor position stands out
                         if actual_line_idx == current_tab.cursor_y && char_pos == current_tab.cursor_x {
-                            style = style.fg(Color::White);
+                            style = style.fg(editor.theme.cursor_fg);
                         }
                         
                         // Everything above decides how the character looks at
@@ -532,7 +537,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 // Handle case where cursor is at the end of the line
                 let cursor_y_visible = current_tab.cursor_y.saturating_sub(current_tab.scroll_position as usize);
                 if visible_line_idx == cursor_y_visible && char_pos == current_tab.cursor_x && current_tab.cursor_x >= first_column {
-                    new_spans.push(Span::styled(" ", Style::default().fg(Color::White)));
+                    new_spans.push(Span::styled(" ", Style::default().fg(editor.theme.cursor_fg)));
                 }
                 
                 *line = Line::from(new_spans);
@@ -568,13 +573,8 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 log::info!("Content rendered successfully");
             }
 
-            // Render minimap if enabled
             if editor.show_minimap {
-                let minimap_area = match editor.show_line_numbers {
-                    true => content_layout[2],  // After line numbers and content
-                    false => content_layout[1], // After content
-                };
-                // render_minimap(f, editor, minimap_area); // Function not implemented yet
+                render_minimap(f, &editor, &colorize_cache, minimap_area);
             }
 
             let scrollbar = Scrollbar::default()
@@ -655,6 +655,14 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             if editor.dialog_mode != crate::DialogMode::None {
                 display_dialog(f, &editor);
             }
+
+            // A requested screen copy is answered here, after every overlay
+            // and dialog has painted, so what lands on the clipboard is
+            // exactly what the user is looking at.
+            if editor.screen_copy_requested {
+                let text = buffer_text(f.buffer_mut());
+                editor.finish_screen_copy(&text);
+            }
         });
 
         match result_draw {
@@ -664,9 +672,130 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
     }
 }
 
+/// A painted frame read back as plain text, which is what makes everything
+/// the IDE displays copyable: overlays and popups live nowhere else. Styling
+/// is dropped, right-hand padding is trimmed, and empty rows at the bottom
+/// go, so what is pasted reads like a screenshot in text.
+pub fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
+    let area = buffer.area;
+    let mut lines: Vec<String> = Vec::new();
+    for y in area.top()..area.bottom() {
+        let mut line = String::new();
+        for x in area.left()..area.right() {
+            line.push_str(buffer[(x, y)].symbol());
+        }
+        lines.push(line.trim_end().to_string());
+    }
+    while lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    return lines.join("\n");
+}
+
+/// How many characters of a line one braille dot column stands for. Fifteen
+/// cells of two dot columns at four characters each cover the first 120
+/// columns of the file, which is enough to give every line a recognisable
+/// shape.
+const MINIMAP_CHARS_PER_DOT: usize = 4;
+
+/// The bit each dot of a braille cell occupies in its code point, indexed by
+/// dot column and then dot row from the top. Braille grew its bottom two dots
+/// after the original six, which is why the last row's bits are out of
+/// sequence with the rest.
+const BRAILLE_DOTS: [[u8; 4]; 2] = [[0x01, 0x02, 0x04, 0x40], [0x08, 0x10, 0x20, 0x80]];
+
+/// A color leaned a third of the way toward the theme background, used for
+/// the minimap rows not on screen. The rows that are on screen keep their
+/// full colors, which is what makes the lit band findable at a glance.
+fn toward_background(color: Color, background: Color) -> Color {
+    match (color, background) {
+        (Color::Rgb(red, green, blue), Color::Rgb(back_red, back_green, back_blue)) => {
+            let mix = |channel: u8, back: u8| -> u8 { ((channel as u16 * 2 + back as u16) / 3) as u8 };
+            return Color::Rgb(mix(red, back_red), mix(green, back_green), mix(blue, back_blue));
+        }
+        _ => return color,
+    }
+}
+
+/// The file in miniature: each braille cell condenses a slice of the file
+/// into a two by four grid of dots, with a dot wherever those lines have
+/// text, painted in the same colors the syntax highlighter gives that text,
+/// so a wall of comments, a string block and a run of keywords each look
+/// like themselves. Dots rather than solid blocks so the map reads as faint
+/// small print instead of slabs of ink. The rows showing what is on screen
+/// sit on the current-line grey at full strength while the rest lean toward
+/// the background, so the band doubles as a scrollbar you can read.
+fn render_minimap(f: &mut Frame, editor: &Editor, colors: &ColorizeCache, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let tab = editor.get_current_tab();
+    let lines_per_row = crate::minimap_lines_per_row(tab.content.len(), area.height);
+    let lines_per_dot_row = lines_per_row / 4;
+    let width = area.width as usize;
+    let dot_columns = width * 2;
+
+    let view_top = tab.scroll_position as usize;
+    let view_bottom = view_top + (editor.view.text.height as usize).max(1);
+
+    let mut rows: Vec<Line> = Vec::with_capacity(area.height as usize);
+    for row in 0..area.height as usize {
+        let first_line = row * lines_per_row;
+
+        // The dots one row of cells lights up, and a tally of the token
+        // colors behind each cell, of which the commonest becomes the cell's
+        // color. Each source line is walked once, so the whole map costs one
+        // pass over the file per frame.
+        let mut dots: Vec<u8> = vec![0; width];
+        let mut tallies: Vec<Vec<(Color, u32)>> = vec![Vec::new(); width];
+        for dot_row in 0..4 {
+            let start = first_line + dot_row * lines_per_dot_row;
+            for index in start..start + lines_per_dot_row {
+                let Some(line) = colors.line(index) else { break };
+                let mut position = 0;
+                'line_done: for span in line.spans.iter() {
+                    let color = span.style.fg.unwrap_or(editor.theme.default);
+                    for character in span.content.chars() {
+                        if position >= dot_columns * MINIMAP_CHARS_PER_DOT {
+                            break 'line_done;
+                        }
+                        if !character.is_whitespace() {
+                            let dot_column = position / MINIMAP_CHARS_PER_DOT;
+                            let cell = dot_column / 2;
+                            dots[cell] |= BRAILLE_DOTS[dot_column % 2][dot_row];
+                            match tallies[cell].iter_mut().find(|(seen, _)| *seen == color) {
+                                Some((_, count)) => *count += 1,
+                                None => tallies[cell].push((color, 1)),
+                            }
+                        }
+                        position += 1;
+                    }
+                }
+            }
+        }
+
+        let on_screen = first_line < view_bottom && first_line + lines_per_row > view_top;
+        let row_background = if on_screen { editor.theme.current_line_bg } else { editor.theme.background };
+        let mut cells: Vec<Span> = Vec::with_capacity(width);
+        for column in 0..width {
+            let commonest = tallies[column].iter().max_by_key(|(_, count)| *count).map(|(color, _)| *color);
+            let (glyph, foreground) = match commonest {
+                None => (' ', row_background),
+                Some(color) => {
+                    let braille = char::from_u32(0x2800 + dots[column] as u32).expect("every braille code point is assigned");
+                    (braille, if on_screen { color } else { toward_background(color, editor.theme.background) })
+                }
+            };
+            cells.push(Span::styled(glyph.to_string(), Style::default().fg(foreground).bg(row_background)));
+        }
+        rows.push(Line::from(cells));
+    }
+    f.render_widget(Paragraph::new(rows), area);
+}
+
 fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
     let current_tab = editor.get_current_tab();
-    
+
     // Create status bar content
     let file_info = if let Some(filename) = &current_tab.filename {
         format!(" {} ", filename)
@@ -676,7 +805,13 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
     
     let cursor_info = format!(" {}:{} ", current_tab.cursor_y + 1, current_tab.cursor_x + 1);
     let line_count = format!(" {} lines ", current_tab.content.len());
-    let modified_indicator = if current_tab.modified { " [*] " } else { " " };
+    let modified_indicator = if current_tab.disk_changed_underneath {
+        " [*] file changed on disk. F9 takes the disk copy, Ctrl+S keeps yours "
+    } else if current_tab.modified {
+        " [*] "
+    } else {
+        " "
+    };
     
     // Selection info
     let selection_info = if current_tab.selection_start.is_some() && current_tab.selection_end.is_some() {
@@ -737,29 +872,29 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
     
     // Create spans for different parts
     let mut spans = vec![
-        Span::styled(file_info, Style::default().fg(Color::Cyan).bg(Color::Black)),
-        Span::styled(modified_indicator, Style::default().fg(Color::Red).bg(Color::Black)),
-        Span::styled(cursor_info, Style::default().fg(Color::Green).bg(Color::Black)),
-        Span::styled(line_count, Style::default().fg(Color::Yellow).bg(Color::Black)),
-        Span::styled(size_info, Style::default().fg(Color::Blue).bg(Color::Black)),
-        Span::styled(tab_info, Style::default().fg(Color::Magenta).bg(Color::Black)),
+        Span::styled(file_info, Style::default().fg(editor.theme.info).bg(editor.theme.ui_panel_bg)),
+        Span::styled(modified_indicator, Style::default().fg(editor.theme.danger).bg(editor.theme.ui_panel_bg)),
+        Span::styled(cursor_info, Style::default().fg(editor.theme.success).bg(editor.theme.ui_panel_bg)),
+        Span::styled(line_count, Style::default().fg(editor.theme.accent).bg(editor.theme.ui_panel_bg)),
+        Span::styled(size_info, Style::default().fg(editor.theme.primary).bg(editor.theme.ui_panel_bg)),
+        Span::styled(tab_info, Style::default().fg(editor.theme.special).bg(editor.theme.ui_panel_bg)),
     ];
     
     // Add selection info if there's a selection
     if !selection_info.is_empty() {
-        spans.push(Span::styled(selection_info, Style::default().fg(Color::LightBlue).bg(Color::Black)));
+        spans.push(Span::styled(selection_info, Style::default().fg(editor.theme.info_bright).bg(editor.theme.ui_panel_bg)));
     }
     
     // Add visual features info if any are enabled
     if !features_info.is_empty() {
-        spans.push(Span::styled(features_info, Style::default().fg(Color::LightGreen).bg(Color::Black)));
+        spans.push(Span::styled(features_info, Style::default().fg(editor.theme.success_bright).bg(editor.theme.ui_panel_bg)));
     }
     
     // Which bindings are in force, when they are not the ones a user would
     // assume. Pushed before the width is measured, so the right flush below
     // still counts it.
     if let Some(label) = editor.keymap.label(editor.vim_mode) {
-        spans.push(Span::styled(label, Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(label, Style::default().fg(editor.theme.badge_fg).bg(editor.theme.badge_bg).add_modifier(Modifier::BOLD)));
     }
 
     // Add padding to push shortcuts to the right
@@ -769,14 +904,14 @@ fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
     
     if current_width + shortcuts_width < total_available {
         let padding_needed = total_available - current_width - shortcuts_width;
-        spans.push(Span::styled(" ".repeat(padding_needed), Style::default().bg(Color::Black)));
+        spans.push(Span::styled(" ".repeat(padding_needed), Style::default().bg(editor.theme.ui_panel_bg)));
     }
     
-    spans.push(Span::styled(shortcuts, Style::default().fg(Color::DarkGray).bg(Color::Black)));
+    spans.push(Span::styled(shortcuts, Style::default().fg(editor.theme.ui_hint).bg(editor.theme.ui_panel_bg)));
     
     let status_line = Line::from(spans);
     let status_paragraph = Paragraph::new(vec![status_line])
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(editor.theme.ui_panel_bg));
     
     f.render_widget(status_paragraph, area);
 }
@@ -836,11 +971,13 @@ fn display_build_status(f: &mut Frame, editor: &Editor) {
 /// What an end-of-line overlay annotation means, which decides its color.
 /// Errors keep the error color, timings render dim like a comment, and stale
 /// timings dim further because they describe an older build. Red always
-/// means error in this IDE, so timings never use it.
+/// means error in this IDE, so timings never use it, and neither do the
+/// bottom-row notices that report a copy or a load went fine.
 enum LineAnnotationKind {
     Error,
     Timing,
     TimingStale,
+    Notice,
 }
 
 /// One overlay rendered after the end of a line's code. Each line carries at
@@ -859,9 +996,13 @@ fn build_line_annotations(editor: &Editor, profile_cache: Option<&(u64, String, 
     // The dump matching the open buffer's fingerprint wins even if another
     // program wrote the dump file more recently. Only when no dump ever
     // matched does the latest one show, dimmed as stale.
-    let chosen = profile_cache
-        .and_then(|(_, fingerprint, _)| editor.profile_dumps.get(fingerprint))
-        .or(editor.profile_data.as_ref());
+    let chosen = if editor.show_timings {
+        profile_cache
+            .and_then(|(_, fingerprint, _)| editor.profile_dumps.get(fingerprint))
+            .or(editor.profile_data.as_ref())
+    } else {
+        None
+    };
     if let (Some(profile), Some((_, fingerprint, decl_lines))) = (chosen, profile_cache) {
         let stale = *fingerprint != profile.source_hash;
         for function in &profile.functions {
@@ -880,10 +1021,28 @@ fn build_line_annotations(editor: &Editor, profile_cache: Option<&(u64, String, 
         messages_by_line.entry(error.code_span.start_line).or_default().push(error.message.as_str());
     }
     for (start_line, messages) in messages_by_line {
-        annotations.insert(start_line, LineAnnotation { text: format!("◀ {}", messages.join(" | ")), kind: LineAnnotationKind::Error });
+        if start_line == 0 {
+            // A receipt says a copy or a load went fine. No arrow, because
+            // it points at no line, and no red, because red means error.
+            annotations.insert(0, LineAnnotation { text: messages.join(" | "), kind: LineAnnotationKind::Notice });
+        } else {
+            annotations.insert(start_line, LineAnnotation { text: format!("◀ {}", messages.join(" | ")), kind: LineAnnotationKind::Error });
+        }
     }
 
     annotations
+}
+
+/// The display text of every annotation on the given 1-based line range,
+/// keyed by line and kept exactly as painted, arrow and all, because the
+/// copies weave each one back onto the end of its own line the way the
+/// screen shows it. Rebuilt from the same sources the draw thread reads.
+pub fn line_annotation_texts(editor: &Editor, first_line: usize, last_line: usize) -> BTreeMap<usize, String> {
+    let current_tab = editor.get_current_tab();
+    let source = current_tab.content.join("\n");
+    let cache = (0u64, nail::prof::source_fingerprint(&source), function_declaration_lines(&current_tab.content));
+    let annotations = build_line_annotations(editor, Some(&cache));
+    return annotations.range(first_line..=last_line).map(|(line, annotation)| (*line, annotation.text.clone())).collect();
 }
 
 fn display_line_annotations(f: &mut Frame, editor: &Editor, content_area: Rect, annotations: &BTreeMap<usize, LineAnnotation>) {
@@ -932,6 +1091,7 @@ fn display_line_annotations(f: &mut Frame, editor: &Editor, content_area: Rect, 
             LineAnnotationKind::Error => Style::default().fg(editor.theme.error).bg(editor.theme.background),
             LineAnnotationKind::Timing => Style::default().fg(editor.theme.comment).bg(editor.theme.background),
             LineAnnotationKind::TimingStale => Style::default().fg(editor.theme.comment).bg(editor.theme.background).add_modifier(Modifier::DIM),
+            LineAnnotationKind::Notice => Style::default().fg(editor.theme.success).bg(editor.theme.background),
         };
         let paragraph = Paragraph::new(Line::from(Span::styled(text, style)));
         f.render_widget(Clear, overlay_area);
@@ -1002,16 +1162,16 @@ fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect)
     
     // Title with function signature
     lines.push(Line::from(vec![
-        Span::styled("Function: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Span::styled(&selected.label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled("Function: ", Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(&selected.label, Style::default().fg(editor.theme.ui_text).add_modifier(Modifier::BOLD)),
     ]));
     
     lines.push(Line::from(""));
     
     // Signature
     lines.push(Line::from(vec![
-        Span::styled("Signature: ", Style::default().fg(Color::Cyan)),
-        Span::styled(&selected.detail, Style::default().fg(Color::White)),
+        Span::styled("Signature: ", Style::default().fg(editor.theme.info)),
+        Span::styled(&selected.detail, Style::default().fg(editor.theme.ui_text)),
     ]));
     
     lines.push(Line::from(""));
@@ -1019,10 +1179,10 @@ fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect)
     // Description
     if !selected.description.is_empty() {
         lines.push(Line::from(vec![
-            Span::styled("Description:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("Description:", Style::default().fg(editor.theme.success).add_modifier(Modifier::BOLD)),
         ]));
         lines.push(Line::from(vec![
-            Span::styled(&selected.description, Style::default().fg(Color::White)),
+            Span::styled(&selected.description, Style::default().fg(editor.theme.ui_text)),
         ]));
         lines.push(Line::from(""));
     }
@@ -1036,20 +1196,20 @@ fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect)
         let call = crate::stdlib_registry::example_snippet(&selected.label, &selected.example);
 
         lines.push(Line::from(vec![
-            Span::styled("Example ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-            Span::styled("(TAB to insert)", Style::default().fg(Color::Yellow)),
+            Span::styled("Example ", Style::default().fg(editor.theme.special).add_modifier(Modifier::BOLD)),
+            Span::styled("(TAB to insert)", Style::default().fg(editor.theme.accent)),
         ]));
-        lines.push(Line::from(vec![Span::styled(call.to_string(), Style::default().fg(Color::Gray))]));
+        lines.push(Line::from(vec![Span::styled(call.to_string(), Style::default().fg(editor.theme.ui_text_muted))]));
         lines.push(Line::from(""));
 
         if selected.example.trim() != call {
             lines.push(Line::from(vec![
-                Span::styled("Full example ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled("(SHIFT + TAB to insert)", Style::default().fg(Color::Yellow)),
+                Span::styled("Full example ", Style::default().fg(editor.theme.special).add_modifier(Modifier::BOLD)),
+                Span::styled("(SHIFT + TAB to insert)", Style::default().fg(editor.theme.accent)),
             ]));
             for example_line in selected.example.lines() {
                 lines.push(Line::from(vec![
-                    Span::styled(example_line.to_string(), Style::default().fg(Color::Gray)),
+                    Span::styled(example_line.to_string(), Style::default().fg(editor.theme.ui_text_muted)),
                 ]));
             }
             lines.push(Line::from(""));
@@ -1059,12 +1219,12 @@ fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect)
     // Help text
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("ESC", Style::default().fg(Color::Yellow)),
-        Span::styled(" back  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("TAB", Style::default().fg(Color::Yellow)),
-        Span::styled(" to insert the example  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("SHIFT + TAB", Style::default().fg(Color::Yellow)),
-        Span::styled(" to insert the full example", Style::default().fg(Color::DarkGray)),
+        Span::styled("ESC", Style::default().fg(editor.theme.accent)),
+        Span::styled(" back  ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("TAB", Style::default().fg(editor.theme.accent)),
+        Span::styled(" to insert the example  ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("SHIFT + TAB", Style::default().fg(editor.theme.accent)),
+        Span::styled(" to insert the full example", Style::default().fg(editor.theme.ui_hint)),
     ]));
 
     // Calculate popup size
@@ -1101,9 +1261,9 @@ fn display_completion_detail(f: &mut Frame, editor: &Editor, content_area: Rect)
     let detail_paragraph = Paragraph::new(lines)
         .block(Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(editor.theme.accent))
             .title(" Documentation (F1 to toggle) ")
-            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            .title_style(Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)))
         .style(Style::default().bg(editor.theme.background))
         .wrap(Wrap { trim: false });
     
@@ -1162,17 +1322,17 @@ fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
             
             let content = if i == editor.completion_index {
                 Line::from(vec![
-                    Span::styled(icon, Style::default().fg(Color::Yellow)),
-                    Span::styled(&item.label, Style::default().fg(Color::White).bg(Color::Blue)),
+                    Span::styled(icon, Style::default().fg(editor.theme.accent)),
+                    Span::styled(&item.label, Style::default().fg(editor.theme.on_emphasis).bg(editor.theme.item_selection_bg)),
                     Span::raw(" "),
-                    Span::styled(&item.detail, Style::default().fg(Color::Gray)),
+                    Span::styled(&item.detail, Style::default().fg(editor.theme.ui_text_muted)),
                 ])
             } else {
                 Line::from(vec![
-                    Span::styled(icon, Style::default().fg(Color::DarkGray)),
+                    Span::styled(icon, Style::default().fg(editor.theme.ui_hint)),
                     Span::styled(&item.label, Style::default().fg(editor.theme.default)),
                     Span::raw(" "),
-                    Span::styled(&item.detail, Style::default().fg(Color::DarkGray)),
+                    Span::styled(&item.detail, Style::default().fg(editor.theme.ui_hint)),
                 ])
             };
             ListItem::new(content)
@@ -1234,7 +1394,7 @@ fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
             .border_style(Style::default().fg(editor.theme.operator))
             .title(title)
             .title_style(if has_docs {
-                Style::default().fg(Color::Yellow)
+                Style::default().fg(editor.theme.accent)
             } else {
                 Style::default().fg(editor.theme.operator)
             }))
@@ -1242,7 +1402,7 @@ fn display_completions(f: &mut Frame, editor: &Editor, content_area: Rect) {
 
     f.render_widget(completions_list, popup_area);
     let list_area = Rect::new(popup_area.x + 1, popup_area.y + 1, popup_area.width.saturating_sub(2), items_to_show as u16);
-    display_list_scrollbar(f, popup_area, list_area, editor.completions.len(), first_shown);
+    display_list_scrollbar(f, editor.theme, popup_area, list_area, editor.completions.len(), first_shown);
 }
 
 fn display_dialog(f: &mut Frame, editor: &Editor) {
@@ -1290,23 +1450,23 @@ fn display_confirm_quit_dialog(f: &mut Frame, editor: &Editor) {
 
     let mut lines = vec![Line::from(vec![Span::styled(
         "Quit?",
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD),
     )])];
     lines.push(Line::from(""));
     if unsaved {
         lines.push(Line::from(vec![Span::styled(
             "You have changes that are not saved.",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default().fg(editor.theme.danger).add_modifier(Modifier::BOLD),
         )]));
         lines.push(Line::from(""));
     }
     lines.push(Line::from(vec![
-        Span::styled("ESC", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-        Span::styled(" again to quit", Style::default().fg(Color::White)),
+        Span::styled("ESC", Style::default().fg(editor.theme.danger).add_modifier(Modifier::BOLD)),
+        Span::styled(" again to quit", Style::default().fg(editor.theme.ui_text)),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("any other key", Style::default().fg(Color::Green)),
-        Span::styled(" to stay", Style::default().fg(Color::White)),
+        Span::styled("any other key", Style::default().fg(editor.theme.success)),
+        Span::styled(" to stay", Style::default().fg(editor.theme.ui_text)),
     ]));
 
     let width = 42;
@@ -1321,9 +1481,9 @@ fn display_confirm_quit_dialog(f: &mut Frame, editor: &Editor) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(if unsaved { Color::Red } else { Color::Yellow }))
+                    .border_style(Style::default().fg(if unsaved { editor.theme.danger } else { editor.theme.accent }))
                     .title(" Quit ")
-                    .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    .title_style(Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)),
             )
             .style(Style::default().bg(editor.theme.background)),
         dialog_area,
@@ -1338,7 +1498,7 @@ fn display_settings_dialog(f: &mut Frame, editor: &Editor) {
 
     let mut lines = vec![Line::from(vec![Span::styled(
         "Settings",
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD),
     )])];
     lines.push(Line::from(""));
 
@@ -1347,31 +1507,31 @@ fn display_settings_dialog(f: &mut Frame, editor: &Editor) {
         let selected = index == editor.settings_row;
         let marker = if selected { "> " } else { "  " };
         let value_style = if selected {
-            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default().fg(editor.theme.badge_fg).bg(editor.theme.badge_bg).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(editor.theme.ui_text)
         };
         lines.push(Line::from(vec![
-            Span::styled(marker, Style::default().fg(Color::Yellow)),
-            Span::styled(format!("{:width$}  ", label, width = label_width), Style::default().fg(Color::Gray)),
+            Span::styled(marker, Style::default().fg(editor.theme.accent)),
+            Span::styled(format!("{:width$}  ", label, width = label_width), Style::default().fg(editor.theme.ui_text_muted)),
             Span::styled(format!(" {} ", value), value_style),
         ]));
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("UP", Style::default().fg(Color::Green)),
-        Span::styled(" and ", Style::default().fg(Color::DarkGray)),
-        Span::styled("DOWN", Style::default().fg(Color::Green)),
-        Span::styled(" to choose, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("LEFT", Style::default().fg(Color::Green)),
-        Span::styled(" and ", Style::default().fg(Color::DarkGray)),
-        Span::styled("RIGHT", Style::default().fg(Color::Green)),
-        Span::styled(" to change", Style::default().fg(Color::DarkGray)),
+        Span::styled("UP", Style::default().fg(editor.theme.success)),
+        Span::styled(" and ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("DOWN", Style::default().fg(editor.theme.success)),
+        Span::styled(" to choose, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("LEFT", Style::default().fg(editor.theme.success)),
+        Span::styled(" and ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("RIGHT", Style::default().fg(editor.theme.success)),
+        Span::styled(" to change", Style::default().fg(editor.theme.ui_hint)),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("ESC", Style::default().fg(Color::Red)),
-        Span::styled(" saves and closes", Style::default().fg(Color::DarkGray)),
+        Span::styled("ESC", Style::default().fg(editor.theme.danger)),
+        Span::styled(" saves and closes", Style::default().fg(editor.theme.ui_hint)),
     ]));
 
     let width = 52;
@@ -1386,9 +1546,9 @@ fn display_settings_dialog(f: &mut Frame, editor: &Editor) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
+                .border_style(Style::default().fg(editor.theme.accent))
                 .title(" Settings (F2) ")
-                .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                .title_style(Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)),
         )
         .style(Style::default().bg(editor.theme.background));
 
@@ -1406,31 +1566,31 @@ fn display_goto_line_dialog(f: &mut Frame, editor: &Editor) {
     
     // Title
     lines.push(Line::from(vec![
-        Span::styled("Go to Line", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("Go to Line", Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)),
     ]));
     lines.push(Line::from(""));
     
     // Input field
     lines.push(Line::from(vec![
-        Span::styled("Line number: ", Style::default().fg(Color::White)),
-        Span::styled(&editor.goto_line_input, Style::default().fg(Color::White).bg(Color::DarkGray)),
-        Span::styled("_", Style::default().fg(Color::White).bg(Color::DarkGray)), // Cursor
+        Span::styled("Line number: ", Style::default().fg(editor.theme.ui_text)),
+        Span::styled(&editor.goto_line_input, Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)),
+        Span::styled("_", Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)), // Cursor
     ]));
     lines.push(Line::from(""));
     
     // Info
     lines.push(Line::from(vec![
-        Span::styled(format!("Current: {} / {}", current_line, total_lines), Style::default().fg(Color::Gray)),
+        Span::styled(format!("Current: {} / {}", current_line, total_lines), Style::default().fg(editor.theme.ui_text_muted)),
     ]));
     lines.push(Line::from(""));
     
     // Help text
     lines.push(Line::from(vec![
-        Span::styled("Press ", Style::default().fg(Color::DarkGray)),
-        Span::styled("ENTER", Style::default().fg(Color::Green)),
-        Span::styled(" to go, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("ESC", Style::default().fg(Color::Red)),
-        Span::styled(" to cancel", Style::default().fg(Color::DarkGray)),
+        Span::styled("Press ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("ENTER", Style::default().fg(editor.theme.success)),
+        Span::styled(" to go, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("ESC", Style::default().fg(editor.theme.danger)),
+        Span::styled(" to cancel", Style::default().fg(editor.theme.ui_hint)),
     ]));
     
     // Calculate dialog size
@@ -1454,9 +1614,9 @@ fn display_goto_line_dialog(f: &mut Frame, editor: &Editor) {
     let dialog_paragraph = Paragraph::new(lines)
         .block(Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(editor.theme.accent))
             .title(" Go to Line (Ctrl+G) ")
-            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            .title_style(Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)))
         .style(Style::default().bg(editor.theme.background))
         .wrap(Wrap { trim: true });
     
@@ -1469,7 +1629,7 @@ fn search_switches(editor: &Editor) -> Vec<Span<'static>> {
     let switches = [("case", editor.case_sensitive), ("word", editor.whole_word), ("regex", editor.use_regex)];
     let mut spans = Vec::new();
     for (label, is_on) in switches {
-        let style = if is_on { Style::default().fg(Color::Black).bg(Color::Green) } else { Style::default().fg(Color::DarkGray) };
+        let style = if is_on { Style::default().fg(editor.theme.toggle_on_fg).bg(editor.theme.toggle_on_bg) } else { Style::default().fg(editor.theme.ui_hint) };
         spans.push(Span::styled(format!(" {} ", label), style));
         spans.push(Span::raw(" "));
     }
@@ -1487,7 +1647,7 @@ fn search_switches(editor: &Editor) -> Vec<Span<'static>> {
 /// `rows` is how many there are in total, `offset` is the first one on
 /// screen, and `list_area` is where the rows themselves were drawn: the bar
 /// runs level with them and stops where they stop.
-fn display_list_scrollbar(f: &mut Frame, box_area: Rect, list_area: Rect, rows: usize, offset: usize) {
+fn display_list_scrollbar(f: &mut Frame, theme: &crate::colorizer::ColorScheme, box_area: Rect, list_area: Rect, rows: usize, offset: usize) {
     let visible = list_area.height as usize;
     if visible == 0 || rows <= visible {
         return;
@@ -1499,8 +1659,8 @@ fn display_list_scrollbar(f: &mut Frame, box_area: Rect, list_area: Rect, rows: 
         .symbols(ratatui::symbols::scrollbar::VERTICAL)
         .begin_symbol(None)
         .end_symbol(None)
-        .track_style(Style::default().fg(Color::DarkGray))
-        .thumb_style(Style::default().fg(Color::Green));
+        .track_style(Style::default().fg(theme.scroll_track))
+        .thumb_style(Style::default().fg(theme.scroll_thumb));
     let mut state = ScrollbarState::new(rows).position(offset).viewport_content_length(visible);
 
     f.render_stateful_widget(bar, bar_area, &mut state);
@@ -1524,13 +1684,13 @@ fn display_picker(f: &mut Frame, editor: &Editor, title: &str, filter: &str, row
 
     let chunks = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(1), Constraint::Min(0)]).split(Rect::new(dialog_area.x + 1, dialog_area.y + 1, dialog_area.width.saturating_sub(2), dialog_area.height.saturating_sub(2)));
 
-    let block = Block::default().borders(Borders::ALL).title(title.to_string()).title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)).style(Style::default().bg(editor.theme.background));
+    let block = Block::default().borders(Borders::ALL).title(title.to_string()).title_style(Style::default().fg(editor.theme.success).add_modifier(Modifier::BOLD)).style(Style::default().bg(editor.theme.background));
     f.render_widget(block, dialog_area);
 
     let prompt = Paragraph::new(Line::from(vec![
-        Span::styled("> ", Style::default().fg(Color::Green)),
-        Span::styled(filter.to_string(), Style::default().fg(Color::White)),
-        Span::styled("_", Style::default().fg(Color::White).bg(Color::DarkGray)),
+        Span::styled("> ", Style::default().fg(editor.theme.success)),
+        Span::styled(filter.to_string(), Style::default().fg(editor.theme.ui_text)),
+        Span::styled("_", Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)),
     ]));
     f.render_widget(prompt, chunks[0]);
 
@@ -1546,14 +1706,14 @@ fn display_picker(f: &mut Frame, editor: &Editor, title: &str, filter: &str, row
             let label = if label.chars().count() > room { format!("{}…", label.chars().take(room.saturating_sub(1)).collect::<String>()) } else { label.clone() };
             let padding = inner_width.saturating_sub(label.chars().count() + hint.chars().count());
             ListItem::new(Line::from(vec![
-                Span::styled(label, Style::default().fg(Color::White)),
+                Span::styled(label, Style::default().fg(editor.theme.ui_text)),
                 Span::raw(" ".repeat(padding)),
-                Span::styled(hint.clone(), Style::default().fg(Color::DarkGray)),
+                Span::styled(hint.clone(), Style::default().fg(editor.theme.ui_hint)),
             ]))
         })
         .collect();
 
-    let list = List::new(items).highlight_style(Style::default().fg(Color::Black).bg(Color::White));
+    let list = List::new(items).highlight_style(Style::default().fg(editor.theme.menu_selection_fg).bg(editor.theme.menu_selection_bg));
     let mut list_state = ListState::default();
     if !rows.is_empty() {
         list_state.select(Some(selected.min(rows.len() - 1)));
@@ -1561,7 +1721,7 @@ fn display_picker(f: &mut Frame, editor: &Editor, title: &str, filter: &str, row
     f.render_stateful_widget(list, chunks[1], &mut list_state);
     // Asked after the list has drawn, because the list is the one that
     // decided how far down it had to scroll to keep the picked row in sight.
-    display_list_scrollbar(f, dialog_area, chunks[1], rows.len(), list_state.offset());
+    display_list_scrollbar(f, editor.theme, dialog_area, chunks[1], rows.len(), list_state.offset());
 }
 
 fn display_palette_dialog(f: &mut Frame, editor: &Editor) {
@@ -1614,7 +1774,7 @@ fn display_symbol_dialog(f: &mut Frame, editor: &Editor) {
 fn display_find_dialog(f: &mut Frame, editor: &Editor) {
     use ratatui::widgets::{Wrap, Clear};
     use ratatui::text::{Line, Span};
-    use ratatui::style::{Color, Style, Modifier};
+    use ratatui::style::{Style, Modifier};
     use ratatui::layout::Rect;
     use ratatui::widgets::{Block, Borders, Paragraph};
     
@@ -1625,15 +1785,15 @@ fn display_find_dialog(f: &mut Frame, editor: &Editor) {
 
     // Title
     lines.push(Line::from(vec![
-        Span::styled("Find", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("Find", Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)),
     ]));
     lines.push(Line::from(""));
 
     // Search input field
     lines.push(Line::from(vec![
-        Span::styled("Find: ", Style::default().fg(Color::White)),
-        Span::styled(&editor.search_query, Style::default().fg(Color::White).bg(Color::DarkGray)),
-        Span::styled("_", Style::default().fg(Color::White).bg(Color::DarkGray)), // Cursor
+        Span::styled("Find: ", Style::default().fg(editor.theme.ui_text)),
+        Span::styled(&editor.search_query, Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)),
+        Span::styled("_", Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)), // Cursor
     ]));
     lines.push(Line::from(""));
 
@@ -1642,29 +1802,29 @@ fn display_find_dialog(f: &mut Frame, editor: &Editor) {
     // Search results
     if !search_status.is_empty() {
         lines.push(Line::from(vec![
-            Span::styled(search_status, Style::default().fg(Color::Green)),
+            Span::styled(search_status, Style::default().fg(editor.theme.success)),
         ]));
     }
     lines.push(Line::from(""));
 
     // Help text
     lines.push(Line::from(vec![
-        Span::styled("ENTER", Style::default().fg(Color::Green)),
-        Span::styled(": next, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("F3", Style::default().fg(Color::Green)),
-        Span::styled(": next, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Shift+F3", Style::default().fg(Color::Green)),
-        Span::styled(": prev", Style::default().fg(Color::DarkGray)),
+        Span::styled("ENTER", Style::default().fg(editor.theme.success)),
+        Span::styled(": next, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("F3", Style::default().fg(editor.theme.success)),
+        Span::styled(": next, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("Shift+F3", Style::default().fg(editor.theme.success)),
+        Span::styled(": prev", Style::default().fg(editor.theme.ui_hint)),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("Alt+C", Style::default().fg(Color::Green)),
-        Span::styled(": case, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Alt+W", Style::default().fg(Color::Green)),
-        Span::styled(": word, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Alt+R", Style::default().fg(Color::Green)),
-        Span::styled(": regex, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("ESC", Style::default().fg(Color::Red)),
-        Span::styled(": close", Style::default().fg(Color::DarkGray)),
+        Span::styled("Alt+C", Style::default().fg(editor.theme.success)),
+        Span::styled(": case, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("Alt+W", Style::default().fg(editor.theme.success)),
+        Span::styled(": word, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("Alt+R", Style::default().fg(editor.theme.success)),
+        Span::styled(": regex, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("ESC", Style::default().fg(editor.theme.danger)),
+        Span::styled(": close", Style::default().fg(editor.theme.ui_hint)),
     ]));
 
     // Calculate dialog size
@@ -1688,9 +1848,9 @@ fn display_find_dialog(f: &mut Frame, editor: &Editor) {
     let dialog_paragraph = Paragraph::new(lines)
         .block(Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(editor.theme.accent))
             .title(" Find (Ctrl+F) ")
-            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            .title_style(Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)))
         .style(Style::default().bg(editor.theme.background))
         .wrap(Wrap { trim: true });
     
@@ -1700,7 +1860,7 @@ fn display_find_dialog(f: &mut Frame, editor: &Editor) {
 fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
     use ratatui::widgets::{Wrap, Clear};
     use ratatui::text::{Line, Span};
-    use ratatui::style::{Color, Style, Modifier};
+    use ratatui::style::{Style, Modifier};
     use ratatui::layout::Rect;
     use ratatui::widgets::{Block, Borders, Paragraph};
     
@@ -1711,7 +1871,7 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
     
     // Title
     lines.push(Line::from(vec![
-        Span::styled("Find and Replace", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("Find and Replace", Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)),
     ]));
     lines.push(Line::from(""));
     
@@ -1719,15 +1879,15 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
     if editor.replace_field_active {
         // Find field inactive
         lines.push(Line::from(vec![
-            Span::styled("Find: ", Style::default().fg(Color::White)),
-            Span::styled(&editor.search_query, Style::default().fg(Color::White).bg(Color::Gray)),
+            Span::styled("Find: ", Style::default().fg(editor.theme.ui_text)),
+            Span::styled(&editor.search_query, Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_inactive_bg)),
         ]));
     } else {
         // Find field active
         lines.push(Line::from(vec![
-            Span::styled("Find: ", Style::default().fg(Color::White)),
-            Span::styled(&editor.search_query, Style::default().fg(Color::White).bg(Color::DarkGray)),
-            Span::styled("_", Style::default().fg(Color::White).bg(Color::DarkGray)), // Cursor
+            Span::styled("Find: ", Style::default().fg(editor.theme.ui_text)),
+            Span::styled(&editor.search_query, Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)),
+            Span::styled("_", Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)), // Cursor
         ]));
     }
     
@@ -1735,15 +1895,15 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
     if editor.replace_field_active {
         // Replace field active
         lines.push(Line::from(vec![
-            Span::styled("Replace: ", Style::default().fg(Color::White)),
-            Span::styled(&editor.replace_text, Style::default().fg(Color::White).bg(Color::DarkGray)),
-            Span::styled("_", Style::default().fg(Color::White).bg(Color::DarkGray)), // Cursor
+            Span::styled("Replace: ", Style::default().fg(editor.theme.ui_text)),
+            Span::styled(&editor.replace_text, Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)),
+            Span::styled("_", Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_bg)), // Cursor
         ]));
     } else {
         // Replace field inactive
         lines.push(Line::from(vec![
-            Span::styled("Replace: ", Style::default().fg(Color::White)),
-            Span::styled(&editor.replace_text, Style::default().fg(Color::White).bg(Color::Gray)),
+            Span::styled("Replace: ", Style::default().fg(editor.theme.ui_text)),
+            Span::styled(&editor.replace_text, Style::default().fg(editor.theme.ui_text).bg(editor.theme.input_inactive_bg)),
         ]));
     }
     lines.push(Line::from(""));
@@ -1753,31 +1913,31 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
     // Search results
     if !search_status.is_empty() {
         lines.push(Line::from(vec![
-            Span::styled(search_status, Style::default().fg(Color::Green)),
+            Span::styled(search_status, Style::default().fg(editor.theme.success)),
         ]));
     }
     lines.push(Line::from(""));
 
     // Help text
     lines.push(Line::from(vec![
-        Span::styled("ENTER", Style::default().fg(Color::Green)),
-        Span::styled(": replace current, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Alt+ENTER", Style::default().fg(Color::Green)),
-        Span::styled(": replace all", Style::default().fg(Color::DarkGray)),
+        Span::styled("ENTER", Style::default().fg(editor.theme.success)),
+        Span::styled(": replace current, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("Alt+ENTER", Style::default().fg(editor.theme.success)),
+        Span::styled(": replace all", Style::default().fg(editor.theme.ui_hint)),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("TAB", Style::default().fg(Color::Green)),
-        Span::styled(": switch field, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("F3", Style::default().fg(Color::Green)),
-        Span::styled(": next, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Shift+F3", Style::default().fg(Color::Green)),
-        Span::styled(": prev", Style::default().fg(Color::DarkGray)),
+        Span::styled("TAB", Style::default().fg(editor.theme.success)),
+        Span::styled(": switch field, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("F3", Style::default().fg(editor.theme.success)),
+        Span::styled(": next, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("Shift+F3", Style::default().fg(editor.theme.success)),
+        Span::styled(": prev", Style::default().fg(editor.theme.ui_hint)),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("Ctrl+I", Style::default().fg(Color::Green)),
-        Span::styled(": toggle case, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("ESC", Style::default().fg(Color::Red)),
-        Span::styled(": close", Style::default().fg(Color::DarkGray)),
+        Span::styled("Ctrl+I", Style::default().fg(editor.theme.success)),
+        Span::styled(": toggle case, ", Style::default().fg(editor.theme.ui_hint)),
+        Span::styled("ESC", Style::default().fg(editor.theme.danger)),
+        Span::styled(": close", Style::default().fg(editor.theme.ui_hint)),
     ]));
     
     // Calculate dialog size
@@ -1801,9 +1961,9 @@ fn display_replace_dialog(f: &mut Frame, editor: &Editor) {
     let dialog_paragraph = Paragraph::new(lines)
         .block(Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(editor.theme.accent))
             .title(" Find and Replace (Ctrl+H) ")
-            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            .title_style(Style::default().fg(editor.theme.accent).add_modifier(Modifier::BOLD)))
         .style(Style::default().bg(editor.theme.background))
         .wrap(Wrap { trim: true });
     
@@ -2394,6 +2554,24 @@ fn run_action(editor: &mut Editor, action: Action, tx: &Sender<EditorMessage>, t
 fn apply_action(editor: &mut Editor, action: Action) {
     match action {
         Action::Quit | Action::SaveAndQuit | Action::Save | Action::CycleExampleFiles | Action::Build => {}
+        // The user saying the disk's copy wins: the buffer becomes whatever
+        // the file says now, and the edits that were in it become one undo
+        // step away rather than gone. The watcher reloads a clean buffer by
+        // itself, so this key exists for the dirty one it refuses to touch.
+        Action::ReloadFromDisk => {
+            let filename = editor.get_current_tab().filename.clone();
+            match filename {
+                None => editor.build_status = BuildStatus::Failed("No file behind this tab to reload".to_string()),
+                Some(filename) => match fs::read_to_string(&filename) {
+                    Ok(text) => {
+                        let mtime = fs::metadata(&filename).and_then(|meta| meta.modified()).ok();
+                        editor.get_current_tab_mut().take_disk_copy(text.lines().map(String::from).collect(), mtime);
+                        editor.build_status = BuildStatus::Complete("Took the disk copy. Undo brings your edits back".to_string());
+                    }
+                    Err(e) => editor.build_status = BuildStatus::Failed(format!("Reload failed: {}", e)),
+                },
+            }
+        }
         Action::ToggleTheme => editor.toggle_theme(),
         Action::ToggleLineNumbers => {
             editor.show_line_numbers = !editor.show_line_numbers;
@@ -2552,6 +2730,11 @@ fn apply_action(editor: &mut Editor, action: Action) {
         }
         Action::NextError => editor.go_to_error(true),
         Action::PreviousError => editor.go_to_error(false),
+        Action::CopyErrors => editor.copy_errors(),
+        Action::CopyScreen => editor.request_screen_copy(),
+        Action::CopySelectionWithAnnotations => editor.copy_selection_with_annotations(),
+        Action::CopyFileText => editor.copy_file_text(),
+        Action::CopyFileWithAnnotations => editor.copy_file_with_annotations(),
         Action::CommandPalette => editor.open_command_palette(),
         Action::SymbolPicker => editor.open_symbol_picker(),
         Action::ProjectSymbolPicker => editor.open_project_symbol_picker(),
@@ -2781,11 +2964,14 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             editor.build_status = BuildStatus::Parsing;
             let current_tab = editor.get_current_tab();
             let content = current_tab.content.join("\n");
+            let filename = current_tab.filename.clone();
             drop(editor);
 
             let stages_started = std::time::Instant::now();
             let lex_started = std::time::Instant::now();
-            let tokens = lexer::lexer(&content);
+            let program = lexer::lex_program(&content, filename.as_deref().map(Path::new));
+            let tokens = program.tokens;
+            let source_map = program.source_map;
             let lex_elapsed = lex_started.elapsed();
 
             let parse_started = std::time::Instant::now();
@@ -2796,7 +2982,7 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                 }
                 Err(e) => {
                     let mut editor = editor_arc.lock().unwrap();
-                    editor.build_status = BuildStatus::Failed(e.message.clone());
+                    editor.build_status = BuildStatus::Failed(prefix_with_file(&e.message, &e.code_span, &source_map));
                     log::error!("Parsing failed: {:?}", e);
                     continue;
                 }
@@ -2810,7 +2996,8 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                     ast
                 }
                 Err(errors) => {
-                    let combined_message = errors.iter().map(|error| error.message.as_str()).collect::<Vec<_>>().join("; ");
+                    let combined_message =
+                        errors.iter().map(|error| prefix_with_file(&error.message, &error.code_span, &source_map)).collect::<Vec<_>>().join("; ");
                     let mut editor = editor_arc.lock().unwrap();
                     editor.build_status = BuildStatus::Failed(combined_message);
                     log::error!("Checker failed: {:?}", errors);
@@ -3096,6 +3283,96 @@ pub fn profile_watcher_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver
     }
 }
 
+/// Watches the files behind the open tabs and pulls in changes made by
+/// anything that is not this editor: a formatter, a git checkout, an AI agent
+/// working on the same file. A buffer with no unsaved edits is reloaded in
+/// place, so the file on screen visibly follows along as something else
+/// rewrites it. A buffer with unsaved edits is never clobbered: it is flagged
+/// instead, and the status bar says the disk moved until the next save
+/// settles whose copy wins.
+pub fn file_watcher_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>) {
+    loop {
+        match rx.try_recv() {
+            Ok(EditorMessage::Shutdown) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                log::info!("Shutting down file watcher thread");
+                break;
+            }
+            _ => {}
+        }
+
+        // What is open, snapshotted under the lock. The stats and reads
+        // happen unlocked, so a slow disk never stalls a keystroke.
+        let watched: Vec<(usize, String, Option<std::time::SystemTime>)> = {
+            let editor = lock(&editor_arc);
+            editor.tabs.iter().enumerate().filter_map(|(index, tab)| tab.filename.clone().map(|filename| (index, filename, tab.disk_mtime))).collect()
+        };
+
+        for (index, filename, known_mtime) in watched {
+            let mtime = match fs::metadata(&filename).and_then(|meta| meta.modified()) {
+                Ok(mtime) => mtime,
+                // Deleted, or briefly missing in the middle of a rewrite.
+                // Keep the buffer: it is the only copy left, and a save puts
+                // the file back.
+                Err(_) => continue,
+            };
+            if known_mtime == Some(mtime) {
+                continue;
+            }
+            let lines: Vec<String> = match fs::read_to_string(&filename) {
+                Ok(text) => text.lines().map(String::from).collect(),
+                Err(_) => continue,
+            };
+
+            let mut editor = lock(&editor_arc);
+            // Everything is re-checked under the lock, because tabs may have
+            // closed and keystrokes may have landed since the snapshot.
+            let tab = match editor.tabs.get_mut(index) {
+                Some(tab) if tab.filename.as_deref() == Some(filename.as_str()) => tab,
+                _ => continue,
+            };
+            if tab.disk_mtime == Some(mtime) {
+                continue;
+            }
+            if tab.modified {
+                tab.disk_changed_underneath = true;
+                tab.disk_mtime = Some(mtime);
+                log::info!("{} changed on disk under unsaved edits, keeping the buffer", filename);
+                continue;
+            }
+            tab.reload_from_disk(lines, Some(mtime));
+            log::info!("Reloaded {} after it changed on disk", filename);
+        }
+
+        thread::sleep(Duration::from_millis(250));
+    }
+}
+
+/// The message an error from an imported file shows in a buffer that cannot
+/// scroll to it: the file and its own line, in front of the original message.
+fn prefix_with_file(message: &str, span: &crate::common::CodeSpan, map: &crate::common::SourceMap) -> String {
+    match map.resolve(span.start_line) {
+        Some((file, real_line)) if file.base != 0 => format!("in {}:{}: {}", file.path, real_line, message),
+        _ => message.to_string(),
+    }
+}
+
+/// Fold a program error onto the open buffer. An error in the buffer itself
+/// keeps its span. An error inside an imported file gets its message prefixed
+/// with that file and line, and its span moved to the import statement that
+/// brought the file in, which is the nearest line the buffer can point at.
+fn localize_span(message: String, code_span: crate::common::CodeSpan, map: &crate::common::SourceMap) -> CodeError {
+    match map.resolve(code_span.start_line) {
+        Some((file, real_line)) if file.base != 0 => {
+            let anchor = map.anchor_in_entry(code_span.start_line);
+            CodeError {
+                message: format!("in {}:{}: {}", file.path, real_line, message),
+                code_span: crate::common::CodeSpan { start_line: anchor, start_column: 1, end_line: anchor, end_column: 1 },
+            }
+        }
+        _ => CodeError { message, code_span },
+    }
+}
+
 pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>) {
     // Tracks the (tab index, content hash) last run through the pipeline so
     // unchanged content is not re-lexed/re-parsed/re-checked every 250ms.
@@ -3110,10 +3387,11 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
             _ => {}
         }
 
-        // Lock the editor to access its content
-        let (tab_index, content) = {
+        // Lock the editor to access its content. The filename comes along so
+        // imports resolve relative to the file, not the process's directory.
+        let (tab_index, content, filename) = {
             let editor = lock(&editor_arc);
-            (editor.tab_index, editor.get_current_tab().content.join("\n"))
+            (editor.tab_index, editor.get_current_tab().content.join("\n"), editor.get_current_tab().filename.clone())
         };
 
         // Skip the whole pipeline when nothing changed since the last run
@@ -3126,8 +3404,11 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         }
         last_processed = Some((tab_index, content_hash));
 
-        // Run the lexer on the content
-        let tokens = lexer::lexer(&content);
+        // Run the lexer on the content, keeping the source map so an error
+        // in an imported file can say which file and line it is really on
+        let program = lexer::lex_program(&content, filename.as_deref().map(Path::new));
+        let tokens = program.tokens;
+        let source_map = program.source_map;
 
         // Copied before the lock is taken rather than under it: a long file is
         // ten thousand tokens, and the key thread is queued behind this.
@@ -3141,7 +3422,7 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
         // Check for error tokens (collect_lexer_errors also finds errors nested
         // inside FunctionSignature tokens, so every one gets its own line)
         let mut lexing_errors: Vec<CodeError> =
-            lexer::collect_lexer_errors(&tokens).into_iter().map(|error| CodeError { message: error.message, code_span: error.code_span }).collect();
+            lexer::collect_lexer_errors(&tokens).into_iter().map(|error| localize_span(error.message, error.code_span, &source_map)).collect();
 
         // A file with no version line is not a Nail file: the compiler refuses
         // it outright. The editor used to say nothing and quietly write one in
@@ -3177,7 +3458,7 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
             Ok(ast) => (ast, true),
             Err(e) => {
                 let mut editor = lock(&editor_arc);
-                editor.code_errors = vec![CodeError { message: e.message.clone(), code_span: e.code_span }];
+                editor.code_errors = vec![localize_span(e.message.clone(), e.code_span, &source_map)];
                 (ASTNode::default(), false)
             }
         };
@@ -3209,7 +3490,7 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
                                 Some(help) => format!("{} — help: {}", error.message, help),
                                 None => error.message,
                             };
-                            CodeError { message, code_span: error.code_span }
+                            localize_span(message, error.code_span, &source_map)
                         })
                         .collect();
                     let mut editor = lock(&editor_arc);
@@ -3367,8 +3648,8 @@ fn display_file_dialog(f: &mut Frame, editor: &Editor) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title)
-        .title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
-        .style(Style::default().fg(Color::White).bg(Color::Black));
+        .title_style(Style::default().fg(editor.theme.success).add_modifier(Modifier::BOLD))
+        .style(Style::default().fg(editor.theme.ui_text).bg(editor.theme.ui_panel_bg));
     let inner = block.inner(dialog_area);
     f.render_widget(block, dialog_area);
     if inner.width == 0 || inner.height == 0 {
@@ -3376,7 +3657,7 @@ fn display_file_dialog(f: &mut Frame, editor: &Editor) {
     }
 
     let query_area = Rect::new(inner.x, inner.y, inner.width, 1);
-    let query = Paragraph::new(format!("> {}", editor.file_dialog_input)).style(Style::default().fg(Color::Yellow).bg(Color::Black));
+    let query = Paragraph::new(format!("> {}", editor.file_dialog_input)).style(Style::default().fg(editor.theme.accent).bg(editor.theme.ui_panel_bg));
     f.render_widget(query, query_area);
     if inner.height < 2 {
         return;
@@ -3387,26 +3668,26 @@ fn display_file_dialog(f: &mut Frame, editor: &Editor) {
         .iter()
         .map(|entry| {
             let style = if entry.is_directory {
-                Style::default().fg(Color::Blue)
+                Style::default().fg(editor.theme.primary)
             } else if entry.is_recent {
-                Style::default().fg(Color::Yellow)
+                Style::default().fg(editor.theme.accent)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(editor.theme.ui_text)
             };
             ListItem::new(entry.name.clone()).style(style)
         })
         .collect();
 
     let list = List::new(items)
-        .style(Style::default().fg(Color::White).bg(Color::Black))
-        .highlight_style(Style::default().fg(Color::Black).bg(Color::White));
+        .style(Style::default().fg(editor.theme.ui_text).bg(editor.theme.ui_panel_bg))
+        .highlight_style(Style::default().fg(editor.theme.menu_selection_fg).bg(editor.theme.menu_selection_bg));
 
     let mut list_state = ListState::default();
     list_state.select(Some(editor.file_dialog_index));
 
     let list_area = Rect::new(inner.x, inner.y + 1, inner.width, inner.height - 1);
     f.render_stateful_widget(list, list_area, &mut list_state);
-    display_list_scrollbar(f, dialog_area, list_area, editor.file_entries.len(), list_state.offset());
+    display_list_scrollbar(f, editor.theme, dialog_area, list_area, editor.file_entries.len(), list_state.offset());
 }
 
 fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
@@ -3433,26 +3714,26 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
     // Create function list items
     let items: Vec<ListItem> = editor.stdlib_functions.iter().map(|func| {
         let display = format!("[{}] {}", func.category, func.name);
-        ListItem::new(display).style(Style::default().fg(Color::White))
+        ListItem::new(display).style(Style::default().fg(editor.theme.ui_text))
     }).collect();
     
     // Create the list widget
     let list_block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" Standard Library Functions - {} ", editor.stdlib_functions.len()))
-        .title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD));
+        .title_style(Style::default().fg(editor.theme.success).add_modifier(Modifier::BOLD));
     let list_area = list_block.inner(chunks[0]);
     let list = List::new(items)
         .block(list_block)
-        .style(Style::default().fg(Color::White).bg(Color::Black))
-        .highlight_style(Style::default().fg(Color::Black).bg(Color::White));
+        .style(Style::default().fg(editor.theme.ui_text).bg(editor.theme.ui_panel_bg))
+        .highlight_style(Style::default().fg(editor.theme.menu_selection_fg).bg(editor.theme.menu_selection_bg));
 
     // Create list state
     let mut list_state = ListState::default();
     list_state.select(Some(editor.stdlib_index));
 
     f.render_stateful_widget(list, chunks[0], &mut list_state);
-    display_list_scrollbar(f, chunks[0], list_area, editor.stdlib_functions.len(), list_state.offset());
+    display_list_scrollbar(f, editor.theme, chunks[0], list_area, editor.stdlib_functions.len(), list_state.offset());
 
     // Show function details, ending with the example, because Enter is about
     // to put that example in the file and nobody should have to guess what
@@ -3461,21 +3742,21 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
         let func = &editor.stdlib_functions[editor.stdlib_index];
         let mut details = vec![
             Line::from(vec![
-                Span::styled("Signature: ", Style::default().fg(Color::Yellow)),
-                Span::styled(&func.signature, Style::default().fg(Color::White)),
+                Span::styled("Signature: ", Style::default().fg(editor.theme.accent)),
+                Span::styled(&func.signature, Style::default().fg(editor.theme.ui_text)),
             ]),
             Line::from(vec![
-                Span::styled("Description: ", Style::default().fg(Color::Yellow)),
-                Span::styled(&func.description, Style::default().fg(Color::White)),
+                Span::styled("Description: ", Style::default().fg(editor.theme.accent)),
+                Span::styled(&func.description, Style::default().fg(editor.theme.ui_text)),
             ]),
         ];
         if !func.example.is_empty() {
             details.push(Line::from(vec![Span::styled(
                 "Enter puts this example in your file:",
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(editor.theme.accent),
             )]));
             for example_line in func.example.lines() {
-                details.push(Line::from(vec![Span::styled(example_line.to_string(), Style::default().fg(Color::Gray))]));
+                details.push(Line::from(vec![Span::styled(example_line.to_string(), Style::default().fg(editor.theme.ui_text_muted))]));
             }
         }
 
@@ -3483,9 +3764,9 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
             .block(Block::default()
                 .borders(Borders::ALL)
                 .title(" Function Details ")
-                .title_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
+                .title_style(Style::default().fg(editor.theme.primary).add_modifier(Modifier::BOLD))
             )
-            .style(Style::default().fg(Color::White).bg(Color::Black))
+            .style(Style::default().fg(editor.theme.ui_text).bg(editor.theme.ui_panel_bg))
             .wrap(ratatui::widgets::Wrap { trim: false });
 
         f.render_widget(detail_paragraph, chunks[1]);
@@ -3495,7 +3776,7 @@ fn display_stdlib_dialog(f: &mut Frame, editor: &Editor) {
     if !editor.stdlib_filter.is_empty() {
         let input_area = Rect::new(dialog_area.x + 1, dialog_area.y + dialog_area.height - 2, dialog_area.width - 2, 1);
         let input_paragraph = Paragraph::new(format!("Filter: {}", editor.stdlib_filter))
-            .style(Style::default().fg(Color::Yellow).bg(Color::Black));
+            .style(Style::default().fg(editor.theme.accent).bg(editor.theme.ui_panel_bg));
         f.render_widget(input_paragraph, input_area);
     }
 }
@@ -3539,7 +3820,7 @@ pub fn render_line_numbers(f: &mut Frame, editor: &Editor, gutter_area: Rect) {
 
         let (style, line_text) = if has_error {
             // Keep the line number visible, just paint it error-red
-            let style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+            let style = Style::default().fg(editor.theme.danger).add_modifier(Modifier::BOLD);
             let text = format!("{:>width$}", line_number, width = (gutter_area.width - 1) as usize);
             (style, text)
         } else if is_current_line && editor.highlight_current_line {
@@ -3648,6 +3929,63 @@ pub fn find_matching_bracket(content: &[String], cursor_y: usize, cursor_x: usiz
 mod tests {
     use super::*;
 
+    /// The rule every copy command serves: the painted frame reads back as
+    /// plain text, with styling gone, right-hand padding trimmed, and the
+    /// blank rows under the last painted one dropped.
+    #[test]
+    fn a_painted_frame_reads_back_as_trimmed_text() {
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 10, 4));
+        buffer.set_string(0, 0, "hello", ratatui::style::Style::default());
+        buffer.set_string(2, 1, "world", ratatui::style::Style::default());
+        assert_eq!(buffer_text(&buffer), "hello\n  world");
+    }
+
+    /// The whole debugging flow at once: a file naming an import that does
+    /// not exist is lexed, the error lands on the import's own line, and
+    /// copying a selection over that line carries the error text with it.
+    #[test]
+    fn a_bad_import_line_copies_together_with_its_error() {
+        let content = "nail latest\nimport(`no_such_folder/nope.nail`)";
+        let program = lexer::lex_program(content, None);
+        let errors: Vec<CodeError> = lexer::collect_lexer_errors(&program.tokens).into_iter().map(|error| localize_span(error.message, error.code_span, &program.source_map)).collect();
+        assert!(!errors.is_empty(), "an import that cannot be read is an error");
+
+        let mut editor = crate::Editor::new();
+        editor.tabs = vec![crate::Tab::new_with_file("main.nail".to_string(), content.lines().map(str::to_string).collect())];
+        editor.tab_index = 0;
+        editor.code_errors = errors;
+        let tab = editor.get_current_tab_mut();
+        tab.selection_start = Some((0, 1));
+        tab.selection_end = Some((10, 1));
+        tab.selection_mode = true;
+
+        let (text, count) = editor.selection_with_annotations_text();
+        assert_eq!(count, 1, "the one error on the selected line came along");
+        assert!(text.contains("Cannot resolve path"), "the copy says what the popup says: {}", text);
+        assert!(text.starts_with("import(`no"), "the copy starts with the selected code: {}", text);
+    }
+
+    /// Turning the timing display off also keeps timings out of every copy,
+    /// because what is copied is exactly what is displayed.
+    #[test]
+    fn timings_stay_out_of_annotations_when_their_display_is_off() {
+        let mut editor = crate::Editor::new();
+        editor.profile_data = Some(ProfileData {
+            source_hash: "abc".to_string(),
+            wall_nanos: 1_000_000,
+            functions: vec![ProfiledFunction { name: "double".to_string(), calls: 1, total_nanos: 400_000, max_nanos: 400_000 }],
+        });
+        let mut decl_lines = HashMap::new();
+        decl_lines.insert("double".to_string(), 0usize);
+        let cache = (0u64, "abc".to_string(), decl_lines);
+        editor.show_timings = true;
+        assert!(build_line_annotations(&editor, Some(&cache)).contains_key(&1), "a timing for a function on line one");
+        editor.show_timings = false;
+        assert!(build_line_annotations(&editor, Some(&cache)).is_empty(), "no timing survives the display being off");
+    }
+
     /// Draws a scrollbar on its own and hands back the column it drew in, so
     /// a test can say what the user would see on the right edge of a list.
     fn scrollbar_column(box_width: u16, list_height: u16, rows: usize, offset: usize) -> String {
@@ -3658,7 +3996,7 @@ mod tests {
         let box_area = Rect::new(0, 0, box_width, list_height + 2);
         let list_area = Rect::new(1, 1, box_width.saturating_sub(2), list_height);
         terminal
-            .draw(|f| display_list_scrollbar(f, box_area, list_area, rows, offset))
+            .draw(|f| display_list_scrollbar(f, &crate::colorizer::DARK_THEME, box_area, list_area, rows, offset))
             .expect("the frame draws");
 
         let buffer = terminal.backend().buffer().clone();
@@ -4016,6 +4354,50 @@ mod tests {
         assert_eq!(editor.vim_mode, VimMode::Normal);
         assert!(!editor.has_selection());
         assert!(!editor.mark_active);
+    }
+
+    /// The minimap draws each cell as braille dots in the syntax color of
+    /// the lines it stands for, which is what makes a comment block, a
+    /// string run and a stretch of code tell apart at a glance. The two
+    /// regressions this pins against are a single flat color, which says
+    /// nothing about where in the file you are, and solid block glyphs,
+    /// which read as slabs of ink rather than small print.
+    #[test]
+    fn the_minimap_wears_the_syntax_colors_of_the_lines_it_condenses() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let mut editor = crate::Editor::new();
+        // Eight lines over a two-row map put one line on each braille
+        // dot-row: the first cell row is all comment, the second all code.
+        let mut content = vec!["// a comment long enough to fill a cell".to_string(); 4];
+        content.extend(vec!["not_a_comment_just_plain_code".to_string(); 4]);
+        editor.get_current_tab_mut().content = content;
+        editor.view = crate::ViewLayout { tabs: Rect::default(), text: Rect::new(0, 0, 40, 10), minimap: Rect::new(40, 0, 15, 2) };
+
+        let mut colors = ColorizeCache::new();
+        colors.colorize(&editor.get_current_tab().content, &editor.theme);
+
+        let mut terminal = Terminal::new(TestBackend::new(15, 2)).expect("a test terminal");
+        terminal.draw(|f| render_minimap(f, &editor, &colors, Rect::new(0, 0, 15, 2))).expect("the frame draws");
+        let buffer = terminal.backend().buffer().clone();
+
+        // Four comment lines fill all eight dots of the first cell, and the
+        // cell wears the comment color.
+        let comment_cell = &buffer[(0u16, 0u16)];
+        assert_eq!(comment_cell.symbol(), "⣿", "a full slice lights every dot");
+        assert_eq!(comment_cell.fg, editor.theme.comment, "the comment rows wear the comment color");
+
+        // The code rows below wear some other token color.
+        let code_cell = &buffer[(0u16, 1u16)];
+        assert_ne!(code_cell.fg, editor.theme.comment, "the code rows wear a different color");
+
+        // Past the end of every line the cell is empty, and its background
+        // is the current-line grey because these lines are the ones on
+        // screen.
+        let empty = &buffer[(14u16, 0u16)];
+        assert_eq!(empty.symbol(), " ");
+        assert_eq!(empty.bg, editor.theme.current_line_bg, "the on-screen band sits on the current-line grey");
     }
 
     #[test]

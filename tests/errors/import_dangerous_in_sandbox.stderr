@@ -1,0 +1,5 @@
+error: import_dangerous is not allowed inside a sandboxed import: a file brought in with import() can only use import() itself
+  --> tests/import_sandbox_breaker_helper.nail:4:1
+   |
+ 4 | import_dangerous(`test_import_helper.nail`)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

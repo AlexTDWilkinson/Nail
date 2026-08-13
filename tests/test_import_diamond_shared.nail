@@ -1,0 +1,6 @@
+nail latest
+// The shared corner of the import diamond tests: both sides import this
+// file, and the program must end up seeing exactly one copy of it.
+f diamond_shout(name:s):s {
+    r string_to_uppercase(name);
+}

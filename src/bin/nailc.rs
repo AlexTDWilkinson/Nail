@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::process;
 
-use nail::lexer::{lexer, lexer_with_context};
+use nail::lexer::lex_program;
 use nail::parser::parse;
 use nail::checker::checker;
 use nail::transpiler::Transpiler;
@@ -250,13 +250,15 @@ fn main() {
         println!("=== Lexing {} ===", filename);
     }
     let stage_start = std::time::Instant::now();
-    let tokens = lexer_with_context(&input, Some(Path::new(filename)));
+    let program = lex_program(&input, Some(Path::new(filename)));
+    let source_map = program.source_map;
+    let tokens = program.tokens;
     stage_timings.push(("lex", stage_start.elapsed()));
 
     let lexer_errors = nail::lexer::collect_lexer_errors(&tokens);
     if !lexer_errors.is_empty() {
         for error in &lexer_errors {
-            eprint!("{}", error.render(filename, &input));
+            eprint!("{}", error.render_with_map(&source_map));
         }
         process::exit(1);
     }
@@ -283,7 +285,7 @@ fn main() {
             ast
         }
         Err(e) => {
-            eprint!("{}", e.render(filename, &input));
+            eprint!("{}", e.render_with_map(&source_map));
             process::exit(1);
         }
     };
@@ -319,7 +321,7 @@ fn main() {
             }
             Err(errors) => {
                 for error in &errors {
-                    eprint!("{}", error.render(filename, &input));
+                    eprint!("{}", error.render_with_map(&source_map));
                 }
                 let count = errors.len();
                 eprintln!("{} error{} found", count, if count == 1 { "" } else { "s" });

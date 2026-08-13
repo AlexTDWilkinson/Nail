@@ -9,7 +9,7 @@ use rayon::prelude::*;
 
 use crate::embedded::{self, Piece};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ColorScheme {
     pub function: Color,
     pub const_decl: Color,
@@ -39,6 +39,43 @@ pub struct ColorScheme {
     pub background: Color,
     pub comment: Color,
     pub error: Color,
+    // Everything below is UI chrome rather than syntax: the panels, dialogs,
+    // selections and highlights the editor draws around the code. They live
+    // here so a theme controls the whole screen, not just the tokens.
+    pub ui_text: Color,
+    pub ui_text_muted: Color,
+    pub ui_hint: Color,
+    pub ui_panel_bg: Color,
+    pub accent: Color,
+    pub success: Color,
+    pub success_bright: Color,
+    pub danger: Color,
+    pub info: Color,
+    pub info_bright: Color,
+    pub primary: Color,
+    pub special: Color,
+    pub on_emphasis: Color,
+    pub current_line_bg: Color,
+    pub error_line_bg: Color,
+    pub selection_bg: Color,
+    pub selection_fg: Color,
+    pub search_match_bg: Color,
+    pub search_match_fg: Color,
+    pub search_other_bg: Color,
+    pub search_other_fg: Color,
+    pub bracket_match_bg: Color,
+    pub cursor_fg: Color,
+    pub input_bg: Color,
+    pub input_inactive_bg: Color,
+    pub menu_selection_bg: Color,
+    pub menu_selection_fg: Color,
+    pub item_selection_bg: Color,
+    pub badge_bg: Color,
+    pub badge_fg: Color,
+    pub toggle_on_bg: Color,
+    pub toggle_on_fg: Color,
+    pub scroll_track: Color,
+    pub scroll_thumb: Color,
 }
 
 /// Convert a hex color string (e.g., "#FF5733") to a `tui::style::Color`
@@ -56,35 +93,74 @@ pub fn hex_to_color(hex: &str) -> Color {
 }
 
 lazy_static! {
+    // The light palette keeps each token in the same hue family as the dark
+    // one, so switching themes never rewires what a color means. Every value
+    // was checked against the backgrounds it can sit on (editor, current
+    // line, panels) and holds at least a 4.5:1 WCAG contrast ratio, except
+    // the statement terminator, which is dimmed on purpose and holds 3:1.
     pub static ref LIGHT_THEME: ColorScheme = ColorScheme {
-        function: hex_to_color("#004380"),      // Darkened Ocean Blue
-        const_decl: hex_to_color("#B01D28"),    // Darkened Ruby Red
-        var_decl: hex_to_color("#663C00"),      // Heavily Darkened Burnt Orange
-        if_decl: hex_to_color("#6C40D9"),       // Darkened Electric Purple
-        else_decl: hex_to_color("#7E62B0"),     // Darkened Medium Purple
-        arrow_decl: hex_to_color("#004A44"),    // Heavily Darkened Teal Green
-        identifier: hex_to_color("#1B2026"),    // Darkened Almost Black
-        unsigned_int: hex_to_color("#6B4A00"),  // Heavily Darkened Dark Gold
-        signed_int: hex_to_color("#7A3000"),    // Heavily Darkened Rust Orange
-        float: hex_to_color("#0F4520"),         // Heavily Darkened Forest Green
-        operator: hex_to_color("#B6303D"),      // Darkened Bright Red
-        keyword: hex_to_color("#5D37A2"),       // Darkened Royal Purple
-        comma: hex_to_color("#485058"),         // Darkened Dark Gray
-        string_literal: hex_to_color("#0A5520"), // Heavily Darkened Grass Green
-        identifier_type: hex_to_color("#004DA6"), // Darkened Azure Blue
-        unknown: hex_to_color("#58606A"),       // Darkened Medium Gray
-        parenthesis: hex_to_color("#483700"),   // Heavily Darkened Dark Olive
-        block: hex_to_color("#0255B3"),         // Darkened Bright Blue
-        end_statement: hex_to_color("#7D848C"), // Darkened Light Gray
-        async_keyword: hex_to_color("#6B5300"),  // Heavily Darkened Mustard
-        parallel_keyword: hex_to_color("#A14C3D"), // Heavily Darkened Coral Orange
-        struct_keyword: hex_to_color("#C53E4C"), // Darkened Watermelon
-        enum_keyword: hex_to_color("#987BCC"),   // Darkened Lavender
-        return_keyword: hex_to_color("#D07BAF"), // Darkened Pink Rose
-        default: hex_to_color("#15191D"),       // Darkened Charcoal
-        background: hex_to_color("#CCCCCC"),    // Light Gray
-        comment: hex_to_color("#5A5C63"),       // Slightly Lightened Comment Gray
-        error: hex_to_color("#AB1F29"),         // Darkened Error Red
+        function: hex_to_color("#0550AE"),      // Deep Blue
+        const_decl: hex_to_color("#BB3043"),    // Ruby Red
+        var_decl: hex_to_color("#953800"),      // Burnt Orange
+        if_decl: hex_to_color("#7647CA"),       // Electric Purple
+        else_decl: hex_to_color("#6F42C1"),     // Medium Purple
+        arrow_decl: hex_to_color("#0E726A"),    // Teal
+        identifier: hex_to_color("#1F2328"),    // Near Black
+        unsigned_int: hex_to_color("#9E4A24"),  // Sienna
+        signed_int: hex_to_color("#536E1B"),    // Olive Green
+        float: hex_to_color("#0A7161"),         // Deep Teal Green
+        operator: hex_to_color("#0761CC"),      // Bright Blue
+        keyword: hex_to_color("#8F258F"),       // Royal Purple
+        comma: hex_to_color("#59636E"),         // Slate Gray
+        string_literal: hex_to_color("#116329"), // Forest Green
+        identifier_type: hex_to_color("#046E90"), // Azure
+        unknown: hex_to_color("#59636E"),       // Slate Gray
+        parenthesis: hex_to_color("#865A00"),   // Dark Gold
+        block: hex_to_color("#3A5DCF"),         // Indigo Blue
+        end_statement: hex_to_color("#79818E"), // Dimmed Gray
+        async_keyword: hex_to_color("#7A5E00"),  // Olive Gold
+        parallel_keyword: hex_to_color("#9D4E00"), // Coral Brown
+        struct_keyword: hex_to_color("#AD337C"), // Deep Pink
+        enum_keyword: hex_to_color("#6639BA"),   // Violet
+        return_keyword: hex_to_color("#B71C8D"), // Magenta
+        default: hex_to_color("#1F2328"),       // Near Black
+        background: hex_to_color("#ECEEF0"),    // Near White
+        comment: hex_to_color("#59636E"),       // Slate Gray
+        error: hex_to_color("#C21F2A"),         // Error Red
+        ui_text: hex_to_color("#1F2328"),
+        ui_text_muted: hex_to_color("#59636E"),
+        ui_hint: hex_to_color("#5C636D"),
+        ui_panel_bg: hex_to_color("#DFE3E8"),
+        accent: hex_to_color("#865A00"),
+        success: hex_to_color("#177331"),
+        success_bright: hex_to_color("#1A7333"),
+        danger: hex_to_color("#C21F2A"),
+        info: hex_to_color("#0D6F7E"),
+        info_bright: hex_to_color("#0761CC"),
+        primary: hex_to_color("#0550AE"),
+        special: hex_to_color("#AD337C"),
+        on_emphasis: hex_to_color("#FFFFFF"),
+        current_line_bg: hex_to_color("#E1E4E8"),
+        error_line_bg: hex_to_color("#F3DCDE"),
+        selection_bg: hex_to_color("#ADD6FF"),
+        selection_fg: hex_to_color("#1F2328"),
+        search_match_bg: hex_to_color("#FFD33D"),
+        search_match_fg: hex_to_color("#1F2328"),
+        search_other_bg: hex_to_color("#F2E491"),
+        search_other_fg: hex_to_color("#1F2328"),
+        bracket_match_bg: hex_to_color("#A83279"),
+        cursor_fg: hex_to_color("#0550AE"),
+        input_bg: hex_to_color("#D6DCE2"),
+        input_inactive_bg: hex_to_color("#E3E6EA"),
+        menu_selection_bg: hex_to_color("#0550AE"),
+        menu_selection_fg: hex_to_color("#FFFFFF"),
+        item_selection_bg: hex_to_color("#0550AE"),
+        badge_bg: hex_to_color("#F0C64C"),
+        badge_fg: hex_to_color("#1F2328"),
+        toggle_on_bg: hex_to_color("#1F883D"),
+        toggle_on_fg: hex_to_color("#FFFFFF"),
+        scroll_track: hex_to_color("#C6CCD4"),
+        scroll_thumb: hex_to_color("#8C949E"),
     };
 
     pub static ref DARK_THEME: ColorScheme = ColorScheme {
@@ -103,10 +179,10 @@ lazy_static! {
         comma: hex_to_color("#858585"),         // Medium Gray
         string_literal: hex_to_color("#98C379"), // Spring Green
         identifier_type: hex_to_color("#4FC1E9"), // Light Blue
-        unknown: hex_to_color("#808080"),       // Gray
+        unknown: hex_to_color("#8F8F8F"),       // Gray
         parenthesis: hex_to_color("#FFD602"),   // Bright Yellow
         block: hex_to_color("#9CDCFE"),         // Powder Blue
-        end_statement: hex_to_color("#6B6B6B"), // Dark Gray
+        end_statement: hex_to_color("#737373"), // Dark Gray
         async_keyword: hex_to_color("#DCDCAA"),  // Pale Yellow
         parallel_keyword: hex_to_color("#FFB86C"), // Orange Cream
         struct_keyword: hex_to_color("#FF79C6"), // Hot Pink
@@ -114,12 +190,611 @@ lazy_static! {
         return_keyword: hex_to_color("#FF6AC1"), // Magenta
         default: hex_to_color("#D4D4D4"),       // Off White
         background: hex_to_color("#1A1A1C"),    // Deep Black
-        comment: hex_to_color("#7F7F7F"),       // Neutral Gray
+        comment: hex_to_color("#8E8E8E"),       // Neutral Gray
         error: hex_to_color("#F97583"),         // Light Red
+        ui_text: hex_to_color("#E6E6E6"),
+        ui_text_muted: hex_to_color("#9DA5AE"),
+        ui_hint: hex_to_color("#8A9199"),
+        ui_panel_bg: hex_to_color("#121214"),
+        accent: hex_to_color("#E3B341"),
+        success: hex_to_color("#3FB950"),
+        success_bright: hex_to_color("#56D364"),
+        danger: hex_to_color("#F85149"),
+        info: hex_to_color("#39C5CF"),
+        info_bright: hex_to_color("#79C0FF"),
+        primary: hex_to_color("#58A6FF"),
+        special: hex_to_color("#DB61A2"),
+        on_emphasis: hex_to_color("#FFFFFF"),
+        current_line_bg: hex_to_color("#282828"),
+        error_line_bg: hex_to_color("#3C1414"),
+        selection_bg: hex_to_color("#264F78"),
+        selection_fg: hex_to_color("#FFFFFF"),
+        search_match_bg: hex_to_color("#E3B341"),
+        search_match_fg: hex_to_color("#1F2328"),
+        search_other_bg: hex_to_color("#3A3F45"),
+        search_other_fg: hex_to_color("#E6E6E6"),
+        bracket_match_bg: hex_to_color("#9E3379"),
+        cursor_fg: hex_to_color("#FFFFFF"),
+        input_bg: hex_to_color("#3E4450"),
+        input_inactive_bg: hex_to_color("#2E3238"),
+        menu_selection_bg: hex_to_color("#D4D4D4"),
+        menu_selection_fg: hex_to_color("#1A1A1C"),
+        item_selection_bg: hex_to_color("#264F78"),
+        badge_bg: hex_to_color("#E3B341"),
+        badge_fg: hex_to_color("#1F2328"),
+        toggle_on_bg: hex_to_color("#3FB950"),
+        toggle_on_fg: hex_to_color("#1F2328"),
+        scroll_track: hex_to_color("#2E3238"),
+        scroll_thumb: hex_to_color("#3FB950"),
     };
 
+    // Modeled on the Solarized light palette.
+    pub static ref SOLAR_THEME: ColorScheme = ColorScheme {
+        function: hex_to_color("#1A659C"),
+        const_decl: hex_to_color("#AC3E11"),
+        var_decl: hex_to_color("#7D5E00"),
+        if_decl: hex_to_color("#5B6900"),
+        else_decl: hex_to_color("#585BA1"),
+        arrow_decl: hex_to_color("#1A6F68"),
+        identifier: hex_to_color("#52666D"),
+        unsigned_int: hex_to_color("#B32C6E"),
+        signed_int: hex_to_color("#5B6900"),
+        float: hex_to_color("#1A6F68"),
+        operator: hex_to_color("#55676F"),
+        keyword: hex_to_color("#5B6900"),
+        comma: hex_to_color("#747F7F"),
+        string_literal: hex_to_color("#1A6F68"),
+        identifier_type: hex_to_color("#7D5E00"),
+        unknown: hex_to_color("#55676F"),
+        parenthesis: hex_to_color("#55676F"),
+        block: hex_to_color("#1A659C"),
+        end_statement: hex_to_color("#747F7F"),
+        async_keyword: hex_to_color("#585BA1"),
+        parallel_keyword: hex_to_color("#AC3E11"),
+        struct_keyword: hex_to_color("#B32C6E"),
+        enum_keyword: hex_to_color("#585BA1"),
+        return_keyword: hex_to_color("#B32C6E"),
+        default: hex_to_color("#52666D"),
+        background: hex_to_color("#F0E9D7"),
+        comment: hex_to_color("#5B6363"),
+        error: hex_to_color("#AF2421"),
+        ui_text: hex_to_color("#4F6269"),
+        ui_text_muted: hex_to_color("#52636B"),
+        ui_hint: hex_to_color("#52636B"),
+        ui_panel_bg: hex_to_color("#E2DCCA"),
+        accent: hex_to_color("#795B00"),
+        success: hex_to_color("#586500"),
+        success_bright: hex_to_color("#586500"),
+        danger: hex_to_color("#B52623"),
+        info: hex_to_color("#196B64"),
+        info_bright: hex_to_color("#1A659C"),
+        primary: hex_to_color("#1A659C"),
+        special: hex_to_color("#AD2A6A"),
+        on_emphasis: hex_to_color("#FDF6E3"),
+        current_line_bg: hex_to_color("#E7E1CF"),
+        error_line_bg: hex_to_color("#E9D3CB"),
+        selection_bg: hex_to_color("#CDE1EE"),
+        selection_fg: hex_to_color("#073642"),
+        search_match_bg: hex_to_color("#EDC85A"),
+        search_match_fg: hex_to_color("#073642"),
+        search_other_bg: hex_to_color("#E6DCAE"),
+        search_other_fg: hex_to_color("#073642"),
+        bracket_match_bg: hex_to_color("#C5327A"),
+        cursor_fg: hex_to_color("#1A659C"),
+        input_bg: hex_to_color("#E0D9C2"),
+        input_inactive_bg: hex_to_color("#E5E0CE"),
+        menu_selection_bg: hex_to_color("#1E75B2"),
+        menu_selection_fg: hex_to_color("#FDF6E3"),
+        item_selection_bg: hex_to_color("#1E75B2"),
+        badge_bg: hex_to_color("#EDC85A"),
+        badge_fg: hex_to_color("#073642"),
+        toggle_on_bg: hex_to_color("#91A21C"),
+        toggle_on_fg: hex_to_color("#073642"),
+        scroll_track: hex_to_color("#D4CEB9"),
+        scroll_thumb: hex_to_color("#93A1A1"),
+    };
 
+    // Modeled on the Solarized dark palette.
+    pub static ref LUNAR_THEME: ColorScheme = ColorScheme {
+        function: hex_to_color("#51A1DA"),
+        const_decl: hex_to_color("#D98361"),
+        var_decl: hex_to_color("#BD951C"),
+        if_decl: hex_to_color("#91A21C"),
+        else_decl: hex_to_color("#9195CF"),
+        arrow_decl: hex_to_color("#41A9A2"),
+        identifier: hex_to_color("#8C9D9E"),
+        unsigned_int: hex_to_color("#E176A7"),
+        signed_int: hex_to_color("#91A21C"),
+        float: hex_to_color("#41A9A2"),
+        operator: hex_to_color("#8C9D9E"),
+        keyword: hex_to_color("#91A21C"),
+        comma: hex_to_color("#697D83"),
+        string_literal: hex_to_color("#41A9A2"),
+        identifier_type: hex_to_color("#BD951C"),
+        unknown: hex_to_color("#8C9BA0"),
+        parenthesis: hex_to_color("#8C9D9E"),
+        block: hex_to_color("#51A1DA"),
+        end_statement: hex_to_color("#697D83"),
+        async_keyword: hex_to_color("#9195CF"),
+        parallel_keyword: hex_to_color("#D98361"),
+        struct_keyword: hex_to_color("#E176A7"),
+        enum_keyword: hex_to_color("#9195CF"),
+        return_keyword: hex_to_color("#E176A7"),
+        default: hex_to_color("#8C9D9E"),
+        background: hex_to_color("#002B36"),
+        comment: hex_to_color("#8C9BA0"),
+        error: hex_to_color("#EB7775"),
+        ui_text: hex_to_color("#93A1A1"),
+        ui_text_muted: hex_to_color("#839496"),
+        ui_hint: hex_to_color("#809298"),
+        ui_panel_bg: hex_to_color("#00212B"),
+        accent: hex_to_color("#B58900"),
+        success: hex_to_color("#859900"),
+        success_bright: hex_to_color("#859900"),
+        danger: hex_to_color("#E66361"),
+        info: hex_to_color("#2AA198"),
+        info_bright: hex_to_color("#2AA198"),
+        primary: hex_to_color("#3894D5"),
+        special: hex_to_color("#DD669F"),
+        on_emphasis: hex_to_color("#002B36"),
+        current_line_bg: hex_to_color("#073642"),
+        error_line_bg: hex_to_color("#3A232B"),
+        selection_bg: hex_to_color("#185360"),
+        selection_fg: hex_to_color("#FDF6E3"),
+        search_match_bg: hex_to_color("#B58900"),
+        search_match_fg: hex_to_color("#002B36"),
+        search_other_bg: hex_to_color("#0D3B47"),
+        search_other_fg: hex_to_color("#93A1A1"),
+        bracket_match_bg: hex_to_color("#DD669F"),
+        cursor_fg: hex_to_color("#93A1A1"),
+        input_bg: hex_to_color("#0D3A44"),
+        input_inactive_bg: hex_to_color("#0B3844"),
+        menu_selection_bg: hex_to_color("#B58900"),
+        menu_selection_fg: hex_to_color("#002B36"),
+        item_selection_bg: hex_to_color("#B58900"),
+        badge_bg: hex_to_color("#B58900"),
+        badge_fg: hex_to_color("#002B36"),
+        toggle_on_bg: hex_to_color("#859900"),
+        toggle_on_fg: hex_to_color("#002B36"),
+        scroll_track: hex_to_color("#0B3844"),
+        scroll_thumb: hex_to_color("#586E75"),
+    };
 
+    // Modeled on the Dracula palette.
+    pub static ref VAMPIRE_THEME: ColorScheme = ColorScheme {
+        function: hex_to_color("#50FA7B"),
+        const_decl: hex_to_color("#BD93F9"),
+        var_decl: hex_to_color("#FFB86C"),
+        if_decl: hex_to_color("#FF79C6"),
+        else_decl: hex_to_color("#FF92DF"),
+        arrow_decl: hex_to_color("#8BE9FD"),
+        identifier: hex_to_color("#F8F8F2"),
+        unsigned_int: hex_to_color("#BD93F9"),
+        signed_int: hex_to_color("#D6ACFF"),
+        float: hex_to_color("#8BE9FD"),
+        operator: hex_to_color("#FF79C6"),
+        keyword: hex_to_color("#FF79C6"),
+        comma: hex_to_color("#9DA6CE"),
+        string_literal: hex_to_color("#F1FA8C"),
+        identifier_type: hex_to_color("#8BE9FD"),
+        unknown: hex_to_color("#8F9BBE"),
+        parenthesis: hex_to_color("#F8F8F2"),
+        block: hex_to_color("#BD93F9"),
+        end_statement: hex_to_color("#6E7DAA"),
+        async_keyword: hex_to_color("#8BE9FD"),
+        parallel_keyword: hex_to_color("#FFB86C"),
+        struct_keyword: hex_to_color("#FF79C6"),
+        enum_keyword: hex_to_color("#BD93F9"),
+        return_keyword: hex_to_color("#FF79C6"),
+        default: hex_to_color("#F8F8F2"),
+        background: hex_to_color("#282A36"),
+        comment: hex_to_color("#8F9BBE"),
+        error: hex_to_color("#FF6E6E"),
+        ui_text: hex_to_color("#F8F8F2"),
+        ui_text_muted: hex_to_color("#ACB4D6"),
+        ui_hint: hex_to_color("#8E99C4"),
+        ui_panel_bg: hex_to_color("#21222C"),
+        accent: hex_to_color("#F1FA8C"),
+        success: hex_to_color("#50FA7B"),
+        success_bright: hex_to_color("#69FF94"),
+        danger: hex_to_color("#FF5555"),
+        info: hex_to_color("#8BE9FD"),
+        info_bright: hex_to_color("#9AEDFE"),
+        primary: hex_to_color("#BD93F9"),
+        special: hex_to_color("#FF79C6"),
+        on_emphasis: hex_to_color("#282A36"),
+        current_line_bg: hex_to_color("#31333F"),
+        error_line_bg: hex_to_color("#402830"),
+        selection_bg: hex_to_color("#44475A"),
+        selection_fg: hex_to_color("#F8F8F2"),
+        search_match_bg: hex_to_color("#F1FA8C"),
+        search_match_fg: hex_to_color("#282A36"),
+        search_other_bg: hex_to_color("#44475A"),
+        search_other_fg: hex_to_color("#F8F8F2"),
+        bracket_match_bg: hex_to_color("#FF79C6"),
+        cursor_fg: hex_to_color("#F8F8F2"),
+        input_bg: hex_to_color("#383B4C"),
+        input_inactive_bg: hex_to_color("#2E3040"),
+        menu_selection_bg: hex_to_color("#BD93F9"),
+        menu_selection_fg: hex_to_color("#282A36"),
+        item_selection_bg: hex_to_color("#BD93F9"),
+        badge_bg: hex_to_color("#F1FA8C"),
+        badge_fg: hex_to_color("#282A36"),
+        toggle_on_bg: hex_to_color("#50FA7B"),
+        toggle_on_fg: hex_to_color("#282A36"),
+        scroll_track: hex_to_color("#343746"),
+        scroll_thumb: hex_to_color("#6272A4"),
+    };
+
+    // Modeled on the gruvbox dark palette.
+    pub static ref RETRO_THEME: ColorScheme = ColorScheme {
+        function: hex_to_color("#8EC07C"),
+        const_decl: hex_to_color("#D3869B"),
+        var_decl: hex_to_color("#FE8019"),
+        if_decl: hex_to_color("#FF6553"),
+        else_decl: hex_to_color("#FE8019"),
+        arrow_decl: hex_to_color("#8EC07C"),
+        identifier: hex_to_color("#EBDBB2"),
+        unsigned_int: hex_to_color("#D3869B"),
+        signed_int: hex_to_color("#B8BB26"),
+        float: hex_to_color("#8EC07C"),
+        operator: hex_to_color("#FE8019"),
+        keyword: hex_to_color("#FF6553"),
+        comma: hex_to_color("#A89984"),
+        string_literal: hex_to_color("#B8BB26"),
+        identifier_type: hex_to_color("#FABD2F"),
+        unknown: hex_to_color("#A4988B"),
+        parenthesis: hex_to_color("#EBDBB2"),
+        block: hex_to_color("#83A598"),
+        end_statement: hex_to_color("#928374"),
+        async_keyword: hex_to_color("#FABD2F"),
+        parallel_keyword: hex_to_color("#FE8019"),
+        struct_keyword: hex_to_color("#D3869B"),
+        enum_keyword: hex_to_color("#C186A2"),
+        return_keyword: hex_to_color("#D3869B"),
+        default: hex_to_color("#EBDBB2"),
+        background: hex_to_color("#282828"),
+        comment: hex_to_color("#A4988B"),
+        error: hex_to_color("#FF6553"),
+        ui_text: hex_to_color("#EBDBB2"),
+        ui_text_muted: hex_to_color("#BDAE93"),
+        ui_hint: hex_to_color("#A89984"),
+        ui_panel_bg: hex_to_color("#1D2021"),
+        accent: hex_to_color("#FABD2F"),
+        success: hex_to_color("#B8BB26"),
+        success_bright: hex_to_color("#B8BB26"),
+        danger: hex_to_color("#FD533F"),
+        info: hex_to_color("#8EC07C"),
+        info_bright: hex_to_color("#83A598"),
+        primary: hex_to_color("#83A598"),
+        special: hex_to_color("#D3869B"),
+        on_emphasis: hex_to_color("#282828"),
+        current_line_bg: hex_to_color("#32302F"),
+        error_line_bg: hex_to_color("#402A26"),
+        selection_bg: hex_to_color("#504945"),
+        selection_fg: hex_to_color("#EBDBB2"),
+        search_match_bg: hex_to_color("#FABD2F"),
+        search_match_fg: hex_to_color("#282828"),
+        search_other_bg: hex_to_color("#504945"),
+        search_other_fg: hex_to_color("#EBDBB2"),
+        bracket_match_bg: hex_to_color("#D3869B"),
+        cursor_fg: hex_to_color("#EBDBB2"),
+        input_bg: hex_to_color("#3C3836"),
+        input_inactive_bg: hex_to_color("#32302F"),
+        menu_selection_bg: hex_to_color("#FABD2F"),
+        menu_selection_fg: hex_to_color("#282828"),
+        item_selection_bg: hex_to_color("#FABD2F"),
+        badge_bg: hex_to_color("#FABD2F"),
+        badge_fg: hex_to_color("#282828"),
+        toggle_on_bg: hex_to_color("#B8BB26"),
+        toggle_on_fg: hex_to_color("#282828"),
+        scroll_track: hex_to_color("#3C3836"),
+        scroll_thumb: hex_to_color("#928374"),
+    };
+
+    // Modeled on the Nord palette.
+    pub static ref FJORD_THEME: ColorScheme = ColorScheme {
+        function: hex_to_color("#88C0D0"),
+        const_decl: hex_to_color("#D69985"),
+        var_decl: hex_to_color("#EBCB8B"),
+        if_decl: hex_to_color("#8DA9C5"),
+        else_decl: hex_to_color("#94B0CC"),
+        arrow_decl: hex_to_color("#88C0D0"),
+        identifier: hex_to_color("#D8DEE9"),
+        unsigned_int: hex_to_color("#BE9DB7"),
+        signed_int: hex_to_color("#A3BE8C"),
+        float: hex_to_color("#8FBCBB"),
+        operator: hex_to_color("#8DA9C5"),
+        keyword: hex_to_color("#8DA9C5"),
+        comma: hex_to_color("#7B88A1"),
+        string_literal: hex_to_color("#A3BE8C"),
+        identifier_type: hex_to_color("#8FBCBB"),
+        unknown: hex_to_color("#A0A6B5"),
+        parenthesis: hex_to_color("#D8DEE9"),
+        block: hex_to_color("#92A8C4"),
+        end_statement: hex_to_color("#7D869D"),
+        async_keyword: hex_to_color("#EBCB8B"),
+        parallel_keyword: hex_to_color("#D69985"),
+        struct_keyword: hex_to_color("#BE9DB7"),
+        enum_keyword: hex_to_color("#BE9DB7"),
+        return_keyword: hex_to_color("#CF989E"),
+        default: hex_to_color("#D8DEE9"),
+        background: hex_to_color("#2E3440"),
+        comment: hex_to_color("#A0A6B5"),
+        error: hex_to_color("#CF989E"),
+        ui_text: hex_to_color("#ECEFF4"),
+        ui_text_muted: hex_to_color("#AEB6C6"),
+        ui_hint: hex_to_color("#919CAF"),
+        ui_panel_bg: hex_to_color("#272C36"),
+        accent: hex_to_color("#EBCB8B"),
+        success: hex_to_color("#A3BE8C"),
+        success_bright: hex_to_color("#A3BE8C"),
+        danger: hex_to_color("#CB8C92"),
+        info: hex_to_color("#88C0D0"),
+        info_bright: hex_to_color("#8FBCBB"),
+        primary: hex_to_color("#81A1C1"),
+        special: hex_to_color("#B691AF"),
+        on_emphasis: hex_to_color("#2E3440"),
+        current_line_bg: hex_to_color("#353C4A"),
+        error_line_bg: hex_to_color("#3F3038"),
+        selection_bg: hex_to_color("#4C566A"),
+        selection_fg: hex_to_color("#ECEFF4"),
+        search_match_bg: hex_to_color("#EBCB8B"),
+        search_match_fg: hex_to_color("#2E3440"),
+        search_other_bg: hex_to_color("#4C566A"),
+        search_other_fg: hex_to_color("#ECEFF4"),
+        bracket_match_bg: hex_to_color("#B691AF"),
+        cursor_fg: hex_to_color("#ECEFF4"),
+        input_bg: hex_to_color("#3B4252"),
+        input_inactive_bg: hex_to_color("#333A47"),
+        menu_selection_bg: hex_to_color("#88C0D0"),
+        menu_selection_fg: hex_to_color("#2E3440"),
+        item_selection_bg: hex_to_color("#88C0D0"),
+        badge_bg: hex_to_color("#EBCB8B"),
+        badge_fg: hex_to_color("#2E3440"),
+        toggle_on_bg: hex_to_color("#A3BE8C"),
+        toggle_on_fg: hex_to_color("#2E3440"),
+        scroll_track: hex_to_color("#3B4252"),
+        scroll_thumb: hex_to_color("#616E88"),
+    };
+
+    // Modeled on the Monokai palette.
+    pub static ref NEON_THEME: ColorScheme = ColorScheme {
+        function: hex_to_color("#A6E22E"),
+        const_decl: hex_to_color("#B084FF"),
+        var_decl: hex_to_color("#FD971F"),
+        if_decl: hex_to_color("#FF6398"),
+        else_decl: hex_to_color("#FA6EA8"),
+        arrow_decl: hex_to_color("#66D9EF"),
+        identifier: hex_to_color("#F8F8F2"),
+        unsigned_int: hex_to_color("#B084FF"),
+        signed_int: hex_to_color("#A6E22E"),
+        float: hex_to_color("#66D9EF"),
+        operator: hex_to_color("#FF6398"),
+        keyword: hex_to_color("#FF6398"),
+        comma: hex_to_color("#999681"),
+        string_literal: hex_to_color("#E6DB74"),
+        identifier_type: hex_to_color("#66D9EF"),
+        unknown: hex_to_color("#9E9B8C"),
+        parenthesis: hex_to_color("#F8F8F2"),
+        block: hex_to_color("#66D9EF"),
+        end_statement: hex_to_color("#807D6A"),
+        async_keyword: hex_to_color("#E6DB74"),
+        parallel_keyword: hex_to_color("#FD971F"),
+        struct_keyword: hex_to_color("#FF6398"),
+        enum_keyword: hex_to_color("#B084FF"),
+        return_keyword: hex_to_color("#FF6398"),
+        default: hex_to_color("#F8F8F2"),
+        background: hex_to_color("#272822"),
+        comment: hex_to_color("#9E9B8C"),
+        error: hex_to_color("#FF658B"),
+        ui_text: hex_to_color("#F8F8F2"),
+        ui_text_muted: hex_to_color("#B8B6A6"),
+        ui_hint: hex_to_color("#94917E"),
+        ui_panel_bg: hex_to_color("#1E1F1A"),
+        accent: hex_to_color("#E6DB74"),
+        success: hex_to_color("#A6E22E"),
+        success_bright: hex_to_color("#A6E22E"),
+        danger: hex_to_color("#FF6188"),
+        info: hex_to_color("#66D9EF"),
+        info_bright: hex_to_color("#66D9EF"),
+        primary: hex_to_color("#AE81FF"),
+        special: hex_to_color("#FF4786"),
+        on_emphasis: hex_to_color("#272822"),
+        current_line_bg: hex_to_color("#32332B"),
+        error_line_bg: hex_to_color("#3E262B"),
+        selection_bg: hex_to_color("#49483E"),
+        selection_fg: hex_to_color("#F8F8F2"),
+        search_match_bg: hex_to_color("#E6DB74"),
+        search_match_fg: hex_to_color("#272822"),
+        search_other_bg: hex_to_color("#49483E"),
+        search_other_fg: hex_to_color("#F8F8F2"),
+        bracket_match_bg: hex_to_color("#AE81FF"),
+        cursor_fg: hex_to_color("#F8F8F2"),
+        input_bg: hex_to_color("#3E3D32"),
+        input_inactive_bg: hex_to_color("#32332B"),
+        menu_selection_bg: hex_to_color("#E6DB74"),
+        menu_selection_fg: hex_to_color("#272822"),
+        item_selection_bg: hex_to_color("#E6DB74"),
+        badge_bg: hex_to_color("#E6DB74"),
+        badge_fg: hex_to_color("#272822"),
+        toggle_on_bg: hex_to_color("#A6E22E"),
+        toggle_on_fg: hex_to_color("#272822"),
+        scroll_track: hex_to_color("#3E3D32"),
+        scroll_thumb: hex_to_color("#75715E"),
+    };
+
+    // Modeled on the Tokyo Night palette.
+    pub static ref MIDNIGHT_THEME: ColorScheme = ColorScheme {
+        function: hex_to_color("#7AA2F7"),
+        const_decl: hex_to_color("#F7768E"),
+        var_decl: hex_to_color("#E0AF68"),
+        if_decl: hex_to_color("#BB9AF7"),
+        else_decl: hex_to_color("#CDB3FA"),
+        arrow_decl: hex_to_color("#73DACA"),
+        identifier: hex_to_color("#C0CAF5"),
+        unsigned_int: hex_to_color("#FF9E64"),
+        signed_int: hex_to_color("#9ECE6A"),
+        float: hex_to_color("#73DACA"),
+        operator: hex_to_color("#89DDFF"),
+        keyword: hex_to_color("#BB9AF7"),
+        comma: hex_to_color("#737AA2"),
+        string_literal: hex_to_color("#9ECE6A"),
+        identifier_type: hex_to_color("#2AC3DE"),
+        unknown: hex_to_color("#878DAA"),
+        parenthesis: hex_to_color("#C0CAF5"),
+        block: hex_to_color("#7AA2F7"),
+        end_statement: hex_to_color("#676F95"),
+        async_keyword: hex_to_color("#E0AF68"),
+        parallel_keyword: hex_to_color("#FF9E64"),
+        struct_keyword: hex_to_color("#F7768E"),
+        enum_keyword: hex_to_color("#BB9AF7"),
+        return_keyword: hex_to_color("#BB9AF7"),
+        default: hex_to_color("#C0CAF5"),
+        background: hex_to_color("#1A1B26"),
+        comment: hex_to_color("#878DAA"),
+        error: hex_to_color("#F7768E"),
+        ui_text: hex_to_color("#C0CAF5"),
+        ui_text_muted: hex_to_color("#9AA5CE"),
+        ui_hint: hex_to_color("#828BB8"),
+        ui_panel_bg: hex_to_color("#16161E"),
+        accent: hex_to_color("#E0AF68"),
+        success: hex_to_color("#9ECE6A"),
+        success_bright: hex_to_color("#9ECE6A"),
+        danger: hex_to_color("#F7768E"),
+        info: hex_to_color("#7DCFFF"),
+        info_bright: hex_to_color("#7DCFFF"),
+        primary: hex_to_color("#7AA2F7"),
+        special: hex_to_color("#BB9AF7"),
+        on_emphasis: hex_to_color("#1A1B26"),
+        current_line_bg: hex_to_color("#232637"),
+        error_line_bg: hex_to_color("#3C2635"),
+        selection_bg: hex_to_color("#283457"),
+        selection_fg: hex_to_color("#C0CAF5"),
+        search_match_bg: hex_to_color("#E0AF68"),
+        search_match_fg: hex_to_color("#1A1B26"),
+        search_other_bg: hex_to_color("#283457"),
+        search_other_fg: hex_to_color("#C0CAF5"),
+        bracket_match_bg: hex_to_color("#BB9AF7"),
+        cursor_fg: hex_to_color("#C0CAF5"),
+        input_bg: hex_to_color("#2F334D"),
+        input_inactive_bg: hex_to_color("#24273A"),
+        menu_selection_bg: hex_to_color("#7AA2F7"),
+        menu_selection_fg: hex_to_color("#1A1B26"),
+        item_selection_bg: hex_to_color("#7AA2F7"),
+        badge_bg: hex_to_color("#E0AF68"),
+        badge_fg: hex_to_color("#1A1B26"),
+        toggle_on_bg: hex_to_color("#9ECE6A"),
+        toggle_on_fg: hex_to_color("#1A1B26"),
+        scroll_track: hex_to_color("#24273A"),
+        scroll_thumb: hex_to_color("#565F89"),
+    };
+
+    // Modeled on the Catppuccin Mocha palette.
+    pub static ref PASTEL_THEME: ColorScheme = ColorScheme {
+        function: hex_to_color("#89B4FA"),
+        const_decl: hex_to_color("#EBA0AC"),
+        var_decl: hex_to_color("#FAB387"),
+        if_decl: hex_to_color("#CBA6F7"),
+        else_decl: hex_to_color("#D8BFF9"),
+        arrow_decl: hex_to_color("#94E2D5"),
+        identifier: hex_to_color("#CDD6F4"),
+        unsigned_int: hex_to_color("#FAB387"),
+        signed_int: hex_to_color("#A6E3A1"),
+        float: hex_to_color("#94E2D5"),
+        operator: hex_to_color("#89DCEB"),
+        keyword: hex_to_color("#CBA6F7"),
+        comma: hex_to_color("#9399B2"),
+        string_literal: hex_to_color("#A6E3A1"),
+        identifier_type: hex_to_color("#F9E2AF"),
+        unknown: hex_to_color("#8E93A6"),
+        parenthesis: hex_to_color("#CDD6F4"),
+        block: hex_to_color("#B4BEFE"),
+        end_statement: hex_to_color("#9399B2"),
+        async_keyword: hex_to_color("#F9E2AF"),
+        parallel_keyword: hex_to_color("#FAB387"),
+        struct_keyword: hex_to_color("#F5C2E7"),
+        enum_keyword: hex_to_color("#CBA6F7"),
+        return_keyword: hex_to_color("#F5C2E7"),
+        default: hex_to_color("#CDD6F4"),
+        background: hex_to_color("#1E1E2E"),
+        comment: hex_to_color("#8E93A6"),
+        error: hex_to_color("#F38BA8"),
+        ui_text: hex_to_color("#CDD6F4"),
+        ui_text_muted: hex_to_color("#A6ADC8"),
+        ui_hint: hex_to_color("#9399B2"),
+        ui_panel_bg: hex_to_color("#181825"),
+        accent: hex_to_color("#F9E2AF"),
+        success: hex_to_color("#A6E3A1"),
+        success_bright: hex_to_color("#A6E3A1"),
+        danger: hex_to_color("#F38BA8"),
+        info: hex_to_color("#89DCEB"),
+        info_bright: hex_to_color("#89DCEB"),
+        primary: hex_to_color("#89B4FA"),
+        special: hex_to_color("#F5C2E7"),
+        on_emphasis: hex_to_color("#1E1E2E"),
+        current_line_bg: hex_to_color("#292A3B"),
+        error_line_bg: hex_to_color("#3A2735"),
+        selection_bg: hex_to_color("#45475A"),
+        selection_fg: hex_to_color("#CDD6F4"),
+        search_match_bg: hex_to_color("#F9E2AF"),
+        search_match_fg: hex_to_color("#1E1E2E"),
+        search_other_bg: hex_to_color("#45475A"),
+        search_other_fg: hex_to_color("#CDD6F4"),
+        bracket_match_bg: hex_to_color("#F5C2E7"),
+        cursor_fg: hex_to_color("#F5E0DC"),
+        input_bg: hex_to_color("#313244"),
+        input_inactive_bg: hex_to_color("#292A3B"),
+        menu_selection_bg: hex_to_color("#89B4FA"),
+        menu_selection_fg: hex_to_color("#1E1E2E"),
+        item_selection_bg: hex_to_color("#89B4FA"),
+        badge_bg: hex_to_color("#F9E2AF"),
+        badge_fg: hex_to_color("#1E1E2E"),
+        toggle_on_bg: hex_to_color("#A6E3A1"),
+        toggle_on_fg: hex_to_color("#1E1E2E"),
+        scroll_track: hex_to_color("#313244"),
+        scroll_thumb: hex_to_color("#6C7086"),
+    };
+
+    // Every theme the editor knows, in the order the settings screen cycles
+    // through them. The name is what the config file stores. Each palette
+    // beyond the first two starts from one the internet already knows, under
+    // its own name here, and any color of the original that fell short of
+    // the contrast floor on these backgrounds was moved along its own hue
+    // until it cleared. The floors are what
+    // every_theme_clears_the_contrast_floor pins.
+    pub static ref THEMES: Vec<(&'static str, &'static ColorScheme)> = vec![
+        ("dark", &*DARK_THEME),
+        ("vampire", &*VAMPIRE_THEME),
+        ("retro", &*RETRO_THEME),
+        ("fjord", &*FJORD_THEME),
+        ("neon", &*NEON_THEME),
+        ("midnight", &*MIDNIGHT_THEME),
+        ("pastel", &*PASTEL_THEME),
+        ("lunar", &*LUNAR_THEME),
+        ("light", &*LIGHT_THEME),
+        ("solar", &*SOLAR_THEME),
+    ];
+}
+
+/// The palette a stored name refers to, or None for a name written by some
+/// other version of the editor.
+pub fn theme_by_name(name: &str) -> Option<&'static ColorScheme> {
+    return THEMES.iter().find(|(known, _)| *known == name).map(|(_, theme)| *theme);
+}
+
+/// The stored name of a palette. An unknown scheme answers to dark's name so
+/// it still round trips through the config file as something loadable.
+pub fn theme_name_of(theme: &ColorScheme) -> &'static str {
+    return THEMES.iter().find(|(_, known)| **known == *theme).map(|(name, _)| *name).unwrap_or("dark");
+}
+
+/// The next theme along in the settings order, wrapping at either end.
+pub fn neighbor_theme(current: &ColorScheme, forward: bool) -> &'static ColorScheme {
+    let position = THEMES.iter().position(|(_, known)| **known == *current).unwrap_or(0);
+    let count = THEMES.len();
+    let next = if forward { (position + 1) % count } else { (position + count - 1) % count };
+    return THEMES[next].1;
 }
 
 pub fn colorize_code(content: Vec<Line>, theme: &ColorScheme) -> Vec<Line<'static>> {
@@ -851,6 +1526,115 @@ mod tests {
             background: Color::Black,
             comment: Color::DarkGray,
             error: Color::Red,
+            ..ColorScheme::default()
+        }
+    }
+
+    /// Every registered theme keeps every color readable on every background
+    /// it can sit on. The floors are WCAG AA: 4.5 to 1 for text against the
+    /// backgrounds it appears over, 3 to 1 for the two punctuation marks a
+    /// theme dims on purpose. A new theme that ships a low contrast color
+    /// fails here by name rather than being discovered by someone squinting.
+    #[test]
+    fn every_theme_clears_the_contrast_floor() {
+        fn channel(c: u8) -> f64 {
+            let c = c as f64 / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        }
+        fn luminance(color: Color) -> f64 {
+            match color {
+                Color::Rgb(r, g, b) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b),
+                other => panic!("theme colors must be Rgb so contrast can be measured, found {:?}", other),
+            }
+        }
+        fn contrast(a: Color, b: Color) -> f64 {
+            let (la, lb) = (luminance(a), luminance(b));
+            let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+            (hi + 0.05) / (lo + 0.05)
+        }
+        fn assert_floor(theme: &str, what: &str, fg: Color, bg: Color, floor: f64) {
+            let seen = contrast(fg, bg);
+            assert!(seen >= floor - 1e-6, "{theme}: {what} holds {seen:.2} to 1 against a floor of {floor} to 1");
+        }
+
+        for (name, theme) in THEMES.iter() {
+            let code_bgs = [theme.background, theme.current_line_bg];
+            let tokens = [
+                ("function", theme.function, 4.5),
+                ("const_decl", theme.const_decl, 4.5),
+                ("var_decl", theme.var_decl, 4.5),
+                ("if_decl", theme.if_decl, 4.5),
+                ("else_decl", theme.else_decl, 4.5),
+                ("arrow_decl", theme.arrow_decl, 4.5),
+                ("identifier", theme.identifier, 4.5),
+                ("unsigned_int", theme.unsigned_int, 4.5),
+                ("signed_int", theme.signed_int, 4.5),
+                ("float", theme.float, 4.5),
+                ("operator", theme.operator, 4.5),
+                ("keyword", theme.keyword, 4.5),
+                ("comma", theme.comma, 3.0),
+                ("string_literal", theme.string_literal, 4.5),
+                ("identifier_type", theme.identifier_type, 4.5),
+                ("unknown", theme.unknown, 4.5),
+                ("parenthesis", theme.parenthesis, 4.5),
+                ("block", theme.block, 4.5),
+                ("end_statement", theme.end_statement, 3.0),
+                ("async_keyword", theme.async_keyword, 4.5),
+                ("parallel_keyword", theme.parallel_keyword, 4.5),
+                ("struct_keyword", theme.struct_keyword, 4.5),
+                ("enum_keyword", theme.enum_keyword, 4.5),
+                ("return_keyword", theme.return_keyword, 4.5),
+                ("default", theme.default, 4.5),
+                ("comment", theme.comment, 4.5),
+                ("error", theme.error, 4.5),
+                ("cursor_fg", theme.cursor_fg, 4.5),
+            ];
+            for (field, color, floor) in tokens {
+                for bg in code_bgs {
+                    assert_floor(name, field, color, bg, floor);
+                }
+            }
+            assert_floor(name, "error on the error line wash", theme.error, theme.error_line_bg, 4.5);
+
+            let ui_bgs = [theme.ui_panel_bg, theme.background];
+            let ui = [
+                ("ui_text", theme.ui_text),
+                ("ui_text_muted", theme.ui_text_muted),
+                ("ui_hint", theme.ui_hint),
+                ("accent", theme.accent),
+                ("success", theme.success),
+                ("success_bright", theme.success_bright),
+                ("danger", theme.danger),
+                ("info", theme.info),
+                ("info_bright", theme.info_bright),
+                ("primary", theme.primary),
+                ("special", theme.special),
+            ];
+            for (field, color) in ui {
+                for bg in ui_bgs {
+                    assert_floor(name, field, color, bg, 4.5);
+                }
+            }
+
+            let pairs = [
+                ("selected text", theme.selection_fg, theme.selection_bg),
+                ("the current search match", theme.search_match_fg, theme.search_match_bg),
+                ("the other search matches", theme.search_other_fg, theme.search_other_bg),
+                ("the keymap badge", theme.badge_fg, theme.badge_bg),
+                ("a switch that is on", theme.toggle_on_fg, theme.toggle_on_bg),
+                ("the picked list row", theme.menu_selection_fg, theme.menu_selection_bg),
+                ("text in an input field", theme.ui_text, theme.input_bg),
+                ("text in an idle input field", theme.ui_text, theme.input_inactive_bg),
+                ("the picked completion", theme.on_emphasis, theme.item_selection_bg),
+                ("the matched bracket", theme.on_emphasis, theme.bracket_match_bg),
+            ];
+            for (what, fg, bg) in pairs {
+                assert_floor(name, what, fg, bg, 4.5);
+            }
         }
     }
 

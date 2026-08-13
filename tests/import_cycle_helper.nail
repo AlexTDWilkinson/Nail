@@ -1,0 +1,3 @@
+nail latest
+// not a standalone program - the cycle half of tests/errors/import_cycle.nail
+import(`errors/import_cycle.nail`)

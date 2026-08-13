@@ -13,7 +13,6 @@ mod stdlib_registry;
 mod transpiler;
 mod utils;
 use crate::colorizer::ColorScheme;
-use crate::colorizer::LIGHT_THEME;
 use crate::utils::create_welcome_message;
 use crate::utils::lex_and_parse_thread_logic;
 use std::backtrace::Backtrace;
@@ -45,6 +44,7 @@ use std::thread;
 use std::time::Instant;
 
 use crate::utils::lock;
+use crate::utils::file_watcher_thread_logic;
 use crate::utils::profile_watcher_thread_logic;
 use crate::utils::BuildStatus;
 use crate::utils::ProfileData;
@@ -121,6 +121,13 @@ struct Tab {
     ast: Option<parser::ASTNode>,
     scope_symbols: Vec<SymbolInfo>,
     tokens: Vec<lexer::Token>,
+    // When the file on disk last changed, as of the last load or save. The
+    // watcher thread compares this against the file to notice someone else
+    // (a formatter, another editor, an AI agent) writing it while it is open.
+    disk_mtime: Option<std::time::SystemTime>,
+    // The file changed on disk while this buffer holds unsaved edits. The
+    // buffer is kept, this is shown, and saving overwrites the disk.
+    disk_changed_underneath: bool,
 }
 
 /// How many columns a line has. A column is a character, because that is what
@@ -159,14 +166,76 @@ impl Tab {
             ast: None,
             scope_symbols: Vec::new(),
             tokens: Vec::new(),
+            disk_mtime: None,
+            disk_changed_underneath: false,
         }
     }
-    
+
     fn new_with_file(filename: String, content: Vec<String>) -> Self {
         let mut tab = Tab::new();
         tab.filename = Some(filename);
         tab.content = content;
+        tab.record_disk_mtime();
         tab
+    }
+
+    /// Remembers when the file on disk last changed, taken at every load and
+    /// save, which are the moments the buffer and the disk agree. The watcher
+    /// thread reloads the buffer when the disk moves past this.
+    fn record_disk_mtime(&mut self) {
+        self.disk_mtime = self.filename.as_ref().and_then(|filename| std::fs::metadata(filename).and_then(|meta| meta.modified()).ok());
+        self.disk_changed_underneath = false;
+    }
+
+    /// Replaces the buffer with what the file says now, either because
+    /// something other than this editor wrote it or because the user asked
+    /// for the disk's copy. Selections point at lines that no longer exist,
+    /// so they are dropped rather than left to land somewhere else. The
+    /// cursor and scroll stay put, clamped back inside the file, so watching
+    /// a file being rewritten does not fling the view around. The undo
+    /// history is the caller's question, because the two callers need
+    /// opposite answers.
+    fn swap_in_disk_content(&mut self, lines: Vec<String>, mtime: Option<std::time::SystemTime>) {
+        self.content = if lines.is_empty() { vec![String::new()] } else { lines };
+        self.disk_mtime = mtime;
+        self.disk_changed_underneath = false;
+        self.modified = false;
+        self.selection_start = None;
+        self.selection_end = None;
+        self.selection_mode = false;
+        self.settle_cursor();
+        let width = columns_in(&self.content[self.cursor_y]);
+        if self.cursor_x > width {
+            self.cursor_x = width;
+        }
+        let furthest = self.content.len().saturating_sub(1) as u16;
+        if self.scroll_position > furthest {
+            self.scroll_position = furthest;
+        }
+    }
+
+    /// The watcher's reload, taken only when the buffer has nothing unsaved:
+    /// the history pointed into text that is gone and held nothing of the
+    /// user's worth keeping, so it goes too.
+    fn reload_from_disk(&mut self, lines: Vec<String>, mtime: Option<std::time::SystemTime>) {
+        self.swap_in_disk_content(lines, mtime);
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.char_insert_group.clear();
+        self.last_char_insert_time = None;
+    }
+
+    /// The user's reload, for a buffer whose edits they said to throw away:
+    /// the whole swap is recorded as one edit, so undo is what un-throws
+    /// them. A key that can be taken back this way needs no confirmation
+    /// dialog in front of it.
+    fn take_disk_copy(&mut self, lines: Vec<String>, mtime: Option<std::time::SystemTime>) {
+        let old_text = self.content.join("\n");
+        self.swap_in_disk_content(lines, mtime);
+        let new_text = self.content.join("\n");
+        if old_text != new_text {
+            self.record_operation(EditOperation::ReplaceText { position: (0, 0), old_text, new_text });
+        }
     }
     
     fn has_selection(&self) -> bool {
@@ -346,6 +415,12 @@ struct Editor {
     tabs: Vec<Tab>,
     tab_index: usize,
     // Global state
+    //
+    // One clipboard for the life of the editor, made the first time it is
+    // used. On X11 the copying program serves the paste itself, so a
+    // clipboard that is dropped right after writing takes the copied text
+    // with it, and arboard prints a warning straight over the screen.
+    clipboard: Option<arboard::Clipboard>,
     build_status: BuildStatus,
     code_errors: Vec<CodeError>,
     scroll_state: ScrollbarState,
@@ -415,6 +490,12 @@ struct Editor {
     show_whitespace: bool,
     show_indentation_guides: bool,
     show_minimap: bool,
+    // The timing annotations can be turned off, and that is also how they
+    // are kept out of a screen copy: what is displayed is what is copied.
+    show_timings: bool,
+    // Asked for by the keyboard, answered by the draw thread, because only
+    // the finished frame knows what the screen actually says.
+    screen_copy_requested: bool,
     // Bracket matching state
     matching_bracket_pos: Option<(usize, usize)>,
     // Where the draw thread last put things. A mouse reports a row and a
@@ -429,6 +510,9 @@ struct Editor {
     // Set while a drag is in progress, so a release outside the text area
     // still ends the selection it started.
     mouse_dragging: bool,
+    // Set while a drag that began on the minimap is in progress, so the drag
+    // keeps scrubbing the view instead of turning into a text selection.
+    minimap_dragging: bool,
     // Selections that expanding grew out of, newest last, so shrinking can
     // walk back exactly the way it came.
     expand_stack: Vec<((usize, usize), (usize, usize))>,
@@ -450,10 +534,24 @@ struct Editor {
 /// The parts of the screen a mouse click can land in, as the draw thread last
 /// laid them out. `text` is the area inside the editor's border, so a click at
 /// its top left is the first visible character rather than the frame around it.
+/// `minimap` is the strip to the right of the text, and is a zero-sized rect
+/// whenever the minimap is switched off, which no click can land in.
 #[derive(Clone, Copy, Debug, Default)]
 struct ViewLayout {
     tabs: ratatui::layout::Rect,
     text: ratatui::layout::Rect,
+    minimap: ratatui::layout::Rect,
+}
+
+/// How many source lines one minimap row stands for. A row is one braille
+/// cell of four dot-rows, so each dot-row covers an equal share of the file,
+/// and a file short enough to fit gets the finest scale of one line per
+/// dot-row. The draw thread and the mouse both go through this so the picture
+/// and the click can never disagree about where a line is.
+pub fn minimap_lines_per_row(total_lines: usize, rows: u16) -> usize {
+    let dot_rows = (rows as usize * 4).max(1);
+    let lines_per_dot_row = (total_lines.div_ceil(dot_rows)).max(1);
+    return lines_per_dot_row * 4;
 }
 
 /// A named thing and the line it is declared on. `file` is the project file
@@ -576,6 +674,7 @@ impl Editor {
             settings_row: 0,
             tabs: vec![welcome_tab],
             tab_index: 0,
+            clipboard: None,
             build_status: BuildStatus::Idle,
             code_errors: Vec::new(),
             scroll_state: ScrollbarState::default(),
@@ -627,6 +726,8 @@ impl Editor {
             show_whitespace: stored_flag("whitespace", false),
             show_indentation_guides: stored_flag("indent_guides", false),
             show_minimap: stored_flag("minimap", false), // Disabled by default as it takes screen space
+            show_timings: stored_flag("timings", true),
+            screen_copy_requested: false,
             // Bracket matching state
             matching_bracket_pos: None,
             view: ViewLayout::default(),
@@ -634,6 +735,7 @@ impl Editor {
             // everyone expects, and F4 is there for the times it is not.
             mouse_enabled: true,
             mouse_dragging: false,
+            minimap_dragging: false,
             expand_stack: Vec::new(),
             profile_data: None,
             profile_dumps: std::collections::HashMap::new(),
@@ -768,6 +870,7 @@ impl Editor {
         new_tab.content = content.lines().map(|l| l.to_string()).collect();
         new_tab.filename = Some(path.to_string());
         new_tab.modified = false;
+        new_tab.record_disk_mtime();
         
         // Add the tab and switch to it
         self.tabs.push(new_tab);
@@ -3230,17 +3333,16 @@ impl Editor {
     }
 
     fn toggle_theme(&mut self) {
-        self.theme = if *self.theme == *LIGHT_THEME { &*DARK_THEME } else { &*LIGHT_THEME };
+        self.cycle_theme(true);
+    }
 
+    fn cycle_theme(&mut self, forward: bool) {
+        self.theme = crate::colorizer::neighbor_theme(self.theme, forward);
         let _ = self.save_config();
     }
 
     fn set_theme(&mut self, theme: &str) {
-        self.theme = match theme {
-            "light" => &LIGHT_THEME,
-            "dark" => &DARK_THEME,
-            _ => &DARK_THEME,
-        };
+        self.theme = crate::colorizer::theme_by_name(theme).unwrap_or(&DARK_THEME);
         let _ = self.save_config();
     }
 
@@ -3306,11 +3408,7 @@ impl Editor {
     fn save_config(&self) -> std::io::Result<()> {
         // Merged into the project's .nail file rather than written over it,
         // because build timings live there too
-        let theme = match self.theme {
-            x if x == &*LIGHT_THEME => "light",
-            _ => "dark",
-        };
-        crate::utils::write_config_values(&[("theme", theme.to_string())]);
+        crate::utils::write_config_values(&[("theme", self.theme_name().to_string())]);
         Ok(())
     }
 
@@ -3345,7 +3443,7 @@ impl Editor {
     }
 
     pub fn settings_row_count(&self) -> usize {
-        return 8;
+        return 9;
     }
 
     pub fn settings_next_row(&mut self) {
@@ -3374,7 +3472,7 @@ impl Editor {
                 self.pending_prefix = None;
                 self.clear_mark();
             }
-            1 => self.toggle_theme(),
+            1 => self.cycle_theme(forward),
             _ => {
                 let value = match self.settings_row {
                     2 => &mut self.show_line_numbers,
@@ -3383,6 +3481,7 @@ impl Editor {
                     5 => &mut self.show_whitespace,
                     6 => &mut self.show_indentation_guides,
                     7 => &mut self.show_minimap,
+                    8 => &mut self.show_timings,
                     _ => return,
                 };
                 *value = !*value;
@@ -3412,11 +3511,12 @@ impl Editor {
             ("Whitespace".to_string(), flag_name(self.show_whitespace)),
             ("Indent guides".to_string(), flag_name(self.show_indentation_guides)),
             ("Minimap".to_string(), flag_name(self.show_minimap)),
+            ("Function timings".to_string(), flag_name(self.show_timings)),
         ];
     }
 
     fn theme_name(&self) -> &'static str {
-        return if *self.theme == *LIGHT_THEME { "light" } else { "dark" };
+        return crate::colorizer::theme_name_of(self.theme);
     }
 
     /// One call rather than eight, because each one rewrites the whole config
@@ -3432,6 +3532,7 @@ impl Editor {
             ("whitespace", flag_name(self.show_whitespace)),
             ("indent_guides", flag_name(self.show_indentation_guides)),
             ("minimap", flag_name(self.show_minimap)),
+            ("timings", flag_name(self.show_timings)),
         ]);
     }
 
@@ -3597,22 +3698,34 @@ impl Editor {
         }
     }
 
-    fn set_clipboard(&self, text: &str) {
-        use arboard::Clipboard;
+    /// The one clipboard, made on first use and kept until the editor exits.
+    /// A failure to make one is not cached, so a display that comes back is
+    /// found on the next copy.
+    fn clipboard(&mut self) -> Option<&mut arboard::Clipboard> {
+        if self.clipboard.is_none() {
+            self.clipboard = arboard::Clipboard::new().ok();
+        }
+        self.clipboard.as_mut()
+    }
+
+    fn set_clipboard(&mut self, text: &str) {
         // A machine with no clipboard is a machine where yanking quietly does
         // nothing, which is the same answer copying already gives there.
-        if let Ok(mut clipboard) = Clipboard::new() {
+        if let Some(clipboard) = self.clipboard() {
             let _ = clipboard.set_text(text.to_string());
         }
+    }
+
+    fn get_clipboard(&mut self) -> Option<String> {
+        return self.clipboard().and_then(|clipboard| clipboard.get_text().ok());
     }
 
     /// Vim's `p` and `P`. Whether the paste lands on a line of its own or
     /// inside the current one is decided by the trailing newline, which is the
     /// same rule vim uses to tell a yanked line from a yanked word.
     pub fn paste_around_cursor(&mut self, after: bool) {
-        use arboard::Clipboard;
-        let text = match Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
-            Ok(text) if !text.is_empty() => text,
+        let text = match self.get_clipboard() {
+            Some(text) if !text.is_empty() => text,
             _ => return,
         };
 
@@ -3736,6 +3849,9 @@ impl Editor {
         std::fs::write(&filename, content)
             .map_err(|e| format!("Failed to save file: {}", e))?;
         current_tab.modified = false;
+        // The disk now says what the buffer says, so the watcher must not
+        // read this save back as someone else's change.
+        current_tab.record_disk_mtime();
         self.save_session();
         Ok(())
     }
@@ -3752,6 +3868,22 @@ impl Editor {
 // Helper function to check if a point is inside a rectangle
 fn point_in_rect(x: u16, y: u16, rect: ratatui::layout::Rect) -> bool {
     x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
+}
+
+/// Lays each annotation at the end of its own line, two spaces in from the
+/// code, which is where the IDE paints it. `first_line` is the 1-based file
+/// line the first row of `code` sits on, which is how a copied selection
+/// from the middle of a file still lines up with its annotations.
+fn weave_annotations(code: &str, first_line: usize, annotations: &std::collections::BTreeMap<usize, String>) -> String {
+    return code
+        .split('\n')
+        .enumerate()
+        .map(|(offset, line)| match annotations.get(&(first_line + offset)) {
+            Some(annotation) => format!("{}  {}", line, annotation),
+            None => line.to_string(),
+        })
+        .collect::<Vec<String>>()
+        .join("\n");
 }
 
 fn main() -> Result<(), io::Error> {
@@ -3808,8 +3940,9 @@ fn main() -> Result<(), io::Error> {
     let (tx_draw, rx_draw) = channel::<EditorMessage>();
     let (tx_build, rx_build) = channel::<EditorMessage>();
     let (tx_lex, rx_lex) = channel::<EditorMessage>();
-    // The sender stays bound so the watcher's channel lives until main exits
+    // The senders stay bound so the watchers' channels live until main exits
     let (_tx_profile, rx_profile) = channel::<EditorMessage>();
+    let (_tx_file_watch, rx_file_watch) = channel::<EditorMessage>();
 
     // Set up terminal. Mouse reporting is asked for here and can be handed
     // back at any time with F4, because while we hold it the terminal's own
@@ -3910,6 +4043,14 @@ fn main() -> Result<(), io::Error> {
         profile_watcher_thread_logic(editor_for_profile, rx_profile);
     });
 
+    // Launch the file watcher thread, which reloads a tab when something
+    // else writes its file, so edits made outside the IDE show up as they
+    // happen
+    let editor_for_file_watch = Arc::clone(&shared_editor);
+    thread::spawn(move || {
+        file_watcher_thread_logic(editor_for_file_watch, rx_file_watch);
+    });
+
     // Main draw thread (this runs on the main thread)
     draw_thread_logic(terminal.clone(), editor_for_draw, rx_draw);
     
@@ -3934,8 +4075,24 @@ fn restore_terminal() {
     if ENHANCED_KEYS.swap(false, Ordering::Relaxed) {
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
     }
+    // Mouse reporting is switched off before anything else, and then the
+    // input queue is read dry. The key thread stopped reading the moment quit
+    // was decided, but the terminal keeps reporting every mouse movement
+    // until it processes this switch-off, and anything it reports in between
+    // sits unread in the input buffer. Whatever is left there when this
+    // process exits, the shell reads as typed keys, which showed up as
+    // 35;60;5M spray at the prompt. The drain stops at the first quiet gap,
+    // with a deadline so a hostile stream of input cannot hold exit hostage.
+    let _ = execute!(io::stdout(), DisableMouseCapture);
+    let deadline = Instant::now() + std::time::Duration::from_millis(500);
+    while matches!(event::poll(std::time::Duration::from_millis(25)), Ok(true)) {
+        let _ = event::read();
+        if Instant::now() > deadline {
+            break;
+        }
+    }
     let _ = disable_raw_mode();
-    let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
+    let _ = execute!(io::stdout(), LeaveAlternateScreen);
 }
 
 #[derive(Debug, Clone)]
@@ -3959,8 +4116,8 @@ enum CompletionRequest {
 // config can never leave the editor without colors
 fn stored_theme() -> &'static ColorScheme {
     return match crate::utils::read_config_value("theme").as_deref() {
-        Some("light") => &LIGHT_THEME,
-        _ => &DARK_THEME,
+        Some(name) => crate::colorizer::theme_by_name(name).unwrap_or(&DARK_THEME),
+        None => &DARK_THEME,
     };
 }
 
@@ -4642,12 +4799,13 @@ impl Editor {
         current_tab.selection_mode = true;
     }
     
-    fn copy_selection(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn copy_selection(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let selected_text = self.get_selected_text();
         if !selected_text.is_empty() {
-            use arboard::Clipboard;
-            let mut clipboard = Clipboard::new()?;
-            clipboard.set_text(selected_text)?;
+            match self.clipboard() {
+                Some(clipboard) => clipboard.set_text(selected_text)?,
+                None => return Err("no clipboard is available".into()),
+            }
         }
         Ok(())
     }
@@ -4661,12 +4819,13 @@ impl Editor {
     }
     
     fn paste_from_clipboard(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        use arboard::Clipboard;
-        let mut clipboard = Clipboard::new()?;
-        let text = clipboard.get_text()?;
-        
+        let text = match self.clipboard() {
+            Some(clipboard) => clipboard.get_text()?,
+            None => return Err("no clipboard is available".into()),
+        };
+
         self.paste_text(&text);
-        
+
         Ok(())
     }
     
@@ -5119,6 +5278,133 @@ impl Editor {
         self.go_to_error(false);
     }
 
+    /// Every message the overlay is showing, grouped per line the way the
+    /// overlay groups them, each followed by the line of code it points at so
+    /// the copy stands on its own when pasted somewhere else. Notices with no
+    /// line in the file are transient and stay out of it.
+    fn errors_as_text(&self) -> String {
+        use std::collections::BTreeMap;
+        let mut messages_by_line: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
+        for error in &self.code_errors {
+            if error.code_span.start_line > 0 {
+                messages_by_line.entry(error.code_span.start_line).or_default().push(error.message.as_str());
+            }
+        }
+        let content = &self.get_current_tab().content;
+        let mut blocks: Vec<String> = Vec::new();
+        for (line_number, messages) in messages_by_line {
+            let mut block = format!("line {}: {}", line_number, messages.join(" | "));
+            if let Some(code) = content.get(line_number - 1) {
+                if !code.trim().is_empty() {
+                    block.push_str("\n    ");
+                    block.push_str(code.trim());
+                }
+            }
+            blocks.push(block);
+        }
+        return blocks.join("\n");
+    }
+
+    /// The error overlay is drawn over the buffer rather than stored in it,
+    /// so no drag can ever select it. This is how the messages get out: the
+    /// whole list lands on the clipboard as plain text.
+    fn copy_errors(&mut self) {
+        let text = self.errors_as_text();
+        if text.is_empty() {
+            self.push_copy_receipt("No errors to copy".to_string());
+            return;
+        }
+        let count = self.code_errors.iter().filter(|error| error.code_span.start_line > 0).count();
+        self.set_clipboard(&text);
+        let noun = if count == 1 { "error" } else { "errors" };
+        self.push_copy_receipt(format!("Copied {} {}", count, noun));
+    }
+
+    /// Whatever is on screen is copyable as plain text, and this is the ask.
+    /// The keyboard cannot answer it alone, because overlays, popups and
+    /// dialogs exist only in the painted frame, so the draw thread picks the
+    /// request up and answers with the frame it just finished.
+    fn request_screen_copy(&mut self) {
+        self.screen_copy_requested = true;
+    }
+
+    /// The draw thread's side of the handshake: the finished frame as plain
+    /// text lands on the clipboard, and the receipt replaces any earlier
+    /// copy receipt rather than stacking under it.
+    pub fn finish_screen_copy(&mut self, text: &str) {
+        self.screen_copy_requested = false;
+        self.set_clipboard(text);
+        self.push_copy_receipt("Copied the screen as text".to_string());
+    }
+
+    /// The selected code with every annotation woven onto the end of its
+    /// own line, exactly the way the IDE paints them, plus how many came
+    /// along. No selection means the current line, because the annotation
+    /// under the cursor is the one being asked about. An annotation whose
+    /// display is turned off stays out, because what is copied is what is
+    /// displayed.
+    fn selection_with_annotations_text(&self) -> (String, usize) {
+        let selection = self.get_selected_text();
+        let tab = self.get_current_tab();
+        let (first_line, code) = if selection.is_empty() {
+            (tab.cursor_y, tab.content.get(tab.cursor_y).cloned().unwrap_or_default())
+        } else {
+            match (tab.selection_start, tab.selection_end) {
+                (Some((_, start_y)), Some((_, end_y))) => (start_y.min(end_y), selection),
+                _ => (tab.cursor_y, selection),
+            }
+        };
+        let line_count = code.split('\n').count();
+        let annotations = crate::utils::line_annotation_texts(self, first_line + 1, first_line + line_count);
+        return (weave_annotations(&code, first_line + 1, &annotations), annotations.len());
+    }
+
+    /// The debugging copy: code and what the IDE says about it, together,
+    /// ready to paste into a bug report or a conversation.
+    fn copy_selection_with_annotations(&mut self) {
+        let (text, count) = self.selection_with_annotations_text();
+        if text.is_empty() {
+            self.push_copy_receipt("Nothing to copy".to_string());
+            return;
+        }
+        self.set_clipboard(&text);
+        let noun = if count == 1 { "annotation" } else { "annotations" };
+        self.push_copy_receipt(format!("Copied the selection with {} {}", count, noun));
+    }
+
+    /// The whole buffer as plain text, exactly as saving would write it.
+    fn copy_file_text(&mut self) {
+        let text = self.get_current_tab().content.join("\n");
+        self.set_clipboard(&text);
+        self.push_copy_receipt("Copied the file".to_string());
+    }
+
+    /// The whole buffer with every annotation woven onto the end of its
+    /// own line, errors and timings alike: the largest of the debugging
+    /// copies.
+    fn copy_file_with_annotations(&mut self) {
+        let tab = self.get_current_tab();
+        let text = tab.content.join("\n");
+        let last_line = tab.content.len();
+        let annotations = crate::utils::line_annotation_texts(self, 1, last_line);
+        let count = annotations.len();
+        if count == 0 {
+            self.set_clipboard(&text);
+            self.push_copy_receipt("Copied the file, no annotations on it".to_string());
+            return;
+        }
+        self.set_clipboard(&weave_annotations(&text, 1, &annotations));
+        let noun = if count == 1 { "annotation" } else { "annotations" };
+        self.push_copy_receipt(format!("Copied the file with {} {}", count, noun));
+    }
+
+    /// One receipt row for every copy command: the newest replaces whatever
+    /// receipt was there before rather than stacking under it.
+    fn push_copy_receipt(&mut self, message: String) {
+        self.code_errors.retain(|error| !(error.code_span.start_line == 0 && (error.message.starts_with("Copied ") || error.message == "No errors to copy" || error.message == "Nothing to copy")));
+        self.code_errors.push(CodeError::from(message));
+    }
+
     /// Puts the cursor on a line counted from one. The view catches up on the
     /// next frame, which is the only place that knows how tall it is.
     fn go_to_line(&mut self, line_number: usize) {
@@ -5523,6 +5809,11 @@ impl Editor {
                 if tab.modified {
                     title.push('*');
                 }
+                if tab.disk_changed_underneath {
+                    // The disk moved under unsaved edits, which is worth
+                    // more alarm than a plain star.
+                    title.push('!');
+                }
                 title
             })
             .collect();
@@ -5557,11 +5848,30 @@ impl Editor {
         return Some((offset, line));
     }
 
+    /// Scrolls to the part of the file a minimap row stands for, landing it in
+    /// the middle of the view. The cursor stays where it was, the same as the
+    /// scroll keys: the minimap moves the view, not the text.
+    fn minimap_jump(&mut self, row: u16) {
+        let minimap = self.view.minimap;
+        let visible = self.view.text.height as usize;
+        let lines_per_row = minimap_lines_per_row(self.get_current_tab().content.len(), minimap.height);
+        let tab = self.get_current_tab_mut();
+        let furthest = tab.content.len().saturating_sub(1);
+        let row_in_map = row.saturating_sub(minimap.y) as usize;
+        let target = (row_in_map * lines_per_row + lines_per_row / 2).min(furthest);
+        tab.scroll_position = target.saturating_sub(visible / 2).min(furthest) as u16;
+    }
+
     fn mouse_press(&mut self, column: u16, row: u16) {
         if point_in_rect(column, row, self.view.tabs) {
             if let Some(index) = self.tab_at_column(column) {
                 self.switch_to_tab(index);
             }
+            return;
+        }
+        if point_in_rect(column, row, self.view.minimap) {
+            self.minimap_dragging = true;
+            self.minimap_jump(row);
             return;
         }
         let position = match self.text_position_at(column, row) {
@@ -5584,6 +5894,14 @@ impl Editor {
     /// clamped back to the nearest edge rather than the drag being dropped,
     /// because someone dragging past the bottom means "keep going".
     fn mouse_drag(&mut self, column: u16, row: u16) {
+        if self.minimap_dragging {
+            let minimap = self.view.minimap;
+            if minimap.height == 0 {
+                return;
+            }
+            self.minimap_jump(row.clamp(minimap.y, minimap.y + minimap.height - 1));
+            return;
+        }
         if !self.mouse_dragging {
             return;
         }
@@ -5606,6 +5924,7 @@ impl Editor {
     }
 
     fn mouse_release(&mut self) {
+        self.minimap_dragging = false;
         self.mouse_dragging = false;
         // A click that never moved leaves an empty selection behind, which
         // would otherwise make the next typed character look like a replace.
@@ -6418,6 +6737,78 @@ mod tests {
         assert_eq!(editor.get_current_tab().cursor_y, 3);
     }
 
+    /// The overlay cannot be selected with the mouse, so the palette's copy
+    /// hands over the same messages as text: file order, grouped per line the
+    /// way the overlay groups them, each with the code it points at. Notices
+    /// with no line in the file stay out of it.
+    #[test]
+    fn copying_errors_writes_them_out_in_file_order_with_their_code() {
+        let mut editor = editor_with(&["one", "bad two", "three", "worse four"]);
+        editor.code_errors = vec![
+            CodeError { message: "later".to_string(), code_span: CodeSpan { start_line: 4, start_column: 1, end_line: 4, end_column: 2 } },
+            CodeError { message: "earlier".to_string(), code_span: CodeSpan { start_line: 2, start_column: 1, end_line: 2, end_column: 2 } },
+            CodeError { message: "also line two".to_string(), code_span: CodeSpan { start_line: 2, start_column: 5, end_line: 2, end_column: 6 } },
+            CodeError::from("a notice with no line".to_string()),
+        ];
+        assert_eq!(editor.errors_as_text(), "line 2: earlier | also line two\n    bad two\nline 4: later\n    worse four");
+    }
+
+    /// Asking for a copy with nothing to copy answers on the bottom row
+    /// rather than silently doing nothing, and asking twice replaces the
+    /// receipt rather than stacking another one.
+    #[test]
+    fn copying_no_errors_says_so_instead_of_staying_silent() {
+        let mut editor = editor_with(&["fine"]);
+        editor.copy_errors();
+        assert_eq!(editor.errors_as_text(), "", "a notice is not an error to copy");
+        assert!(editor.code_errors.iter().any(|error| error.message == "No errors to copy"));
+        editor.copy_errors();
+        assert_eq!(editor.code_errors.len(), 1);
+    }
+
+    /// The debugging copy: the selected code and what the IDE says about
+    /// those lines travel together, so one paste into a conversation
+    /// carries the code and its diagnosis.
+    #[test]
+    fn copying_the_selection_carries_the_annotations_on_its_lines() {
+        let mut editor = editor_with(&["one", "bad two", "three"]);
+        editor.code_errors = vec![CodeError { message: "boom".to_string(), code_span: CodeSpan { start_line: 2, start_column: 1, end_line: 2, end_column: 2 } }];
+        select(&mut editor, (0, 0), (7, 1));
+        let (text, count) = editor.selection_with_annotations_text();
+        assert_eq!(count, 1);
+        assert_eq!(text, "one\nbad two  ◀ boom");
+    }
+
+    /// With nothing selected the line under the cursor is the selection,
+    /// because the annotation being asked about is the one in front of
+    /// the cursor. An annotation on any other line stays out.
+    #[test]
+    fn copying_with_no_selection_takes_the_line_under_the_cursor() {
+        let mut editor = editor_with(&["one", "bad two", "three"]);
+        editor.code_errors = vec![
+            CodeError { message: "boom".to_string(), code_span: CodeSpan { start_line: 2, start_column: 1, end_line: 2, end_column: 2 } },
+            CodeError { message: "elsewhere".to_string(), code_span: CodeSpan { start_line: 3, start_column: 1, end_line: 3, end_column: 2 } },
+        ];
+        editor.get_current_tab_mut().cursor_y = 1;
+        let (text, count) = editor.selection_with_annotations_text();
+        assert_eq!(count, 1);
+        assert_eq!(text, "bad two  ◀ boom");
+    }
+
+    /// The largest debugging copy: the whole file and every annotation on
+    /// any line of it, so one keypress hands a conversation the full
+    /// picture even when the file runs past the window.
+    #[test]
+    fn copying_the_file_carries_every_annotation() {
+        let mut editor = editor_with(&["one", "bad two", "three"]);
+        editor.code_errors = vec![
+            CodeError { message: "boom".to_string(), code_span: CodeSpan { start_line: 2, start_column: 1, end_line: 2, end_column: 2 } },
+            CodeError { message: "also".to_string(), code_span: CodeSpan { start_line: 3, start_column: 1, end_line: 3, end_column: 2 } },
+        ];
+        editor.copy_file_with_annotations();
+        assert!(editor.code_errors.iter().any(|error| error.message == "Copied the file with 2 annotations"));
+    }
+
     /// The three switches on the find box, each of which changes what counts
     /// as a match rather than how the matches are shown.
     #[test]
@@ -6483,7 +6874,7 @@ mod tests {
     #[test]
     fn a_click_lands_on_the_line_it_points_at() {
         let mut editor = editor_with(&["first line", "second line", "third line"]);
-        editor.view = ViewLayout { tabs: ratatui::layout::Rect::new(0, 0, 80, 3), text: ratatui::layout::Rect::new(5, 4, 40, 10) };
+        editor.view = ViewLayout { tabs: ratatui::layout::Rect::new(0, 0, 80, 3), text: ratatui::layout::Rect::new(5, 4, 40, 10), minimap: ratatui::layout::Rect::default() };
         editor.get_current_tab_mut().scroll_position = 1;
 
         assert_eq!(editor.text_position_at(8, 5), Some((3, 2)));
@@ -6492,6 +6883,115 @@ mod tests {
         assert_eq!(editor.text_position_at(40, 4), Some((11, 1)));
         // Outside the text area entirely
         assert_eq!(editor.text_position_at(2, 1), None);
+    }
+
+    /// The file watcher pulls in what something else wrote. The text swaps,
+    /// everything that pointed into the old text is dropped, and the cursor
+    /// is clamped back inside the file instead of being flung to the top.
+    #[test]
+    fn an_external_reload_swaps_the_text_and_keeps_the_view_sane() {
+        let mut editor = editor_with(&["first line", "second line", "third line"]);
+        select(&mut editor, (0, 0), (4, 2));
+        let tab = editor.get_current_tab_mut();
+        tab.cursor_y = 2;
+        tab.cursor_x = 8;
+        tab.undo_stack.push(EditOperation::InsertChar { position: (0, 2), char: 'x' });
+        tab.modified = true;
+        tab.disk_changed_underneath = true;
+
+        tab.reload_from_disk(vec!["short".to_string()], None);
+
+        assert_eq!(tab.content, vec!["short"]);
+        assert_eq!((tab.cursor_x, tab.cursor_y), (5, 0));
+        assert!(!tab.has_selection());
+        assert!(tab.undo_stack.is_empty());
+        assert!(!tab.modified);
+        assert!(!tab.disk_changed_underneath);
+    }
+
+    /// The watcher thread end to end: a clean tab follows the file as
+    /// something else rewrites it, and a tab with unsaved edits keeps them
+    /// and raises the flag instead.
+    #[test]
+    fn the_watcher_follows_the_disk_and_never_clobbers_edits() {
+        let dir = std::env::temp_dir().join(format!("nail_ide_watch_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir for the watched file");
+        let path = dir.join("watched.nail").to_string_lossy().to_string();
+        std::fs::write(&path, "before").expect("the file being watched");
+
+        let mut editor = Editor::new_with_debug(false);
+        editor.tabs = vec![Tab::new_with_file(path.clone(), vec!["before".to_string()])];
+        editor.tab_index = 0;
+        let editor = std::sync::Arc::new(std::sync::Mutex::new(editor));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let editor_for_watcher = std::sync::Arc::clone(&editor);
+        let watcher = std::thread::spawn(move || crate::utils::file_watcher_thread_logic(editor_for_watcher, rx));
+
+        let wait_for = |accept: &dyn Fn(&Tab) -> bool| -> bool {
+            for _ in 0..100 {
+                if accept(&editor.lock().expect("editor lock").tabs[0]) {
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            return false;
+        };
+
+        // A clean buffer follows the disk. The pause first is because two
+        // writes inside one kernel clock tick share an mtime, and this test
+        // gets from its first write to here faster than any real editor or
+        // agent ever rewrites a file.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::fs::write(&path, "after").expect("rewriting the watched file");
+        assert!(wait_for(&|tab| tab.content == vec!["after".to_string()]), "the reload never arrived");
+
+        // A dirty buffer stays put and says so
+        {
+            let mut editor = editor.lock().expect("editor lock");
+            editor.tabs[0].content = vec!["mine".to_string()];
+            editor.tabs[0].modified = true;
+        }
+        std::fs::write(&path, "theirs").expect("rewriting under unsaved edits");
+        assert!(wait_for(&|tab| tab.disk_changed_underneath), "the flag never went up");
+        assert_eq!(editor.lock().expect("editor lock").tabs[0].content, vec!["mine".to_string()]);
+
+        drop(tx);
+        watcher.join().expect("the watcher thread shuts down when its channel closes");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F9 takes the disk copy, and what makes that safe to put on one key is
+    /// that the thrown-away edits are a single undo step, not gone.
+    #[test]
+    fn taking_the_disk_copy_is_one_undo_away_from_regret() {
+        let mut editor = editor_with(&["mine, half typed", "second line"]);
+        {
+            let tab = editor.get_current_tab_mut();
+            tab.modified = true;
+            tab.disk_changed_underneath = true;
+            tab.take_disk_copy(vec!["theirs".to_string()], None);
+            assert_eq!(tab.content, vec!["theirs"]);
+            assert!(!tab.modified);
+            assert!(!tab.disk_changed_underneath);
+        }
+
+        assert!(editor.undo());
+
+        let tab = editor.get_current_tab();
+        assert_eq!(tab.content, vec!["mine, half typed".to_string(), "second line".to_string()]);
+        assert!(tab.modified);
+    }
+
+    /// A file truncated to nothing still has to leave a line for the cursor
+    /// to be on, the same as opening an empty file does.
+    #[test]
+    fn reloading_an_emptied_file_leaves_one_empty_line() {
+        let mut editor = editor_with(&["something"]);
+        let tab = editor.get_current_tab_mut();
+        tab.reload_from_disk(Vec::new(), None);
+        assert_eq!(tab.content, vec![String::new()]);
+        assert_eq!((tab.cursor_x, tab.cursor_y), (0, 0));
     }
 
     #[test]

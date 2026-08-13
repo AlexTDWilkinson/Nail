@@ -171,6 +171,7 @@ fn from_inputrc_text(text: &str) -> Option<Keymap> {
 pub enum Action {
     Quit,
     Save,
+    ReloadFromDisk,
     CycleExampleFiles,
     ToggleTheme,
     Build,
@@ -228,6 +229,11 @@ pub enum Action {
     DeleteWordRight,
     NextError,
     PreviousError,
+    CopyErrors,
+    CopyScreen,
+    CopySelectionWithAnnotations,
+    CopyFileText,
+    CopyFileWithAnnotations,
     CommandPalette,
     SymbolPicker,
     ProjectSymbolPicker,
@@ -334,6 +340,10 @@ impl Keys {
 pub const COMMANDS: &[Command] = &[
     Command { name: "Save file", keys: Keys::new("Ctrl+S", "Ctrl+S", "Ctrl+X Ctrl+S"), action: Action::Save },
     Command { name: "Open file", keys: Keys::new("Ctrl+O", "Ctrl+O", "Ctrl+X Ctrl+F"), action: Action::OpenFileDialog },
+    // The other half of the file watcher: when the disk moved under unsaved
+    // edits, this is how to say the disk's copy is the one to keep. The
+    // discard is one recorded edit, so undo brings the edits back.
+    Command { name: "Reload file from disk (discard edits, undo restores them)", keys: Keys::same("F9"), action: Action::ReloadFromDisk },
     Command { name: "Build and run", keys: Keys::same("F7"), action: Action::Build },
     // Ctrl+G is the emacs cancel key, so going to a line has no emacs chord.
     Command { name: "Go to line", keys: Keys::new("Ctrl+G", "Ctrl+G", ""), action: Action::GoToLineDialog },
@@ -350,6 +360,18 @@ pub const COMMANDS: &[Command] = &[
     Command { name: "Clear search highlight", keys: Keys::new("", "Ctrl+L", ""), action: Action::ClearSearchHighlight },
     Command { name: "Next error", keys: Keys::new("F8", "]d", "F8"), action: Action::NextError },
     Command { name: "Previous error", keys: Keys::new("Shift+F8", "[d", "Shift+F8"), action: Action::PreviousError },
+    // The error overlay is drawn over the buffer rather than stored in it, so
+    // no selection can ever pick it up. This is how the messages get out.
+    Command { name: "Copy errors", keys: Keys::same(""), action: Action::CopyErrors },
+    // The rule the copy commands serve: anything the IDE displays is
+    // copyable as plain text. This one takes the whole painted frame,
+    // overlays, popups and all, so nothing on screen is ever out of reach.
+    Command { name: "Copy screen as text", keys: Keys::same("F10"), action: Action::CopyScreen },
+    // The debugging copy: the selected code and whatever the IDE has to say
+    // about those lines, errors and timings alike, in one paste.
+    Command { name: "Copy selection with errors and timings", keys: Keys::same("Shift+F10"), action: Action::CopySelectionWithAnnotations },
+    Command { name: "Copy file text", keys: Keys::same(""), action: Action::CopyFileText },
+    Command { name: "Copy file with errors and timings", keys: Keys::same(""), action: Action::CopyFileWithAnnotations },
     // Ctrl+B pages up in vim, so the library is on the key vim already uses
     // for looking a word up.
     Command { name: "Standard library browser", keys: Keys::new("Ctrl+B", "K", ""), action: Action::StdLibBrowser },
@@ -553,6 +575,17 @@ fn common(key: KeyEvent) -> Option<Action> {
         KeyCode::F(12) => Some(Action::OpenImportedFile),
         KeyCode::F(8) if shift => Some(Action::PreviousError),
         KeyCode::F(8) => Some(Action::NextError),
+        // The answer to "the file changed on disk under my edits" has to be
+        // a key the status bar can name in the moment, not a command to go
+        // hunting for. Undo takes it back, which is why one keypress is safe.
+        KeyCode::F(9) => Some(Action::ReloadFromDisk),
+        // The whole painted frame as plain text, because error popups and
+        // timing annotations exist only on screen and a drag cannot reach
+        // them. Shifted, the selection instead, with what the IDE says
+        // about its lines. Some terminals keep F10 for their own menu, so
+        // the command palette carries both of these too.
+        KeyCode::F(10) if shift => Some(Action::CopySelectionWithAnnotations),
+        KeyCode::F(10) => Some(Action::CopyScreen),
         KeyCode::Tab if control && shift => Some(Action::PreviousTab),
         KeyCode::Tab if control => Some(Action::NextTab),
         // The other copy and paste keys, from before Ctrl+C settled the
@@ -1309,6 +1342,7 @@ mod tests {
         assert_eq!(plain(KeyCode::F(4)), Some(Action::ToggleMouse));
         assert_eq!(plain(KeyCode::F(8)), Some(Action::NextError));
         assert_eq!(with(KeyCode::F(8), KeyModifiers::SHIFT), Some(Action::PreviousError));
+        assert_eq!(plain(KeyCode::F(9)), Some(Action::ReloadFromDisk));
     }
 
     /// Backspace and Delete are text input until a modifier is held, and both

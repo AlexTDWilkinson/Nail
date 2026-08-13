@@ -219,10 +219,24 @@ f generate_css():s {
         font-size: 4.5rem;
         font-weight: 800;
         margin-bottom: 1rem;
-        background: linear-gradient(90deg, #ffb454 0%, #f28779 100%);
+        background: linear-gradient(90deg, #ffb454, #f28779, #ffb454);
+        background-size: 200% 100%;
         background-clip: text;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
+        animation: hero-shimmer 14s ease-in-out infinite alternate;
+    }
+
+    /* The title's gradient drifts slowly through its two colours. One
+       element repainting is cheap, the same animation on every token of
+       every code block would not be. */
+    @keyframes hero-shimmer {
+        from { background-position: 0% 50%; }
+        to { background-position: 100% 50%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .hero-title { animation: none; }
     }
 
     .hero-tagline {
@@ -414,6 +428,37 @@ f generate_css():s {
         font-family: var(--font-mono);
         font-size: 0.75rem;
         letter-spacing: 0.02em;
+    }
+
+    /* A slow sheet of light drifting over each code block, so every token
+       colour shimmers within its own hue. The overlay is one oversized
+       pseudo-element whose only animated property is transform, which the
+       compositor moves without repainting the text beneath. Animating a
+       gradient on the tokens themselves would repaint every span of every
+       block on every frame. */
+    .code-example {
+        isolation: isolate;
+    }
+
+    .code-example::after {
+        content: "";
+        position: absolute;
+        inset: -60% -40%;
+        pointer-events: none;
+        background:
+            radial-gradient(40% 55% at 25% 30%, rgba(255,255,255,0.10), transparent 70%),
+            radial-gradient(35% 50% at 75% 70%, rgba(255,255,255,0.07), transparent 70%);
+        mix-blend-mode: soft-light;
+        animation: code-shimmer 18s ease-in-out infinite alternate;
+    }
+
+    @keyframes code-shimmer {
+        from { transform: translate3d(-6%, -4%, 0) rotate(-2deg); }
+        to { transform: translate3d(6%, 4%, 0) rotate(2deg); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .code-example::after { animation: none; }
     }
 
     /* Token colors emitted by code_highlight_html (Nail's own lexer).

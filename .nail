@@ -1,4 +1,4 @@
-theme=dark
+theme=pastel
 keymap=normal
 line_numbers=on
 current_line=on
@@ -9,3 +9,4 @@ minimap=off
 open_files=examples/mcp_dice_server.nail:1:0,examples/todo_app.nail:1:0,examples/web_server.nail:1:0
 active_file=examples/web_server.nail
 recent_files=examples/web_server.nail,examples/todo_app.nail,examples/mcp_dice_server.nail
+build_deps_nanos=29801265601

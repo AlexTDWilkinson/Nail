@@ -1,0 +1,8 @@
+nail latest
+// Two files import the same third file. An import is idempotent, so the
+// shared file is spliced once and its functions exist exactly once.
+import(`test_import_diamond_left.nail`)
+import(`test_import_diamond_right.nail`)
+
+print(diamond_left());
+print(diamond_right());

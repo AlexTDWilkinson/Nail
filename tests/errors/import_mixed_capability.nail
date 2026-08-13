@@ -1,0 +1,5 @@
+nail latest
+// One file, two capabilities: imported dangerously here and sandboxed one
+// line later. The file cannot be both, so the second import is an error.
+import_dangerous(`../test_import_helper.nail`)
+import(`../test_import_helper.nail`)

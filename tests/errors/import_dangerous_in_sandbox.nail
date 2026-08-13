@@ -1,0 +1,4 @@
+nail latest
+// A sandboxed import must stay sandboxed all the way down. The helper tries
+// import_dangerous, which the sandbox has to refuse.
+import(`../import_sandbox_breaker_helper.nail`)

@@ -1,0 +1,4 @@
+nail latest
+// not a standalone program - tries to break out of the sandbox for
+// tests/errors/import_dangerous_in_sandbox.nail
+import_dangerous(`test_import_helper.nail`)
