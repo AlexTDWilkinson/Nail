@@ -916,6 +916,16 @@ f generate_css():s {
     // The downloads table. It borrows the benchmark table's shape, and adds a
     // badge for whichever release `latest` currently points at.
     release_styles:s = css`
+    /* The file column carries a whole filename, which is wider than a phone.
+       It scrolls inside its own box rather than pushing the page sideways. */
+    .release-wrap {
+        overflow-x: auto;
+    }
+
+    .release-table td:last-child {
+        white-space: nowrap;
+    }
+
     .release-table {
         width: 100%;
         border-collapse: collapse;

@@ -1183,6 +1183,12 @@ f generate_games_section():s {
 // One release, as a row: version, size, date, and a direct link. The list
 // comes from deploy/releases.sh, which writes it at publish time because this
 // server is sandboxed away from the directory the releases live in.
+//
+// The link opts out of hx-boost, and has to. Every page here is served inside
+// <body hx-boost="true">, so htmx turns a click on any local link into a
+// request it swaps into the page. That is right for pages and wrong for a
+// release: it fetched eight hundred megabytes into memory and put none of it
+// on disk, and the click looked like it had done nothing at all.
 f release_row(line:s, newest:s):s {
     fields:a:s = string_split(line, `\t`);
     version:s = safe(array_get(fields, 0), missing_field);
@@ -1204,7 +1210,7 @@ f release_row(line:s, newest:s):s {
         <td><code>{{version}}</code> {{{marker}}}</td>
         <td>{{date}}</td>
         <td>{{size}} MB</td>
-        <td><a href="/versions/{{version}}/x86_64-linux">x86_64-linux</a></td>
+        <td><a href="/versions/{{version}}/x86_64-linux" hx-boost="false" download="nail-{{version}}-linux-x86_64.tar.xz">nail-{{version}}-linux-x86_64.tar.xz</a></td>
     </tr>`, values));
 }
 
@@ -1227,10 +1233,10 @@ f generate_downloads_page(releases_tsv:s, nav_html:s):s {
 
     body:s = if {
         array_length(lines) == 0 -> { r html`<p>No releases published yet.</p>`; },
-        else -> { r array_join([html`<table class="release-table">
-            <thead><tr><th>Version</th><th>Published</th><th>Size</th><th>Download</th></tr></thead>
+        else -> { r array_join([html`<div class="release-wrap"><table class="release-table">
+            <thead><tr><th>Version</th><th>Published</th><th>Size</th><th>File</th></tr></thead>
             <tbody>`, rows, html`</tbody>
-        </table>`], ``); }
+        </table></div>`], ``); }
     };
 
     // Every version this page names is the newest published one, read from the
