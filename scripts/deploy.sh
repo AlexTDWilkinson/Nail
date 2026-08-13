@@ -118,8 +118,12 @@ chmod +x "$STAGE/$BIN"
 echo "   $(du -h "$STAGE/$BIN" | cut -f1) $(file -b "$STAGE/$BIN" | cut -d, -f1-2)"
 
 echo "== uploading runtime data =="
-# --relative keeps each path's directory structure under /srv/nail.
-rsync -az --relative -e "$RSH" "${DATA_PATHS[@]}" "$HOST:/srv/$APP/"
+# --relative keeps each path's directory structure under /srv/nail. --delete
+# prunes files a previous deploy shipped that no longer exist, and only
+# inside the directories listed above: the binary, releases and anything
+# else at /srv/nail stay, because rsync never scans directories it was not
+# given (verified against implied directories like bundle/ too).
+rsync -az --relative --delete -e "$RSH" "${DATA_PATHS[@]}" "$HOST:/srv/$APP/"
 
 echo "== uploading binary =="
 # Write beside the live binary then mv: rename is atomic, so a request never
