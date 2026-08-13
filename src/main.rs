@@ -530,6 +530,10 @@ struct Editor {
     // a percentage in the status line.
     compile_started: Option<std::time::Instant>,
     compile_estimate: Option<std::time::Duration>,
+    // Counted up by every thread that changes what the screen should show,
+    // and read by the draw thread, which paints only when it moves. The
+    // number itself means nothing, only that it moved.
+    repaint: u64,
 }
 
 /// The parts of the screen a mouse click can land in, as the draw thread last
@@ -742,7 +746,21 @@ impl Editor {
             profile_dumps: std::collections::HashMap::new(),
             compile_started: None,
             compile_estimate: None,
+            repaint: 0,
         }
+    }
+
+    /// Tells the draw thread the screen is stale. Called by whichever thread
+    /// changed something visible, while it still holds the editor lock, and
+    /// harmless to call when nothing actually changed: the cost is one frame.
+    pub fn request_repaint(&mut self) {
+        self.repaint = self.repaint.wrapping_add(1);
+    }
+
+    /// The current repaint count, compared by the draw thread against the
+    /// value it last painted.
+    pub fn repaint_count(&self) -> u64 {
+        return self.repaint;
     }
 
     // Tab management methods
@@ -3352,9 +3370,8 @@ impl Editor {
     }
 
     fn scroll_up(&mut self) {
-        // Move up by visible lines (approximate page size)
-        let page_size = 20; // Approximate visible lines
-        
+        let page_size = self.page_size();
+
         let new_scroll_pos = {
             let current_tab = self.get_current_tab_mut();
             let old_scroll = current_tab.scroll_position;
@@ -3381,9 +3398,8 @@ impl Editor {
     }
 
     fn scroll_down(&mut self) {
-        // Move down by visible lines (approximate page size)
-        let page_size = 20; // Approximate visible lines
-        
+        let page_size = self.page_size();
+
         let new_scroll_pos = {
             let current_tab = self.get_current_tab_mut();
             let old_scroll = current_tab.scroll_position;
@@ -3408,6 +3424,14 @@ impl Editor {
         };
         
         self.scroll_state = self.scroll_state.position(new_scroll_pos as usize);
+    }
+
+    /// How far one press of Page Up or Page Down moves: the height of the
+    /// text area as the draw thread last measured it. Before the first frame
+    /// has measured anything the old guess of twenty lines stands in.
+    fn page_size(&self) -> u16 {
+        let height = self.view.text.height;
+        return if height == 0 { 20 } else { height };
     }
 
     fn save_config(&self) -> std::io::Result<()> {

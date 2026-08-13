@@ -11,6 +11,7 @@ use crate::Editor;
 use log::error;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
 use ratatui::prelude::Position;
 use std::backtrace::Backtrace;
 use std::panic;
@@ -149,9 +150,230 @@ pub fn resize_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io:
     }
 }
 
+/// How often the draw thread checks whether anything wants painting. This is
+/// the ceiling on input-to-screen latency, not a frame rate: a tick that
+/// finds nothing changed paints nothing.
+const REDRAW_POLL: Duration = Duration::from_millis(4);
+
+/// How long the screen may go unpainted with no repaint request. Everything
+/// that changes without asking rides this: the compile percentage, which is
+/// computed from the clock, and the background threads (build status, fresh
+/// error underlines, watcher reloads, profile timings), whose updates are
+/// slow enough that arriving within this interval reads as instant.
+const REDRAW_FALLBACK: Duration = Duration::from_millis(120);
+
+/// The least time between two frames, so a flood of events (a held key, a
+/// mouse drag) paints once per frame instead of once per event.
+const MIN_FRAME: Duration = Duration::from_millis(8);
+
+/// Whether anything has to be painted over this line beyond its syntax
+/// colors: the cursor, a selection, an error, a search match, a bracket
+/// highlight, a horizontal scroll, or the whitespace decorations. A line
+/// with none of these shows exactly what the colorize cache holds, and the
+/// draw loop reuses the cached line instead of rebuilding it.
+fn line_needs_overlays(editor: &Editor, line_idx: usize, first_column: usize, selection: Option<&((usize, usize), (usize, usize))>) -> bool {
+    if first_column > 0 || editor.show_whitespace || editor.show_indentation_guides {
+        return true;
+    }
+    let tab = editor.get_current_tab();
+    if line_idx == tab.cursor_y {
+        return true;
+    }
+    if editor.highlight_matching_brackets {
+        if let Some((_, bracket_line)) = editor.matching_bracket_pos {
+            if bracket_line == line_idx {
+                return true;
+            }
+        }
+    }
+    if let Some(&((_, selection_start_line), (_, selection_end_line))) = selection {
+        if line_idx >= selection_start_line && line_idx <= selection_end_line {
+            return true;
+        }
+    }
+    // Error lines are 1-based, line_idx is 0-based
+    if editor.code_errors.iter().any(|error| error.code_span.start_line == line_idx + 1) {
+        return true;
+    }
+    return editor.search_results.iter().any(|&(line, _, _)| line == line_idx);
+}
+
+/// Rebuilds one visible line with its overlays painted over the syntax
+/// colors: selection, search matches, error underlines, bracket and cursor
+/// highlights, and the whitespace decorations. Everything that holds for
+/// the whole line is gathered once here, and the per-character loop folds
+/// runs that end up in one style into one span rather than a span apiece.
+fn overlay_line(cached: &Line<'static>, editor: &Editor, actual_line_idx: usize, first_column: usize, selection: Option<&((usize, usize), (usize, usize))>) -> Line<'static> {
+    let tab = editor.get_current_tab();
+    let is_current_line = actual_line_idx == tab.cursor_y && editor.highlight_current_line;
+
+    // The error spans on this line, as half-open column ranges. An error
+    // that runs onto later lines underlines this one to its end.
+    let line_errors: Vec<(usize, usize)> = editor
+        .code_errors
+        .iter()
+        .filter(|error| error.code_span.start_line == actual_line_idx + 1)
+        .map(|error| {
+            let span_start = error.code_span.start_column.saturating_sub(1);
+            let span_end = if error.code_span.end_line == error.code_span.start_line {
+                error.code_span.end_column.saturating_sub(1).max(span_start + 1)
+            } else {
+                usize::MAX
+            };
+            (span_start, span_end)
+        })
+        .collect();
+    let has_error_line = !line_errors.is_empty();
+
+    // The search matches on this line, each knowing whether it is the one
+    // the search is standing on, which is highlighted brighter than the rest.
+    let line_matches: Vec<(usize, usize, bool)> = editor
+        .search_results
+        .iter()
+        .enumerate()
+        .filter(|(_, &(line, _, _))| line == actual_line_idx)
+        .map(|(match_idx, &(_, start, end))| (start, end, match_idx == editor.current_match_index))
+        .collect();
+
+    let line_content = tab.content.get(actual_line_idx);
+    let leading_spaces = match (editor.show_indentation_guides, line_content) {
+        (true, Some(text)) => text.len() - text.trim_start().len(),
+        _ => 0,
+    };
+    let trimmed_len = line_content.map(|text| text.trim_end().len()).unwrap_or(0);
+
+    let mut new_spans: Vec<Span<'static>> = Vec::new();
+    // The run being folded: the style every character since the last flush
+    // shares, and those characters.
+    let mut run_style = Style::default();
+    let mut run_text = String::new();
+    let mut char_pos = 0;
+
+    for span in cached.spans.iter() {
+        let mut span_style = span.style;
+
+        // Apply current line background highlighting
+        if is_current_line {
+            span_style = span_style.bg(editor.theme.current_line_bg);
+        }
+
+        // Apply error line background highlighting (overrides current line)
+        if has_error_line {
+            span_style = span_style.bg(editor.theme.error_line_bg);
+        }
+
+        for ch in span.content.chars() {
+            let mut style = span_style;
+
+            // Indentation guides at every fourth column of the indent
+            if editor.show_indentation_guides && ch == ' ' && char_pos < leading_spaces && char_pos > 0 && char_pos % 4 == 0 {
+                style = style.fg(editor.theme.comment);
+            }
+
+            // Whitespace visualization
+            if editor.show_whitespace {
+                match ch {
+                    ' ' => {
+                        // Spaces show dimly, except where an indentation guide claimed the column
+                        if !editor.show_indentation_guides || char_pos % 4 != 0 {
+                            style = style.fg(editor.theme.comment);
+                        }
+                    }
+                    '\t' => {
+                        style = style.fg(editor.theme.danger);
+                    }
+                    _ => {}
+                }
+
+                // Trailing whitespace stands out in the danger color
+                if line_content.is_some() && char_pos >= trimmed_len && (ch == ' ' || ch == '\t') {
+                    style = style.bg(editor.theme.danger).fg(editor.theme.on_emphasis);
+                }
+            }
+
+            // Underline the exact error spans so the message can live at
+            // the end of the line without a caret overlay covering code
+            for &(span_start, span_end) in &line_errors {
+                if char_pos >= span_start && char_pos < span_end {
+                    style = style.fg(editor.theme.error).add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
+                    break;
+                }
+            }
+
+            // Search matches highlight dimly, except the current one
+            let mut is_current_match = false;
+            for &(start, end, current) in &line_matches {
+                if char_pos >= start && char_pos < end {
+                    if current {
+                        style = style.bg(editor.theme.search_match_bg).fg(editor.theme.search_match_fg);
+                        is_current_match = true;
+                    } else {
+                        style = style.bg(editor.theme.search_other_bg).fg(editor.theme.search_other_fg);
+                    }
+                    break;
+                }
+            }
+
+            // Selection, unless a search match already claimed the character
+            if !is_current_match {
+                if let Some(&((selection_start_x, selection_start_line), (selection_end_x, selection_end_line))) = selection {
+                    let is_selected = if selection_start_line == selection_end_line {
+                        actual_line_idx == selection_start_line && char_pos >= selection_start_x && char_pos < selection_end_x
+                    } else if actual_line_idx == selection_start_line {
+                        char_pos >= selection_start_x
+                    } else if actual_line_idx == selection_end_line {
+                        char_pos < selection_end_x
+                    } else {
+                        actual_line_idx > selection_start_line && actual_line_idx < selection_end_line
+                    };
+                    if is_selected {
+                        style = style.bg(editor.theme.selection_bg).fg(editor.theme.selection_fg);
+                    }
+                }
+            }
+
+            // The bracket at the cursor and the bracket it matches
+            if editor.highlight_matching_brackets {
+                let current_pos = (char_pos, actual_line_idx);
+                let cursor_pos = (tab.cursor_x, tab.cursor_y);
+                if (current_pos == cursor_pos || Some(current_pos) == editor.matching_bracket_pos) && matches!(ch, '(' | ')' | '[' | ']' | '{' | '}') {
+                    style = style.bg(editor.theme.bracket_match_bg).fg(editor.theme.on_emphasis).add_modifier(Modifier::BOLD);
+                }
+            }
+
+            // The character under the cursor stands out
+            if actual_line_idx == tab.cursor_y && char_pos == tab.cursor_x {
+                style = style.fg(editor.theme.cursor_fg);
+            }
+
+            // Everything above decides how the character looks at its real
+            // column in the file. Only the columns the view has scrolled to
+            // are drawn.
+            if char_pos >= first_column {
+                if style != run_style && !run_text.is_empty() {
+                    new_spans.push(Span::styled(std::mem::take(&mut run_text), run_style));
+                }
+                run_style = style;
+                run_text.push(ch);
+            }
+            char_pos += 1;
+        }
+    }
+    if !run_text.is_empty() {
+        new_spans.push(Span::styled(run_text, run_style));
+    }
+
+    // A cursor parked just past the end of its line still has to show
+    if actual_line_idx == tab.cursor_y && char_pos == tab.cursor_x && tab.cursor_x >= first_column {
+        new_spans.push(Span::styled(" ", Style::default().fg(editor.theme.cursor_fg)));
+    }
+
+    return Line::from(new_spans);
+}
+
 pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::Stdout>>>>, editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>) {
     log::info!("Draw thread started");
-    
+
     // Set up panic handler for this thread
     std::panic::set_hook(Box::new(|panic_info| {
         log::error!("DRAW THREAD PANICKED: {:?}", panic_info);
@@ -164,6 +386,10 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
     // cursor and selection overlays.
     let mut colorize_cache = ColorizeCache::new();
 
+    // The minimap's braille picture, rebuilt only when the colored file
+    // changes and re-tinted every frame it is on screen.
+    let mut minimap_cache = MinimapCache::new();
+
     // Buffer fingerprint and function declaration lines for timing
     // annotations, keyed by content hash. Rebuilt only when the buffer
     // changes, so an unedited frame costs one hash comparison.
@@ -173,6 +399,11 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
     // chases the cursor only when this changes, which is what lets the scroll
     // keys and the wheel move the page without it snapping straight back.
     let mut last_cursor = (usize::MAX, usize::MAX, usize::MAX);
+
+    // The repaint count as of the frame on screen. Starting it where no
+    // count can be makes the first pass through the loop paint.
+    let mut painted_repaint: u64 = u64::MAX;
+    let mut last_frame = Instant::now();
 
     loop {
         match rx.try_recv() {
@@ -189,8 +420,26 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
         }
 
-        thread::sleep(Duration::from_millis(50)); // 20 FPS - balance between smooth UI and mouse selection
-        
+        // Paint only when some thread asked for it, or when the fallback
+        // interval has passed. A tick that finds neither goes back to sleep,
+        // which is what makes an idle editor cost nothing and a keypress
+        // reach the screen in milliseconds instead of at the next frame of a
+        // fixed rate.
+        let stale = match try_lock_with_timeout(&editor_arc, 10) {
+            Some(editor) => editor.repaint_count() != painted_repaint,
+            // The lock being busy means someone is changing things right now,
+            // so painting is the safe guess.
+            None => true,
+        };
+        if !stale && last_frame.elapsed() < REDRAW_FALLBACK {
+            thread::sleep(REDRAW_POLL);
+            continue;
+        }
+        if let Some(wait) = MIN_FRAME.checked_sub(last_frame.elapsed()) {
+            thread::sleep(wait);
+        }
+        last_frame = Instant::now();
+
         // Use timeout-based lock to prevent deadlocks
         let mut locked_terminal = match try_lock_with_timeout(&terminal_arc, 100) {
             Some(terminal) => terminal,
@@ -214,6 +463,12 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             continue;
         }
 
+        // The whole frame goes out inside one synchronized update, so the
+        // terminal swaps to it at once instead of painting the write as it
+        // arrives, which is what showed as tearing on a full-page scroll. A
+        // terminal that does not know the mode ignores both marks and is no
+        // worse off than before.
+        let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
         let result_draw = locked_terminal.draw(|f| {
             // Use timeout-based lock to prevent deadlocks during drawing
             // Held mutably because drawing is also what works out where things
@@ -225,6 +480,9 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                     return;
                 }
             };
+
+            // What is about to be painted is everything asked for so far.
+            painted_repaint = editor.repaint_count();
 
             // Only log frame area details in debug mode
             if editor.debug_mode {
@@ -271,9 +529,14 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             } else {
                 0
             };
-            let minimap_width = if editor.show_minimap { 15 } else { 0 };
-            
-            let content_layout = match (editor.show_line_numbers, editor.show_minimap) {
+            // Past this size the minimap bows out even when it is switched
+            // on: every keystroke re-condenses the whole file into braille,
+            // and that pass was measured at 15ms on a 50k-line file, which
+            // is two whole frames spent on a thumbnail.
+            let minimap_on = editor.show_minimap && current_tab.content.len() <= MINIMAP_MAX_LINES;
+            let minimap_width = if minimap_on { 15 } else { 0 };
+
+            let content_layout = match (editor.show_line_numbers, minimap_on) {
                 (true, true) => {
                     Layout::default().direction(Direction::Horizontal)
                         .constraints([
@@ -313,7 +576,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             // border drawn around it. A mouse click arrives as a row and a
             // column of the terminal and this is what turns it into a line of
             // the file, so it is recorded before anything is painted.
-            let content_area = match (editor.show_line_numbers, editor.show_minimap) {
+            let content_area = match (editor.show_line_numbers, minimap_on) {
                 (true, _) => content_layout[1],
                 (false, _) => content_layout[0],
             };
@@ -323,7 +586,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 width: content_area.width.saturating_sub(2),
                 height: content_area.height.saturating_sub(2),
             };
-            let minimap_area = match (editor.show_minimap, editor.show_line_numbers) {
+            let minimap_area = match (minimap_on, editor.show_line_numbers) {
                 (true, true) => content_layout[2],
                 (true, false) => content_layout[1],
                 (false, _) => Rect::default(),
@@ -357,190 +620,25 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             let current_tab = editor.get_current_tab();
             colorize_cache.colorize(&current_tab.content, &editor.theme);
 
-            // Then extract the visible portion and apply cursor and selection highlighting
+            // Then extract the visible portion, laying the cursor, selection,
+            // search and error overlays over it. Most lines carry none of
+            // those, and a line with no overlays is the cached colored line,
+            // reused as it is. That reuse is what makes paging through a big
+            // file cheap: on a typical screen every line but the cursor's
+            // takes it.
             let first_line = current_tab.scroll_position as usize;
-            let mut visible_content: Vec<Line> =
-                (first_line..first_line + visible_lines).filter_map(|index| colorize_cache.line(index)).cloned().collect();
-            
-            // Apply selection highlighting first, then cursor highlighting
-            for (visible_line_idx, line) in visible_content.iter_mut().enumerate() {
-                // Add bounds check to prevent potential issues
-                if visible_line_idx >= 1000 {
-                    log::warn!("Draw thread: visible line index too high ({}), breaking to prevent infinite loop", visible_line_idx);
-                    break;
+            let selection = match (current_tab.selection_start, current_tab.selection_end) {
+                (Some(start), Some(end)) => Some(normalize_selection_positions(start, end)),
+                _ => None,
+            };
+            let mut visible_content: Vec<Line> = Vec::with_capacity(visible_lines);
+            for actual_line_idx in first_line..first_line + visible_lines {
+                let Some(cached) = colorize_cache.line(actual_line_idx) else { break };
+                if line_needs_overlays(&editor, actual_line_idx, first_column, selection.as_ref()) {
+                    visible_content.push(overlay_line(cached, &editor, actual_line_idx, first_column, selection.as_ref()));
+                } else {
+                    visible_content.push(cached.clone());
                 }
-                
-                let actual_line_idx = visible_line_idx + current_tab.scroll_position as usize;
-                let mut new_spans = Vec::new();
-                let mut char_pos = 0;
-                
-                // Check if this is the current line for highlighting
-                let is_current_line = actual_line_idx == current_tab.cursor_y && editor.highlight_current_line;
-                
-                // Check if this line has an error
-                // Error lines are 1-based, actual_line_idx is 0-based
-                let has_error_line = editor.code_errors.iter().any(|error| actual_line_idx + 1 == error.code_span.start_line);
-                
-                for span in line.spans.iter() {
-                    let text = span.content.to_string();
-                    let mut span_style = span.style;
-                    
-                    // Apply current line background highlighting
-                    if is_current_line {
-                        span_style = span_style.bg(editor.theme.current_line_bg);
-                    }
-
-                    // Apply error line background highlighting (overrides current line)
-                    if has_error_line {
-                        span_style = span_style.bg(editor.theme.error_line_bg);
-                    }
-                    
-                    for ch in text.chars() {
-                        // Safety check to prevent infinite character processing
-                        if char_pos > 10000 {
-                            log::warn!("Draw thread: character position too high ({}), breaking to prevent infinite loop", char_pos);
-                            break;
-                        }
-                        
-                        let mut style = span_style;
-
-                        // Add indentation guides
-                        if editor.show_indentation_guides && ch == ' ' {
-                            // Calculate indentation level based on line content (with bounds check)
-                            if actual_line_idx < current_tab.content.len() {
-                                let line_content = &current_tab.content[actual_line_idx];
-                                let leading_spaces = line_content.len() - line_content.trim_start().len();
-                                
-                                // Show guide at every 4 spaces or at tab boundaries
-                                if char_pos < leading_spaces && char_pos > 0 && char_pos % 4 == 0 {
-                                    style = style.fg(editor.theme.comment);
-                                }
-                            }
-                        }
-                        
-                        // Add whitespace visualization
-                        if editor.show_whitespace {
-                            match ch {
-                                ' ' => {
-                                    // Show spaces as middle dots (only if not covered by indentation guides)
-                                    if !editor.show_indentation_guides || char_pos % 4 != 0 {
-                                        style = style.fg(editor.theme.comment);
-                                    }
-                                },
-                                '\t' => {
-                                    // Show tabs as arrows - replace the character
-                                    style = style.fg(editor.theme.danger);
-                                },
-                                _ => {}
-                            }
-                            
-                            // Highlight trailing whitespace in red (with bounds check)
-                            if actual_line_idx < current_tab.content.len() {
-                                let line_content = &current_tab.content[actual_line_idx];
-                                let trimmed_len = line_content.trim_end().len();
-                                if char_pos >= trimmed_len && (ch == ' ' || ch == '\t') {
-                                    style = style.bg(editor.theme.danger).fg(editor.theme.on_emphasis);
-                                }
-                            }
-                        }
-                        
-                        // Underline the exact error spans so the message can live at
-                        // the end of the line without a caret overlay covering code
-                        if has_error_line {
-                            for error in &editor.code_errors {
-                                if error.code_span.start_line != actual_line_idx + 1 {
-                                    continue;
-                                }
-                                let span_start = error.code_span.start_column.saturating_sub(1);
-                                let span_end = if error.code_span.end_line == error.code_span.start_line {
-                                    error.code_span.end_column.saturating_sub(1).max(span_start + 1)
-                                } else {
-                                    usize::MAX
-                                };
-                                if char_pos >= span_start && char_pos < span_end {
-                                    style = style.fg(editor.theme.error).add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
-                                    break;
-                                }
-                            }
-                        }
-
-                        // Check if this character is within a search result (highlight all matches dimly)
-                        let mut is_current_match = false;
-                        for (match_idx, &(line, start, end)) in editor.search_results.iter().enumerate() {
-                            if actual_line_idx == line && char_pos >= start && char_pos < end {
-                                if match_idx == editor.current_match_index {
-                                    // Current match - bright highlight
-                                    style = style.bg(editor.theme.search_match_bg).fg(editor.theme.search_match_fg);
-                                    is_current_match = true;
-                                } else {
-                                    // Other matches - dim highlight
-                                    style = style.bg(editor.theme.search_other_bg).fg(editor.theme.search_other_fg);
-                                }
-                                break;
-                            }
-                        }
-                        
-                        // Check if this character is within selection (but not if it's a search match)
-                        if !is_current_match && current_tab.selection_start.is_some() && current_tab.selection_end.is_some() {
-                            let start = current_tab.selection_start.expect("selection_start checked to be Some");
-                            let end = current_tab.selection_end.expect("selection_end checked to be Some");
-                            let (start_pos, end_pos) = normalize_selection_positions(start, end);
-                            
-                            let is_selected = if start_pos.1 == end_pos.1 {
-                                // Single line selection
-                                actual_line_idx == start_pos.1 && char_pos >= start_pos.0 && char_pos < end_pos.0
-                            } else {
-                                // Multi-line selection
-                                if actual_line_idx == start_pos.1 {
-                                    char_pos >= start_pos.0
-                                } else if actual_line_idx == end_pos.1 {
-                                    char_pos < end_pos.0
-                                } else {
-                                    actual_line_idx > start_pos.1 && actual_line_idx < end_pos.1
-                                }
-                            };
-                            
-                            if is_selected {
-                                style = style.bg(editor.theme.selection_bg).fg(editor.theme.selection_fg);
-                            }
-                        }
-                        
-                        // Check if this character is a matching bracket
-                        if editor.highlight_matching_brackets {
-                            let current_pos = (char_pos, actual_line_idx);
-                            let cursor_pos = (current_tab.cursor_x, current_tab.cursor_y);
-                            
-                            // Highlight current bracket (at cursor position) and its match
-                            if current_pos == cursor_pos || Some(current_pos) == editor.matching_bracket_pos {
-                                // Check if this is actually a bracket character
-                                if matches!(ch, '(' | ')' | '[' | ']' | '{' | '}') {
-                                    style = style.bg(editor.theme.bracket_match_bg).fg(editor.theme.on_emphasis).add_modifier(Modifier::BOLD);
-                                }
-                            }
-                        }
-                        
-                        // Apply cursor highlighting so the cursor position stands out
-                        if actual_line_idx == current_tab.cursor_y && char_pos == current_tab.cursor_x {
-                            style = style.fg(editor.theme.cursor_fg);
-                        }
-                        
-                        // Everything above decides how the character looks at
-                        // its real column in the file. Only the columns the
-                        // view has scrolled to are drawn.
-                        if char_pos >= first_column {
-                            new_spans.push(Span::styled(ch.to_string(), style));
-                        }
-                        char_pos += 1;
-                    }
-                }
-
-                // Handle case where cursor is at the end of the line
-                let cursor_y_visible = current_tab.cursor_y.saturating_sub(current_tab.scroll_position as usize);
-                if visible_line_idx == cursor_y_visible && char_pos == current_tab.cursor_x && current_tab.cursor_x >= first_column {
-                    new_spans.push(Span::styled(" ", Style::default().fg(editor.theme.cursor_fg)));
-                }
-                
-                *line = Line::from(new_spans);
             }
 
             // Render line numbers if enabled
@@ -573,8 +671,8 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 log::info!("Content rendered successfully");
             }
 
-            if editor.show_minimap {
-                render_minimap(f, &editor, &colorize_cache, minimap_area);
+            if minimap_on {
+                render_minimap(f, &editor, &colorize_cache, &mut minimap_cache, minimap_area);
             }
 
             let scrollbar = Scrollbar::default()
@@ -589,7 +687,7 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
                 .content_length(current_tab.content.len())
                 .position(current_tab.scroll_position as usize);
 
-            let scrollbar_area = match (editor.show_line_numbers, editor.show_minimap) {
+            let scrollbar_area = match (editor.show_line_numbers, minimap_on) {
                 (true, true) => content_layout[3],  // Line numbers + content + minimap + scrollbar
                 (true, false) => content_layout[2], // Line numbers + content + scrollbar
                 (false, true) => content_layout[2], // Content + minimap + scrollbar
@@ -665,6 +763,8 @@ pub fn draw_thread_logic(terminal_arc: Arc<Mutex<Terminal<CrosstermBackend<io::S
             }
         });
 
+        let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+
         match result_draw {
             Ok(_) => {}
             Err(err) => log::error!("Error drawing terminal: {:?}", err),
@@ -717,6 +817,27 @@ fn toward_background(color: Color, background: Color) -> Color {
     }
 }
 
+/// The braille rows of the minimap before any band tinting, kept between
+/// frames. Rebuilding them is one pass over the whole file, so they live
+/// until the colored file or the map's shape changes, and a frame that only
+/// scrolled re-tints the rows it already has.
+/// The file size past which the minimap stays hidden even when switched on.
+/// Condensing the file to braille costs about 0.3us a line and runs again on
+/// every keystroke, so at this cap a rebuild is roughly one 8ms frame. A
+/// file this size is a generated artifact, not something being read by map.
+const MINIMAP_MAX_LINES: usize = 25_000;
+
+struct MinimapCache {
+    key: Option<(u64, Rect)>,
+    rows: Vec<Vec<(char, Option<Color>)>>,
+}
+
+impl MinimapCache {
+    fn new() -> Self {
+        return MinimapCache { key: None, rows: Vec::new() };
+    }
+}
+
 /// The file in miniature: each braille cell condenses a slice of the file
 /// into a two by four grid of dots, with a dot wherever those lines have
 /// text, painted in the same colors the syntax highlighter gives that text,
@@ -725,27 +846,66 @@ fn toward_background(color: Color, background: Color) -> Color {
 /// small print instead of slabs of ink. The rows showing what is on screen
 /// sit on the current-line grey at full strength while the rest lean toward
 /// the background, so the band doubles as a scrollbar you can read.
-fn render_minimap(f: &mut Frame, editor: &Editor, colors: &ColorizeCache, area: Rect) {
+fn render_minimap(f: &mut Frame, editor: &Editor, colors: &ColorizeCache, cache: &mut MinimapCache, area: Rect) {
     if area.width == 0 || area.height == 0 {
         return;
     }
     let tab = editor.get_current_tab();
     let lines_per_row = crate::minimap_lines_per_row(tab.content.len(), area.height);
-    let lines_per_dot_row = lines_per_row / 4;
-    let width = area.width as usize;
-    let dot_columns = width * 2;
+
+    // One braille picture serves every frame until the colored file or the
+    // map's shape changes. Scrolling changes neither, so paging through a
+    // big file never pays for the full pass, only for the re-tint below.
+    let key = (colors.generation(), area);
+    if cache.key != Some(key) {
+        cache.rows = minimap_rows(editor, colors, area, lines_per_row);
+        cache.key = Some(key);
+    }
 
     let view_top = tab.scroll_position as usize;
     let view_bottom = view_top + (editor.view.text.height as usize).max(1);
 
-    let mut rows: Vec<Line> = Vec::with_capacity(area.height as usize);
+    // The tint goes straight into the frame's buffer, cell by cell. Going
+    // through a Paragraph meant a heap string and a span for every braille
+    // cell on every frame the map was visible, building a structure ratatui
+    // then took apart into these same cells.
+    let buffer = f.buffer_mut();
+    let mut encoded = [0u8; 4];
+    for (row, cells) in cache.rows.iter().enumerate() {
+        if row >= area.height as usize {
+            break;
+        }
+        let first_line = row * lines_per_row;
+        let on_screen = first_line < view_bottom && first_line + lines_per_row > view_top;
+        let row_background = if on_screen { editor.theme.current_line_bg } else { editor.theme.background };
+        for (column, &(glyph, commonest)) in cells.iter().enumerate() {
+            if column >= area.width as usize {
+                break;
+            }
+            let foreground = match commonest {
+                None => row_background,
+                Some(color) if on_screen => color,
+                Some(color) => toward_background(color, editor.theme.background),
+            };
+            let symbol: &str = glyph.encode_utf8(&mut encoded);
+            buffer.set_string(area.x + column as u16, area.y + row as u16, symbol, Style::default().fg(foreground).bg(row_background));
+        }
+    }
+}
+
+/// One pass over the whole colored file, condensing it into braille cells:
+/// each cell is its glyph and the commonest token color behind it, or no
+/// color where those lines have no text. The dots one row of cells lights
+/// up come from walking each source line once.
+fn minimap_rows(editor: &Editor, colors: &ColorizeCache, area: Rect, lines_per_row: usize) -> Vec<Vec<(char, Option<Color>)>> {
+    let lines_per_dot_row = lines_per_row / 4;
+    let width = area.width as usize;
+    let dot_columns = width * 2;
+
+    let mut rows: Vec<Vec<(char, Option<Color>)>> = Vec::with_capacity(area.height as usize);
     for row in 0..area.height as usize {
         let first_line = row * lines_per_row;
 
-        // The dots one row of cells lights up, and a tally of the token
-        // colors behind each cell, of which the commonest becomes the cell's
-        // color. Each source line is walked once, so the whole map costs one
-        // pass over the file per frame.
         let mut dots: Vec<u8> = vec![0; width];
         let mut tallies: Vec<Vec<(Color, u32)>> = vec![Vec::new(); width];
         for dot_row in 0..4 {
@@ -774,23 +934,18 @@ fn render_minimap(f: &mut Frame, editor: &Editor, colors: &ColorizeCache, area: 
             }
         }
 
-        let on_screen = first_line < view_bottom && first_line + lines_per_row > view_top;
-        let row_background = if on_screen { editor.theme.current_line_bg } else { editor.theme.background };
-        let mut cells: Vec<Span> = Vec::with_capacity(width);
-        for column in 0..width {
-            let commonest = tallies[column].iter().max_by_key(|(_, count)| *count).map(|(color, _)| *color);
-            let (glyph, foreground) = match commonest {
-                None => (' ', row_background),
+        let cells: Vec<(char, Option<Color>)> = (0..width)
+            .map(|column| match tallies[column].iter().max_by_key(|(_, count)| *count).map(|(color, _)| *color) {
+                None => (' ', None),
                 Some(color) => {
                     let braille = char::from_u32(0x2800 + dots[column] as u32).expect("every braille code point is assigned");
-                    (braille, if on_screen { color } else { toward_background(color, editor.theme.background) })
+                    (braille, Some(color))
                 }
-            };
-            cells.push(Span::styled(glyph.to_string(), Style::default().fg(foreground).bg(row_background)));
-        }
-        rows.push(Line::from(cells));
+            })
+            .collect();
+        rows.push(cells);
     }
-    f.render_widget(Paragraph::new(rows), area);
+    return rows;
 }
 
 fn display_status_bar(f: &mut Frame, editor: &Editor, area: Rect) {
@@ -2011,6 +2166,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
             if asked.elapsed() >= COMPLETION_DELAY {
                 if let Some(mut editor) = try_lock_with_timeout(&editor_arc, 100) {
                     editor.flush_completion_request();
+                    editor.request_repaint();
                     asked_for_a_list = None;
                 }
             }
@@ -2036,7 +2192,11 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                                 continue;
                             }
                         };
-                        
+                        // Whatever this key does, the screen should show it.
+                        // Asking before knowing whether the key changes
+                        // anything costs at most one diffed frame.
+                        editor.request_repaint();
+
                         // Handle dialog modes first
                         match editor.dialog_mode {
                             crate::DialogMode::OpenFile => {
@@ -2383,6 +2543,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                             }
                         };
                         editor.paste_text(&data);
+                        editor.request_repaint();
                         // Don't update completions during paste to avoid lag
                     }
                     // A click puts the cursor where it points, a drag selects,
@@ -2411,6 +2572,7 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                         if editor.dialog_mode != crate::DialogMode::None {
                             continue;
                         }
+                        editor.request_repaint();
                         match mouse.kind {
                             MouseEventKind::Down(MouseButton::Left) => editor.mouse_press(mouse.column, mouse.row),
                             MouseEventKind::Drag(MouseButton::Left) => editor.mouse_drag(mouse.column, mouse.row),
@@ -2420,8 +2582,15 @@ pub fn key_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessa
                             _ => {}
                         }
                     }
+                    Ok(Event::Resize(_, _)) => {
+                        // The next frame notices the new size by itself, it
+                        // just has to happen now rather than at the fallback.
+                        if let Some(mut editor) = try_lock_with_timeout(&editor_arc, 100) {
+                            editor.request_repaint();
+                        }
+                    }
                     Ok(_) => {
-                        // Other events (resize, etc.) - ignore
+                        // Other events (focus, etc.) - ignore
                     }
                     Err(e) => {
                         log::error!("Error reading key event: {}", e);
@@ -4438,6 +4607,76 @@ mod tests {
         assert!(!editor.mark_active);
     }
 
+    /// Paging a big file is cheap because a line nothing overlays is reused
+    /// straight from the colorize cache. This pins which lines count as
+    /// overlaid: the cursor's own line, a selected line, a searched line,
+    /// and every line once the view has scrolled sideways.
+    #[test]
+    fn only_lines_an_overlay_touches_are_rebuilt() {
+        let mut editor = crate::Editor::new();
+        editor.get_current_tab_mut().content = vec!["first".to_string(), "second".to_string(), "third".to_string()];
+
+        // The cursor starts on line 0, and its line always rebuilds.
+        assert!(line_needs_overlays(&editor, 0, 0, None));
+        assert!(!line_needs_overlays(&editor, 1, 0, None));
+        assert!(!line_needs_overlays(&editor, 2, 0, None));
+
+        // A horizontal scroll trims columns off every line.
+        assert!(line_needs_overlays(&editor, 1, 4, None));
+
+        // A selection claims the lines it runs across.
+        let selection = ((0usize, 1usize), (2usize, 2usize));
+        assert!(line_needs_overlays(&editor, 1, 0, Some(&selection)));
+
+        // A search match claims its line.
+        editor.search_results = vec![(2, 0, 3)];
+        assert!(line_needs_overlays(&editor, 2, 0, None));
+    }
+
+    /// The rebuilt line must say everything the old one-span-per-character
+    /// build said: same text, selection painted over the selected columns,
+    /// the current-line background elsewhere, in far fewer spans.
+    #[test]
+    fn a_selected_line_paints_the_selection_and_folds_runs() {
+        let mut editor = crate::Editor::new();
+        editor.get_current_tab_mut().content = vec!["let value = 5".to_string()];
+        let mut colors = ColorizeCache::new();
+        colors.colorize(&editor.get_current_tab().content, &editor.theme);
+        let cached = colors.line(0).expect("the line is cached");
+
+        // "value" is selected, columns four through eight.
+        let selection = ((4usize, 0usize), (9usize, 0usize));
+        let line = overlay_line(cached, &editor, 0, 0, Some(&selection));
+
+        let mut painted: Vec<(char, Style)> = Vec::new();
+        for span in line.spans.iter() {
+            for ch in span.content.chars() {
+                painted.push((ch, span.style));
+            }
+        }
+        let text: String = painted.iter().map(|(ch, _)| *ch).collect();
+        assert_eq!(text, "let value = 5", "overlays change styles, never the text");
+        assert_eq!(painted[5].1.bg, Some(editor.theme.selection_bg), "a selected column wears the selection background");
+        assert_eq!(painted[5].1.fg, Some(editor.theme.selection_fg));
+        assert_eq!(painted[1].1.bg, Some(editor.theme.current_line_bg), "an unselected column keeps the current-line background");
+        assert!(line.spans.len() < painted.len(), "runs of one style fold into one span");
+    }
+
+    /// Scrolling sideways drops the columns left of the view and nothing
+    /// else, which is what the h_scroll slow path exists to do.
+    #[test]
+    fn a_horizontal_scroll_drops_the_columns_left_of_the_view() {
+        let mut editor = crate::Editor::new();
+        editor.get_current_tab_mut().content = vec!["let value = 5".to_string()];
+        let mut colors = ColorizeCache::new();
+        colors.colorize(&editor.get_current_tab().content, &editor.theme);
+        let cached = colors.line(0).expect("the line is cached");
+
+        let line = overlay_line(cached, &editor, 0, 4, None);
+        let text: String = line.spans.iter().flat_map(|span| span.content.chars()).collect();
+        assert_eq!(text, "value = 5");
+    }
+
     /// The minimap draws each cell as braille dots in the syntax color of
     /// the lines it stands for, which is what makes a comment block, a
     /// string run and a stretch of code tell apart at a glance. The two
@@ -4461,7 +4700,8 @@ mod tests {
         colors.colorize(&editor.get_current_tab().content, &editor.theme);
 
         let mut terminal = Terminal::new(TestBackend::new(15, 2)).expect("a test terminal");
-        terminal.draw(|f| render_minimap(f, &editor, &colors, Rect::new(0, 0, 15, 2))).expect("the frame draws");
+        let mut cache = MinimapCache::new();
+        terminal.draw(|f| render_minimap(f, &editor, &colors, &mut cache, Rect::new(0, 0, 15, 2))).expect("the frame draws");
         let buffer = terminal.backend().buffer().clone();
 
         // Four comment lines fill all eight dots of the first cell, and the
@@ -4496,4 +4736,60 @@ mod tests {
         assert_eq!(found, vec!["src/deep/buried.nail".to_string(), "src/main.nail".to_string()]);
         let _ = fs::remove_dir_all(&root);
     }
+
+    /// One whole frame, painted headlessly: the code, the gutter and the
+    /// minimap all land in the buffer, and painting the same frame again
+    /// touches none of the caches. The second half is the render loop's
+    /// whole bargain: an unchanged file costs a sweep, not a rebuild.
+    #[test]
+    fn a_whole_frame_paints_code_gutter_minimap_and_reuses_its_caches() {
+        use ratatui::backend::TestBackend;
+
+        let mut editor = crate::Editor::new();
+        let content: Vec<String> = vec!["nail latest".to_string(), "first_value:i = 5".to_string(), "second_value:s = `text`".to_string()];
+        editor.tabs = vec![crate::Tab::new_with_file("frame.nail".to_string(), content)];
+        editor.tab_index = 0;
+        editor.show_line_numbers = true;
+        editor.show_minimap = true;
+
+        let mut terminal = ratatui::Terminal::new(TestBackend::new(100, 30)).expect("test terminal");
+        let mut colors = ColorizeCache::new();
+        let mut minimap = MinimapCache::new();
+
+        fn paint(terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>, editor: &mut crate::Editor, colors: &mut ColorizeCache, minimap: &mut MinimapCache) {
+            terminal
+                .draw(|f| {
+                    let chunks = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(1)].as_ref()).split(f.area());
+                    let gutter_width = calculate_line_number_width(editor.get_current_tab().content.len());
+                    let content_layout = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Length(gutter_width), Constraint::Min(0), Constraint::Length(15), Constraint::Length(1)].as_ref())
+                        .split(chunks[1]);
+                    let content_area = content_layout[1];
+                    let text_area = Rect { x: content_area.x + 1, y: content_area.y + 1, width: content_area.width.saturating_sub(2), height: content_area.height.saturating_sub(2) };
+                    editor.view = crate::ViewLayout { tabs: chunks[0], text: text_area, minimap: content_layout[2] };
+
+                    colors.colorize(&editor.get_current_tab().content, &editor.theme);
+                    let visible: Vec<Line> = (0..text_area.height as usize).map_while(|index| colors.line(index).cloned()).collect();
+                    render_line_numbers(f, editor, content_layout[0]);
+                    f.render_widget(Paragraph::new(visible).block(Block::default().borders(Borders::ALL)), content_area);
+                    render_minimap(f, editor, colors, minimap, content_layout[2]);
+                    display_status_bar(f, editor, chunks[2]);
+                })
+                .expect("frame draws");
+        }
+
+        paint(&mut terminal, &mut editor, &mut colors, &mut minimap);
+        let painted = buffer_text(terminal.backend().buffer());
+        assert!(painted.contains("first_value:i = 5"), "the code is on screen: {painted}");
+        assert!(painted.contains(" 2 "), "the gutter numbers the lines: {painted}");
+        assert!(!minimap.rows.is_empty(), "the minimap condensed the file");
+
+        let generation = colors.generation();
+        let rows_before = minimap.rows.as_ptr();
+        paint(&mut terminal, &mut editor, &mut colors, &mut minimap);
+        assert_eq!(colors.generation(), generation, "an unchanged file keeps its colored picture");
+        assert_eq!(minimap.rows.as_ptr(), rows_before, "an unchanged picture keeps its braille rows");
+    }
+
 }

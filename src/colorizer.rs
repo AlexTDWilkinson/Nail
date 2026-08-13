@@ -1035,6 +1035,10 @@ pub struct ColorizeCache {
     theme: Option<ColorScheme>,
     lines: Vec<CachedLine>,
     recolored: usize,
+    /// Moves whenever any cached line changes, so anything derived from the
+    /// colored file (the minimap) can tell a new picture from the old one
+    /// without comparing lines itself.
+    generation: u64,
 }
 
 struct CachedLine {
@@ -1049,7 +1053,7 @@ struct CachedLine {
 
 impl ColorizeCache {
     pub fn new() -> Self {
-        return ColorizeCache { theme: None, lines: Vec::new(), recolored: 0 };
+        return ColorizeCache { theme: None, lines: Vec::new(), recolored: 0, generation: 0 };
     }
 
     /// Brings the cache up to date with `content`. An edit is nearly always
@@ -1076,30 +1080,43 @@ impl ColorizeCache {
             .take_while(|(line, cached)| **line == cached.text)
             .count();
 
-        let mut previous = std::mem::take(&mut self.lines);
-        let tail_entries = previous.split_off(previous.len() - tail);
-        previous.truncate(head);
-        let mut rebuilt = previous;
+        let lines_before = self.lines.len();
         self.recolored = 0;
 
-        let mut state = rebuilt.last().and_then(|cached| cached.end.clone());
+        let mut state = if head == 0 { None } else { self.lines[head - 1].end.clone() };
+        let mut fresh: Vec<CachedLine> = Vec::with_capacity(content.len() - head - tail);
         for text in &content[head..content.len() - tail] {
-            rebuilt.push(self.color(text, &mut state, theme));
+            fresh.push(self.color(text, &mut state, theme));
         }
 
         // The tail is only what it was if it still starts where it started.
         // A string opened above it repaints everything under it, which is
         // exactly what the screen then has to show.
-        match tail_entries.first() {
-            Some(first) if first.start == state => rebuilt.extend(tail_entries),
-            _ => {
-                for text in &content[content.len() - tail..] {
-                    rebuilt.push(self.color(text, &mut state, theme));
-                }
+        let tail_survives = tail > 0 && self.lines[lines_before - tail].start == state;
+        if !tail_survives {
+            for text in &content[content.len() - tail..] {
+                fresh.push(self.color(text, &mut state, theme));
             }
         }
 
-        self.lines = rebuilt;
+        // The fresh middle drops in over the stale one, leaving the head and
+        // the surviving tail where they already sit. Rebuilding the vector
+        // moved every cached line on every keystroke, which at fifty
+        // thousand lines was most of what an edit cost.
+        let replaced_up_to = if tail_survives { lines_before - tail } else { lines_before };
+        self.lines.splice(head..replaced_up_to, fresh);
+        // Recoloring nothing while keeping every line is the one case where
+        // the picture is unchanged. Pure deletion recolors nothing too, which
+        // is why the length is part of the question.
+        if self.recolored > 0 || self.lines.len() != lines_before {
+            self.generation = self.generation.wrapping_add(1);
+        }
+    }
+
+    /// Which version of the colored file the cache holds. Any change to any
+    /// line moves it, and nothing else does.
+    pub fn generation(&self) -> u64 {
+        return self.generation;
     }
 
     fn color(&mut self, text: &str, state: &mut Option<StringContext>, theme: &ColorScheme) -> CachedLine {

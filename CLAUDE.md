@@ -31,11 +31,11 @@ Generated files to watch for and delete:
 
 This is non-negotiable to maintain language stability and prevent regressions.
 
-A clean run currently reports 567/567 lexer/parser, 566/566 type checker and
-547/547 transpiler, with zero failures. Those counts are every `.nail` file in
+A clean run currently reports 568/568 lexer/parser, 567/567 type checker and
+548/548 transpiler, with zero failures. Those counts are every `.nail` file in
 the repository, from the one shared list in `scripts/test_nail_files.sh`, rather than
-the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1327 passing
-(1345 with `--features "game audio"`), `cargo test --bin nail` reports 1346
+the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1332 passing
+(1371 with `--features "game audio"`), `cargo test --bin nail` reports 1355
 (the library's tests plus the editor's own), and `./scripts/test_e2e.sh` reports 376
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
@@ -47,7 +47,7 @@ at once will fail each other. Re-run those alone before believing a failure.
 `./scripts/test_launcher.sh` reports 49 checks passing, and
 `./scripts/test_error_messages.sh` reports 32 passed, 0 failed.
 
-`./scripts/test_doc_examples.sh` compiles all 1166 registry examples and runs the 1033
+`./scripts/test_doc_examples.sh` compiles all 1180 registry examples and runs the 1047
 that can run unattended. The rest are named, with the reason, in
 `tests/doc_examples_needing_the_world.txt`, which is checked both ways: an
 example listed there that starts passing is reported so the line can be
