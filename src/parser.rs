@@ -94,14 +94,6 @@ pub enum ASTNode {
         code_span: CodeSpan,
         scope: usize
     },
-    WhileLoop { 
-        condition: Box<ASTNode>, 
-        initial_value: Option<Box<ASTNode>>, // For 'from' clause
-        max_iterations: Option<Box<ASTNode>>, 
-        body: Box<ASTNode>, 
-        code_span: CodeSpan, 
-        scope: usize 
-    },
     Loop {
         index_iterator: Option<String>, // Optional index parameter
         body: Box<ASTNode>,
@@ -120,7 +112,6 @@ pub enum ASTNode {
     Block { statements: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     BinaryOperation { left: Box<ASTNode>, operator: Operation, right: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     UnaryOperation { operator: Operation, operand: Box<ASTNode>, code_span: CodeSpan, scope: usize },
-    Assignment { left: Box<ASTNode>, right: Box<ASTNode>, code_span: CodeSpan, scope: usize },
     StructDeclaration { name: String, fields: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
     StructDeclarationField { name: String, data_type: NailDataTypeDescriptor, scope: usize },
     StructInstantiation { name: String, fields: Vec<ASTNode>, code_span: CodeSpan, scope: usize },
@@ -162,7 +153,6 @@ impl ASTNode {
             ASTNode::FindExpression { code_span, .. } => code_span.clone(),
             ASTNode::AllExpression { code_span, .. } => code_span.clone(),
             ASTNode::AnyExpression { code_span, .. } => code_span.clone(),
-            ASTNode::WhileLoop { code_span, .. } => code_span.clone(),
             ASTNode::Loop { code_span, .. } => code_span.clone(),
             ASTNode::SpawnBlock { code_span, .. } => code_span.clone(),
             ASTNode::BreakStatement { code_span, .. } => code_span.clone(),
@@ -172,7 +162,6 @@ impl ASTNode {
             ASTNode::Block { code_span, .. } => code_span.clone(),
             ASTNode::BinaryOperation { code_span, .. } => code_span.clone(),
             ASTNode::UnaryOperation { code_span, .. } => code_span.clone(),
-            ASTNode::Assignment { code_span, .. } => code_span.clone(),
             ASTNode::StructDeclaration { code_span, .. } => code_span.clone(),
             ASTNode::StructDeclarationField { .. } => CodeSpan::default(), // No code_span for this variant
             ASTNode::StructInstantiation { code_span, .. } => code_span.clone(),
@@ -228,15 +217,8 @@ impl ASTNode {
             | ASTNode::AllExpression { iterable, body, .. }
             | ASTNode::AnyExpression { iterable, body, .. } => vec![iterable.as_ref(), body.as_ref()],
             ASTNode::ReduceExpression { iterable, initial_value, body, .. } | ASTNode::ScanExpression { iterable, initial_value, body, .. } => vec![iterable.as_ref(), initial_value.as_ref(), body.as_ref()],
-            ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
-                let mut children = vec![condition.as_ref()];
-                children.extend(initial_value.as_deref());
-                children.extend(max_iterations.as_deref());
-                children.push(body.as_ref());
-                children
-            }
             ASTNode::Loop { body, .. } | ASTNode::SpawnBlock { body, .. } => vec![body.as_ref()],
-            ASTNode::BinaryOperation { left, right, .. } | ASTNode::Assignment { left, right, .. } => vec![left.as_ref(), right.as_ref()],
+            ASTNode::BinaryOperation { left, right, .. } => vec![left.as_ref(), right.as_ref()],
             ASTNode::UnaryOperation { operand, .. } => vec![operand.as_ref()],
             ASTNode::StructDeclaration { fields, .. } | ASTNode::StructInstantiation { fields, .. } | ASTNode::EnumDeclaration { variants: fields, .. } => fields.iter().collect(),
             ASTNode::StructInstantiationField { value, .. } => vec![value.as_ref()],
@@ -318,13 +300,11 @@ fn describe_statement(statement: &ASTNode) -> String {
         ASTNode::FunctionCall { name, .. } => format!("a call to '{}'", name),
         ASTNode::IfStatement { .. } => "an if statement".to_string(),
         ASTNode::ForLoop { .. } => "a for loop".to_string(),
-        ASTNode::WhileLoop { .. } => "a while loop".to_string(),
         ASTNode::Loop { .. } => "a loop".to_string(),
         ASTNode::SpawnBlock { .. } => "a spawn block".to_string(),
         ASTNode::ParallelBlock { .. } => "a parallel block".to_string(),
         ASTNode::ConcurrentBlock { .. } => "a concurrent block".to_string(),
         ASTNode::Block { .. } => "a block".to_string(),
-        ASTNode::Assignment { .. } => "an assignment".to_string(),
         ASTNode::MapExpression { .. } => "a map expression".to_string(),
         ASTNode::FilterExpression { .. } => "a filter expression".to_string(),
         ASTNode::ReduceExpression { .. } => "a reduce expression".to_string(),
@@ -432,7 +412,6 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::FindDeclaration => parse_find_expression(state)?,
             TokenType::AllDeclaration => parse_all_expression(state)?,
             TokenType::AnyDeclaration => parse_any_expression(state)?,
-            TokenType::WhileDeclaration => parse_while_loop(state)?,
             TokenType::LoopKeyword => parse_loop(state)?,
             TokenType::FunctionSignature(_) => parse_inline_function_from_signature(state)?,
             _ => {
@@ -464,7 +443,6 @@ fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
             TokenType::FindDeclaration => parse_find_expression(state),
             TokenType::AllDeclaration => parse_all_expression(state),
             TokenType::AnyDeclaration => parse_any_expression(state),
-            TokenType::WhileDeclaration => parse_while_loop(state),
             TokenType::LoopKeyword => parse_loop(state),
             TokenType::SpawnKeyword => parse_spawn_block(state),
             TokenType::BreakKeyword => parse_break_statement(state),
@@ -519,18 +497,17 @@ fn parse_expression(state: &mut ParserState, min_precedence: u8) -> Result<ASTNo
                     left = ASTNode::BinaryOperation { left: Box::new(left), operator: op, right: Box::new(right), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
                 }
             }
-            Some(Token { token_type: TokenType::Assignment, .. }) => {
-                // Assignment has very low precedence (right-associative)
-                let assignment_precedence = 0;
-                if assignment_precedence < min_precedence {
-                    break;
-                }
-
-                advance(state); // Consume the assignment token
-                let code_span = state.current_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
-                
-                let right = parse_expression(state, assignment_precedence)?;
-                left = ASTNode::Assignment { left: Box::new(left), right: Box::new(right), code_span: code_span.clone(), scope: GLOBAL_SCOPE };
+            Some(Token { token_type: TokenType::Assignment, code_span, .. }) => {
+                // A bare `=` after an expression would be a reassignment, and
+                // Nail has none. Refusing it here, with the alternatives
+                // spelled out, keeps the error better than the generic
+                // "did not expect '='" it would otherwise fall into.
+                let code_span = code_span.clone();
+                return Err(CodeError {
+                    message: "Nail has no reassignment: a variable cannot be assigned a second time".to_string(),
+                    help: Some("declare a binding with a type ('name:i = ...', redeclaring an earlier name in the same scope is allowed), accumulate across items with reduce, or write '==' if a comparison was meant".to_string()),
+                    code_span,
+                });
             }
             _ => break,
         }
@@ -1498,44 +1475,6 @@ fn parse_any_expression(state: &mut ParserState) -> Result<ASTNode, CodeError> {
         body: Box::new(condition), 
         code_span,
         scope: GLOBAL_SCOPE 
-    })
-}
-
-fn parse_while_loop(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    let start_span = expect_token(state, TokenType::WhileDeclaration)?;
-    let condition = parse_expression(state, 0)?;
-    
-    // Check for optional 'from' clause
-    let initial_value = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::FromKeyword)) {
-        advance(state); // consume 'from'
-        Some(Box::new(parse_expression(state, 0)?))
-    } else {
-        None
-    };
-    
-    // Check for max iterations
-    let max_iterations = if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::MaxKeyword)) {
-        advance(state); // consume max
-        Some(Box::new(parse_expression(state, 0)?))
-    } else {
-        None
-    };
-    
-    let body = parse_block(state)?;
-    let code_span = CodeSpan { 
-        start_line: start_span.start_line, 
-        start_column: start_span.start_column,
-        end_line: body.code_span().end_line,
-        end_column: body.code_span().end_column,
-    };
-    
-    Ok(ASTNode::WhileLoop {
-        condition: Box::new(condition),
-        initial_value,
-        max_iterations,
-        body: Box::new(body),
-        code_span,
-        scope: GLOBAL_SCOPE,
     })
 }
 

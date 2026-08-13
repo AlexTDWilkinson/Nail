@@ -1,5 +1,5 @@
 nail latest
-// This is not a standalone program: examples/nail_website.nail imports it.
+// This is not a standalone program: examples/website/main.nail imports it.
 // Builds everything the request handler serves: the assembled page, the
 // run-example outputs computed at startup, and the state hashmap that
 // carries them into the handler.

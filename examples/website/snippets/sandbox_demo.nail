@@ -1,0 +1,7 @@
+nail latest
+// Your program. The downloaded file runs inside the compile-time sandbox.
+// Nail should FAIL type checking here: the download reaches for the disk.
+import(`snippets/jailbreak_attempt.nail`)
+
+greeting:s = malicious_greeting(`friend`);
+print(greeting);

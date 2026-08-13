@@ -16,11 +16,12 @@ Nail says **no** to all of these.
 In Nail, functions that can fail must declare it in their type signature:
 
 ```nail
-// This function CANNOT fail
-add:i = add_numbers(5, 3);
+// string_length CANNOT fail - no !e in its return type
+name_length:i = string_length(`Nail`);
 
-// This function CAN fail - note the !e
-user_input:s!e = io_read_line_prompt(`Enter your name: `);
+// io_read_line_prompt CAN fail - it returns s!e. A result can never
+// sit in a variable, so it must be handled right at the call
+user_input:s = danger(io_read_line_prompt(`Enter your name: `));
 ```
 
 ## Three Ways to Handle Errors
@@ -34,63 +35,79 @@ When you're confident a function won't fail, use `danger`:
 config:s = danger(fs_read(`config.nail`));
 
 // Converting a number we KNOW is valid
-port:i = danger(from(`3000`));
+port:i = danger(int_from(`3000`));
 ```
 
-If the operation fails, the error propagates up automatically with context.
+If the operation fails, the program crashes with the underlying error message.
 
 ### 2. The `safe` Approach: Graceful Handling
 
-When you want to handle errors gracefully, use `safe`:
+When you want to handle errors gracefully, use `safe`. Its second argument is a named function that takes the error (type `e`) and produces the fallback:
 
-```nail
+```nail-fragment
 // Provide a default value if parsing fails
-user_age:i = safe(
-    int_from(age_input),
-    (error:s):i { 
-        print(`Invalid age provided, using default`);
-        r 0; 
-    }
-);
+f default_age(error_msg:e):i {
+    print(`Invalid age provided, using default`);
+    r 0;
+}
+user_age:i = safe(int_from(age_input), default_age);
 
 // Try multiple servers until one works
-response:s = safe(
-    http_get(`https://primary.api.com/data`),
-    (e:s):s {
-        // Primary failed, try backup
-        r safe(
-            http_get(`https://backup.api.com/data`),
-            (e2:s):s { r `{"error": "All servers down"}`; }
-        );
-    }
+f all_servers_down(error_msg:e):HTTP_Response {
+    r HTTP_Response {
+        status = 503,
+        body = `{"error": "All servers down"}`,
+        content_type = `application/json`,
+        headers = hashmap_new()
+    };
+}
+f try_backup(error_msg:e):HTTP_Response {
+    // Primary failed, try backup
+    r safe(
+        http_request(HTTP_Method::Get, `https://backup.api.com/data`, hashmap_new(), ``),
+        all_servers_down
+    );
+}
+response:HTTP_Response = safe(
+    http_request(HTTP_Method::Get, `https://primary.api.com/data`, hashmap_new(), ``),
+    try_backup
 );
 ```
 
-### 3. The `expect` Approach: Assert with Message
+### 3. The `expect` Approach: This Can Never Fail
 
-Similar to `danger` but with a custom panic message:
+`expect` unwraps exactly like `danger` and takes only the result. The difference is intent: `danger` marks a risk you accept, `expect` marks a case you believe impossible, crash loudly if you are wrong:
 
 ```nail
-// This SHOULD work, but if not, we want a clear error
-database:Database = expect(
-    db_connect(`postgresql://localhost/myapp`),
-    `Database connection required for application startup`
-);
+// A local database the app cannot start without -
+// if this fails, something is deeply wrong, so crash loudly
+database:DB_Postgres = expect(db_postgres_connect(`postgres://localhost/myapp`));
 ```
 
 ## Real-World Example: User Registration
 
-```nail
+```nail-fragment
 struct User {
     username:s,
     email:s,
     age:i
 }
 
+// A failed parse becomes -1, which the age range check rejects
+f unparseable_age(parse_error:e):i {
+    print(`Invalid age:`, parse_error);
+    r -1;
+}
+
+// A failed lookup means no stored user, so the name is free
+f missing_user(db_error:e):User {
+    r User { username = ``, email = ``, age = 0 };
+}
+
 f register_user(username_input:s, email_input:s, age_input:s):User!e {
     // Validate username
     if {
-        string_len(username_input) < 3 -> {
+        string_length(username_input) < 3 -> {
             r e(`Username must be at least 3 characters`);
         }
     };
@@ -103,12 +120,7 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
     };
     
     // Parse age - this could fail
-    age:i = safe(
-        int_from(age_input),
-        (parse_error:s):i!e { 
-            r e(array_join([`Invalid age: `, parse_error])); 
-        }
-    );
+    age:i = safe(int_from(age_input), unparseable_age);
     
     // Check age range
     if {
@@ -117,21 +129,16 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
     };
     
     // Check if username already exists
-    existing_user:User!e = db_find_user(username_input);
-    existing_check:b = safe(
-        existing_user,
-        (db_error:s):b { r false; } // No user found is good!
-    );
-    
+    existing_user:User = safe(db_find_user(username_input), missing_user);
     if {
-        existing_check -> { r e(`Username already taken`); }
+        existing_user.username == username_input -> { r e(`Username already taken`); }
     };
     
     // Create user
     new_user:User = User {
-        username: username_input,
-        email: email_input,
-        age: age
+        username = username_input,
+        email = email_input,
+        age = age
     };
     
     // Save to database
@@ -141,34 +148,30 @@ f register_user(username_input:s, email_input:s, age_input:s):User!e {
 }
 
 // Usage
-user_result:User!e = register_user(`alice`, `alice@example.com`, `25`);
-user:User = safe(
-    user_result,
-    (error:s):User {
-        print(array_join([`Registration failed: `, error]));
-        r User { 
-            username: `guest`, 
-            email: `guest@example.com`, 
-            age: 0 
-        };
-    }
-);
+f guest_user(error_msg:e):User {
+    print(`Registration failed:`, error_msg);
+    r User { 
+        username = `guest`, 
+        email = `guest@example.com`, 
+        age = 0 
+    };
+}
+user:User = safe(register_user(`alice`, `alice@example.com`, `25`), guest_user);
 ```
 
 ## Error Context and Tracing
 
-Nail automatically adds context as errors propagate:
+Nail's error messages carry context: stdlib failures name the function that failed and echo the offending input, and your own `e(...)` messages should do the same:
 
-```nail
+```nail-fragment
 f process_order(order_id:s):Receipt!e {
+    // Each danger() unwraps its result, and crashes with the
+    // underlying error message if that step fails
     order:Order = danger(fetch_order(order_id));
-    // If fetch_order fails, error includes: "[process_order] Failed to fetch order"
     
     payment:Payment = danger(process_payment(order));
-    // If process_payment fails: "[process_order] Payment processing failed"
     
     receipt:Receipt = danger(generate_receipt(payment));
-    // If generate_receipt fails: "[process_order] Receipt generation failed"
     
     r receipt;
 }
@@ -178,17 +181,18 @@ f process_order(order_id:s):Receipt!e {
 
 Even in parallel blocks, errors are handled properly:
 
-```nail
+```nail-fragment
+f fallback_preferences(error_msg:e):Preferences {
+    r default_preferences();
+}
+
 p
     user_data:User = danger(fetch_user(user_id));
-    preferences:Preferences = safe(
-        fetch_preferences(user_id),
-        (e:s):Preferences { r default_preferences(); }
-    );
+    preferences:Preferences = safe(fetch_preferences(user_id), fallback_preferences);
     notifications:a:Notification = danger(fetch_notifications(user_id));
-}
+/p
 // All three operations run in parallel
-// If any danger() calls fail, the error is caught here
+// If any danger() call fails, the program crashes with that error
 ```
 
 ## Best Practices
@@ -197,18 +201,20 @@ p
 
 - **`danger`**: When failure means a bug in your code
 - **`safe`**: When failure is expected and you can recover
-- **`expect`**: When failure is unlikely but you want a clear message
+- **`expect`**: When failure should be impossible, and you want the crash to be loud if you are wrong
 
 ### 2. Fail Fast in Development
 
-```nail
+```nail-fragment
+f fallback_config(error_msg:e):Config {
+    r default_config();
+}
+
 // During development
 debug_mode:b = true;
 config:Config = if {
-    debug_mode -> { danger(load_config()); },
-    else -> { 
-        safe(load_config(), (e:s):Config { r default_config(); })
-    }
+    debug_mode -> { r danger(load_config()); },
+    else -> { r safe(load_config(), fallback_config); }
 };
 ```
 
@@ -222,7 +228,7 @@ f validate_price(price:f):f!e {
                 `Invalid price: `, 
                 string_from(price), 
                 `. Price must be non-negative`
-            ])); 
+            ], ``)); 
         },
         price > 1000000.0 -> { 
             r e(`Price exceeds maximum allowed value of 1,000,000`); 
@@ -236,7 +242,7 @@ f validate_price(price:f):f!e {
 
 1. **No Hidden Failures**: Every function that can fail says so in its type
 2. **Explicit Handling**: You must choose how to handle errors
-3. **Automatic Context**: Error messages accumulate context as they propagate
+3. **Messages With Context**: Runtime errors name the failing function and echo the offending input
 4. **Type Safety**: The compiler ensures all errors are handled
 5. **Performance**: Zero-cost abstractions when transpiled to Rust
 

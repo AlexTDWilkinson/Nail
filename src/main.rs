@@ -14,6 +14,7 @@ mod transpiler;
 mod utils;
 use crate::colorizer::ColorScheme;
 use crate::utils::create_welcome_message;
+use rayon::prelude::*;
 use crate::utils::lex_and_parse_thread_logic;
 use std::backtrace::Backtrace;
 use std::panic;
@@ -917,33 +918,37 @@ impl Editor {
         let needle = self.file_dialog_input.to_lowercase();
         let open_paths: Vec<&str> = self.tabs.iter().filter_map(|tab| tab.filename.as_deref()).collect();
         let showing = self.get_current_tab().filename.clone();
-        let mut scored: Vec<(i32, FileEntry)> = Vec::new();
-        for relative in &self.file_index {
-            let mut score = match crate::utils::path_score(&relative.to_lowercase(), &needle) {
-                Some(score) => score,
-                None => continue,
-            };
-            let full = std::path::Path::new(&self.project_root).join(relative).to_string_lossy().to_string();
-            // A file opened recently is far more likely to be wanted than one
-            // never opened at all, and the more recently the more so.
-            let recent = self.recent_files.iter().position(|path| path == &full);
-            if let Some(position) = recent {
-                score += 60 - 5 * position.min(10) as i32;
-            }
-            if open_paths.contains(&full.as_str()) {
-                score += 10;
-            }
-            // With nothing typed the finder is a list of somewhere else to be,
-            // and the file already on screen is not somewhere else. Opening it
-            // and pressing return therefore lands on the file before this one,
-            // which is the move people make most. Once something is typed the
-            // penalty lifts, because then the user is naming a file rather
-            // than picking one, and they may well be naming this one.
-            if needle.is_empty() && showing.as_deref() == Some(full.as_str()) {
-                score -= 100;
-            }
-            scored.push((score, FileEntry { name: relative.clone(), path: full, is_directory: false, is_recent: recent.is_some() }));
-        }
+        // Scored in parallel: this runs on every keystroke over every file in
+        // the project, and each file's score is independent of the others.
+        // The collect keeps the walk's order, so the stable sort below still
+        // means what it says.
+        let mut scored: Vec<(i32, FileEntry)> = self
+            .file_index
+            .par_iter()
+            .filter_map(|relative| {
+                let mut score = crate::utils::path_score(&relative.to_lowercase(), &needle)?;
+                let full = std::path::Path::new(&self.project_root).join(relative).to_string_lossy().to_string();
+                // A file opened recently is far more likely to be wanted than one
+                // never opened at all, and the more recently the more so.
+                let recent = self.recent_files.iter().position(|path| path == &full);
+                if let Some(position) = recent {
+                    score += 60 - 5 * position.min(10) as i32;
+                }
+                if open_paths.contains(&full.as_str()) {
+                    score += 10;
+                }
+                // With nothing typed the finder is a list of somewhere else to be,
+                // and the file already on screen is not somewhere else. Opening it
+                // and pressing return therefore lands on the file before this one,
+                // which is the move people make most. Once something is typed the
+                // penalty lifts, because then the user is naming a file rather
+                // than picking one, and they may well be naming this one.
+                if needle.is_empty() && showing.as_deref() == Some(full.as_str()) {
+                    score -= 100;
+                }
+                Some((score, FileEntry { name: relative.clone(), path: full, is_directory: false, is_recent: recent.is_some() }))
+            })
+            .collect();
         // Stable, so that files scoring the same stay in the alphabetical
         // order the walk left them in rather than shuffling as the user types.
         scored.sort_by(|left, right| right.0.cmp(&left.0));
@@ -4957,9 +4962,6 @@ impl Editor {
             parser::ASTNode::ForLoop { body, .. } => {
                 symbols.extend(self.extract_symbols_from_ast(body));
             }
-            parser::ASTNode::WhileLoop { body, .. } => {
-                symbols.extend(self.extract_symbols_from_ast(body));
-            }
             // Add more node types as needed
             _ => {
                 // For other node types, we don't extract symbols but could add more cases
@@ -5573,22 +5575,29 @@ impl Editor {
     /// each and finding them is a string comparison, so a project of a few
     /// hundred files costs a few milliseconds and is never out of date.
     fn collect_project_symbols(&self) -> Vec<FileSymbol> {
-        let mut symbols = Vec::new();
-        for relative in crate::utils::scan_project_files(std::path::Path::new(&self.project_root)) {
-            if !relative.ends_with(".nail") {
-                continue;
-            }
-            let lines = match self.project_lines(&relative) {
-                Some(lines) => lines,
-                None => continue,
-            };
-            for (index, line) in lines.iter().enumerate() {
-                if let Some(label) = declaration_label(line) {
-                    symbols.push(FileSymbol { label, line: index + 1, file: Some(relative.clone()) });
+        // One task per file: each file is read and scanned independently, and
+        // the reads are what the time goes to. The per-file lists are
+        // flattened in the walk's order, so the result is the same as the
+        // sequential loop gave.
+        let files = crate::utils::scan_project_files(std::path::Path::new(&self.project_root));
+        let per_file: Vec<Vec<FileSymbol>> = files
+            .par_iter()
+            .map(|relative| {
+                if !relative.ends_with(".nail") {
+                    return Vec::new();
                 }
-            }
-        }
-        return symbols;
+                let lines = match self.project_lines(relative) {
+                    Some(lines) => lines,
+                    None => return Vec::new(),
+                };
+                lines
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, line)| declaration_label(line).map(|label| FileSymbol { label, line: index + 1, file: Some(relative.clone()) }))
+                    .collect()
+            })
+            .collect();
+        return per_file.into_iter().flatten().collect();
     }
 
     /// One project file's text, taken from the tab holding it when there is
@@ -5619,26 +5628,33 @@ impl Editor {
         if needle.chars().count() < 2 {
             return;
         }
-        for relative in crate::utils::scan_project_files(std::path::Path::new(&self.project_root)) {
-            let lines = match self.project_lines(&relative) {
-                Some(lines) => lines,
-                None => continue,
-            };
-            for (index, line) in lines.iter().enumerate() {
-                if !line.to_lowercase().contains(&needle) {
-                    continue;
-                }
-                // Long lines are cut rather than wrapped, because a result
-                // list is for choosing between places and not for reading the
-                // code that is about to be opened anyway.
-                let text: String = line.trim().chars().take(160).collect();
-                self.symbol_entries.push(FileSymbol { label: text, line: index + 1, file: Some(relative.clone()) });
-                if self.symbol_entries.len() >= Self::PROJECT_SEARCH_LIMIT {
-                    self.symbol_matches = (0..self.symbol_entries.len()).collect();
-                    return;
-                }
-            }
-        }
+        // One task per file, since the lowercasing of every line is where the
+        // time goes. Each file collects at most the overall limit, the
+        // flatten below keeps the walk's order, and the final truncate gives
+        // the same first two hundred hits the sequential loop found. Files
+        // past the limit are still read, which is the price of the split, and
+        // is smaller than the win of scanning them all at once.
+        let files = crate::utils::scan_project_files(std::path::Path::new(&self.project_root));
+        let per_file: Vec<Vec<FileSymbol>> = files
+            .par_iter()
+            .map(|relative| {
+                let lines = match self.project_lines(relative) {
+                    Some(lines) => lines,
+                    None => return Vec::new(),
+                };
+                lines
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, line)| line.to_lowercase().contains(&needle))
+                    // Long lines are cut rather than wrapped, because a result
+                    // list is for choosing between places and not for reading
+                    // the code that is about to be opened anyway.
+                    .map(|(index, line)| FileSymbol { label: line.trim().chars().take(160).collect(), line: index + 1, file: Some(relative.clone()) })
+                    .take(Self::PROJECT_SEARCH_LIMIT)
+                    .collect()
+            })
+            .collect();
+        self.symbol_entries = per_file.into_iter().flatten().take(Self::PROJECT_SEARCH_LIMIT).collect();
         self.symbol_matches = (0..self.symbol_entries.len()).collect();
     }
 
@@ -5700,21 +5716,25 @@ impl Editor {
     /// anybody having to invent a syntax for saying so.
     fn filter_symbols(&mut self) {
         let needle = self.symbol_filter.to_lowercase();
-        let mut scored: Vec<(i32, usize)> = Vec::new();
-        for (index, symbol) in self.symbol_entries.iter().enumerate() {
-            // The name is what was asked for, so a match in it counts for
-            // more than the same letters found in the path. A match in the
-            // path still counts, because that is how one file's declarations
-            // are picked out of the whole project's.
-            let by_name = crate::utils::fuzzy_score(&symbol.label.to_lowercase(), &needle).map(|score| score + 40);
-            let by_file = match &symbol.file {
-                Some(file) => crate::utils::fuzzy_score(&format!("{} {}", symbol.label, file).to_lowercase(), &needle),
-                None => None,
-            };
-            if let Some(score) = by_name.into_iter().chain(by_file).max() {
-                scored.push((score, index));
-            }
-        }
+        // Scored in parallel on every keystroke, one task per symbol. The
+        // collect keeps collection order, so the stable sort below holds.
+        let mut scored: Vec<(i32, usize)> = self
+            .symbol_entries
+            .par_iter()
+            .enumerate()
+            .filter_map(|(index, symbol)| {
+                // The name is what was asked for, so a match in it counts for
+                // more than the same letters found in the path. A match in the
+                // path still counts, because that is how one file's declarations
+                // are picked out of the whole project's.
+                let by_name = crate::utils::fuzzy_score(&symbol.label.to_lowercase(), &needle).map(|score| score + 40);
+                let by_file = match &symbol.file {
+                    Some(file) => crate::utils::fuzzy_score(&format!("{} {}", symbol.label, file).to_lowercase(), &needle),
+                    None => None,
+                };
+                by_name.into_iter().chain(by_file).max().map(|score| (score, index))
+            })
+            .collect();
         // Stable, so equal scores keep the order they were collected in,
         // which is file by file and top to bottom within each.
         scored.sort_by(|left, right| right.0.cmp(&left.0));

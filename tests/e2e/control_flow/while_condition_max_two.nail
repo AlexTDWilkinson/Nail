@@ -1,6 +1,0 @@
-nail latest
-// E2E: while with an always-true comparison capped at two iterations
-while 2 > 1 max 2 {
-    print(`beat`);
-}
-print(`end`);

@@ -416,12 +416,16 @@ fn main() {
         // own copy of the nail crate. A development checkout uses the system
         // cargo and the crate next door.
         let bundle = nail::toolchain::BundledToolchain::detect();
+        let explicit_nail_path = args.iter().any(|arg| arg.starts_with("--nail-path="));
         let nail_crate_path = match &bundle {
             Some(bundle) => bundle.nail_crate_path().display().to_string(),
             // The build directory sits beside the source rather than beside
             // the crate, so a relative --nail-path would resolve from the
-            // wrong place. Anchor it to where the command was run.
-            None => fs::canonicalize(&nail_path).map(|path| path.display().to_string()).unwrap_or_else(|_| nail_path.clone()),
+            // wrong place. An explicit --nail-path is anchored to where the
+            // command was run. Without one, the checkout this nailc was
+            // compiled from is the crate, wherever the command was run from.
+            None if explicit_nail_path => fs::canonicalize(&nail_path).map(|path| path.display().to_string()).unwrap_or_else(|_| nail_path.clone()),
+            None => env!("CARGO_MANIFEST_DIR").to_string(),
         };
 
         // Written only when changed, so cargo's mtime fingerprints survive and
@@ -474,7 +478,14 @@ fn main() {
 
         // Arguments after the file are the program's, not ours.
         let program_args: Vec<&String> = args.iter().skip(2).filter(|arg| !arg.starts_with("--")).collect();
-        let error = std::os::unix::process::CommandExt::exec(process::Command::new(&binary).args(program_args));
+        // The program runs in its source file's directory, the same rule
+        // imports follow, so a program that reads a file beside itself works
+        // no matter where `nail run` was typed. The binary path is made
+        // absolute first: a relative path would resolve against the new
+        // working directory and miss.
+        let run_dir = Path::new(filename).parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        let binary = fs::canonicalize(&binary).unwrap_or(binary);
+        let error = std::os::unix::process::CommandExt::exec(process::Command::new(&binary).args(program_args).current_dir(run_dir));
         eprintln!("Cannot run {}: {}", binary.display(), error);
         process::exit(1);
     }

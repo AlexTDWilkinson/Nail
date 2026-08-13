@@ -1,0 +1,7 @@
+error: 'sum' shadows a variable from an enclosing scope, and the shadow dies at the end of this block
+  --> tests/errors/shadow_outer_in_loop.nail:4:22
+   |
+ 4 |     sum:i = sum + num;
+   |                      ^
+help: code after this block will see the outer 'sum' again, untouched. Give this variable a different name, or use reduce to accumulate a value across iterations
+1 error found

@@ -19,13 +19,16 @@ label_sum:i = label + 1;
 print(label_use);
 print(label_sum);
 
-// Shadow inside a revisitable region: the inner binding must not pin the
-// outer one — the outer binding's last use after the loop still moves.
+// Shadow inside a revisitable region: a same-scope shadow in the body gets
+// distinct binding ids per binding, and the outer heap binding's last use
+// after the loop still moves. (Shadowing an OUTER name in the body is a
+// compile error, so the body uses its own name.)
 message:s = `outer`;
 numbers:a:i = [1, 2, 3];
 labels:a:s = map num in numbers {
-    message:s = string_from(num);
-    y message;
+    label_text:s = string_from(num);
+    label_text:s = string_concat([label_text, `.`]);
+    y label_text;
 };
 final_message:s = string_concat([message, `!`]);
 print(final_message);

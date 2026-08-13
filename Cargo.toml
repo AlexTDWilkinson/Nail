@@ -12,10 +12,6 @@ path = "src/main.rs"
 name = "nailc"
 path = "src/bin/nailc.rs"
 
-[[bin]]
-name = "nail-website"
-path = "src/bin/nail-website.rs"
-
 # The launcher. It resolves a file's version line, installs that exact release
 # if it is missing, and hands the file over. It is installed as `nail`, the
 # only name anyone types. It cannot be called `nail` here, because that name

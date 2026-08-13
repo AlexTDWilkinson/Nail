@@ -1,0 +1,4 @@
+nail latest
+count:i = 1;
+count = 2;
+print(count);

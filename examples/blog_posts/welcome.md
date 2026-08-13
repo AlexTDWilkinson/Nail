@@ -4,8 +4,8 @@ Nail is a programming language that removes unnecessary complexity while maintai
 
 ## Key Features
 
-- **No variables** - Everything is immutable by default
-- **No loops** - Use functional programming with map, filter, and reduce
+- **No mutation** - Nail has variables, but every binding is immutable, unconditionally
+- **Iteration built in** - map, filter, and reduce are language keywords, alongside for, while (with its required max bound), and loop
 - **Automatic parallelism** - Code runs concurrently without explicit threading
 - **Built-in async** - All I/O operations are async by default
 

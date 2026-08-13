@@ -83,7 +83,7 @@ f update(state:Viewer, input:GAME_Input):Viewer {
 }
 
 config:GAME_Config = GAME_Config { title = `Nail model viewer`, width = 900, height = 640, target_fps = 60, pixel_size = 1, physics_hz = 0 };
-monument:i = danger(game3d_mesh_load(`examples/monument.glb`));
+monument:i = danger(game3d_mesh_load(`monument.glb`));
 start:Viewer = Viewer { yaw = 0.6, pitch = 0.35, distance = 2.6, last_mouse_x = 0.0, last_mouse_y = 0.0, mesh = monument, done = false };
 
 final_state:Viewer = danger(game_run(config, start));

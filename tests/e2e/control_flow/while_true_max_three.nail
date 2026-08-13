@@ -1,6 +1,0 @@
-nail latest
-// E2E: while true bounded by max runs exactly three times
-while true max 3 {
-    print(`tick`);
-}
-print(`done`);

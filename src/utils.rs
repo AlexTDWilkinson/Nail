@@ -2484,14 +2484,47 @@ fn run_action(editor: &mut Editor, action: Action, tx: &Sender<EditorMessage>, t
         }
         Action::CycleExampleFiles => {
             log::info!("Cycling through example files");
-            let example_files = match fs::read_dir("examples") {
-                Ok(dir) => dir.filter_map(Result::ok).filter(|entry| entry.path().extension().map_or(false, |ext| ext == "nail")).map(|entry| entry.path().to_string_lossy().to_string()).collect::<Vec<String>>(),
+            // The examples directory is found by walking up from the open
+            // file, then from where the IDE was started, then from the
+            // checkout the IDE was compiled from. Launch directory stops
+            // mattering: F5 works wherever the IDE was started.
+            let examples_dir = {
+                let mut anchors: Vec<PathBuf> = Vec::new();
+                if let Some(name) = &editor.get_current_tab().filename {
+                    if let Ok(canonical) = fs::canonicalize(name) {
+                        anchors.push(canonical);
+                    }
+                }
+                if let Ok(cwd) = std::env::current_dir() {
+                    anchors.push(cwd);
+                }
+                anchors.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+                anchors.iter().flat_map(|anchor| anchor.ancestors()).map(|dir| dir.join("examples")).find(|candidate| candidate.is_dir())
+            };
+            let examples_dir = match examples_dir {
+                Some(dir) => dir,
+                None => {
+                    editor.build_status = BuildStatus::Failed("Examples directory not found".to_string());
+                    return false;
+                }
+            };
+            // Relative to the working directory when it is inside it, so tab
+            // titles stay short in the everyday checkout case.
+            let display_dir = std::env::current_dir().ok().and_then(|cwd| examples_dir.strip_prefix(&cwd).map(Path::to_path_buf).ok()).unwrap_or_else(|| examples_dir.clone());
+            let mut example_files = match fs::read_dir(&examples_dir) {
+                Ok(dir) => dir
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "nail"))
+                    .filter_map(|entry| entry.path().file_name().map(|name| display_dir.join(name).to_string_lossy().to_string()))
+                    .collect::<Vec<String>>(),
                 Err(e) => {
                     log::warn!("Failed to read examples directory: {}", e);
                     editor.build_status = BuildStatus::Failed("Examples directory not found".to_string());
                     return false;
                 }
             };
+            // read_dir order is arbitrary, which would make F5 jump around.
+            example_files.sort();
 
             if example_files.is_empty() {
                 editor.build_status = BuildStatus::Failed("No example files found".to_string());
@@ -2501,7 +2534,10 @@ fn run_action(editor: &mut Editor, action: Action, tx: &Sender<EditorMessage>, t
             // Find current file index
             let current_tab = editor.get_current_tab();
             let current_index = match &current_tab.filename {
-                Some(current) => example_files.iter().position(|file| file == current).unwrap_or(0),
+                Some(current) => {
+                    let current_canonical = fs::canonicalize(current).ok();
+                    example_files.iter().position(|file| file == current || (current_canonical.is_some() && fs::canonicalize(file).ok() == current_canonical)).unwrap_or(0)
+                }
                 None => 0,
             };
 
@@ -3039,14 +3075,19 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             );
             log::info!("{}", compiler_timings);
 
-            // Step 3: Write Rust code into the persistent transpilation project.
-            // The directory is kept between builds so cargo can reuse target/
-            // instead of recompiling every dependency from scratch. Files are
-            // only rewritten when their content changed, preserving cargo's
-            // mtime-based fingerprints where possible.
-            let transpilation_dir = Path::new("./transpilation");
-            let transpilation_src_dir = transpilation_dir.join("src");
-            if let Err(e) = fs::create_dir_all(&transpilation_src_dir) {
+            // Step 3: Write Rust code into the persistent build project, the
+            // same .nail-build directory beside the source that `nail run`
+            // and `nail build` use. The directory is kept between builds so
+            // cargo can reuse target/ instead of recompiling every dependency
+            // from scratch. Files are only rewritten when their content
+            // changed, preserving cargo's mtime-based fingerprints where
+            // possible.
+            let build_dir = match &filename {
+                Some(name) => Path::new(name).parent().unwrap_or(Path::new(".")).join(".nail-build"),
+                None => PathBuf::from(".nail-build"),
+            };
+            let build_src_dir = build_dir.join("src");
+            if let Err(e) = fs::create_dir_all(&build_src_dir) {
                 let mut editor = editor_arc.lock().unwrap();
                 editor.build_status = BuildStatus::Failed(format!("Failed to create src directory: {}", e));
                 log::error!("Failed to create src directory: {}", e);
@@ -3055,14 +3096,17 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
 
             // Installed bundles build with their own pinned toolchain and
             // nail crate; development checkouts use the system cargo and the
-            // repo's nail crate at "..".
+            // checkout this IDE was compiled from, wherever the IDE was
+            // started. The build directory sits beside the source rather than
+            // beside the crate, so a relative path would resolve from the
+            // wrong place.
             let bundle = nail::toolchain::BundledToolchain::detect();
             let nail_crate_path = match &bundle {
                 Some(bundle) => bundle.nail_crate_path().display().to_string(),
-                None => "..".to_string(),
+                None => env!("CARGO_MANIFEST_DIR").to_string(),
             };
             let transpilation_toml = transpiler.generate_cargo_toml("nail_transpilation", &nail_crate_path);
-            let transpilation_toml_path = transpilation_dir.join("Cargo.toml");
+            let transpilation_toml_path = build_dir.join("Cargo.toml");
             let toml_unchanged = fs::read_to_string(&transpilation_toml_path).map(|existing| existing == transpilation_toml).unwrap_or(false);
             if !toml_unchanged {
                 if let Err(e) = fs::write(&transpilation_toml_path, &transpilation_toml) {
@@ -3073,7 +3117,7 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                 }
             }
 
-            let temp_file_path = transpilation_src_dir.join("main.rs");
+            let temp_file_path = build_src_dir.join("main.rs");
             let main_rs_unchanged = fs::read_to_string(&temp_file_path).map(|existing| existing == rust_code).unwrap_or(false);
             if !main_rs_unchanged {
                 if let Err(e) = fs::write(&temp_file_path, &rust_code) {
@@ -3100,7 +3144,7 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                 Some(bundle) => bundle.cargo_command(),
                 None => Command::new("cargo"),
             };
-            let output = cargo.arg("build").arg("--release").current_dir(transpilation_dir).output();
+            let output = cargo.arg("build").arg("--release").current_dir(&build_dir).output();
             let compile_elapsed = compile_started.elapsed();
 
             match output {
@@ -3114,12 +3158,17 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
 
                         let binary_path = match &bundle {
                             Some(bundle) => bundle.built_binary_path("nail_transpilation"),
-                            None => transpilation_dir.join("target/release/nail_transpilation"),
+                            None => build_dir.join("target/release/nail_transpilation"),
                         };
-                        let destination_path = Path::new("./build");
+                        // Beside the source and named after it, the same
+                        // place `nail build` puts it.
+                        let destination_path = match &filename {
+                            Some(name) => Path::new(name).with_extension(""),
+                            None => PathBuf::from("build"),
+                        };
                         // Copy (not move) so cargo's target/ stays intact and the
                         // next build can skip even the final link when unchanged.
-                        // Unlink first so copying succeeds even if ./build is running.
+                        // Unlink first so copying succeeds even if the binary is running.
                         let _ = fs::remove_file(&destination_path);
                         if let Err(e) = fs::copy(&binary_path, &destination_path) {
                             log::error!("Failed to copy binary: {}", e);
@@ -3243,12 +3292,14 @@ fn parse_profile_dump(text: &str) -> Option<ProfileData> {
     Some(ProfileData { source_hash, wall_nanos, functions })
 }
 
-/// Polls .nail_profile.json about once a second. A stat of the mtime is the
-/// only steady cost, the file is re-read and re-parsed on change only. A
-/// missing or unreadable file just means no annotations.
+/// Polls .nail_profile.json about once a second, both beside the file on
+/// screen (where a program started with `nail run` writes it) and in the
+/// IDE's own working directory. A stat of the mtime is the only steady cost,
+/// a file is re-read and re-parsed on change only. Missing or unreadable
+/// files just mean no annotations.
 pub fn profile_watcher_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMessage>) {
-    const PROFILE_DUMP_PATH: &str = ".nail_profile.json";
-    let mut last_mtime: Option<std::time::SystemTime> = None;
+    const PROFILE_DUMP_NAME: &str = ".nail_profile.json";
+    let mut last_mtimes: std::collections::HashMap<PathBuf, std::time::SystemTime> = std::collections::HashMap::new();
     loop {
         match rx.try_recv() {
             Ok(EditorMessage::Shutdown) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -3258,24 +3309,44 @@ pub fn profile_watcher_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver
             _ => {}
         }
 
-        match fs::metadata(PROFILE_DUMP_PATH).and_then(|meta| meta.modified()) {
-            Ok(mtime) => {
-                if last_mtime != Some(mtime) {
-                    last_mtime = Some(mtime);
-                    if let Some(data) = fs::read_to_string(PROFILE_DUMP_PATH).ok().and_then(|text| parse_profile_dump(&text)) {
-                        let mut editor = lock(&editor_arc);
-                        editor.profile_dumps.insert(data.source_hash.clone(), data.clone());
-                        editor.profile_data = Some(data);
-                    }
+        let mut candidates = vec![PathBuf::from(PROFILE_DUMP_NAME)];
+        {
+            let editor = lock(&editor_arc);
+            if let Some(name) = &editor.get_current_tab().filename {
+                if let Some(parent) = Path::new(name).parent().filter(|parent| !parent.as_os_str().is_empty()) {
+                    candidates.push(parent.join(PROFILE_DUMP_NAME));
                 }
             }
-            Err(_) => {
-                // Dump deleted or unreadable, drop annotations rather than
-                // keep showing timings that no longer exist on disk
-                if last_mtime.take().is_some() {
-                    let mut editor = lock(&editor_arc);
-                    editor.profile_data = None;
+        }
+
+        let mut any_present = false;
+        for candidate in candidates {
+            match fs::metadata(&candidate).and_then(|meta| meta.modified()) {
+                Ok(mtime) => {
+                    any_present = true;
+                    if last_mtimes.get(&candidate) != Some(&mtime) {
+                        last_mtimes.insert(candidate.clone(), mtime);
+                        if let Some(data) = fs::read_to_string(&candidate).ok().and_then(|text| parse_profile_dump(&text)) {
+                            let mut editor = lock(&editor_arc);
+                            editor.profile_dumps.insert(data.source_hash.clone(), data.clone());
+                            editor.profile_data = Some(data);
+                        }
+                    }
                 }
+                Err(_) => {
+                    last_mtimes.remove(&candidate);
+                }
+            }
+        }
+        if !any_present && !last_mtimes.is_empty() {
+            last_mtimes.clear();
+        }
+        if !any_present {
+            // Dumps deleted or unreadable, drop annotations rather than
+            // keep showing timings that no longer exist on disk
+            let mut editor = lock(&editor_arc);
+            if editor.profile_data.is_some() {
+                editor.profile_data = None;
             }
         }
 
@@ -3387,22 +3458,33 @@ pub fn lex_and_parse_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<E
             _ => {}
         }
 
-        // Lock the editor to access its content. The filename comes along so
-        // imports resolve relative to the file, not the process's directory.
-        let (tab_index, content, filename) = {
+        // Lock the editor and hash the lines in place. The join into one
+        // String only happens when the hash says something changed, so an
+        // idle editor costs a scan and no allocation, four times a second.
+        // The filename comes along so imports resolve relative to the file,
+        // not the process's directory.
+        let changed = {
             let editor = lock(&editor_arc);
-            (editor.tab_index, editor.get_current_tab().content.join("\n"), editor.get_current_tab().filename.clone())
+            let tab = editor.get_current_tab();
+            let mut hasher = DefaultHasher::new();
+            for line in &tab.content {
+                line.hash(&mut hasher);
+            }
+            let content_hash = hasher.finish();
+            if last_processed == Some((editor.tab_index, content_hash)) {
+                None
+            } else {
+                last_processed = Some((editor.tab_index, content_hash));
+                Some((editor.tab_index, tab.content.join("\n"), tab.filename.clone()))
+            }
         };
-
-        // Skip the whole pipeline when nothing changed since the last run
-        let mut hasher = DefaultHasher::new();
-        content.hash(&mut hasher);
-        let content_hash = hasher.finish();
-        if last_processed == Some((tab_index, content_hash)) {
-            thread::sleep(Duration::from_millis(250));
-            continue;
-        }
-        last_processed = Some((tab_index, content_hash));
+        let (tab_index, content, filename) = match changed {
+            Some(taken) => taken,
+            None => {
+                thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
 
         // Run the lexer on the content, keeping the source map so an error
         // in an imported file can say which file and line it is really on

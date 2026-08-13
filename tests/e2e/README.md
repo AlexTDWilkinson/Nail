@@ -3,47 +3,47 @@
 This directory is the **sanity harness** for the Nail language. Every test here
 is a complete Nail program that is transpiled, compiled to a native executable,
 executed, and whose stdout is compared **byte-for-byte** against a checked-in
-expectation. If `./test_e2e.sh` is green, the entire pipeline — lexer, parser,
-type checker, transpiler, generated Rust, runtime stdlib behavior — still
-produces the exact same observable results.
+expectation. If `./scripts/test_e2e.sh` is green, the entire pipeline (lexer,
+parser, type checker, transpiler, generated Rust, runtime stdlib behavior)
+still produces the exact same observable results.
 
 **Run it after every change to the language implementation.** The fast stage
-scripts (`test_lexer_parser.sh`, `test_type_checker.sh`, `test_transpiler.sh`)
-only prove that code compiles; this suite proves programs still *behave* the
-same. It exists specifically so AI-driven changes to the compiler cannot
-silently alter program semantics.
+scripts (`scripts/test_lexer_parser.sh`, `scripts/test_type_checker.sh`,
+`scripts/test_transpiler.sh`) only prove that code compiles. This suite proves
+programs still *behave* the same. It exists specifically so AI-driven changes
+to the compiler cannot silently alter program semantics.
 
 ```bash
-./test_e2e.sh                                  # everything
-./test_e2e.sh tests/e2e/collections            # one category
-./test_e2e.sh tests/e2e/basics/hello_world.nail  # one test
+./scripts/test_e2e.sh                                  # everything
+./scripts/test_e2e.sh tests/e2e/collections            # one category
+./scripts/test_e2e.sh tests/e2e/basics/hello_world.nail  # one test
 ```
 
 The harness transpiles every test, builds them all as bins of ONE shared Cargo
-project (dependencies compile once; the build is incremental across runs), then
-runs each executable in a fresh empty working directory with a timeout.
+project (dependencies compile once, and the build is incremental across runs),
+then runs each executable in a fresh empty working directory with a timeout.
 
 ## Test contract
 
-- `tests/e2e/<category>/<name>.nail` — a small, focused, self-contained program
-- `tests/e2e/<category>/<name>.stdout` — its exact expected stdout (bytes)
-- `tests/e2e/<category>/<name>.exitcode` — optional expected exit code (default 0)
-- `tests/e2e/<category>/<name>.stderr` — optional expected stderr, compared
+- `tests/e2e/<category>/<name>.nail` - a small, focused, self-contained program
+- `tests/e2e/<category>/<name>.stdout` - its exact expected stdout (bytes)
+- `tests/e2e/<category>/<name>.exitcode` - optional expected exit code (default 0)
+- `tests/e2e/<category>/<name>.stderr` - optional expected stderr, compared
   after Rust panic scaffolding is stripped (the `thread ... panicked at`
   location line, the `RUST_BACKTRACE` note, and blank lines). This is how
-  `danger(...)` panic messages are pinned — see
+  `danger(...)` panic messages are pinned, see
   `runtime_errors/danger_stderr_message`
 - Tests must be **deterministic**: same output on every run, on any machine
 - Each test runs with cwd set to a fresh empty directory: filesystem tests must
   first create anything they read, and may write freely
 - Keep tests small: one behavior, a handful of `print` calls. Hundreds of tiny
-  programs beat dozens of huge ones — a failure should point at one feature
+  programs beat dozens of huge ones, a failure should point at one feature
 
 The `runtime_errors/` category pins the exact text of stdlib runtime error
 messages (the style guide in `nail_language_spec.md` applies to them too:
 name the function, echo the offending input). Most of these tests route the
 error through a `safe(...)` handler that prints `error_msg`, so the message
-is enforced through the normal stdout comparison; the `danger` path is pinned
+is enforced through the normal stdout comparison. The `danger` path is pinned
 via `.stderr` goldens. When changing a runtime message on purpose, update the
 golden in the same commit.
 
@@ -53,11 +53,11 @@ golden in the same commit.
   `crypto_uuid_v4`, `array_shuffle`. Assert derived facts instead, e.g.
   `print(rand_val >= 0.0);`
 - Hashmap iteration order is not deterministic: never print `hashmap_keys` /
-  `hashmap_values` results directly — sort them first with `array_sort`, or
+  `hashmap_values` results directly. Sort them first with `array_sort`, or
   assert via `hashmap_get` / `hashmap_len` / `hashmap_contains_key`
 - Don't print from inside `c`/`p`/`spawn` concurrency constructs when ordering
-  could race; compute inside, print after the block
-- Avoid float operations with inexact decimal results (`0.1 + 0.2`); stick to
+  could race: compute inside, print after the block
+- Avoid float operations with inexact decimal results (`0.1 + 0.2`). Stick to
   halves and quarters, which print exactly
 
 ## Output formatting facts (verified against the runtime)
@@ -80,9 +80,9 @@ space, then appends one newline per call:
 | `print(empty_int_array);`     | `[]`              |
 
 - `\n` inside a backtick string becomes a real newline when printed
-- `\t` does **not** — it prints literally as `\t`. Avoid tabs
+- `\t` does **not**, it prints literally as `\t`. Avoid tabs
 - `${...}` string interpolation is NOT implemented: it prints literally.
-  Never use it; pass multiple arguments to `print` instead
+  Never use it, pass multiple arguments to `print` instead
 
 ## Nail syntax cheatsheet (for test authors)
 
@@ -91,7 +91,7 @@ are immutable, declared `name:type = expr;`. No single-letter identifiers.
 Types: `i` int, `f` float, `s` string, `b` bool, `a:T` array, `h<K,V>` hashmap,
 `StructName`, `EnumName`, `T!e` result.
 
-```nail
+```nail-fragment
 // functions ('f', return with 'r'; result types with !e; errors via e(...))
 f divide(dividend:i, divisor:i):i!e {
     if {
@@ -144,18 +144,18 @@ Common pitfalls:
 
 - `array_get`, `array_first`, `array_last`, `array_slice`, `hashmap_get`,
   `hashmap_remove`, `int_from`, `float_from`, `string_slice`, `math_factorial`,
-  `math_divide`, and all `regex_*` return results — wrap in `danger(...)` or
-  `safe(...)`
+  `math_divide`, and all `regex_*` return results, so wrap them in
+  `danger(...)` or `safe(...)`
 - Function names come from the stdlib registry (`src/stdlib_registry/`), which
   is the source of truth for names, parameter types, and return types
-- Don't name variables after keywords (`map`, `filter`, `from`, `when`, `max`,
-  `in`, `loop`, `step`, `insert`, ...)
+- Don't name variables after keywords (`map`, `filter`, `from`, `when`,
+  `in`, `loop`, `while`, `import`, ...)
 
 ## When a test fails
 
-1. **The change broke the language** — most likely. Fix the compiler, not the
+1. **The change broke the language**, most likely. Fix the compiler, not the
    test. (CLAUDE.md: never work around compiler bugs.)
-2. **The change intentionally altered behavior** — update the `.stdout` file in
+2. **The change intentionally altered behavior**: update the `.stdout` file in
    the same commit, and say why in the commit message.
 3. Never delete or weaken a test to make the suite pass.
 
@@ -163,6 +163,6 @@ Common pitfalls:
 
 Every new language feature or stdlib function should land with e2e coverage.
 Write the `.nail` program, reason out the exact expected stdout by hand, save
-it as `.stdout`, then run `./test_e2e.sh tests/e2e/<category>/<name>.nail` to
-confirm reality matches your reasoning. If it doesn't, understand why before
-touching either file — a surprise here is usually a compiler bug worth keeping.
+it as `.stdout`, then run `./scripts/test_e2e.sh tests/e2e/<category>/<name>.nail`
+to confirm reality matches your reasoning. If it doesn't, understand why before
+touching either file. A surprise here is usually a compiler bug worth keeping.

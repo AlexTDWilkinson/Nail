@@ -164,5 +164,5 @@ config:HTTP_Config = HTTP_Config {
 
 // Start the server
 print(`Starting blog server on port `, port, `...`);
-print(`Loading posts from examples/blog_posts/*.md`);
+print(`Loading posts from blog_posts/*.md beside this file`);
 http_server(port, config);

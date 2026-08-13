@@ -1,0 +1,7 @@
+nail latest
+count:i = 1;
+if {
+    true -> { count:i = 99; print(count); },
+    else -> {}
+}
+print(count);

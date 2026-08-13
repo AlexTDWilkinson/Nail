@@ -534,10 +534,9 @@ f push_out_x(pos_x:f, pos_y:f, old_x:f, plat:Platform):f {
 }
 
 f collide_x(try_x:f, pos_y:f, old_x:f, platforms:a:Platform):f {
-    result:f = try_x;
-    for plat in platforms {
-        result = push_out_x(result, pos_y, old_x, plat);
-    }
+    result:f = reduce acc plat in platforms from try_x {
+        y push_out_x(acc, pos_y, old_x, plat);
+    };
     r result;
 }
 
@@ -578,10 +577,10 @@ f push_out_y(landing:Landing, pos_x:f, old_y:f, plat:Platform):Landing {
 }
 
 f collide_y(try_y:f, pos_x:f, old_y:f, fall_vel:f, platforms:a:Platform):Landing {
-    result:Landing = Landing { land_y = try_y, land_vel = fall_vel, grounded = false, nudge_x = 0.0 };
-    for plat in platforms {
-        result = push_out_y(result, pos_x, old_y, plat);
-    }
+    start:Landing = Landing { land_y = try_y, land_vel = fall_vel, grounded = false, nudge_x = 0.0 };
+    result:Landing = reduce acc plat in platforms from start {
+        y push_out_y(acc, pos_x, old_y, plat);
+    };
     r result;
 }
 
@@ -1455,16 +1454,14 @@ f view(state:Platformer):GAME_Frame {
     coin_shapes:a:GAME_Shape = array_concat(coin_discs, coin_glints);
     score:i = taken_count(state.coins);
 
-    // Spikes and enemies are several shapes each, so they are gathered rather
-    // than mapped: an array of arrays is not a thing Nail has.
-    hazard_shapes:a:GAME_Shape = [];
-    for spike in level_spikes(level) {
-        hazard_shapes = array_concat(hazard_shapes, spike_shapes(spike, cam));
-    }
-    foe_shapes:a:GAME_Shape = [];
-    for foe in state.foes {
-        foe_shapes = array_concat(foe_shapes, enemy_shapes(foe, cam));
-    }
+    // Spikes and enemies are several shapes each, so they are gathered with
+    // reduce rather than mapped: an array of arrays is not a thing Nail has.
+    hazard_shapes:a:GAME_Shape = reduce acc spike in level_spikes(level) from no_shapes() {
+        y array_concat(acc, spike_shapes(spike, cam));
+    };
+    foe_shapes:a:GAME_Shape = reduce acc foe in state.foes from no_shapes() {
+        y array_concat(acc, enemy_shapes(foe, cam));
+    };
 
     // The goal flag, the player, and the numbers on screen.
     goal_x:f = flag_x(level);

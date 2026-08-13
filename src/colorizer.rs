@@ -96,49 +96,51 @@ lazy_static! {
     // The light palette keeps each token in the same hue family as the dark
     // one, so switching themes never rewires what a color means. Every value
     // was checked against the backgrounds it can sit on (editor, current
-    // line, panels) and holds at least a 4.5:1 WCAG contrast ratio, except
-    // the statement terminator, which is dimmed on purpose and holds 3:1.
+    // line, panels) and holds at least a 7:1 WCAG AAA contrast ratio, except
+    // the two dimmed punctuation marks, which hold 4.5:1. Light themes need
+    // the higher floor: thin terminal glyphs on a bright ground wash out at
+    // ratios that read fine on a dark one.
     pub static ref LIGHT_THEME: ColorScheme = ColorScheme {
-        function: hex_to_color("#0550AE"),      // Deep Blue
-        const_decl: hex_to_color("#BB3043"),    // Ruby Red
-        var_decl: hex_to_color("#953800"),      // Burnt Orange
-        if_decl: hex_to_color("#7647CA"),       // Electric Purple
-        else_decl: hex_to_color("#6F42C1"),     // Medium Purple
-        arrow_decl: hex_to_color("#0E726A"),    // Teal
+        function: hex_to_color("#054598"),      // Deep Blue
+        const_decl: hex_to_color("#89212A"),    // Ruby Red
+        var_decl: hex_to_color("#7D3000"),      // Burnt Orange
+        if_decl: hex_to_color("#5E29A0"),       // Deep Purple
+        else_decl: hex_to_color("#5C2E9D"),     // Medium Purple
+        arrow_decl: hex_to_color("#0E524A"),    // Teal
         identifier: hex_to_color("#1F2328"),    // Near Black
-        unsigned_int: hex_to_color("#9E4A24"),  // Sienna
-        signed_int: hex_to_color("#536E1B"),    // Olive Green
-        float: hex_to_color("#0A7161"),         // Deep Teal Green
-        operator: hex_to_color("#0761CC"),      // Bright Blue
-        keyword: hex_to_color("#8F258F"),       // Royal Purple
+        unsigned_int: hex_to_color("#76361D"),  // Sienna
+        signed_int: hex_to_color("#394E13"),    // Olive Green
+        float: hex_to_color("#0A5343"),         // Deep Teal Green
+        operator: hex_to_color("#074696"),      // Navy Blue
+        keyword: hex_to_color("#7B1E7B"),       // Royal Purple
         comma: hex_to_color("#59636E"),         // Slate Gray
-        string_literal: hex_to_color("#116329"), // Forest Green
-        identifier_type: hex_to_color("#046E90"), // Azure
-        unknown: hex_to_color("#59636E"),       // Slate Gray
-        parenthesis: hex_to_color("#865A00"),   // Dark Gold
-        block: hex_to_color("#3A5DCF"),         // Indigo Blue
-        end_statement: hex_to_color("#79818E"), // Dimmed Gray
-        async_keyword: hex_to_color("#7A5E00"),  // Olive Gold
-        parallel_keyword: hex_to_color("#9D4E00"), // Coral Brown
-        struct_keyword: hex_to_color("#AD337C"), // Deep Pink
-        enum_keyword: hex_to_color("#6639BA"),   // Violet
-        return_keyword: hex_to_color("#B71C8D"), // Magenta
+        string_literal: hex_to_color("#115321"), // Forest Green
+        identifier_type: hex_to_color("#044E70"), // Azure
+        unknown: hex_to_color("#404A55"),       // Slate Gray
+        parenthesis: hex_to_color("#624200"),   // Dark Gold
+        block: hex_to_color("#283EA4"),         // Indigo Blue
+        end_statement: hex_to_color("#5D6572"), // Dimmed Gray
+        async_keyword: hex_to_color("#564600"),  // Olive Gold
+        parallel_keyword: hex_to_color("#6A3D00"), // Chestnut
+        struct_keyword: hex_to_color("#811F5E"), // Plum
+        enum_keyword: hex_to_color("#5A2DA2"),   // Violet
+        return_keyword: hex_to_color("#851C5E"), // Dark Magenta
         default: hex_to_color("#1F2328"),       // Near Black
         background: hex_to_color("#ECEEF0"),    // Near White
-        comment: hex_to_color("#59636E"),       // Slate Gray
-        error: hex_to_color("#C21F2A"),         // Error Red
+        comment: hex_to_color("#404A55"),       // Slate Gray
+        error: hex_to_color("#881F21"),         // Error Red
         ui_text: hex_to_color("#1F2328"),
-        ui_text_muted: hex_to_color("#59636E"),
-        ui_hint: hex_to_color("#5C636D"),
+        ui_text_muted: hex_to_color("#3F4954"),
+        ui_hint: hex_to_color("#424953"),
         ui_panel_bg: hex_to_color("#DFE3E8"),
-        accent: hex_to_color("#865A00"),
-        success: hex_to_color("#177331"),
-        success_bright: hex_to_color("#1A7333"),
-        danger: hex_to_color("#C21F2A"),
-        info: hex_to_color("#0D6F7E"),
-        info_bright: hex_to_color("#0761CC"),
-        primary: hex_to_color("#0550AE"),
-        special: hex_to_color("#AD337C"),
+        accent: hex_to_color("#624200"),
+        success: hex_to_color("#145321"),
+        success_bright: hex_to_color("#145323"),
+        danger: hex_to_color("#8A1F21"),
+        info: hex_to_color("#0D4F5E"),
+        info_bright: hex_to_color("#074594"),
+        primary: hex_to_color("#054496"),
+        special: hex_to_color("#811F5E"),
         on_emphasis: hex_to_color("#FFFFFF"),
         current_line_bg: hex_to_color("#E1E4E8"),
         error_line_bg: hex_to_color("#F3DCDE"),
@@ -148,8 +150,8 @@ lazy_static! {
         search_match_fg: hex_to_color("#1F2328"),
         search_other_bg: hex_to_color("#F2E491"),
         search_other_fg: hex_to_color("#1F2328"),
-        bracket_match_bg: hex_to_color("#A83279"),
-        cursor_fg: hex_to_color("#0550AE"),
+        bracket_match_bg: hex_to_color("#9A2B72"),
+        cursor_fg: hex_to_color("#054598"),
         input_bg: hex_to_color("#D6DCE2"),
         input_inactive_bg: hex_to_color("#E3E6EA"),
         menu_selection_bg: hex_to_color("#0550AE"),
@@ -157,7 +159,7 @@ lazy_static! {
         item_selection_bg: hex_to_color("#0550AE"),
         badge_bg: hex_to_color("#F0C64C"),
         badge_fg: hex_to_color("#1F2328"),
-        toggle_on_bg: hex_to_color("#1F883D"),
+        toggle_on_bg: hex_to_color("#19662C"),
         toggle_on_fg: hex_to_color("#FFFFFF"),
         scroll_track: hex_to_color("#C6CCD4"),
         scroll_thumb: hex_to_color("#8C949E"),
@@ -230,46 +232,46 @@ lazy_static! {
 
     // Modeled on the Solarized light palette.
     pub static ref SOLAR_THEME: ColorScheme = ColorScheme {
-        function: hex_to_color("#1A659C"),
-        const_decl: hex_to_color("#AC3E11"),
-        var_decl: hex_to_color("#7D5E00"),
-        if_decl: hex_to_color("#5B6900"),
-        else_decl: hex_to_color("#585BA1"),
-        arrow_decl: hex_to_color("#1A6F68"),
-        identifier: hex_to_color("#52666D"),
-        unsigned_int: hex_to_color("#B32C6E"),
-        signed_int: hex_to_color("#5B6900"),
-        float: hex_to_color("#1A6F68"),
-        operator: hex_to_color("#55676F"),
-        keyword: hex_to_color("#5B6900"),
-        comma: hex_to_color("#747F7F"),
-        string_literal: hex_to_color("#1A6F68"),
-        identifier_type: hex_to_color("#7D5E00"),
-        unknown: hex_to_color("#55676F"),
-        parenthesis: hex_to_color("#55676F"),
-        block: hex_to_color("#1A659C"),
-        end_statement: hex_to_color("#747F7F"),
-        async_keyword: hex_to_color("#585BA1"),
-        parallel_keyword: hex_to_color("#AC3E11"),
-        struct_keyword: hex_to_color("#B32C6E"),
-        enum_keyword: hex_to_color("#585BA1"),
-        return_keyword: hex_to_color("#B32C6E"),
-        default: hex_to_color("#52666D"),
+        function: hex_to_color("#194B68"),
+        const_decl: hex_to_color("#822911"),
+        var_decl: hex_to_color("#564400"),
+        if_decl: hex_to_color("#474B00"),
+        else_decl: hex_to_color("#404371"),
+        arrow_decl: hex_to_color("#134F48"),
+        identifier: hex_to_color("#374B4E"),
+        unsigned_int: hex_to_color("#811F55"),
+        signed_int: hex_to_color("#474B00"),
+        float: hex_to_color("#134F48"),
+        operator: hex_to_color("#384A50"),
+        keyword: hex_to_color("#474B00"),
+        comma: hex_to_color("#5A6565"),
+        string_literal: hex_to_color("#134F48"),
+        identifier_type: hex_to_color("#564400"),
+        unknown: hex_to_color("#384A50"),
+        parenthesis: hex_to_color("#384A50"),
+        block: hex_to_color("#194B68"),
+        end_statement: hex_to_color("#5A6565"),
+        async_keyword: hex_to_color("#404371"),
+        parallel_keyword: hex_to_color("#822911"),
+        struct_keyword: hex_to_color("#811F55"),
+        enum_keyword: hex_to_color("#404371"),
+        return_keyword: hex_to_color("#811F55"),
+        default: hex_to_color("#374B4E"),
         background: hex_to_color("#F0E9D7"),
-        comment: hex_to_color("#5B6363"),
-        error: hex_to_color("#AF2421"),
-        ui_text: hex_to_color("#4F6269"),
-        ui_text_muted: hex_to_color("#52636B"),
-        ui_hint: hex_to_color("#52636B"),
+        comment: hex_to_color("#414949"),
+        error: hex_to_color("#7D1E1E"),
+        ui_text: hex_to_color("#324547"),
+        ui_text_muted: hex_to_color("#36474D"),
+        ui_hint: hex_to_color("#36474D"),
         ui_panel_bg: hex_to_color("#E2DCCA"),
-        accent: hex_to_color("#795B00"),
-        success: hex_to_color("#586500"),
-        success_bright: hex_to_color("#586500"),
-        danger: hex_to_color("#B52623"),
-        info: hex_to_color("#196B64"),
-        info_bright: hex_to_color("#1A659C"),
-        primary: hex_to_color("#1A659C"),
-        special: hex_to_color("#AD2A6A"),
+        accent: hex_to_color("#524100"),
+        success: hex_to_color("#444700"),
+        success_bright: hex_to_color("#444700"),
+        danger: hex_to_color("#811F1F"),
+        info: hex_to_color("#124B44"),
+        info_bright: hex_to_color("#184762"),
+        primary: hex_to_color("#184762"),
+        special: hex_to_color("#7B1E51"),
         on_emphasis: hex_to_color("#FDF6E3"),
         current_line_bg: hex_to_color("#E7E1CF"),
         error_line_bg: hex_to_color("#E9D3CB"),
@@ -279,17 +281,17 @@ lazy_static! {
         search_match_fg: hex_to_color("#073642"),
         search_other_bg: hex_to_color("#E6DCAE"),
         search_other_fg: hex_to_color("#073642"),
-        bracket_match_bg: hex_to_color("#C5327A"),
-        cursor_fg: hex_to_color("#1A659C"),
+        bracket_match_bg: hex_to_color("#972563"),
+        cursor_fg: hex_to_color("#194B68"),
         input_bg: hex_to_color("#E0D9C2"),
         input_inactive_bg: hex_to_color("#E5E0CE"),
-        menu_selection_bg: hex_to_color("#1E75B2"),
+        menu_selection_bg: hex_to_color("#1D5878"),
         menu_selection_fg: hex_to_color("#FDF6E3"),
-        item_selection_bg: hex_to_color("#1E75B2"),
+        item_selection_bg: hex_to_color("#1D5878"),
         badge_bg: hex_to_color("#EDC85A"),
         badge_fg: hex_to_color("#073642"),
         toggle_on_bg: hex_to_color("#91A21C"),
-        toggle_on_fg: hex_to_color("#073642"),
+        toggle_on_fg: hex_to_color("#03080C"),
         scroll_track: hex_to_color("#D4CEB9"),
         scroll_thumb: hex_to_color("#93A1A1"),
     };
@@ -1442,7 +1444,7 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
         "c" | "v" => Span::styled(word.to_string(), Style::default().fg(theme.keyword)), // const/var keywords
 
         // Collection/iteration language constructs (lexer keywords, not stdlib functions)
-        "map" | "filter" | "reduce" | "scan" | "each" | "find" | "all" | "any" | "loop" | "while" | "for" | "in" | "from" | "when" | "break" | "continue" | "spawn" => {
+        "map" | "filter" | "reduce" | "scan" | "each" | "find" | "all" | "any" | "loop" | "for" | "in" | "from" | "when" | "break" | "continue" | "spawn" => {
             Span::styled(word.to_string(), Style::default().fg(theme.function))
         }
 
@@ -1531,10 +1533,12 @@ mod tests {
     }
 
     /// Every registered theme keeps every color readable on every background
-    /// it can sit on. The floors are WCAG AA: 4.5 to 1 for text against the
-    /// backgrounds it appears over, 3 to 1 for the two punctuation marks a
-    /// theme dims on purpose. A new theme that ships a low contrast color
-    /// fails here by name rather than being discovered by someone squinting.
+    /// it can sit on. Dark themes hold WCAG AA: 4.5 to 1 for text, 3 to 1 for
+    /// the two punctuation marks a theme dims on purpose. Light themes hold
+    /// AAA, 7 to 1 and 4.5 to 1, because thin terminal glyphs on a bright
+    /// ground wash out at ratios that read fine on a dark one. A new theme
+    /// that ships a low contrast color fails here by name rather than being
+    /// discovered by someone squinting.
     #[test]
     fn every_theme_clears_the_contrast_floor() {
         fn channel(c: u8) -> f64 {
@@ -1562,43 +1566,45 @@ mod tests {
         }
 
         for (name, theme) in THEMES.iter() {
+            let light_background = luminance(theme.background) > 0.5;
+            let (text_floor, dim_floor) = if light_background { (7.0, 4.5) } else { (4.5, 3.0) };
             let code_bgs = [theme.background, theme.current_line_bg];
             let tokens = [
-                ("function", theme.function, 4.5),
-                ("const_decl", theme.const_decl, 4.5),
-                ("var_decl", theme.var_decl, 4.5),
-                ("if_decl", theme.if_decl, 4.5),
-                ("else_decl", theme.else_decl, 4.5),
-                ("arrow_decl", theme.arrow_decl, 4.5),
-                ("identifier", theme.identifier, 4.5),
-                ("unsigned_int", theme.unsigned_int, 4.5),
-                ("signed_int", theme.signed_int, 4.5),
-                ("float", theme.float, 4.5),
-                ("operator", theme.operator, 4.5),
-                ("keyword", theme.keyword, 4.5),
-                ("comma", theme.comma, 3.0),
-                ("string_literal", theme.string_literal, 4.5),
-                ("identifier_type", theme.identifier_type, 4.5),
-                ("unknown", theme.unknown, 4.5),
-                ("parenthesis", theme.parenthesis, 4.5),
-                ("block", theme.block, 4.5),
-                ("end_statement", theme.end_statement, 3.0),
-                ("async_keyword", theme.async_keyword, 4.5),
-                ("parallel_keyword", theme.parallel_keyword, 4.5),
-                ("struct_keyword", theme.struct_keyword, 4.5),
-                ("enum_keyword", theme.enum_keyword, 4.5),
-                ("return_keyword", theme.return_keyword, 4.5),
-                ("default", theme.default, 4.5),
-                ("comment", theme.comment, 4.5),
-                ("error", theme.error, 4.5),
-                ("cursor_fg", theme.cursor_fg, 4.5),
+                ("function", theme.function, text_floor),
+                ("const_decl", theme.const_decl, text_floor),
+                ("var_decl", theme.var_decl, text_floor),
+                ("if_decl", theme.if_decl, text_floor),
+                ("else_decl", theme.else_decl, text_floor),
+                ("arrow_decl", theme.arrow_decl, text_floor),
+                ("identifier", theme.identifier, text_floor),
+                ("unsigned_int", theme.unsigned_int, text_floor),
+                ("signed_int", theme.signed_int, text_floor),
+                ("float", theme.float, text_floor),
+                ("operator", theme.operator, text_floor),
+                ("keyword", theme.keyword, text_floor),
+                ("comma", theme.comma, dim_floor),
+                ("string_literal", theme.string_literal, text_floor),
+                ("identifier_type", theme.identifier_type, text_floor),
+                ("unknown", theme.unknown, text_floor),
+                ("parenthesis", theme.parenthesis, text_floor),
+                ("block", theme.block, text_floor),
+                ("end_statement", theme.end_statement, dim_floor),
+                ("async_keyword", theme.async_keyword, text_floor),
+                ("parallel_keyword", theme.parallel_keyword, text_floor),
+                ("struct_keyword", theme.struct_keyword, text_floor),
+                ("enum_keyword", theme.enum_keyword, text_floor),
+                ("return_keyword", theme.return_keyword, text_floor),
+                ("default", theme.default, text_floor),
+                ("comment", theme.comment, text_floor),
+                ("error", theme.error, text_floor),
+                ("cursor_fg", theme.cursor_fg, text_floor),
             ];
             for (field, color, floor) in tokens {
                 for bg in code_bgs {
                     assert_floor(name, field, color, bg, floor);
                 }
             }
-            assert_floor(name, "error on the error line wash", theme.error, theme.error_line_bg, 4.5);
+            assert_floor(name, "error on the error line wash", theme.error, theme.error_line_bg, text_floor);
 
             let ui_bgs = [theme.ui_panel_bg, theme.background];
             let ui = [
@@ -1616,7 +1622,7 @@ mod tests {
             ];
             for (field, color) in ui {
                 for bg in ui_bgs {
-                    assert_floor(name, field, color, bg, 4.5);
+                    assert_floor(name, field, color, bg, text_floor);
                 }
             }
 
@@ -1633,7 +1639,7 @@ mod tests {
                 ("the matched bracket", theme.on_emphasis, theme.bracket_match_bg),
             ];
             for (what, fg, bg) in pairs {
-                assert_floor(name, what, fg, bg, 4.5);
+                assert_floor(name, what, fg, bg, text_floor);
             }
         }
     }

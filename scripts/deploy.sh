@@ -7,7 +7,7 @@
 # Nothing is built on the droplet - it receives a finished binary plus the data
 # files the server reads at runtime.
 #
-# Build steps mirror run_website.sh: transpile examples/nail_website.nail to
+# Build steps mirror run_website.sh: transpile examples/website/main.nail to
 # Rust, regenerate the server's Cargo.toml, then cargo build --release. Set
 # SKIP_TRANSPILE=1 to build the existing generated main.rs as-is.
 set -euo pipefail
@@ -16,19 +16,21 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # This app's identity on the box - must match what add-app.sh registered.
 APP=nail
-# Hardcoded in the Nail source (examples/nail_website.nail), not settable by
+# Hardcoded in the Nail source (examples/website/main.nail), not settable by
 # env: the stdlib HTTP server takes its port from the program itself.
 APP_PORT=8080
 BIN=nail_website_server
 
+# The generated server project lives under target/ with the other build
+# output. Everything in it is regenerated on each build, nothing is tracked.
+SERVER_DIR=target/nail_website_server
+
 # Files the server reads at runtime, relative to its working directory. Paths
 # are kept identical on the droplet, so read_file("examples/...") still
 # resolves. Keep in sync with the read_file calls in the generated main.rs.
+# examples/website covers the whole site: sources, snippets, screenshots
+# and assets all live inside it.
 DATA_PATHS=(
-	examples/website_examples
-	examples/website_screenshots
-	examples/website_assets
-	examples/nail_website.nail
 	examples/website
 	examples/mcp_dice_server.nail
 	tests
@@ -54,6 +56,13 @@ if [[ -z "$HOST" ]]; then
 	exit 1
 fi
 
+echo "== documentation tests =="
+# Everything this deploy ships that a person will read - README.md, the spec,
+# the blog example's posts - carries Nail code and file paths the docs tests
+# verify against the compiler and the repository. Stale documentation fails
+# here, on this machine, not after it ships.
+cargo test --quiet --lib docs
+
 # DEPLOY_PASSWORD in .env means no prompts. The value goes to sshpass through
 # the environment, never on a command line, so it stays out of `ps`.
 SSH=(ssh -o StrictHostKeyChecking=accept-new)
@@ -75,17 +84,17 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 if [[ "${SKIP_TRANSPILE:-0}" != "1" ]]; then
-	echo "== transpiling nail_website.nail =="
-	mkdir -p nail_website_server/src
+	echo "== transpiling examples/website/main.nail =="
+	mkdir -p "$SERVER_DIR/src"
 	# Deliberately built WITH profiling: the live timings section on the page
 	# is this server reading its own profiler dump. Other production deploys
 	# would pass --no-profile here.
-	cargo run --quiet --bin nailc examples/nail_website.nail --transpile
-	[[ -s examples/nail_website.rs ]] || { echo "transpile produced nothing" >&2; exit 1; }
-	mv examples/nail_website.rs nail_website_server/src/main.rs
-	cargo run --quiet --bin nailc examples/nail_website.nail \
-		--cargo-toml "--nail-path=.." --package-name=nail_website_server \
-		> nail_website_server/Cargo.toml
+	cargo run --quiet --bin nailc examples/website/main.nail --transpile
+	[[ -s examples/website/main.rs ]] || { echo "transpile produced nothing" >&2; exit 1; }
+	mv examples/website/main.rs "$SERVER_DIR/src/main.rs"
+	cargo run --quiet --bin nailc examples/website/main.nail \
+		--cargo-toml "--nail-path=../.." --package-name=nail_website_server \
+		> "$SERVER_DIR/Cargo.toml"
 fi
 
 echo "== building browser demos =="
@@ -101,9 +110,9 @@ echo "== building playground =="
 echo "== building server =="
 # x86-64-v3 (AVX2, BMI, FMA) matches the droplet's CPU and lets LLVM use
 # wider vector registers than the portable baseline allows.
-(cd nail_website_server && RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release)
+(cd "$SERVER_DIR" && RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release)
 
-cp "nail_website_server/target/release/$BIN" "$STAGE/$BIN"
+cp "$SERVER_DIR/target/release/$BIN" "$STAGE/$BIN"
 strip "$STAGE/$BIN" 2>/dev/null || true
 chmod +x "$STAGE/$BIN"
 echo "   $(du -h "$STAGE/$BIN" | cut -f1) $(file -b "$STAGE/$BIN" | cut -d, -f1-2)"
@@ -116,6 +125,17 @@ echo "== uploading binary =="
 # Write beside the live binary then mv: rename is atomic, so a request never
 # hits a half-copied file, and the running process keeps its old inode.
 "${SCP[@]}" -q "$STAGE/$BIN" "$HOST:/srv/$APP/$BIN.new"
+
+# The server runs in the website's own directory, the same rule `nail run`
+# applies, so its file-relative reads resolve. add-app.sh registers units
+# with WorkingDirectory=/srv/<app>, so this app carries a drop-in override.
+# Written idempotently on every deploy: it survives an add-app.sh re-run and
+# costs nothing when already in place.
+WORKDIR_OVERRIDE="/etc/systemd/system/$APP.service.d/workdir.conf"
+"${SSH[@]}" "$HOST" "mkdir -p /etc/systemd/system/$APP.service.d \
+	&& printf '[Service]\nWorkingDirectory=/srv/%s/examples/website\n' '$APP' > $WORKDIR_OVERRIDE \
+	&& systemctl daemon-reload"
+
 "${SSH[@]}" "$HOST" "mv /srv/$APP/$BIN.new /srv/$APP/$BIN \
 	&& chown -R $APP:$APP /srv/$APP \
 	&& systemctl restart $APP"

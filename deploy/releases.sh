@@ -31,6 +31,11 @@ RELEASE_DOMAIN="${RELEASE_DOMAIN:-$(env_val RELEASE_DOMAIN)}"
 [[ -n "$HOST" ]] || { echo "set DEPLOY_HOST in .env" >&2; exit 1; }
 [[ -n "$RELEASE_DOMAIN" ]] || { echo "set RELEASE_DOMAIN in .env (the hostname nail fetches releases from)" >&2; exit 1; }
 
+echo "== documentation tests =="
+# The bundle embeds the specification, and `nail docs` serves it. A release
+# whose documentation the compiler rejects stops here, before anything ships.
+cargo test --quiet --lib docs
+
 SSH=(ssh -o StrictHostKeyChecking=accept-new)
 SCP=(scp -o StrictHostKeyChecking=accept-new)
 DEPLOY_PASSWORD="${DEPLOY_PASSWORD:-$(env_val DEPLOY_PASSWORD)}"

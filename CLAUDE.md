@@ -23,20 +23,20 @@ Generated files to watch for and delete:
 **IMPORTANT**: After making ANY changes to the Nail language implementation (lexer, parser, checker, transpiler, stdlib), you MUST:
 
 1. While iterating, run the fast script for the stage you touched -
-   `./test_lexer_parser.sh`, `./test_type_checker.sh`, or `./test_transpiler.sh`
-2. Before committing, run `./test_all_stages.sh` - all three stages in sequence
+   `./scripts/test_lexer_parser.sh`, `./scripts/test_type_checker.sh`, or `./scripts/test_transpiler.sh`
+2. Before committing, run `./scripts/test_all_stages.sh` - all three stages in sequence
 3. Verify all previously passing tests still pass
 4. If any tests fail that previously passed, investigate and fix the regression
 5. Only proceed with additional changes after all tests pass
 
 This is non-negotiable to maintain language stability and prevent regressions.
 
-A clean run currently reports 574/574 lexer/parser, 573/573 type checker and
-554/554 transpiler, with zero failures. Those counts are every `.nail` file in
-the repository, from the one shared list in `test_nail_files.sh`, rather than
-the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1325 passing
-(1343 with `--features "game audio"`), `cargo test --bin nail` reports 1344
-(the library's tests plus the editor's own), and `./test_e2e.sh` reports 376
+A clean run currently reports 567/567 lexer/parser, 566/566 type checker and
+547/547 transpiler, with zero failures. Those counts are every `.nail` file in
+the repository, from the one shared list in `scripts/test_nail_files.sh`, rather than
+the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1327 passing
+(1345 with `--features "game audio"`), `cargo test --bin nail` reports 1346
+(the library's tests plus the editor's own), and `./scripts/test_e2e.sh` reports 376
 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
@@ -44,10 +44,10 @@ The server tests in `parser::std_lib::net` and the watch tests in
 `parser::std_lib::fs` bind fixed ports and fixed `/tmp` paths, so two test runs
 at once will fail each other. Re-run those alone before believing a failure.
 
-`./test_launcher.sh` reports 49 checks passing, and
-`./test_error_messages.sh` reports 28 passed, 0 failed.
+`./scripts/test_launcher.sh` reports 49 checks passing, and
+`./scripts/test_error_messages.sh` reports 32 passed, 0 failed.
 
-`./test_doc_examples.sh` compiles all 1166 registry examples and runs the 1033
+`./scripts/test_doc_examples.sh` compiles all 1166 registry examples and runs the 1033
 that can run unattended. The rest are named, with the reason, in
 `tests/doc_examples_needing_the_world.txt`, which is checked both ways: an
 example listed there that starts passing is reported so the line can be
@@ -56,9 +56,10 @@ file it then reads is one a reader can paste and run.
 
 ## Nail in the documentation
 
-Every fenced block of Nail in `README.md` and `nail_language_spec.md` is
-compiled by `cargo test --lib docs`, and what the fence calls itself decides
-how hard:
+Every fenced block of Nail in every markdown file in the repository (the
+README, the spec, the blog example's posts, the test READMEs, the agent
+definitions) is compiled by `cargo test --lib docs`, and what the fence calls
+itself decides how hard:
 
 - ` ```nail ` - a whole program: it lexes, parses and type checks
 - ` ```nail-fragment ` - a piece of one: it lexes and parses, its context is
@@ -67,7 +68,16 @@ how hard:
 
 Any other fence (`js`, `ebnf`, `bash`) is not Nail and is not checked. Blocks
 that import a file the reader is expected to have resolve it against
-`tests/docs_imports/`.
+`tests/docs_imports/`. A new markdown file is swept automatically, there is no
+list to add it to.
+
+The same test run checks the documentation's references: every `.sh` path
+named in any markdown file must exist where it says (bare names may live in
+`scripts/`, `bundle/` or `deploy/`), and every `DATA_PATHS` entry in
+`scripts/deploy.sh` must exist in the repository and be mentioned in
+`deploy/README.md`. Both `scripts/deploy.sh` and `deploy/releases.sh` run
+`cargo test --quiet --lib docs` before shipping anything, so stale
+documentation fails a deploy on the machine that runs it.
 
 ## CRITICAL: Never Use Workarounds
 
@@ -112,7 +122,7 @@ Write separate sentences, or use a colon, comma, or parentheses instead.
 
 This applies to ALL human-readable text:
 
-1. Website copy (`examples/nail_website.nail`)
+1. Website copy (`examples/website/main.nail`)
 2. Stdlib registry descriptions (`src/stdlib_registry/`) - these render on the website and in IDE F1 docs
 3. Documentation (README.md, nail_language_spec.md, deploy/README.md)
 4. Error messages, code comments, and commit messages
@@ -127,13 +137,13 @@ HTML entities like `&lt;` are unaffected - this rule is about prose punctuation 
 ## Testing Guidelines
 
 **ABSOLUTELY MOST IMPORTANT THING Testing Principle**:
-- Use the fast test scripts (`test_lexer_parser.sh`, `test_type_checker.sh`, `test_transpiler.sh`) for development
+- Use the fast test scripts (`scripts/test_lexer_parser.sh`, `scripts/test_type_checker.sh`, `scripts/test_transpiler.sh`) for development
 - These scripts test specific compiler stages quickly without slow Rust compilation
 - Only test Rust compilation manually when absolutely necessary
 
 ## Development Commands
 
-- **Run development mode**: `./start.sh` - Runs `cargo watch -x run` with debug flags enabled
+- **Run development mode**: `./scripts/start.sh` - Runs `cargo watch -x run` with debug flags enabled
 - **Build**: `cargo build` or `cargo build --release`
 - **Build compiler**: `cargo build --bin nailc` - Builds the Nail compiler binary
 
@@ -142,21 +152,21 @@ HTML entities like `&lt;` are unaffected - this rule is about prose punctuation 
 ### Running Tests
 
 **Fast Test Scripts** (use these for rapid development):
-- **`./test_lexer_parser.sh`** - Tests lexer and parser only (very fast)
-- **`./test_type_checker.sh`** - Tests type checking for files that pass lexer/parser (fast)
-- **`./test_transpiler.sh`** - Tests transpilation for files that pass type checking (fast)
-- **`./test_rust_compilation.sh`** - Tests Rust compilation of transpiled files (VERY SLOW - only use when specifically needed)
-- **`./test_all_stages.sh`** - Runs all three fast test scripts in sequence. Too slow for tight iteration, but required before committing a change to the language implementation
-- **`./test_all_stages.sh --with-rust`** - DO NOT USE UNLESS EXPLICITLY ASKED - Also runs Rust compilation tests (EXTREMELY SLOW)
+- **`./scripts/test_lexer_parser.sh`** - Tests lexer and parser only (very fast)
+- **`./scripts/test_type_checker.sh`** - Tests type checking for files that pass lexer/parser (fast)
+- **`./scripts/test_transpiler.sh`** - Tests transpilation for files that pass type checking (fast)
+- **`./scripts/test_rust_compilation.sh`** - Tests Rust compilation of transpiled files (VERY SLOW - only use when specifically needed)
+- **`./scripts/test_all_stages.sh`** - Runs all three fast test scripts in sequence. Too slow for tight iteration, but required before committing a change to the language implementation
+- **`./scripts/test_all_stages.sh --with-rust`** - DO NOT USE UNLESS EXPLICITLY ASKED - Also runs Rust compilation tests (EXTREMELY SLOW)
 
 **Other suites** (not part of the standard pre-commit run):
-- **`./test_launcher.sh`** - Exercises every `nail` subcommand against a
+- **`./scripts/test_launcher.sh`** - Exercises every `nail` subcommand against a
   throwaway store. Nothing else runs them, so a broken subcommand otherwise
   reaches users untouched (`nail run` once shipped passing a flag nailc had
   never heard of). Run it after touching `src/bin/nail_launcher.rs` or
   `src/version_line.rs`
-- **`./test_e2e.sh`** - End-to-end runs of compiled Nail programs
-- **`./test_doc_examples.sh`** - Transpiles, compiles and runs every
+- **`./scripts/test_e2e.sh`** - End-to-end runs of compiled Nail programs
+- **`./scripts/test_doc_examples.sh`** - Transpiles, compiles and runs every
   documentation example in the registry. The Rust tests prove the examples
   parse and type check, which compares them against the registry's own
   declaration of each function. Only rustc compares that declaration to the
@@ -164,25 +174,25 @@ HTML entities like `&lt;` are unaffected - this rule is about prose punctuation 
   were shipping uncompilable Rust and four more panicked when run before this
   existed. Slow (it builds a thousand binaries), so it is not part of the
   pre-commit run, but it is required after touching the registry or the
-  transpiler. `./test_doc_examples.sh array_` checks one module
-- **`./test_error_messages.sh`** - Checks runtime error message wording against goldens
-- **`./check_all_features.sh`** - Verifies every feature-gated combination still compiles
+  transpiler. `./scripts/test_doc_examples.sh array_` checks one module
+- **`./scripts/test_error_messages.sh`** - Checks runtime error message wording against goldens
+- **`./scripts/check_all_features.sh`** - Verifies every feature-gated combination still compiles
 
 **Usage:**
 ```bash
 # Test all files
-./test_lexer_parser.sh   # Test lexing/parsing
-./test_type_checker.sh   # Test type checking
-./test_transpiler.sh     # Test transpilation
-./test_rust_compilation.sh  # Test Rust compilation (slow)
+./scripts/test_lexer_parser.sh   # Test lexing/parsing
+./scripts/test_type_checker.sh   # Test type checking
+./scripts/test_transpiler.sh     # Test transpilation
+./scripts/test_rust_compilation.sh  # Test Rust compilation (slow)
 
 # Test individual files
-./test_rust_compilation.sh tests/test_arrays.nail  # Test single file
-./test_rust_compilation.sh tests/*.nail  # Test multiple files
+./scripts/test_rust_compilation.sh tests/test_arrays.nail  # Test single file
+./scripts/test_rust_compilation.sh tests/*.nail  # Test multiple files
 
 # Run all stages
-./test_all_stages.sh     # Run all tests (no Rust compilation)
-./test_all_stages.sh --with-rust  # Include Rust compilation (very slow)
+./scripts/test_all_stages.sh     # Run all tests (no Rust compilation)
+./scripts/test_all_stages.sh --with-rust  # Include Rust compilation (very slow)
 ```
 
 **Important Notes:**
@@ -233,31 +243,36 @@ cargo run --bin nailc tests/example.nail --cargo-toml --package-name=my_app
 
 ## Nail Website
 
-The Nail website is a demonstration of the language written in Nail itself:
+The Nail website is a demonstration of the language written in Nail itself.
+Everything that belongs to the site lives in one directory, `examples/website/`:
 
-- **Source**: `examples/nail_website.nail` - The website code written in Nail. This is the ONLY file to edit
-- **Local run**: `./run_website.sh` - Transpiles and runs the website on port 8080
-- **Deploy**: `./scripts/deploy.sh` - Transpiles, builds, and ships to the droplet
-- **How it works**:
-  1. The script transpiles `nail_website.nail` to Rust
-  2. Writes it into the separate Cargo project in `nail_website_server/`
-  3. Builds and runs the server on port 8080
-  4. The website showcases Nail examples and features using HTMX for interactivity
+- `main.nail` - the entry point, and the file `scripts/run_website.sh` and
+  `scripts/deploy.sh` transpile
+- `startup_data.nail`, `styles.nail`, `page_sections.nail`,
+  `server_state.nail`, `routes.nail` and `safe/` - modules that `main.nail`
+  imports
+- `snippets/` - the Nail programs the site displays and the playground loads
+- `screenshots/` - the HTML captures of the IDE shown on the site
+- `assets/` - binary data the pages embed
 
-**Important**: The `nail-website` binary in Cargo.toml is NOT the actual website - it's just a build helper. The real website runs from the transpiled `nail_website.nail` file.
+To run it locally: `./scripts/run_website.sh` transpiles `examples/website/main.nail`,
+writes the generated Rust into the Cargo project in
+`target/nail_website_server/` (entirely generated, nothing in it is tracked),
+builds it, and serves on port 8080. `./scripts/deploy.sh` does the same build
+and ships the binary to the droplet. The site uses HTMX for interactivity.
 
-**`nail_website_server/src/main.rs` is transpiler output and is gitignored.**
-It used to be tracked, drifted out of sync with the compiler, and eventually
-stopped compiling entirely. Never edit it and never commit it - it is
-regenerated on every run and every deploy. Note that
-`nail_website_server/Cargo.toml` is also generated (by `nailc --cargo-toml`)
-but is still tracked.
+The server runs in `examples/website/`, the same run-in-its-own-directory
+rule every Nail program follows, so `nail run examples/website/main.nail`
+works. Its runtime reads are relative to that directory: files inside the
+site by bare name (`snippets/...`, `main.nail`), repo files above it by
+`../../` (`../../README.md`, `../../tests/...`). `scripts/run_website.sh`
+starts the binary there, and on the droplet a systemd drop-in written by
+`scripts/deploy.sh` sets `WorkingDirectory=/srv/nail/examples/website`.
 
-The server reads several files at runtime relative to its working directory
-(`examples/website_examples/`, `tests/`, `nail_language_spec.md`, `README.md`,
-`examples/nail_website.nail`). `scripts/deploy.sh` ships those alongside the
-binary - if you add a new `read_file` call to the website, add its path to
-`DATA_PATHS` in that script or the deployed site will panic on startup.
+`scripts/deploy.sh` ships the files the server reads alongside the binary,
+keeping repo-relative layout - if you add a new `read_file` call to the
+website, add its path to `DATA_PATHS` in that script or the deployed site
+will panic on startup.
 
 ## Deployment
 

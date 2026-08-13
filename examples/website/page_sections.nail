@@ -1,5 +1,5 @@
 nail latest
-// This is not a standalone program: examples/nail_website.nail imports it.
+// This is not a standalone program: examples/website/main.nail imports it.
 // The HTML builders: one function per section of the page, plus the head,
 // the navbar, the footer and the menu script.
 
@@ -76,7 +76,7 @@ f generate_hero(hero_code:s):s {
     </div>
     <p style="color: var(--text-secondary);">
         This page is a Nail program: server, highlighting, compiler output, all of it.
-        <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/nail_website.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
+        <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/website/main.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">Read its source →</a>
     </p>
 </section>`
     ], ``);
@@ -397,7 +397,7 @@ nail hello.nail</pre></div>
         <p style="font-size: 0.95rem;">
             The <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/nail_language_spec.md" target="_blank" style="color: var(--primary); text-decoration: underline;">language specification</a>
             is the full reference, and this site's own
-            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/nail_website.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">source</a>
+            <a href="https://github.com/AlexTDWilkinson/Nail/blob/main/examples/website/main.nail" target="_blank" style="color: var(--primary); text-decoration: underline;">source</a>
             is the largest Nail program there is to read.
         </p>
     </div>

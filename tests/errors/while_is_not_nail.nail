@@ -1,0 +1,5 @@
+nail latest
+count:i = 0;
+while count < 3 {
+    print(count);
+}

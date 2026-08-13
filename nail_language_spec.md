@@ -6,13 +6,13 @@
 
 ## Introduction
 
-Nail is a programming language designed with a focus on simplicity, safety, and productivity. Its primary goal is to eliminate common sources of bugs and reduce cognitive load on developers by enforcing strict rules, a strict enviroment and by providing a consistent, straightforward syntax.
+Nail is a programming language designed with a focus on simplicity, safety, and productivity. Its primary goal is to eliminate common sources of bugs and reduce cognitive load on developers by enforcing strict rules, a strict environment and by providing a consistent, straightforward syntax.
 
-Nail can ONLY be written and transpiled in the Nail IDE, which only runs on Linux.
+Nail runs on Linux only. The `nail` launcher installs everything: the IDE, the compiler, and the exact toolchain version each file pins.
 
-Nail programs are transpiled to async, parallellized (when specified) Rust and then compiled to native executables.
+Nail programs are transpiled to async, parallelized (when specified) Rust and then compiled to native executables.
 
-Nail programs often exhibit superior performance compared to typical Rust implementations, as Nail easily incorporates asynchronous, concurrent, and parallel paradigms — optimizations that many developers might not take the time to implement in typical Rust programs. However, it's important to note that a meticulously optimized Rust program can likely exceed Nail's performance, given that Nail is ultimately transpiled to Rust.
+Nail programs often exhibit superior performance compared to typical Rust implementations, as Nail easily incorporates asynchronous, concurrent, and parallel paradigms: optimizations that many developers might not take the time to implement in typical Rust programs. However, it's important to note that a meticulously optimized Rust program can likely exceed Nail's performance, given that Nail is ultimately transpiled to Rust.
 
 ## Core Design Principles
 
@@ -27,16 +27,16 @@ Nail adheres to the following core principles:
 
 To achieve its goals, Nail imposes the following restrictions:
 
-- Limited data types: integer, float, string, boolean, array, struct, and enum.
-- The simple parallell block keyword transforms into paralellized Rust.
+- Limited data types: integer, float, string, boolean, array, hashmap, struct, and enum.
+- The simple parallel block keyword transforms into parallelized Rust.
 - No package manager or external dependencies (The standard library is updated with every new version of Nail)
 - No uninitialized constants (constants must be defined with a value)
 - No null references.
-- No mutability - all variables are immutable.
+- No mutability - variables are immutable, with no exceptions. Rebinding a name is done by shadowing (a fresh declaration in the same scope), and accumulating across iterations is what `reduce` and `scan` are for.
 - No classes, inheritance, or traditional OOP constructs.
 - No manual memory allocation or management.
-- Immutable loop constructs (for, while) that return values.
-- No traditional if statements (replaced by a psuedo match/switch expressions).
+- Two loop constructs only: `for` (which can yield values) and `loop` (a statement, with `break` and `continue`). No while loop.
+- No traditional if statements (replaced by a pseudo match/switch expression).
 - No function or operator overloading.
 - No implicit returns.
 - No default values.
@@ -47,7 +47,7 @@ To achieve its goals, Nail imposes the following restrictions:
 - No method attachment to structs or enums.
 - No generics.
 - No macros or metaprogramming.
-- No single letter variable names (must be descriptive)
+- No single letter variable or parameter names (x, y, z and w are whitelisted, so a struct holding coordinates can name its fields honestly)
 - No lambda functions or closures
 - Explicit collection operation keywords (map, filter, reduce, scan, each, find, all, any) instead of generic functional methods
 - Collection operations use 'y' (yield) to produce values, while 'r' (return) exits functions
@@ -59,8 +59,15 @@ To achieve its goals, Nail imposes the following restrictions:
 Reserved keywords in Nail:
 
 ```
-Meh, there's a bunch, see the EBNF file in this repo for specifics.
+f if else struct enum import import_dangerous
+for loop in from break continue when
+map filter reduce scan each find all any
+p /p c /c r y spawn
 ```
+
+Rust's own keywords (`fn`, `let`, `match`, `impl` and the rest) are also
+reserved, so an identifier that would collide with the generated Rust is
+refused with a message saying so.
 
 ### 4.2 Identifiers
 
@@ -119,7 +126,7 @@ The highlighters that ship with Nail - the editor's colorizer and
 | JavaScript family | `js`, `javascript`, `mjs`, `cjs`, `jsx`, `ts`, `typescript`, `tsx`, `json`, `jsonc` |
 | SQL | `sql`, `postgres`, `postgresql`, `mysql`, `sqlite` |
 | Shell | `sh`, `bash`, `zsh`, `shell`, `dockerfile` |
-| Other languages | `py`, `rb`, `rs`, `go`, `java`, `cs`, `c`, `cpp`, `php`, `swift`, `kt`, `lua`, `graphql` |
+| Other languages | `py`, `python`, `rb`, `ruby`, `rs`, `rust`, `go`, `golang`, `java`, `cs`, `csharp`, `c`, `h`, `cpp`, `cc`, `hpp`, `cxx`, `php`, `swift`, `kt`, `kotlin`, `lua`, `graphql`, `gql` |
 | Configuration | `yaml`, `yml`, `toml`, `ini`, `cfg`, `conf`, `properties` |
 | Markdown | `md`, `markdown` |
 
@@ -213,12 +220,12 @@ Strict type checking is enforced:
 count:i = 5;  // Valid
 count:i = 6.0;  // Error: Can't assign float to integer
 count:f = 6.0;  // Valid
-count:f!e = to_float(5);  // Invalid, all result type errors cannot be assigned to a variable. They must be handled explicitly.
-count:f = danger(to_float(5));  // Valid, removes the error type.
-count:f = expect(to_float(5));  // Valid, removes the error type (same as danger but different semantic meaning).
+count:f!e = float_from(5);  // Invalid, all result type errors cannot be assigned to a variable. They must be handled explicitly.
+count:f = danger(float_from(5));  // Valid, removes the error type.
+count:f = expect(float_from(5));  // Valid, removes the error type (same as danger but different semantic meaning).
 // Handler function must be defined separately
 f handle_float_error(e:s):f { r 0.0; }
-count:f = safe(to_float(5), handle_float_error);  // Valid, handles error safely.
+count:f = safe(float_from(5), handle_float_error);  // Valid, handles error safely.
 ```
 
 ### 5.4 Composite Types
@@ -334,7 +341,7 @@ indexed_values:a:s = map num idx in numbers {
 };
 
 // Note: To map over characters in a string, first convert to array
-// let chars:a:s = string_to_chars(`hello`);
+// let chars:a:s = string_chars(`hello`);
 // uppercase_chars:a:s = map char in chars { ... };
 ```
 
@@ -467,19 +474,21 @@ f less_than_five(num:i):b { r num < 5; }
 small_nums:a:i = array_take_while(numbers, less_than_five);  // [1, 2, 3, 4]
 
 // Array utilities
-unique_nums:a:i = array_unique([1, 2, 2, 3, 3, 3]);  // [1, 2, 3]
+unique_nums:a:i = array_deduplicate([1, 2, 2, 3, 3, 3]);  // [1, 2, 3]
 nested:a:a:i = [[1, 2], [3, 4]];
 flat_array:a:i = array_flatten(nested);    // [1, 2, 3, 4]
 
 // Finding elements
 index:i = danger(array_find(numbers, 5));  // Returns 4 (0-based index)
 
-// Functional operations as library functions
-f double(num:i):i { r num * 2; }
-doubled:a:i = array_map(numbers, double);
+// Transforming and selecting are the map and filter keywords
+doubled:a:i = map num in numbers {
+    y num * 2;
+};
 
-f is_even(num:i):b { r num % 2 == 0; }
-evens:a:i = array_filter(numbers, is_even);
+evens:a:i = filter num in numbers {
+    y num % 2 == 0;
+};
 ```
 
 ### 6.4 For Loops
@@ -510,23 +519,13 @@ for position in array_range(0, array_length(numbers)) {
 }
 ```
 
-#### While Loops
+#### No While Loops
 
-While loops with safety features to prevent infinite loops:
-
-```nail-fragment
-// A while loop always carries a max: it is the promise that the loop ends
-countdown:i = 3;
-while countdown > 0 max 10 {
-    print(countdown);
-    countdown = countdown - 1;
-}
-```
-
-The `max` clause is required, and it is a count of iterations, not a
-suggestion: reaching it ends the loop. A while loop is a statement rather than
-an expression, so it produces no value. Building one up as you go is what
-`reduce` and `scan` are for.
+Nail has no `while` loop, and the keyword is refused with an error saying so.
+Every job a while loop does has a better home: iterating a collection is
+`for`, building a value up as you go is `reduce` or `scan`, and repeating
+until some outside condition changes is `loop` with `break`. A while loop
+would also need mutable state to ever terminate, and Nail has no mutation.
 
 #### Loop (Infinite Loops)
 
@@ -583,7 +582,11 @@ spawn {
 
 ### 6.4 Collection Operation Transpilation
 
-All collection operations transpile to simple for loops with enumerate() in Rust:
+The elementwise operations (map, filter, find, all, any) transpile to rayon
+parallel iterators, so they use every core without the program saying so. In an
+async context the chain is wrapped in `tokio::task::spawn_blocking` so the
+runtime's threads are never blocked, and a body that itself does async work
+drives each element with its own `block_on`. Sketched:
 
 ```js
 // Nail
@@ -591,46 +594,26 @@ doubled:a:i = map num in numbers {
     y num * 2;
 };
 
-// Transpiles to Rust
-let doubled = {
-    let mut __result = Vec::new();
-    for (idx, num) in numbers.iter().enumerate() {
-        __result.push(num * 2);
-    }
-    __result
-};
-
-// Nail reduce operation
-sum:i = reduce acc num in numbers from 0 {
-    y acc + num;
-};
-
-// Transpiles to Rust (reduce operation)
-let sum = {
-    let mut __accumulator = 0;
-    for (_idx, num) in numbers.iter().enumerate() {
-        __accumulator = __accumulator + num;
-    }
-    __accumulator
-};
+// Transpiles to Rust (sketch, async context)
+let doubled = tokio::task::spawn_blocking(move || {
+    numbers.into_par_iter().map(|num| num * 2).collect::<Vec<_>>()
+}).await;
 
 // Filter operation (block with yield statement)
 evens:a:i = filter num in numbers {
     y num % 2 == 0;
 };
 
-// Transpiles to Rust (filter operation)
-let evens = {
-    let mut __result = Vec::new();
-    for (_idx, num) in numbers.iter().enumerate() {
-        let condition_result = num % 2 == 0;
-        if condition_result {
-            __result.push(num.clone());
-        }
-    }
-    __result
-};
+// Transpiles to the same shape, with rayon's filter
+let evens = tokio::task::spawn_blocking(move || {
+    numbers.into_par_iter().filter(|num| num % 2 == 0).collect::<Vec<_>>()
+}).await;
 ```
+
+A reduce depends on the value before it, so it stays an ordered loop over the
+elements, unless its step is provably associative (a sum, say), in which case
+it too is split across cores. A scan's intermediate values are the point, so a
+scan always runs in order.
 
 #### EBNF
 
@@ -667,10 +650,7 @@ any_expression :=
 // - This maintains Nail's principle of explicit yields in iterations
 
 for_loop :=
-    "for" identifier "in" expression block
-
-while_loop :=
-    "while" expression ["from" expression] ["max" expression] block
+    "for" identifier "in" expression ["from" expression] ["when" expression] block
 
 loop :=
     "loop" [identifier] block
@@ -701,7 +681,7 @@ continue_statement :=
 
 statement :=
     const_decl | struct_decl | enum_decl | function_decl |
-    if_expression | for_loop | while_loop | loop |
+    if_expression | for_loop | loop |
     spawn_block | parallel_block | concurrent_block |
     return_statement | yield_statement | break_statement | continue_statement |
     expression_statement
@@ -796,7 +776,7 @@ f calculate_monthly_payment(principal:i, annual_rate:i, years:i):f!e {
             payments:i = years * 12;
             
             // Division by zero check
-            denominator:f = 1.0 - pow(1.0 + monthly_rate, -payments);
+            denominator:f = 1.0 - math_pow(1.0 + monthly_rate, -payments);
             if {
                 denominator == 0.0 -> { 
                     r e(`Cannot calculate payment: invalid parameters`);
@@ -816,13 +796,13 @@ f calculate_monthly_payment(principal:i, annual_rate:i, years:i):f!e {
 Errors must be explicitly handled:
 
 ```nail-refused
-user_input:s!e = lib_io_readline();
-user_input:s = danger(lib_io_readline());
+user_input:s!e = io_read_line();
+user_input:s = danger(io_read_line());
 
 // OR safely handle the error
 f handle_input_error(e:e):s { r `default value`; }
-user_input:s!e = lib_io_readline();
-user_input:s = safe(lib_io_readline(), handle_input_error);
+user_input:s!e = io_read_line();
+user_input:s = safe(io_read_line(), handle_input_error);
 
 ```
 
@@ -852,7 +832,6 @@ import_dangerous(`your_own_helpers.nail`)
 
 Both forms include a file the same way:
 
-- The statement must appear at the beginning of a line (no indentation)
 - The file path is resolved relative to the current file's directory
 - The entire contents of the specified file are spliced in at the location of
   the statement, at compile time during lexical analysis
@@ -914,9 +893,11 @@ print(result);
        r danger(http_download_file(`https://example.com/r`, `r.bin`));
    }
    ```
-4. **Nesting stays sandboxed.** An `import_dangerous()` inside an imported file
-   is sandboxed too, the whole subtree is. An `import()` nested deeper simply
-   stays sandboxed.
+4. **Nesting cannot escape.** An `import_dangerous()` inside an imported file
+   is a compile error: the lexer refuses it with "import_dangerous is not
+   allowed inside a sandboxed import", since a file brought in with `import()`
+   can only use `import()` itself. An `import()` nested deeper simply stays
+   sandboxed.
 
 ### Trusted inclusion: import_dangerous
 
@@ -955,19 +936,19 @@ print(product); // Outputs: 16
 
 Friendly, detailed errors are a core feature of Nail, and their quality is
 enforced by golden-file tests (`tests/errors/`, run via
-`./test_error_messages.sh`). Every diagnostic the compiler emits must answer
+`./scripts/test_error_messages.sh`). Every diagnostic the compiler emits must answer
 four things:
 
-1. **What is wrong** — stated in plain language, never internal jargon.
+1. **What is wrong**, stated in plain language, never internal jargon.
    Write "Expected '}' but the file ended first", not "Expected BlockClose".
-2. **Where** — the failing line of the user's own code is shown with a
+2. **Where**: the failing line of the user's own code is shown with a
    caret underline pointing at the problem (rendered by `CodeError::render`).
    A diagnostic with a missing span (line 0) is a bug.
-3. **Why, with the actual values involved** — name the real types, variables,
+3. **Why, with the actual values involved**: name the real types, variables,
    and functions, e.g. "'count' is declared as an integer (i) but its value
    is a string (s)". Use `NailDataTypeDescriptor::describe()` for type names,
    never `{:?}` Debug formatting.
-4. **How to fix it** — a concrete `help:` suggestion (the `help` field on
+4. **How to fix it**: a concrete `help:` suggestion (the `help` field on
    `CodeError`) whenever a fix is knowable: a "did you mean 'x'?" for typos,
    a corrected code snippet, or the idiomatic alternative.
 
@@ -979,9 +960,9 @@ Example of the required shape:
 
 ```
 error: 'count' is declared as an integer (i) but its value is a string (s)
-  --> tests/errors/type_mismatch_declaration.nail:2:18
+  --> tests/errors/type_mismatch_declaration.nail:3:18
    |
- 2 | count:i = `hello`;
+ 3 | count:i = `hello`;
    |                  ^
 help: either change the declaration to 'count:s' or make the value an integer (i)
 ```
@@ -1008,7 +989,7 @@ program can reach, the bundle vendors all of them, and `nailc
 pin, down to the byte, on its own. This is why nothing beside the file is
 needed, and why a lockfile must never be added.
 
-### Version version line
+### The version line
 
 A file declares its version on the first line:
 
@@ -1055,6 +1036,12 @@ compiling, the garbled line might be legitimate syntax from a release that does
 not exist yet, and by the time `nailc` runs the correct compiler has already
 been chosen. Strictness belongs where it can be acted on.
 
+**A program runs in its own directory.** `nail run` starts the program with its
+working directory set to the directory of the source file, the same rule
+imports follow. A program that reads `data.csv` beside itself works no matter
+where the command was typed. A program run as a bare compiled binary gets
+whatever directory it was started from, like any other executable.
+
 ### The grammar, which can never change
 
 A `nail` built today has to read a file written in ten years, and a compiler from
@@ -1087,7 +1074,7 @@ unpinned rather than as an error, for the same reason.
 A prerelease suffix (`0.4.0-dev`) marks a locally built compiler that was never
 published. the launcher refuses to fetch one and says why.
 
-The implementation is `src/version line.rs`, shared by the compiler and by the launcher.
+The implementation is `src/version_line.rs`, shared by the compiler and by the launcher.
 
 ### Resolution
 
@@ -1103,18 +1090,21 @@ the entry file's compiler backwards with it.
 
 ### What the launcher owns, and what it forwards
 
-`nail` is a multiplexer. It owns only the commands that are about the *set* of
-installed versions, because no single version can answer those. Everything else
-is forwarded to the resolved version's `nailc`:
+`nail` is a multiplexer. It owns the commands that are about the *set* of
+installed versions, because no single version can answer those, and the
+everyday spellings that pick a version and hand the file over: `new`, `run`,
+`build`, `check`, `test`, `docs`, `website`, `github`, `version`, `open` and
+`help`. Anything it has never heard of is forwarded to the resolved version's
+`nailc`:
 
 ```
-nail fmt old.nail     runs the formatter that shipped with old.nail's compiler
+nail --transpile old.nail     runs the transpiler that shipped with old.nail's compiler
 ```
 
-So `fmt`, `test`, `build` and anything invented in ten years work through a
-`nail` built today, without it ever being taught about them. Forwarding is
-also better than calling `nailc` directly, because the file's own version does
-the work rather than the newest one.
+So `--transpile`, `--cargo-toml` and anything invented in ten years work
+through a `nail` built today, without it ever being taught about them.
+Forwarding is also better than calling `nailc` directly, because the file's
+own version does the work rather than the newest one.
 
 The reserved list is frozen. Growing it later would shadow a subcommand some
 future `nailc` wants for itself.
@@ -1129,7 +1119,15 @@ future `nailc` wants for itself.
 | `doctor` | check the install over |
 | `self-update` | the only thing that rewrites the launcher |
 | `config` | warn and gc thresholds |
-| `run` `open` | explicit forms of the default |
+| `new <file>` | create a file already stamped |
+| `run` `build` `check` | compile a file through the version it pins |
+| `test [pattern]` | run every file in tests/, or those matching |
+| `docs [name]` | what the standard library says, whole or for one name |
+| `website` | open the Nail website |
+| `github` / `source` | open the repository |
+| `version` | print the resolved compiler's version |
+| `open` | open a file in the editor, the explicit form of the default |
+| `help` | print usage |
 | `--` | escape hatch, forwards something that collides with the above |
 
 `nail update` splits across the same line. the launcher walks the tree and makes
@@ -1273,7 +1271,7 @@ functions, structs, and enums alike, and holds for every module: a name
 without a namespace reads as a word of the language itself.
 
 The language's own words are the only names with no namespace: `print`,
-`danger`, `safe`, `expect`, `panic`, `todo` and `spawn`. Two registry tests
+`print_no_newline`, `danger`, `safe`, `expect`, `panic`, `todo` and `spawn`. Two registry tests
 enforce the rule, so a new stdlib name cannot skip it.
 
 ### The Library Describes Itself
@@ -1288,7 +1286,7 @@ functions:a:STDLIB_Function = stdlib_functions();
 modules:a:s = stdlib_modules();
 
 string_functions:a:STDLIB_Function = filter function in functions {
-    y function.module == `Strings`;
+    y function.module == `string`;
 };
 ```
 
@@ -1303,12 +1301,12 @@ authority.
 
 ### Core Operations
 - `print(value)` - Print any value to stdout
-- `assert(condition:b)` - Assert a condition is true, panic if false
+- `test_assert(condition:b, message:s):v` - Assert a condition is true, stop the program with the message if false
 - `panic(message:s)` - Panic with a message
 - `todo(message:s)` - Mark unimplemented code
 
 ### String Operations
-- `string_from(value):s!e` - Convert any value to string
+- `string_from(value):s` - Convert any value to string
 - `string_to_uppercase(s:s):s` - Convert to uppercase
 - `string_to_lowercase(s:s):s` - Convert to lowercase
 - `string_to_title_case(s:s):s` - Convert to title case (capitalize each word)
@@ -1318,7 +1316,6 @@ authority.
 - `string_contains(s:s, substring:s):b` - Check if string contains substring
 - `string_replace(s:s, from:s, to:s):s` - Replace all occurrences of substring
 - `string_replace_first(s:s, from:s, to:s):s` - Replace first occurrence of substring
-- `string_replace_all(s:s, from:s, to:s):s` - Replace all occurrences (alias for string_replace)
 - `string_split(s:s, delimiter:s):a:s` - Split string by delimiter
 - `string_split_whitespace(s:s):a:s` - Split string by whitespace
 - `string_split_lines(s:s):a:s` - Split string by line breaks
@@ -1346,7 +1343,7 @@ authority.
 ### Array Operations
 - `array_length(arr:a:T):i` - Get array length
 - `array_get(arr:a:T, index:i):T!e` - Get element at index (can fail)
-- `array_push(arr:a:T, item:T):v` - Add element to array
+- `array_push(arr:a:T, item:T):a:T` - The array with the item appended (arrays are immutable, so this builds a new one)
 - `array_join(arr:a:s, separator:s):s` - Join string array with separator
 - `array_contains(arr:a:T, item:T):b` - Check if array contains item
 - `array_concat(arr1:a:T, arr2:a:T):a:T` - Concatenate two arrays
@@ -1360,14 +1357,11 @@ authority.
 - `array_skip(arr:a:T, count:i):a:T` - Skip first count elements from array
 - `array_take_while(arr:a:T, predicate:f(T):b):a:T` - Take elements while predicate is true
 - `array_skip_while(arr:a:T, predicate:f(T):b):a:T` - Skip elements while predicate is true
-- `array_zip(arr1:a:T, arr2:a:U):a:Pair<T,U>` - Combine two arrays element-wise into pairs
+- `array_zip_with(first:a:A, second:a:B, combine:f(A,B):C):a:C!e` - Combine two arrays element-wise through a named function
 - `array_flatten(arr:a:a:T):a:T` - Flatten nested array by one level
-- `array_unique(arr:a:T):a:T` - Remove duplicate elements (alias for deduplicate)
 - `array_deduplicate(arr:a:T):a:T` - Remove duplicate elements
 - `array_find(arr:a:T, value:T):i!e` - Find index of first occurrence (can fail)
 - `array_find_last(arr:a:T, value:T):i!e` - Find index of last occurrence (can fail)
-- `array_filter(arr:a:T, predicate:f(T):b):a:T` - Filter elements using predicate function
-- `array_map(arr:a:T, mapper:f(T):U):a:U` - Transform elements using mapper function
 - `array_intersect(arr1:a:T, arr2:a:T):a:T` - Get intersection of two arrays
 - `array_difference(arr1:a:T, arr2:a:T):a:T` - Get elements in arr1 but not in arr2
 - `array_union(arr1:a:T, arr2:a:T):a:T` - Get union of two arrays (unique elements from both)
@@ -1405,7 +1399,9 @@ per_author:h<s,i>      = array_count_by(books, book_author);
 - `array_group_by(arr:a:T, key:f(T):K):h<K,a:T>` - buckets, in the order they appeared
 - `array_count_by(arr:a:T, key:f(T):K):h<K,i>` - the bucket sizes alone
 
-The key may be `i`, `s` or `b`. A `b` key is how an array is split in two,
+For `array_group_by`, `array_count_by` and `array_deduplicate_by` the key must
+be `i`, `s` or `b` (the sorting and min/max functions take any key, and
+`array_sum_by` wants `i` or `f`). A `b` key is how an array is split in two,
 which other languages call partition:
 
 ```nail-fragment
@@ -1735,8 +1731,10 @@ positive, a model answering "no" every time scores 99.9%. That is why
 measures and the percentage ones disagree, and the disagreement is information.
 
 **ML_BoostConfig fields:** `trees`, `learning_rate`, `max_depth`,
-`min_samples_leaf`, `bins`, `lambda_l2`. Start from
-`ml_boost_default_config()` and change what you need.
+`min_samples_leaf`, `bins`, `lambda_l2`, `objective`,
+`early_stopping_rounds`. Start from `ml_boost_default_config()` and change
+what you need, since Nail has no default field values and a literal must name
+every field.
 
 ### Randomness (`rand_*`)
 
@@ -1780,7 +1778,7 @@ Files are read and written with `fs_*` below, not here.
 - `fs_remove_dir_all(path:s):v!e` - Remove a directory and everything in it. There is no undoing this
 - `fs_size(path:s):i!e` - How many bytes a file holds
 - `fs_modified(path:s):i!e` - When it last changed, as a Unix timestamp
-- `fs_is_dir(path:s):b` / `fs_is_file(path:s):b` - False for a path that is not there
+- `fs_is_dir(path:s):b!e` / `fs_is_file(path:s):b!e` - False for a path that is not there
 - `fs_temp_dir():s` - Where this machine keeps temporary files
 - `fs_glob(directory:s, pattern:s):a:s!e` - Every file underneath whose path matches a shell pattern
 
@@ -1829,7 +1827,7 @@ functions.
 - `http_server(port:i, config:HTTP_Config):v` - Serve HTTP on a port. Blocks forever
 - `http_default_config():HTTP_Config` - The default server configuration
 - `http_path_matches(pattern:s, path:s):b` - Whether a path matches a route pattern
-- `http_path_params(pattern:s, path:s):h<s,s>` - The named segments a pattern binds
+- `http_path_params(pattern:s, path:s):h<s,s>!e` - The named segments a pattern binds, an error for a path the pattern does not match
 - `http_default_cookie(name:s, value:s):HTTP_Cookie` - A cookie with the safe defaults: `/` path, session lifetime, HttpOnly, Secure, SameSite=Lax
 - `http_build_cookie(cookie:HTTP_Cookie):s!e` - The `Set-Cookie` header value for a cookie
 - `http_parse_cookies(header:s):h<s,s>` - Parse the browser's `Cookie` header, which holds every cookie at once
@@ -2340,10 +2338,10 @@ between a capital and a small letter usually should not count:
 Nail has no format strings, so the roundings and comma insertions every program
 writes for itself live here instead. Everything returns text for a reader, never
 text to parse again:
-- `format_decimals(value:f, places:i):s` - Fixed decimals, keeping trailing zeros
-- `format_thousands(value:i):s` / `format_thousands_float(value:f, places:i):s` - Grouped digits
+- `format_decimals(value:f, places:i):s!e` - Fixed decimals, keeping trailing zeros
+- `format_thousands(value:i):s` / `format_thousands_float(value:f, places:i):s!e` - Grouped digits
 - `format_currency(amount:f, symbol:s):s` - A symbol and two decimals
-- `format_percent(fraction:f, places:i):s` - `0.125` at one place is `12.5%`
+- `format_percent(fraction:f, places:i):s!e` - `0.125` at one place is `12.5%`
 - `format_bytes(count:i):s` - `1.5 KB`, in steps of 1024
 - `format_compact(value:i):s` - `1.2k`, `3.4M`, in steps of 1000
 - `format_ordinal(number:i):s` - `1st`, `2nd`, `13th`
@@ -2553,7 +2551,7 @@ value itself with `r value;`, and only the error case is written out with `e(...
 
 ## Development Environment
 
-- Mandatory use of Nail's IDE on Linux.
+- Nail's IDE on Linux is the default way to write Nail, and `nailc` with `nail run`, `nail build` and `nail check` is the command line route.
 - Opinionated code formatting enforced on save.
 
 ## Built-in Profiling
@@ -2567,7 +2565,7 @@ Every build is profiled by default. There is nothing to enable and nothing to co
 - `nailc --no-profile` builds without any instrumentation, for deploys that want zero overhead. The Nail website deliberately ships profiled: its live timings section is the server reading its own dump. Browser builds are never instrumented.
 - The compiler itself reports per-stage timings (lex, parse, check, transpile) on stderr when run at a terminal.
 
-The EBNF specification in this repo provides a more formal and comprehensive overview of the Nail programming language.
+The grammar sections below state the language's rules formally.
 
 #  Nail Language Grammar in EBNF
 
@@ -2633,7 +2631,6 @@ expression :=
     match_expression          // Pattern matching (e.g., `match x { ... }`)
     block                     // A sequence of statements inside `{}` (e.g., `{ stmt1; stmt2 }`)
     for_loop                  // For loop construct (e.g., `for i in array_range(0, 10) { ... }`)
-    while_loop                // While loop construct (e.g., `while condition { ... }`)
     loop                      // Infinite loop construct (e.g., `loop { ... }`)
     break                     // Breaks out of a loop (e.g., `break`)
     continue                  // Skips to the next loop iteration (e.g., `continue`)
@@ -2911,7 +2908,7 @@ greeting:s = `Hello, World!`;
 
 Key points about const declarations:
 - They are immutable.
-- To change a const value, you must use shadowing (redeclaration with the same name).
+- To change a const value, you must use shadowing (redeclaration with the same name, in the same scope).
 - Identifiers use snake_case, same as constant declarations (otherwise changing all the names for minor refactoring would be painful).
 
 Example of shadowing:
@@ -2935,8 +2932,18 @@ max_attempts:s = `Three`; // Shadows can even change the type (like Rust)
 ### Key Takeaways
 
 - Const values can be "changed" through shadowing, giving an impression of mutability, which helps ease of use.
+- Shadowing works in the SAME scope only. Declaring a name that already
+  exists in an enclosing scope is a compile error, because such a shadow dies
+  at the end of its block and code after the block silently sees the outer
+  value again (`sum:i = sum + num;` in a loop body would quietly sum to
+  nothing). The error's help names the fix: use `reduce` to accumulate, or
+  pick a different name.
+- There is no reassignment at all. A bare `count = 2;` (no type annotation)
+  is a compile error everywhere, with a help line pointing at shadowing,
+  `reduce`, and `==` for the comparison typo. Accumulating across iterations
+  is `reduce` and `scan`, never mutation.
 
-## Functions and Closures
+## Functions
 
 ### Function Declaration Syntax
 
@@ -2980,14 +2987,17 @@ f divide(a:i, b:i):i!e {
 }
 ```
 
-**Important Rule**: Void functions cannot be assigned to variables. Since they don't return a value, attempting to capture their "result" is a type error:
+**Important Rule**: A void call can only be assigned to a name declared `:v`. Assigning it to any other type is a mismatch, since there is no value of that type to hand over:
 
 ```nail-fragment
-// This is INVALID - compile error
-result:s = print(`Hello`);  // ERROR: Cannot assign void to variable
+// This is INVALID - print returns void, not a string
+result:s = print(`Hello`);  // ERROR
 
 // This is valid - just call the function
 print(`Hello`);  // OK
+
+// Also valid - the declaration says void
+outcome:v = print(`Hello`);  // OK
 
 // Functions that return values can be assigned
 sum:i = calculate(5, 3);  // OK - returns an integer
@@ -2995,16 +3005,15 @@ sum:i = calculate(5, 3);  // OK - returns an integer
 
 ### Function Parameters
 
-In Nail, function parameters must always be named, unless the name of the constant being passed is an exact match to the parameter name. This encourages clear and self-documenting function calls.
+Arguments are positional: a call supplies one expression per parameter, in the order the declaration names them. There is no named-argument syntax.
 
-```nail-refused
-f greet(name:s) {
-    print(`Hello, ` + name + `!`);
+```nail
+f greet(name:s):v {
+    print(string_concat([`Hello, `, name, `!`]));
 }
 
 user_name:s = `Alice`;
-greet(name:user_name);  // Explicitly named parameter
-greet(user_name);        // Allowed because constant name matches parameter name
+greet(user_name);
 ```
 
 ### Loop-based Processing
@@ -3054,9 +3063,9 @@ p
 
 ### Key Points:
 
-- All statements inside a parallel block execute concurrently
+- All statements inside a parallel block execute at the same time
 - Variables declared inside can be used after the block completes
-- Transpiles to Rust's `tokio::join!` for true parallelism
+- Each statement transpiles to its own `std::thread::spawn`, and the block joins every thread before continuing, so the statements run on separate cores
 - No semicolon needed after the closing brace
 - Ideal for I/O operations, API calls, or independent computations
 
@@ -3078,13 +3087,30 @@ print(`Balance: `, account_balance);
 // Example 2: Parallel file processing
 files:a:s = [`data1.txt`, `data2.txt`, `data3.txt`];
 p
-    content1:s = danger(fs_read_file(`data1.txt`));
-    content2:s = danger(fs_read_file(`data2.txt`));
-    content3:s = danger(fs_read_file(`data3.txt`));
+    content1:s = danger(fs_read(`data1.txt`));
+    content2:s = danger(fs_read(`data2.txt`));
+    content3:s = danger(fs_read(`data3.txt`));
 /p
 
 // Process all content together
 all_content:s = array_join([content1, content2, content3], `\n`);
+```
+
+### Concurrent Blocks
+
+A `c ... /c` block has the same shape and the same scoping as a parallel
+block, but transpiles to Rust's `tokio::join!`: every statement becomes an
+async task on the runtime rather than its own operating system thread. Reach
+for `c` when the statements spend their time waiting (requests, file reads,
+sleeps), and for `p` when they spend it computing.
+
+```nail-fragment
+c
+    weather:s = danger(fs_read(`weather.txt`));
+    news:s = danger(fs_read(`news.txt`));
+/c
+
+report:s = string_concat([weather, news]);
 ```
 
 ## Structs
@@ -3211,7 +3237,7 @@ Nail implements a unique error handling mechanism that promotes robust and maint
 
 ### Error 
 
-Errors are panic'd on immediately whenever an "e" (which represents Rust's err type) type is returned from any function.
+Returning `e(message)` from a function whose return type is `T!e` produces an error value, and nothing panics at that point. The error travels back to the caller as a value, and the program only stops if `danger` or `expect` meets it.
 
 ### Handling Errors
 
@@ -3232,7 +3258,7 @@ result:i = safe(potentially_failing_function(), handle_error);
 
 #### Using `danger`
 
-The `danger` function allows you to assert that a function will not fail, and if it does, it will return the error to start it propogating up the stack. The difference between `danger` and `expect` is that `danger` is used when the programmer acknowledges this should and can be made safe, and it should be made safe. This way you can easily find all dangerous parts of a program, and make them safe.
+The `danger` function unwraps a result, and panics with the error if there is one. The difference between `danger` and `expect` is purely one of intent: `danger` is used when the programmer acknowledges this should and can be made safe, and it should be made safe. This way you can easily find all dangerous parts of a program, and make them safe.
 
 ```nail-fragment
 result:i = danger(potentially_failing_function());
@@ -3295,7 +3321,7 @@ user_age:i = 25;
 
 #### Traditional If Syntax Error
 ```
-Error: Expected BlockOpen, found Identifier
+Expected '{' here, but found the name 'count'
 ```
 **Solution**: Nail only supports match-like if syntax:
 ```nail-refused
@@ -3313,7 +3339,7 @@ if {
 
 #### Using Return in Collection Operations
 ```
-Error: Cannot use 'r' (return) in collection operation
+Use 'y' (yield) instead of 'r' (return) in collection operations
 ```
 **Solution**: Use `y` (yield) in collection operations, `r` (return) in functions:
 ```nail-fragment
@@ -3330,28 +3356,15 @@ doubled:a:i = map num in numbers {
 
 #### Void Function Assignment Error
 ```
-Error: Cannot assign void to variable
+'result' is declared as a string (s) but its value is void (v)
 ```
-**Solution**: Void functions cannot be assigned to variables:
+**Solution**: A void call can only be assigned to a name declared `:v`:
 ```nail
-// Wrong
-result:v = print(`Hello`);  // ERROR
+// Wrong: result:s = print(`Hello`);
 
 // Correct
 print(`Hello`);  // Just call the function
-```
-
-#### HashMap Type Errors
-```
-Error: Void type cannot be used as hashmap value
-```
-**Solution**: HashMap values must be concrete types:
-```nail-refused
-// Wrong
-map:h<s,v> = hashmap_new();  // ERROR
-
-// Correct
-map:h<s,i> = hashmap_new();  // Use concrete types
+outcome:v = print(`Hello`);  // Or name the void result honestly
 ```
 
 ### Runtime Issues

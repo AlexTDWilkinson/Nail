@@ -1,0 +1,55 @@
+nail latest
+// The Nail website: a real web server, written in Nail, that serves the page
+// describing Nail. This file is the entry point and the table of contents.
+//
+// The program is split across files with Nail's compile-time file inclusion:
+// each line below splices that file in at lex time, in this order, as if its
+// contents were typed here.
+//
+//   safe/demo_math.nail       arithmetic for the live demos, sandboxed
+//   safe/stdlib_listing.nail  sort and row helpers for the library page, sandboxed
+//   safe/text_helpers.nail    small string shapers, sandboxed
+//   startup_data.nail         site config, file reads, demo values computed at startup
+//   styles.nail               the page stylesheet
+//   page_sections.nail        the HTML builders, one function per section
+//   server_state.nail         page assembly and handler state
+//   routes.nail               the request handler and its routes
+//
+// Below the inserts is the server wiring itself.
+
+port:i = 8080;
+
+// import() is the default way to bring a file in: the compiler sandboxes it so
+// it can compute anything and touch nothing: no network, no disk, no
+// environment, no processes, no global state, checked at compile time and
+// enforced through every function the sandboxed code reaches. The three files
+// below could be downloaded from the internet and imported unread, nothing in
+// them can act on this machine. If Nail ever grows a package repository, it
+// will be a folder of simple files brought in exactly like this.
+import(`safe/demo_math.nail`)
+import(`safe/stdlib_listing.nail`)
+import(`safe/text_helpers.nail`)
+
+// The rest of the program is our own code and stays fully trusted: these
+// files read the disk, hold the server state, and answer requests.
+import_dangerous(`startup_data.nail`)
+import_dangerous(`styles.nail`)
+import_dangerous(`page_sections.nail`)
+import_dangerous(`server_state.nail`)
+import_dangerous(`routes.nail`)
+
+// Serve the website
+// The browser demos on /games are static files: Nail programs compiled to
+// WebAssembly by scripts/build_wasm_demos.sh into wasm_demos/.
+config:HTTP_Config = HTTP_Config {
+    static_mounts = [HTTP_Static { prefix = `/wasm`, directory = `../../wasm_demos` }],
+    max_body_bytes = 0,
+    timeout_seconds = 0,
+    state = state,
+    cors_origins = [],
+    security_headers = false,
+    rate_limit_per_minute = 0,
+    rate_limit_message = ``
+};
+http_server(port, config);
+print(`Server running on http://localhost:`, port);

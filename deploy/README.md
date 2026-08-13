@@ -63,16 +63,27 @@ Isolation each app gets:
 ./scripts/deploy.sh
 ```
 
-Transpiles `examples/nail_website.nail`, builds the server, uploads the binary
-plus the runtime data files, restarts the service, and health-checks it -
-dumping the last 30 log lines if the check fails. Set `SKIP_TRANSPILE=1` to
-build the existing generated `main.rs` as-is.
+Runs the documentation tests (`cargo test --lib docs`, which compile every
+Nail block in every markdown file and verify the paths the docs name), then
+transpiles `examples/website/main.nail`, builds the wasm demos and the
+playground, builds the server, uploads the binary plus the runtime data files,
+restarts the service, and health-checks it - dumping the last 30 log lines if
+the check fails. `deploy/releases.sh` runs the same gate before publishing a
+compiler release. Set `SKIP_TRANSPILE=1` to build the existing generated
+`main.rs` as-is.
 
-**Runtime data files.** The server reads several paths relative to its working
-directory. They are listed in `DATA_PATHS` in `scripts/deploy.sh`:
-`examples/website_examples/`, `examples/nail_website.nail`, `tests/`,
-`nail_language_spec.md`, `README.md`. If you add a `read_file` call to the
-website, add its path there or the deployed site panics on startup.
+**Runtime data files.** The server runs in `/srv/nail/examples/website`, the
+same run-in-its-own-directory rule every Nail program follows. `add-app.sh`
+registers units with `WorkingDirectory=/srv/<app>`, so `scripts/deploy.sh`
+writes a systemd drop-in setting the website's working directory, idempotently
+on every deploy. Reads are relative to that directory: site files by bare
+name (`snippets/...`), repo files above it by `../../` (`../../README.md`).
+The shipped paths are listed in `DATA_PATHS` in `scripts/deploy.sh`,
+currently: `examples/website/`, `examples/mcp_dice_server.nail`, `tests/`,
+`nail_language_spec.md`, `README.md`, `wasm_demos/`, and `bundle/install.sh`
+(the script behind the `curl | sh` install one-liner). If you add an `fs_read`
+call to the website, add its path there or the deployed site panics on
+startup.
 
 ## Publishing a Nail release
 
@@ -113,7 +124,7 @@ in `.env` to the hostname `nail` fetches releases from.
 
 ## Port 8080
 
-The port comes from the Nail source (`examples/nail_website.nail`), not from
+The port comes from the Nail source (`examples/website/main.nail`), not from
 the environment - the stdlib HTTP server takes its port from the program. If
 you change it there, re-run `add-app.sh` with the matching `--port` and update
 `APP_PORT` in `scripts/deploy.sh`.

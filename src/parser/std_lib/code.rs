@@ -32,15 +32,12 @@ fn token_class(token_type: &TokenType) -> Option<&'static str> {
         | TokenType::FindDeclaration
         | TokenType::AllDeclaration
         | TokenType::AnyDeclaration
-        | TokenType::WhileDeclaration
         | TokenType::LoopKeyword
         | TokenType::InKeyword
         | TokenType::FromKeyword
         | TokenType::WhenKeyword
         | TokenType::BreakKeyword
         | TokenType::ContinueKeyword
-        | TokenType::MaxKeyword
-        | TokenType::StepKeyword
         | TokenType::Return
         | TokenType::Yield
         | TokenType::ImportKeyword

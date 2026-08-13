@@ -293,7 +293,6 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::BooleanLiteral { scope, .. }
         | ASTNode::UnaryOperation { scope, .. }
         | ASTNode::BinaryOperation { scope, .. }
-        | ASTNode::Assignment { scope, .. }
         | ASTNode::Identifier { scope, .. }
         | ASTNode::IfStatement { scope, .. }
         | ASTNode::ForLoop { scope, .. }
@@ -305,7 +304,6 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::FindExpression { scope, .. }
         | ASTNode::AllExpression { scope, .. }
         | ASTNode::AnyExpression { scope, .. }
-        | ASTNode::WhileLoop { scope, .. }
         | ASTNode::Loop { scope, .. }
         | ASTNode::SpawnBlock { scope, .. }
         | ASTNode::BreakStatement { scope, .. }
@@ -345,10 +343,6 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         }
         ASTNode::ForLoop { iterable, body, .. } => {
             update_node_scope(iterable, new_scope);
-            update_node_scope(body, new_scope);
-        }
-        ASTNode::WhileLoop { condition, body, .. } => {
-            update_node_scope(condition, new_scope);
             update_node_scope(body, new_scope);
         }
         ASTNode::Loop { body, .. } => {
@@ -447,10 +441,6 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         ASTNode::ConstDeclaration { value, .. } => {
             update_node_scope(value, new_scope);
         }
-        ASTNode::Assignment { left, right, .. } => {
-            update_node_scope(left, new_scope);
-            update_node_scope(right, new_scope);
-        }
         _ => {
             // All cases should be handled explicitly
             eprintln!("Unhandled node type in update_node_scope: {:?}", node);
@@ -462,6 +452,10 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
 fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
     let current_scope = state.scope_arena.current_scope();
 
+    visit_node_inner(node, state, current_scope);
+}
+
+fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope: usize) {
     // Set the scope for all nodes to the current scope
     // This ensures all nodes have their scope properly set during traversal
     match node {
@@ -472,7 +466,6 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         | ASTNode::BooleanLiteral { scope, .. }
         | ASTNode::UnaryOperation { scope, .. }
         | ASTNode::BinaryOperation { scope, .. }
-        | ASTNode::Assignment { scope, .. }
         | ASTNode::Identifier { scope, .. }
         | ASTNode::IfStatement { scope, .. }
         | ASTNode::ForLoop { scope, .. }
@@ -484,7 +477,6 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         | ASTNode::FindExpression { scope, .. }
         | ASTNode::AllExpression { scope, .. }
         | ASTNode::AnyExpression { scope, .. }
-        | ASTNode::WhileLoop { scope, .. }
         | ASTNode::Loop { scope, .. }
         | ASTNode::SpawnBlock { scope, .. }
         | ASTNode::BreakStatement { scope, .. }
@@ -576,7 +568,6 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
         ASTNode::FindExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_find_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::AllExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_all_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::AnyExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_any_expression(iterator, index_iterator, iterable, body, state, *scope),
-        ASTNode::WhileLoop { condition, initial_value, body, max_iterations, .. } => visit_while_loop(condition, initial_value, body, max_iterations, state),
         ASTNode::Loop { index_iterator, body, scope, .. } => visit_loop(index_iterator, body, state, *scope),
         ASTNode::SpawnBlock { body, .. } => visit_spawn_block(body, state),
         ASTNode::BreakStatement { code_span, .. } => visit_break_statement(state, code_span),
@@ -637,11 +628,6 @@ fn visit_node(node: &mut ASTNode, state: &mut AnalyzerState) {
             visit_struct_instantiation(&name, fields, state, &mut code_span);
         }
         ASTNode::EnumVariant { .. } => {},  // Enum variants don't need additional processing
-        ASTNode::Assignment { left, right, .. } => {
-            // Visit both sides of assignment
-            visit_node(left, state);
-            visit_node(right, state);
-        }
         _ => {
             panic!("visit_node: unhandled node type");
         }
@@ -742,7 +728,52 @@ fn resolve_custom_type(state: &AnalyzerState, data_type: &NailDataTypeDescriptor
     }
 }
 
+/// The enclosing-scope variable a declaration would shadow, if any. The walk
+/// starts at the parent of the declaring scope and stops at the function
+/// boundary, because a function body cannot see variables outside itself, so
+/// nothing out there can be shadowed. Function names are skipped: a variable
+/// sharing a function's name is a different (already handled) collision.
+fn shadowed_outer_variable(state: &AnalyzerState, declaring_scope: usize, name: &str) -> Option<NailDataTypeDescriptor> {
+    if declaring_scope == GLOBAL_SCOPE {
+        return None;
+    }
+    let boundary = state.function_scope.unwrap_or(GLOBAL_SCOPE);
+    if declaring_scope == boundary {
+        return None;
+    }
+    let mut scope = state.scope_arena.get_scope(declaring_scope).parent;
+    loop {
+        let scope_data = state.scope_arena.get_scope(scope);
+        if let Some(symbol) = scope_data.symbols.get(name) {
+            if !matches!(symbol.data_type, NailDataTypeDescriptor::Fn(_, _)) {
+                return Some(symbol.data_type.clone());
+            }
+        }
+        if scope == boundary || scope == GLOBAL_SCOPE {
+            return None;
+        }
+        scope = scope_data.parent;
+    }
+}
+
 fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+    // Shadowing a variable from an enclosing scope is refused: the shadow
+    // dies with this block, so code after the block sees the outer value
+    // again, which is a silently wrong answer rather than anything a shadow
+    // is for. A deliberate scratch variable deserves its own name, and an
+    // accumulation across iterations is what reduce is for. Redeclaring a
+    // name in the SAME scope stays legal: that is the documented way to
+    // rebind, and it behaves the way it reads.
+    let declaring_scope = state.scope_arena.current_scope();
+    if shadowed_outer_variable(state, declaring_scope, name).is_some() {
+        add_error_with_help(
+            state,
+            format!("'{}' shadows a variable from an enclosing scope, and the shadow dies at the end of this block", name),
+            Some(format!("code after this block will see the outer '{}' again, untouched. Give this variable a different name, or use reduce to accumulate a value across iterations", name)),
+            code_span,
+        );
+    }
+
     // Check if the value is an if expression without an else branch
     if let ASTNode::IfStatement { else_branch, .. } = value {
         if else_branch.is_none() && *data_type != NailDataTypeDescriptor::Void {
@@ -1392,43 +1423,6 @@ fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     state.scope_arena.exit_scope();
 }
 
-
-fn visit_while_loop(condition: &mut ASTNode, initial_value: &mut Option<Box<ASTNode>>, body: &mut ASTNode, max_iterations: &mut Option<Box<ASTNode>>, state: &mut AnalyzerState) {
-    // Mark that we're in a loop context for break/continue validation
-    let previous_in_loop = state.in_loop;
-    state.in_loop = true;
-    
-    // Visit the condition
-    visit_node(condition, state);
-    
-    // Check that condition is boolean
-    let condition_type = check_type(condition, state);
-    if condition_type != NailDataTypeDescriptor::Boolean && !condition_type.is_unresolved() {
-        add_error(state, format!("The 'while' condition must be a boolean, but it is {}", condition_type.describe()), &mut condition.code_span());
-    }
-    
-    // Visit initial value if present
-    if let Some(init) = initial_value {
-        visit_node(init, state);
-    }
-    
-    // Visit max iterations if present
-    if let Some(max_iter) = max_iterations {
-        visit_node(max_iter, state);
-        
-        // Check that max iterations is an integer
-        let max_type = check_type(max_iter, state);
-        if max_type != NailDataTypeDescriptor::Int && !max_type.is_unresolved() {
-            add_error(state, format!("The 'while' loop's maximum iteration count must be an integer, but it is {}", max_type.describe()), &mut max_iter.code_span());
-        }
-    }
-    
-    // Visit the body
-    visit_node(body, state);
-    
-    // Restore previous loop context
-    state.in_loop = previous_in_loop;
-}
 
 fn visit_loop(index_iterator: &Option<String>, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
     // Mark that we're in a loop context for break/continue validation
@@ -2107,7 +2101,7 @@ fn collect_return_types(node: &ASTNode, return_types: &mut Vec<NailDataTypeDescr
             }
         }
         // Don't recurse into nested functions or loops
-        ASTNode::ForLoop { .. } | ASTNode::WhileLoop { .. } | ASTNode::MapExpression { .. } => {}
+        ASTNode::ForLoop { .. } | ASTNode::MapExpression { .. } => {}
         _ => {
             panic!("collect_return_types: unhandled node type");
         }
@@ -2374,7 +2368,6 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
             // Any returns boolean
             NailDataTypeDescriptor::Boolean
         }
-        ASTNode::WhileLoop { .. } => NailDataTypeDescriptor::Void,
         ASTNode::Loop { .. } => NailDataTypeDescriptor::Void,
         ASTNode::SpawnBlock { .. } => NailDataTypeDescriptor::Void,
         ASTNode::BreakStatement { .. } => NailDataTypeDescriptor::Never,
@@ -2482,10 +2475,6 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                 }
             }
             NailDataTypeDescriptor::FailedToResolve
-        }
-        ASTNode::Assignment { left, .. } => {
-            // For assignments, the type is the type of the left-hand side (variable being assigned to)
-            check_type(left, state)
         }
     }
 }

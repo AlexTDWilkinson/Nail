@@ -4,10 +4,11 @@ Every `.nail` file in this directory is a program that is SUPPOSED to fail
 compilation. Its sibling `.stderr` file is the exact diagnostic the compiler
 must print, byte for byte.
 
-Run with `./test_error_messages.sh` (from the repo root). After changing a
-diagnostic on purpose, regenerate goldens with `./test_error_messages.sh
---bless` and READ the new `.stderr` files before committing — a golden is a
-human-approved promise about error quality, not just captured output.
+Run with `./scripts/test_error_messages.sh` (from the repo root). After
+changing a diagnostic on purpose, regenerate goldens with
+`./scripts/test_error_messages.sh --bless` and READ the new `.stderr` files
+before committing. A golden is a human-approved promise about error quality,
+not just captured output.
 
 Every message must follow the error style guide in
 `nail_language_spec.md` ("Error Message Style Guide"): plain-language

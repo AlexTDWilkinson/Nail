@@ -1,6 +1,6 @@
-# Functional Programming Paradise: Why Nail Replaces Loops with Map, Filter, and Reduce
+# Functional Programming Paradise: Why Nail Prefers Map, Filter, and Reduce
 
-In Nail, we've made a radical decision: **no loops**. No `for`, no `while`, no `do-while`. Instead, we embrace functional programming patterns that are safer, more expressive, and automatically parallelizable.
+Nail builds iteration into the language as dedicated keywords: `map`, `filter`, and `reduce`. Loops exist too (`for`, `while` with its required `max` bound, `loop`), but for transforming data, the functional forms are safer, more expressive, and easier to reason about.
 
 ## The Problem with Traditional Loops
 
@@ -30,7 +30,7 @@ increased_prices:a:f = map price in prices {
 
 ### Filter: Select What You Need
 
-```nail
+```nail-fragment
 // Get all premium users
 users:a:User = fetch_all_users();
 premium_users:a:User = filter user in users {
@@ -45,7 +45,7 @@ active_premium_users:a:User = filter user in premium_users {
 
 ### Reduce: Combine Into One
 
-```nail
+```nail-fragment
 // Calculate total revenue
 orders:a:Order = get_todays_orders();
 total_revenue:f = reduce sum order in orders from 0.0 {
@@ -54,11 +54,11 @@ total_revenue:f = reduce sum order in orders from 0.0 {
 
 // Find the oldest user
 users:a:User = get_all_users();
-first_user:User = users[0];
+first_user:User = danger(array_get(users, 0));
 oldest_user:User = reduce oldest current in users from first_user {
-    if {
-        current.age > oldest.age -> { y current; },
-        else -> { y oldest; }
+    y if {
+        current.age > oldest.age -> { r current; },
+        else -> { r oldest; }
     };
 };
 ```
@@ -81,10 +81,10 @@ log_lines:a:s = string_split(process_logs, `\n`);
 log_entries:a:LogEntry = map line in log_lines {
     parts:a:s = string_split(line, `,`);
     y LogEntry {
-        timestamp: danger(int_from(array_get(parts, 0))),
-        user_id: danger(array_get(parts, 1)),
-        action: danger(array_get(parts, 2)),
-        duration_ms: danger(int_from(array_get(parts, 3)))
+        timestamp = danger(int_from(danger(array_get(parts, 0)))),
+        user_id = danger(array_get(parts, 1)),
+        action = danger(array_get(parts, 2)),
+        duration_ms = danger(int_from(danger(array_get(parts, 3))))
     };
 };
 
@@ -97,34 +97,34 @@ slow_requests:a:LogEntry = filter entry in log_entries {
 total_duration:i = reduce sum entry in slow_requests from 0 {
     y sum + entry.duration_ms;
 };
-avg_duration:f = float_from(total_duration) / float_from(array_length(slow_requests));
+avg_duration:f = danger(float_from(total_duration)) / danger(float_from(array_length(slow_requests)));
 
-print(array_join([`Average slow request duration: `, string_from(avg_duration), `ms`]));
+print(array_join([`Average slow request duration: `, string_from(avg_duration), `ms`], ``));
 ```
 
 ## Advanced Patterns
 
-### Parallel Processing with map_parallel
+### Real Work Inside map
 
-```nail
-// Process images in parallel
+```nail-fragment
+// Process every image, one whole pipeline per element
 image_paths:a:s = get_image_paths();
 processed_images:a:ProcessedImage = map path in image_paths {
-    image_data:Bytes = danger(fs_read_bytes(path));
-    thumbnail:Bytes = generate_thumbnail(image_data);
+    image_data:s = danger(fs_read_base64(path));
+    thumbnail:s = generate_thumbnail(image_data);
     metadata:ImageMetadata = extract_metadata(image_data);
     
     y ProcessedImage {
-        original_path: path,
-        thumbnail: thumbnail,
-        metadata: metadata
+        original_path = path,
+        thumbnail = thumbnail,
+        metadata = metadata
     };
 };
 ```
 
 ### Building Complex Aggregations
 
-```nail
+```nail-fragment
 struct Sales {
     product_id:s,
     quantity:i,
@@ -150,7 +150,7 @@ total_sales:f = reduce sum sale in sales_data from 0.0 {
 f default_sale(err:e):Sales {
     print(err);
     // Return a dummy sale
-    r Sales { quantity: 0, price: 0.0, region: `Unknown` };
+    r Sales { product_id = `none`, quantity = 0, price = 0.0, region = `Unknown` };
 }
 
 // Or find the highest value sale
@@ -160,16 +160,16 @@ highest_sale:Sales = reduce best sale in sales_data from first_sale {
     current_value:f = current_quantity * sale.price;
     best_quantity:f = safe(float_from(best.quantity), default_zero);
     best_value:f = best_quantity * best.price;
-    if {
-        current_value > best_value -> { y sale; },
-        else -> { y best; }
+    y if {
+        current_value > best_value -> { r sale; },
+        else -> { r best; }
     };
 };
 ```
 
 ## Why This Matters
 
-1. **Automatic Parallelization**: The Nail runtime can parallelize `map` operations across cores
+1. **Parallel Friendly**: Iterations share no state, so heavy work splits cleanly into `p` blocks when you need concurrency
 2. **No State Bugs**: Each iteration is independent, eliminating shared state issues
 3. **Composability**: Functions compose naturally without side effects
 4. **Clarity**: The intent is clear - transform, filter, or aggregate
@@ -184,4 +184,4 @@ highest_sale:Sales = reduce best sale in sales_data from first_sale {
 
 ## Conclusion
 
-By removing loops, Nail forces you to think differently about iteration. The result? Cleaner, safer, and often faster code that's easier to understand and maintain. Welcome to functional programming - Nail style! 🔨
+By making map, filter, and reduce first-class syntax, Nail nudges you to think in transformations. The result? Cleaner, safer, and often faster code that's easier to understand and maintain. Welcome to functional programming - Nail style! 🔨

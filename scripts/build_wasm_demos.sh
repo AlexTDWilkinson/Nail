@@ -6,8 +6,8 @@
 #
 # Output lands in wasm_demos/ (gitignored, regenerated at will):
 #   wasm_demos/viewer/pkg/     the 3D model viewer compiled for the browser
-#   wasm_demos/examples/monument.glb   the model the viewer fetches, at the path
-#                                  the program names, resolved from /games/
+#   wasm_demos/monument.glb    the model the viewer fetches, at the path the
+#                              program names, resolved against <base href="/wasm/">
 #
 # The wasm-bindgen CLI version must match the version each demo's lockfile
 # resolves. If they drift, wasm-bindgen says so and names the fix.
@@ -40,9 +40,9 @@ build_demo() {
 build_demo platformer examples/platformer.nail
 build_demo viewer examples/model_viewer.nail
 
-# The viewer program fetches examples/monument.glb relative to its page under
-# /games/, so the file sits at that path inside the mounted directory.
-mkdir -p "$OUT_DIR/examples"
-cp examples/monument.glb "$OUT_DIR/examples/monument.glb"
+# The viewer program loads monument.glb from beside its source file. In the
+# browser the same path is fetched as a URL against the embed page's
+# <base href="/wasm/">, so the file sits at the top of the mounted directory.
+cp examples/monument.glb "$OUT_DIR/monument.glb"
 
 echo "Browser demos built into wasm_demos/"

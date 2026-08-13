@@ -236,7 +236,6 @@ pub struct Transpiler {
     // Names that appear as assignment targets anywhere in the program; their
     // declarations need `let mut`. Name-based, so a same-named variable in
     // another scope gets a harmless unused_mut at worst.
-    reassigned_variables: HashSet<String>,
     // User functions whose bodies (transitively) perform no async work. These
     // emit as plain sync Rust fns: no .await at call sites, no Box::pin for
     // recursion, and collection operations over them use plain rayon closures.
@@ -289,7 +288,6 @@ impl Transpiler {
             in_collection_operation: false,
             stdlib_types: HashMap::new(),
             move_contexts: Vec::new(),
-            reassigned_variables: HashSet::new(),
             pure_functions: HashSet::new(),
             in_sync_function: false,
             in_parallel_closure: false,
@@ -435,18 +433,6 @@ impl Transpiler {
         }
     }
 
-    /// Collects every name used as an assignment target so declarations can
-    /// be emitted with `let mut`.
-    fn collect_reassigned_variables(node: &ASTNode, out: &mut HashSet<String>) {
-        if let ASTNode::Assignment { left, .. } = node {
-            if let ASTNode::Identifier { name, .. } = left.as_ref() {
-                out.insert(name.clone());
-            }
-        }
-        for child in Self::ast_children(node) {
-            Self::collect_reassigned_variables(child, out);
-        }
-    }
 
     fn has_return_statements(&self, node: &ASTNode) -> bool {
         match node {
@@ -719,13 +705,6 @@ impl Transpiler {
                 self.collect_used_functions(iterable);
                 self.collect_used_functions(body);
             }
-            ASTNode::WhileLoop { condition, max_iterations, body, .. } => {
-                self.collect_used_functions(condition);
-                if let Some(max) = max_iterations {
-                    self.collect_used_functions(max);
-                }
-                self.collect_used_functions(body);
-            }
             ASTNode::Loop { body, .. } => {
                 self.collect_used_functions(body);
             }
@@ -778,11 +757,6 @@ impl Transpiler {
             ASTNode::StructDeclarationField { .. } |
             ASTNode::EnumVariant { .. } => {
                 // These nodes don't contain function calls or other expressions
-            }
-            ASTNode::Assignment { left, right, .. } => {
-                // Collect functions from both sides of assignment
-                self.collect_used_functions(left);
-                self.collect_used_functions(right);
             }
             ASTNode::StructInstantiationField { value, .. } => {
                 self.collect_used_functions(value);
@@ -872,16 +846,6 @@ impl Transpiler {
                 }
                 Self::collect_free_variables(body, &mut inner_bound, free);
             }
-            ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
-                Self::collect_free_variables(condition, bound, free);
-                if let Some(init) = initial_value {
-                    Self::collect_free_variables(init, bound, free);
-                }
-                if let Some(max) = max_iterations {
-                    Self::collect_free_variables(max, bound, free);
-                }
-                Self::collect_free_variables(body, &mut bound.clone(), free);
-            }
             ASTNode::Loop { index_iterator, body, .. } => {
                 let mut inner_bound = bound.clone();
                 if let Some(idx) = index_iterator {
@@ -892,7 +856,7 @@ impl Transpiler {
             ASTNode::SpawnBlock { body, .. } => {
                 Self::collect_free_variables(body, &mut bound.clone(), free);
             }
-            ASTNode::BinaryOperation { left, right, .. } | ASTNode::Assignment { left, right, .. } => {
+            ASTNode::BinaryOperation { left, right, .. } => {
                 Self::collect_free_variables(left, bound, free);
                 Self::collect_free_variables(right, bound, free);
             }
@@ -981,15 +945,6 @@ impl Transpiler {
                 // Emitted as a raw name outside the Identifier arm: pin it.
                 count(code_span, struct_name, counts);
             }
-            ASTNode::Assignment { left, right, .. } => {
-                // The assignment target is emitted bare and must stay valid: pin it.
-                if let ASTNode::Identifier { name, code_span, .. } = left.as_ref() {
-                    count(code_span, name, counts);
-                } else {
-                    Self::count_variable_uses(left, resolution, counts);
-                }
-                Self::count_variable_uses(right, resolution, counts);
-            }
             ASTNode::FunctionDeclaration { .. } | ASTNode::LambdaDeclaration { .. } => {}
             _ => {
                 for child in Self::ast_children(node) {
@@ -1052,15 +1007,6 @@ impl Transpiler {
                     mark_all(&[filter.as_ref()], out);
                 }
                 mark_all(&[body.as_ref()], out);
-            }
-            ASTNode::WhileLoop { condition, initial_value, max_iterations, body, .. } => {
-                if let Some(initial_value) = initial_value {
-                    Self::collect_never_move(initial_value, revisitable, resolution, out);
-                }
-                if let Some(max_iterations) = max_iterations {
-                    Self::collect_never_move(max_iterations, revisitable, resolution, out);
-                }
-                mark_all(&[condition.as_ref(), body.as_ref()], out);
             }
             ASTNode::Loop { body, .. } => mark_all(&[body.as_ref()], out),
             ASTNode::ParallelBlock { statements, .. } | ASTNode::ConcurrentBlock { statements, .. } => {
@@ -1754,9 +1700,6 @@ impl Transpiler {
     pub fn transpile(&mut self, node: &ASTNode) -> Result<String, CodeError> {
         // First pass: collect all used functions by traversing the AST
         self.collect_used_functions(node);
-        let mut reassigned = HashSet::new();
-        Self::collect_reassigned_variables(node, &mut reassigned);
-        self.reassigned_variables = reassigned;
         self.pure_functions = Self::compute_pure_functions(node);
         let mut struct_fields = HashMap::new();
         Self::collect_struct_field_types(node, &mut struct_fields);
@@ -1950,12 +1893,11 @@ impl Transpiler {
                 }
             }
             ASTNode::ConstDeclaration { name, data_type, value, code_span, .. } => {
-                let mutability = if self.reassigned_variables.contains(name) { "mut " } else { "" };
                 if add_semicolons {
-                    write!(output, "{}let {}{}: {} = ", self.indent(), mutability, name, self.rust_type(data_type, name))?;
+                    write!(output, "{}let {}: {} = ", self.indent(), name, self.rust_type(data_type, name))?;
                 } else {
                     // Inside expression context (like lambdas), don't add indent
-                    write!(output, "let {}{}: {} = ", mutability, name, self.rust_type(data_type, name))?;
+                    write!(output, "let {}: {} = ", name, self.rust_type(data_type, name))?;
                 }
                 self.transpile_node_internal(value, output, false)?;
                 self.activate_declaration(name, data_type, code_span);
@@ -2359,60 +2301,6 @@ impl Transpiler {
                 // Any: parallel with short-circuit on the first hit
                 self.write_parallel_search(iterator, index_iterator, iterable, body, output, add_semicolons, "any", false, "__search_result")?;
             }
-            ASTNode::WhileLoop { condition, max_iterations, body, .. } => {
-                if let Some(max_iter) = max_iterations {
-                    // Generate a bounded while loop
-                    if add_semicolons {
-                        writeln!(output, "{}{{", self.indent())?;
-                        writeln!(output, "{}    let mut _iterations = 0;", self.indent())?;
-                        write!(output, "{}    let _max_iterations = ", self.indent())?;
-                        self.transpile_node_internal(max_iter, output, false)?;
-                        writeln!(output, ";")?;
-                        write!(output, "{}    while ", self.indent())?;
-                    } else {
-                        writeln!(output, "{{")?;
-                        writeln!(output, "    let mut _iterations = 0;")?;
-                        write!(output, "    let _max_iterations = ")?;
-                        self.transpile_node_internal(max_iter, output, false)?;
-                        writeln!(output, ";")?;
-                        write!(output, "    while ")?;
-                    }
-                    self.transpile_node_internal(condition, output, false)?;
-                    writeln!(output, " && _iterations < _max_iterations {{")?;
-                    self.indent_level += 2;
-                    self.transpile_node_internal(body, output, true)?;
-                    if add_semicolons {
-                        writeln!(output, "{}_iterations += 1;", self.indent())?;
-                    } else {
-                        writeln!(output, "        _iterations += 1;")?;
-                    }
-                    self.indent_level -= 2;
-                    if add_semicolons {
-                        writeln!(output, "{}    }}", self.indent())?;
-                        writeln!(output, "{}}}", self.indent())?;
-                    } else {
-                        writeln!(output, "    }}")?;
-                        write!(output, "}}")?;
-                    }
-                } else {
-                    // Regular unbounded while loop
-                    if add_semicolons {
-                        write!(output, "{}while ", self.indent())?;
-                    } else {
-                        write!(output, "while ")?;
-                    }
-                    self.transpile_node_internal(condition, output, false)?;
-                    writeln!(output, " {{")?;
-                    self.indent_level += 1;
-                    self.transpile_node_internal(body, output, true)?;
-                    self.indent_level -= 1;
-                    if add_semicolons {
-                        writeln!(output, "{}}}", self.indent())?;
-                    } else {
-                        write!(output, "}}")?;
-                    }
-                }
-            }
             ASTNode::Loop { index_iterator, body, .. } => {
                 if let Some(index_name) = index_iterator {
                     self.record_variable_type(index_name, NailDataTypeDescriptor::Int);
@@ -2725,23 +2613,6 @@ impl Transpiler {
                     self.transpile_node_internal(value, output, false)?;
                 }
                 write!(output, "]")?;
-            }
-            ASTNode::Assignment { left, right, .. } => {
-                // Transpile assignment: left = right
-                // For assignment left-hand side, don't clone - just use the variable name
-                if add_semicolons {
-                    write!(output, "{}", self.indent())?;
-                }
-                if let ASTNode::Identifier { name, .. } = left.as_ref() {
-                    write!(output, "{}", name)?;
-                } else {
-                    self.transpile_node_internal(left, output, false)?;
-                }
-                write!(output, " = ")?;
-                self.transpile_node_internal(right, output, false)?;
-                if add_semicolons {
-                    writeln!(output, ";")?;
-                }
             }
         }
         Ok(())

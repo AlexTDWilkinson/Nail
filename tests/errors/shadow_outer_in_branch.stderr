@@ -1,0 +1,7 @@
+error: 'count' shadows a variable from an enclosing scope, and the shadow dies at the end of this block
+  --> tests/errors/shadow_outer_in_branch.nail:4:27
+   |
+ 4 |     true -> { count:i = 99; print(count); },
+   |                           ^
+help: code after this block will see the outer 'count' again, untouched. Give this variable a different name, or use reduce to accumulate a value across iterations
+1 error found

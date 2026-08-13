@@ -1,5 +1,5 @@
 nail latest
-// This is not a standalone program: examples/nail_website.nail imports it.
+// This is not a standalone program: examples/website/main.nail imports it.
 // The request handler and its routes.
 
 // Every request lands here. Routing is ordinary Nail code rather than a table
@@ -159,23 +159,16 @@ f prof_row_html(row:ProfRow, wall_nanos:i):s {
 f generate_profile_fragment(dump:s):s {
     wall:i = safe(json_get_int(dump, `wall_nanos`), prof_json_zero);
     count:i = safe(json_array_length(dump, `functions`), prof_json_zero);
-    rows:a:ProfRow = [];
-    for idx in array_range(0, count) {
+    all_rows:a:ProfRow = map idx in array_range(0, count) {
         prefix:s = array_join([`functions.`, string_from(idx), `.`], ``);
-        calls:i = safe(json_get_int(dump, array_join([prefix, `calls`], ``)), prof_json_zero);
-        if {
-            calls > 0 -> {
-                row:ProfRow = ProfRow {
-                    name = safe(json_get_string(dump, array_join([prefix, `name`], ``)), prof_json_blank),
-                    calls = calls,
-                    total_nanos = safe(json_get_int(dump, array_join([prefix, `total_nanos`], ``)), prof_json_zero),
-                    max_nanos = safe(json_get_int(dump, array_join([prefix, `max_nanos`], ``)), prof_json_zero)
-                };
-                rows = array_push(rows, row);
-            },
-            else -> {}
-        }
-    }
+        y ProfRow {
+            name = safe(json_get_string(dump, array_join([prefix, `name`], ``)), prof_json_blank),
+            calls = safe(json_get_int(dump, array_join([prefix, `calls`], ``)), prof_json_zero),
+            total_nanos = safe(json_get_int(dump, array_join([prefix, `total_nanos`], ``)), prof_json_zero),
+            max_nanos = safe(json_get_int(dump, array_join([prefix, `max_nanos`], ``)), prof_json_zero)
+        };
+    };
+    rows:a:ProfRow = filter row in all_rows { y row.calls > 0; };
     ordered:a:ProfRow = array_reverse(array_sort_by(rows, prof_row_total));
     top:a:ProfRow = array_take(ordered, 10);
     hidden:i = array_length(ordered) - array_length(top);
@@ -183,10 +176,7 @@ f generate_profile_fragment(dump:s):s {
         hidden > 0 -> { r array_join([`, plus `, string_from(hidden), ` quieter functions not shown`], ``); },
         else -> { r ``; }
     };
-    row_bits:a:s = [];
-    for row in top {
-        row_bits = array_push(row_bits, prof_row_html(row, wall));
-    }
+    row_bits:a:s = map row in top { y prof_row_html(row, wall); };
     r array_join([
         `<div class="bench-wrap"><table class="bench-table">`,
         `<tr>`,

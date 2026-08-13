@@ -1,5 +1,5 @@
 nail latest
-// This is not a standalone program: examples/nail_website.nail imports it.
+// This is not a standalone program: examples/website/main.nail imports it.
 // Site configuration, the files this server reads at startup, and the demo
 // values it computes at startup by really running the code the page displays.
 
@@ -23,17 +23,17 @@ nav_items:a:NavItem = [
 ];
 
 // Read example files that showcase Nail's philosophy
-error_example:s = danger(fs_read(`examples/website_examples/simple_error.nail`));
-concurrent_example:s = danger(fs_read(`examples/website_examples/simple_concurrent.nail`));
-parallel_example:s = danger(fs_read(`examples/website_examples/simple_parallel.nail`));  
-immutable_example:s = danger(fs_read(`examples/website_examples/immutable_safety.nail`));
-basics_example:s = danger(fs_read(`examples/website_examples/binding_values.nail`));
-mcp_example:s = danger(fs_read(`examples/mcp_dice_server.nail`));
+error_example:s = danger(fs_read(`snippets/simple_error.nail`));
+concurrent_example:s = danger(fs_read(`snippets/simple_concurrent.nail`));
+parallel_example:s = danger(fs_read(`snippets/simple_parallel.nail`));  
+immutable_example:s = danger(fs_read(`snippets/immutable_safety.nail`));
+basics_example:s = danger(fs_read(`snippets/binding_values.nail`));
+mcp_example:s = danger(fs_read(`../mcp_dice_server.nail`));
 
 // Read test files for more complex examples
-greet_test:s = danger(fs_read(`tests/test_website_greet_example.nail`));
-collections_test:s = danger(fs_read(`tests/test_website_collections_example.nail`));
-factorial_test:s = danger(fs_read(`tests/test_website_factorial_example.nail`));
+greet_test:s = danger(fs_read(`../../tests/test_website_greet_example.nail`));
+collections_test:s = danger(fs_read(`../../tests/test_website_collections_example.nail`));
+factorial_test:s = danger(fs_read(`../../tests/test_website_factorial_example.nail`));
 
 // The /run-example routes serve REAL output: this server executes the same
 // code as the displayed examples at startup and builds responses from the results.
@@ -52,7 +52,7 @@ f read_no_releases(err:e):s {
 // anyone who would rather read it before running it is reading exactly what
 // runs. It installs the launcher only: versions of Nail come down later, when a file
 // asks for one.
-install_script:s = safe(fs_read(`bundle/install.sh`), read_fallback);
+install_script:s = safe(fs_read(`../../bundle/install.sh`), read_fallback);
 
 // Every published release, written by deploy/releases.sh at publish time: the
 // website is sandboxed away from the release directory and cannot list it
@@ -61,7 +61,7 @@ install_script:s = safe(fs_read(`bundle/install.sh`), read_fallback);
 // This is read by people on the downloads page. nail never reads it. It
 // names a version in a URL and that is the whole protocol, and a list it
 // depended on would be one more thing that has to stay correct forever.
-releases_tsv:s = safe(fs_read(`releases.tsv`), read_no_releases);
+releases_tsv:s = safe(fs_read(`../../releases.tsv`), read_no_releases);
 
 // Same CPU-heavy work as the parallel example, on separate OS threads.
 // Timed, so the run output can show how long the whole block took.
@@ -78,24 +78,24 @@ parallel_elapsed_us:i = time_now_micros() - parallel_started;
 // Timed: the block takes as long as its slowest read, not their sum.
 concurrent_started:i = time_now_micros();
 c
-    spec_text:s = danger(fs_read(`nail_language_spec.md`));
-    readme_text:s = expect(fs_read(`README.md`));
-    website_entry_text:s = safe(fs_read(`examples/nail_website.nail`), read_fallback);
-    demo_math_text:s = safe(fs_read(`examples/website/safe/demo_math.nail`), read_fallback);
-    stdlib_listing_text:s = safe(fs_read(`examples/website/safe/stdlib_listing.nail`), read_fallback);
-    text_helpers_text:s = safe(fs_read(`examples/website/safe/text_helpers.nail`), read_fallback);
-    startup_data_text:s = safe(fs_read(`examples/website/startup_data.nail`), read_fallback);
-    styles_text:s = safe(fs_read(`examples/website/styles.nail`), read_fallback);
-    page_sections_text:s = safe(fs_read(`examples/website/page_sections.nail`), read_fallback);
-    server_state_text:s = safe(fs_read(`examples/website/server_state.nail`), read_fallback);
-    routes_text:s = safe(fs_read(`examples/website/routes.nail`), read_fallback);
+    spec_text:s = danger(fs_read(`../../nail_language_spec.md`));
+    readme_text:s = expect(fs_read(`../../README.md`));
+    website_entry_text:s = safe(fs_read(`main.nail`), read_fallback);
+    demo_math_text:s = safe(fs_read(`safe/demo_math.nail`), read_fallback);
+    stdlib_listing_text:s = safe(fs_read(`safe/stdlib_listing.nail`), read_fallback);
+    text_helpers_text:s = safe(fs_read(`safe/text_helpers.nail`), read_fallback);
+    startup_data_text:s = safe(fs_read(`startup_data.nail`), read_fallback);
+    styles_text:s = safe(fs_read(`styles.nail`), read_fallback);
+    page_sections_text:s = safe(fs_read(`page_sections.nail`), read_fallback);
+    server_state_text:s = safe(fs_read(`server_state.nail`), read_fallback);
+    routes_text:s = safe(fs_read(`routes.nail`), read_fallback);
 /c
 concurrent_elapsed_us:i = time_now_micros() - concurrent_started;
 
 // The listing of this site's source: the entry file, then each imported part
 // under a labeled header, in import order.
 website_text:s = array_join([
-    label_source_file(`examples/nail_website.nail`, website_entry_text),
+    label_source_file(`examples/website/main.nail`, website_entry_text),
     label_source_file(`examples/website/safe/demo_math.nail`, demo_math_text),
     label_source_file(`examples/website/safe/stdlib_listing.nail`, stdlib_listing_text),
     label_source_file(`examples/website/safe/text_helpers.nail`, text_helpers_text),
@@ -116,14 +116,14 @@ error_elapsed_us:i = time_now_micros() - error_started;
 // the server lexes each example and emits colored HTML spans)
 // The author photo travels as base64 in the page itself: this server serves
 // routes of text, so there is no binary asset to host or path to get wrong.
-author_avatar:s = danger(fs_read(`examples/website_assets/author_avatar.b64`));
+author_avatar:s = danger(fs_read(`assets/author_avatar.b64`));
 
 // Real frames of the IDE, captured from a terminal and converted to HTML, so
 // the colors below are the ones the editor actually drew.
-ide_shot_error:s = danger(fs_read(`examples/website_screenshots/ide_error.html`));
-ide_shot_complete:s = danger(fs_read(`examples/website_screenshots/ide_complete.html`));
-ide_shot_docs:s = danger(fs_read(`examples/website_screenshots/ide_docs.html`));
-ide_shot_profiling:s = danger(fs_read(`examples/website_screenshots/ide_profiling.html`));
+ide_shot_error:s = danger(fs_read(`screenshots/ide_error.html`));
+ide_shot_complete:s = danger(fs_read(`screenshots/ide_complete.html`));
+ide_shot_docs:s = danger(fs_read(`screenshots/ide_docs.html`));
+ide_shot_profiling:s = danger(fs_read(`screenshots/ide_profiling.html`));
 
 hero_snippet:s = `// Nothing here is mutable, so nothing here can race.
 // map and filter are language operations, so they run on every core.
@@ -173,16 +173,16 @@ f refusal_of(source:s):s {
 }
 
 // The sandbox demo: a booby-trapped download and the program that contains it.
-jailbreak_source:s = danger(fs_read(`examples/website_examples/jailbreak_attempt.nail`));
-sandbox_demo_source:s = danger(fs_read(`examples/website_examples/sandbox_demo.nail`));
+jailbreak_source:s = danger(fs_read(`snippets/jailbreak_attempt.nail`));
+sandbox_demo_source:s = danger(fs_read(`snippets/sandbox_demo.nail`));
 jailbreak_html:s = code_highlight_html(jailbreak_source);
 sandbox_demo_html:s = code_highlight_html(sandbox_demo_source);
 sandbox_verdict_html:s = code_escape_html(refusal_of(sandbox_demo_source));
 
 // Three everyday bugs the type checker refuses to compile.
-refused_error_source:s = danger(fs_read(`examples/website_examples/refused_ignored_error.nail`));
-refused_field_source:s = danger(fs_read(`examples/website_examples/refused_missing_field.nail`));
-refused_nothing_source:s = danger(fs_read(`examples/website_examples/refused_nothing.nail`));
+refused_error_source:s = danger(fs_read(`snippets/refused_ignored_error.nail`));
+refused_field_source:s = danger(fs_read(`snippets/refused_missing_field.nail`));
+refused_nothing_source:s = danger(fs_read(`snippets/refused_nothing.nail`));
 refused_error_html:s = code_highlight_html(refused_error_source);
 refused_field_html:s = code_highlight_html(refused_field_source);
 refused_nothing_html:s = code_highlight_html(refused_nothing_source);
@@ -191,7 +191,7 @@ refused_field_verdict:s = code_escape_html(refusal_of(refused_field_source));
 refused_nothing_verdict:s = code_escape_html(refusal_of(refused_nothing_source));
 
 // The whole language on one screen, proven to compile at startup.
-whole_language_source:s = danger(fs_read(`examples/website_examples/whole_language.nail`));
+whole_language_source:s = danger(fs_read(`snippets/whole_language.nail`));
 whole_language_html:s = code_highlight_html(whole_language_source);
 whole_language_rust_lines:i = array_length(string_split(danger(code_transpile_to_rust(whole_language_source)), `\n`));
 

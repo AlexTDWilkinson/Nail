@@ -112,7 +112,6 @@ pub enum TokenType {
     FindDeclaration,                         // For find keyword
     AllDeclaration,                          // For all keyword
     AnyDeclaration,                          // For any keyword
-    WhileDeclaration,                        // For while keyword
     LoopKeyword,                             // For loop keyword (infinite loops)
     SpawnKeyword,                            // For spawn keyword (background tasks)
     InKeyword,                               // For in keyword
@@ -120,8 +119,6 @@ pub enum TokenType {
     WhenKeyword,                             // For when keyword (filtering)
     BreakKeyword,                            // For break keyword
     ContinueKeyword,                         // For continue keyword
-    MaxKeyword,                              // For max keyword (while bounds)
-    StepKeyword,                             // For step keyword (for loops)
     Range,                                   // For .. operator
     RangeInclusive,                          // For ..= operator
     Assignment,                              // For assignment ie =
@@ -206,7 +203,6 @@ impl TokenType {
             TokenType::FindDeclaration => "the 'find' keyword".to_string(),
             TokenType::AllDeclaration => "the 'all' keyword".to_string(),
             TokenType::AnyDeclaration => "the 'any' keyword".to_string(),
-            TokenType::WhileDeclaration => "the 'while' keyword".to_string(),
             TokenType::LoopKeyword => "the 'loop' keyword".to_string(),
             TokenType::SpawnKeyword => "the 'spawn' keyword".to_string(),
             TokenType::InKeyword => "the 'in' keyword".to_string(),
@@ -214,8 +210,6 @@ impl TokenType {
             TokenType::WhenKeyword => "the 'when' keyword".to_string(),
             TokenType::BreakKeyword => "the 'break' keyword".to_string(),
             TokenType::ContinueKeyword => "the 'continue' keyword".to_string(),
-            TokenType::MaxKeyword => "the 'max' keyword".to_string(),
-            TokenType::StepKeyword => "the 'step' keyword".to_string(),
             TokenType::Return => "the 'r' (return) keyword".to_string(),
             TokenType::Yield => "the 'y' (yield) keyword".to_string(),
             TokenType::LexerError(_) => "an invalid token".to_string(),
@@ -1454,7 +1448,7 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "match" => TokenType::LexerError("'match' is a reserved keyword and cannot be used as an identifier".to_string()),
         "loop" => TokenType::LoopKeyword,
         "spawn" => TokenType::SpawnKeyword,
-        "while" => TokenType::WhileDeclaration,
+        "while" => TokenType::LexerError("Nail has no 'while' loop: iterate with 'for', repeat with 'loop' and 'break', accumulate with 'reduce'".to_string()),
         "for" => TokenType::ForDeclaration,
         "map" => TokenType::MapDeclaration,
         "filter" => TokenType::FilterDeclaration,
@@ -1469,8 +1463,6 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "when" => TokenType::WhenKeyword,
         "break" => TokenType::BreakKeyword,
         "continue" => TokenType::ContinueKeyword,
-        "max" => TokenType::MaxKeyword,
-        "step" => TokenType::StepKeyword,
         "return" => TokenType::LexerError("'return' is a reserved keyword and cannot be used as an identifier".to_string()),
         "yield" => TokenType::LexerError("'yield' is a reserved keyword and cannot be used as an identifier".to_string()),
         "ref" => TokenType::LexerError("'ref' is a reserved keyword and cannot be used as an identifier".to_string()),
