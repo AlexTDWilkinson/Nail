@@ -155,6 +155,16 @@ check "nothing is left pointing at the machine that built it" "left=0" "left=$(g
 check "the imported release is installed" "0.9.9" "$("$LAUNCHER" list 2>&1)"
 "$LAUNCHER" remove 0.9.9 >/dev/null 2>&1
 
+# A release is a .tar.xz and tar runs `xz` to read one, so a machine with tar
+# and nothing else gets 774MB down the wire before anything goes wrong. Both
+# programs are checked before the download, and the message names the one that
+# is missing rather than leaving tar to complain about a child process.
+ONLY_TAR="$WORK/only-tar"
+mkdir -p "$ONLY_TAR"
+ln -sf "$(command -v tar)" "$ONLY_TAR/tar"
+check "a missing xz is named, before anything is downloaded" "\`xz\` is not installed" "$(PATH="$ONLY_TAR" "$LAUNCHER" import "$WORK/foreign.tar" 2>&1)"
+check "doctor checks for xz as well as tar" "xz is available" "$("$LAUNCHER" doctor 2>&1)"
+
 # Which store nail uses is decided by where nail itself is, so a machine with
 # both a home install and a machine-wide one has each using its own. Without
 # this the two would race for one directory and whoever did not own it would

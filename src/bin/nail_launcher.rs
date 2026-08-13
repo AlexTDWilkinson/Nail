@@ -602,7 +602,7 @@ fn install(store: &Store, version: &Version) -> Fallible<()> {
         println!("{} is already installed", version);
         return Ok(());
     }
-    require_tar()?;
+    require_unpack_tools()?;
 
     let versions = store.versions_dir();
     fs::create_dir_all(&versions).map_err(|error| format!("cannot create {}: {}\n{}", versions.display(), error, permission_hint(store)))?;
@@ -854,13 +854,22 @@ fn unpack(tarball: &Path, into: &Path) -> Fallible<()> {
     return Ok(());
 }
 
-fn require_tar() -> Fallible<()> {
-    let found = Command::new("tar").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok();
-    if found {
-        Ok(())
-    } else {
-        fail("`tar` is not installed, and nail needs it to unpack releases")
+fn have(program: &str) -> bool {
+    return Command::new(program).arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok();
+}
+
+/// A release is a .tar.xz, and tar does not decompress that itself: it runs
+/// `xz`. So a machine with tar and no xz-utils used to download the whole
+/// release and only then fail, in tar's words about a child process rather
+/// than in ours about a missing program.
+fn require_unpack_tools() -> Fallible<()> {
+    if !have("tar") {
+        return fail("`tar` is not installed, and nail needs it to unpack releases");
     }
+    if !have("xz") {
+        return fail("`xz` is not installed, and nail needs it to unpack releases. tar runs xz to read them, so tar alone is not enough");
+    }
+    return Ok(());
 }
 
 // ---------------------------------------------------------------------------
@@ -1405,7 +1414,7 @@ fn command_export(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
         return fail(format!("{} is not installed", version));
     }
     let destination = arguments.get(1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(format!("nail-{}-{}.tar", version, TARGET)));
-    require_tar()?;
+    require_unpack_tools()?;
     println!("packing {} (this takes a while, it is gigabytes)", version);
     let status = Command::new("tar")
         .arg("-cf")
@@ -1424,7 +1433,7 @@ fn command_export(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
 
 fn command_import(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
     let source = arguments.first().map(PathBuf::from).ok_or("usage: nail import <file.tar>")?;
-    require_tar()?;
+    require_unpack_tools()?;
     let versions = store.versions_dir();
     fs::create_dir_all(&versions).map_err(|error| format!("cannot create {}: {}", versions.display(), error))?;
 
@@ -1458,7 +1467,8 @@ fn command_doctor(store: &Store) -> Fallible<ExitCode> {
 
     println!("store {} ({})\n", store.root.display(), if store.is_system() { "machine-wide" } else { "yours alone" });
 
-    report(require_tar().is_ok(), "tar is available for unpacking releases".to_string());
+    report(have("tar"), "tar is available for unpacking releases".to_string());
+    report(have("xz"), "xz is available, which is what tar unpacks a release with".to_string());
 
     let versions = store.versions_dir();
     let writable = can_write(&versions);
