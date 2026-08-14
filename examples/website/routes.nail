@@ -67,6 +67,25 @@ f handle_request(request:HTTP_Request, state:h<s,s>):HTTP_Response {
                 headers = headers
             };
         },
+        request.path == `/llms.txt` -> {
+            // The agent primer, plain text, for tools that fetch
+            // documentation over the network. The llms.txt convention is a
+            // markdown page at exactly this path.
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `llms_txt`)),
+                content_type = `text/plain; charset=utf-8`,
+                headers = headers
+            };
+        },
+        request.path == `/llms-full.txt` -> {
+            r HTTP_Response {
+                status = 200,
+                body = danger(hashmap_get(state, `llms_full`)),
+                content_type = `text/plain; charset=utf-8`,
+                headers = headers
+            };
+        },
         request.path == `/run-example` -> {
             r run_example_response(request, state, headers);
         },

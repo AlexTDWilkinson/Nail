@@ -4,3 +4,4 @@ error: Nail has no reassignment: a variable cannot be assigned a second time
  3 | count = 2;
    |       ^
 help: declare a binding with a type ('name:i = ...', redeclaring an earlier name in the same scope is allowed), accumulate across items with reduce, or write '==' if a comparison was meant
+1 error found while parsing

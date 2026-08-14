@@ -3,3 +3,4 @@ error: Import error: '../test_import_helper.nail' is imported both with import()
    |
  5 | import(`../test_import_helper.nail`)
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1 error found before parsing

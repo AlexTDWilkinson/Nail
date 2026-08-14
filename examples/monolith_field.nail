@@ -84,6 +84,27 @@ f pillars(state:Field):a:GAME3D_Draw {
     };
 }
 
+// The sky behind everything: a sunrise, banded from night indigo at the
+// top of the window down through violet and rose to gold at the horizon.
+// Sixty four flat rectangles laid before the scene draws over them -
+// ordinary 2D shapes doing a shader's job again, same as the sun's halo.
+f sunrise_color(share:f):s {
+    scaled:f = share * 4.0;
+    r if {
+        scaled < 1.0 -> { r danger(color_mix(`#1b2247`, `#443668`, scaled)); },
+        scaled < 2.0 -> { r danger(color_mix(`#443668`, `#8a5273`, scaled - 1.0)); },
+        scaled < 3.0 -> { r danger(color_mix(`#8a5273`, `#d3775f`, scaled - 2.0)); },
+        else -> { r danger(color_mix(`#d3775f`, `#f6b26b`, scaled - 3.0)); }
+    };
+}
+
+f sunrise_sky():a:GAME_Shape {
+    r map index in array_range(0, 64) {
+        share:f = danger(float_from(index)) / 63.0;
+        y game_rect(0.0, danger(float_from(index)) * 10.0, 900.0, 11.0, sunrise_color(share));
+    };
+}
+
 // The orb is also the sun: the scene's light points at wherever it is,
 // so every face in the field relights as it circles. Its spot is three
 // little functions because the light and the drawn sphere both need it.
@@ -163,7 +184,7 @@ f view(state:Field):GAME_Frame {
         light_z = orb_away(state),
         light_color = `#ffe8c0`,
         ambient = 0.28,
-        fog_color = `#101018`,
+        fog_color = `#d08a5f`,
         fog_near = 14.0,
         fog_far = 52.0
     };
@@ -184,9 +205,9 @@ f view(state:Field):GAME_Frame {
 
     title:GAME_Shape = game_text(`an ocean, a sun and ninety five meshes, one scene shape, on the graphics card`, 20.0, 18.0, 18.0, `#e0e0e0`);
     help:GAME_Shape = game_text(`drag to orbit, scroll to zoom, click a tower, Esc quits`, 20.0, 608.0, 16.0, `#757575`);
-    shapes:a:GAME_Shape = array_concat(array_concat([world], sun_halo(state, camera)), array_concat([title, help], picked_label(state, camera)));
+    shapes:a:GAME_Shape = array_concat(array_concat(sunrise_sky(), array_concat([world], sun_halo(state, camera))), array_concat([title, help], picked_label(state, camera)));
 
-    r GAME_Frame { shapes = shapes, background = `#101018`, quit = state.done };
+    r GAME_Frame { shapes = shapes, background = `#1b2247`, quit = state.done };
 }
 
 // Clicking the sky claims nothing, and that is not an error worth stopping
@@ -316,28 +337,86 @@ fn shade(surface: NAIL_Surface) -> vec4<f32> {
 }`;
 sun_shader:GAME3D_Shader = danger(game3d_shader(sun_wgsl));
 
-// The ocean's surface: two crossing swells tip the normal per pixel so one
-// flat plane rolls, the light glints off the ripples toward the eye, and
-// grazing angles wash toward sky. surface.time is what keeps it moving.
-water_wgsl:s = wgsl`fn wave_tilt(spot: vec2<f32>, phase: f32) -> vec2<f32> {
-    let lean_x = sin(spot.x * 1.7 + phase) * 0.6 + sin(spot.x * 0.31 + spot.y * 0.7 + phase * 0.6) * 0.4;
-    let lean_z = cos(spot.y * 1.3 + phase * 0.8) * 0.6 + cos(spot.x * 0.5 + spot.y * 0.27 + phase * 0.5) * 0.4;
-    return vec2<f32>(lean_x, lean_z);
+// The ocean's surface, in WGSL. The standard recipe every good Shadertoy
+// sea is built from, written fresh here: octaves of ridged noise make a
+// choppy height field, a finite difference turns it into a normal, and the
+// shading does the three things water does to light - a trough to crest
+// colour ramp, a fresnel wash toward sky at grazing angles, and a hard sun
+// glint. Foam frays the tallest crests.
+water_wgsl:s = wgsl`fn hash2(spot: vec2<f32>) -> f32 {
+    return fract(sin(dot(spot, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
+fn noise2(spot: vec2<f32>) -> f32 {
+    let cell = floor(spot);
+    let part = fract(spot);
+    let eased = part * part * (3.0 - 2.0 * part);
+    let low = mix(hash2(cell), hash2(cell + vec2<f32>(1.0, 0.0)), eased.x);
+    let high = mix(hash2(cell + vec2<f32>(0.0, 1.0)), hash2(cell + vec2<f32>(1.0, 1.0)), eased.x);
+    return mix(low, high, eased.y) * 2.0 - 1.0;
+}
+
+// Wind makes ridged crests and rounded troughs, so the noise is folded:
+// sharp where it peaks, soft where it dips.
+fn ridged(value: f32) -> f32 {
+    let folded = 1.0 - abs(value);
+    return folded * folded;
+}
+
+// Five octaves of chop, each drifting at its own speed and turned ninety
+// degrees from the last so the seas cross instead of marching in step.
+fn ocean_height(spot: vec2<f32>, time: f32) -> f32 {
+    var height = 0.0;
+    var amplitude = 0.52;
+    var frequency = 0.16;
+    var direction = vec2<f32>(0.86, 0.51);
+    for (var octave = 0; octave < 5; octave = octave + 1) {
+        let drift = direction * time * (0.35 + 0.22 * f32(octave));
+        height = height + ridged(noise2(spot * frequency + drift)) * amplitude;
+        amplitude = amplitude * 0.46;
+        frequency = frequency * 2.15;
+        direction = vec2<f32>(-direction.y, direction.x);
+    }
+    return height;
 }
 
 fn shade(surface: NAIL_Surface) -> vec4<f32> {
-    let phase = surface.time * 1.8;
-    let tip = wave_tilt(surface.world_position.xz, phase);
-    let normal = normalize(surface.normal + vec3<f32>(tip.x, 0.0, tip.y) * 0.35);
+    let spot = surface.world_position.xz;
+    let eps = 0.25;
+    let here = ocean_height(spot, surface.time);
+    let east = ocean_height(spot + vec2<f32>(eps, 0.0), surface.time);
+    let north = ocean_height(spot + vec2<f32>(0.0, eps), surface.time);
+    let steep = 2.6;
+    let normal = normalize(vec3<f32>((here - east) * steep / eps, 1.0, (here - north) * steep / eps));
+    let toward_eye = normalize(surface.toward_eye);
+
+    // Trough to crest: the tint the draw carries is the water, darkest
+    // deep in a trough, lifting and greening where a wave thins out.
+    let deep = surface.color * 0.35;
+    let crest = surface.color * 1.15 + vec3<f32>(0.02, 0.12, 0.05);
+    var color = mix(deep, crest, clamp(here * here, 0.0, 1.0));
+
     let facing = max(dot(normal, surface.light), 0.0);
-    let shaded = surface.ambient + (1.0 - surface.ambient) * facing;
-    var color = surface.color * (0.2 + shaded) * surface.light_color;
+    let lit = surface.ambient + (1.0 - surface.ambient) * facing;
+    color = color * lit * surface.light_color;
+
+    // Water is glass face on and a mirror at a grazing angle, and what it
+    // mirrors here is the sunrise.
+    let fresnel = pow(1.0 - max(dot(normal, toward_eye), 0.0), 5.0);
+    let sky = vec3<f32>(0.90, 0.72, 0.62);
+    color = mix(color, sky * surface.light_color, clamp(0.05 + 0.85 * fresnel, 0.0, 1.0));
+
+    // The glint, tight and overdriven the way low sun on water is.
     let mirrored = reflect(-surface.light, normal);
-    let glint = pow(max(dot(mirrored, surface.toward_eye), 0.0), 32.0) * 1.3;
+    let glint = pow(max(dot(mirrored, toward_eye), 0.0), 96.0) * 2.2;
     color = color + surface.light_color * glint;
-    let grazing = pow(1.0 - max(dot(normal, surface.toward_eye), 0.0), 3.0) * 0.45;
-    color = mix(color, vec3<f32>(0.85, 0.92, 1.0), grazing);
-    return vec4<f32>(color, 1.0);
+
+    // Foam on the tallest crests, frayed by the same noise the sea is.
+    let fray = noise2(spot * 1.9 + vec2<f32>(surface.time * 0.8, surface.time * 0.6));
+    let foam = smoothstep(0.82, 1.02, here + 0.18 * fray);
+    color = mix(color, vec3<f32>(0.93, 0.97, 0.98), foam * 0.6);
+
+    return vec4<f32>(clamp(color, vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 1.0, 1.0)), 1.0);
 }`;
 water_shader:GAME3D_Shader = danger(game3d_shader(water_wgsl));
 

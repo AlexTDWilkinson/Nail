@@ -95,3 +95,22 @@ error_output:s = array_join([
 ], ``);
 
 hashmap_set(state, `example_error`, error_output);
+
+// The machine-readable documentation routes, following the llms.txt
+// convention. /llms.txt is the agent primer plus a pointer to the full
+// dump. /llms-full.txt is everything a model needs in one fetch: the
+// primer, the whole specification, and the signature and description of
+// every standard library function, printed by the compiler serving them.
+stdlib_reference_lines:a:s = map func in stdlib_function_list {
+    y stdlib_reference_entry(func);
+};
+llms_pointer:s = `\n\n## The full reference\n\n- https://nail.alex-wilkinson.ca/llms-full.txt: this primer, then the complete language specification, then every standard library function with its signature and description\n`;
+hashmap_set(state, `llms_txt`, string_concat([primer_text, llms_pointer]));
+hashmap_set(state, `llms_full`, array_join([
+    primer_text,
+    `\n\n`,
+    spec_text,
+    `\n\n# The Nail standard library\n\nEvery function that ships with the compiler, printed by the compiler serving this page.\n\n`,
+    array_join(stdlib_reference_lines, `\n`),
+    `\n`
+], ``));

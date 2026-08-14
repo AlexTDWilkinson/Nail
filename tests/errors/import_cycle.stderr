@@ -3,3 +3,4 @@ error: Import error: Circular import detected: 'errors/import_cycle.nail'
    |
  3 | import(`errors/import_cycle.nail`)
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1 error found before parsing

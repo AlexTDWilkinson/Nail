@@ -13,6 +13,18 @@
 
 const SPECIFICATION: &str = include_str!("../nail_language_spec.md");
 
+/// The agent primer: the whole language on one page, written to be loaded
+/// into a model's context (or a person's) before writing any Nail. Embedded
+/// for the same reason the specification is: the answer belongs to the
+/// version that will compile the code.
+const PRIMER: &str = include_str!("../nail_for_agents.md");
+
+/// The one-page briefing `nail docs primer` prints and the website serves at
+/// /llms.txt for tools that fetch documentation over the network.
+pub fn primer() -> &'static str {
+    return PRIMER;
+}
+
 /// The heading of every top-level section, in the order the specification puts
 /// them.
 pub fn topics() -> Vec<&'static str> {

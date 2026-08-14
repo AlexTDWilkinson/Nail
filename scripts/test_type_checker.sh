@@ -23,8 +23,8 @@ run_one() {
     output=$("$NAILC" "$file" --check-only 2>&1)
 
     # Skip files that don't pass lexer/parser (covered by test_lexer_parser.sh).
-    # Such runs error out before the type-checking banner is printed.
-    if ! echo "$output" | grep -q "=== Type Checking ==="; then
+    # Those stages name themselves in the failure summary.
+    if echo "$output" | grep -q "found before parsing\|found while parsing\|has no version line"; then
         echo "SKIP" > "$RESULTS_DIR/$(echo "$file" | tr '/' '_').result"
         return
     fi
@@ -36,9 +36,10 @@ run_one() {
         expect_fail=true
     fi
 
-    if echo "$output" | grep -q "Type check successful!"; then
+    # A clean check prints exactly `ok`, a refused one counts its errors.
+    if echo "$output" | grep -qx "ok"; then
         if $expect_fail; then result="FAIL (expected type check to reject this file)"; else result="PASS"; fi
-    elif echo "$output" | grep -qE "^[0-9]+ errors? found"; then
+    elif echo "$output" | grep -qE "^[0-9]+ errors? found$"; then
         if $expect_fail; then result="PASS (correctly rejected)"; else result="FAIL (Type checker)"; fi
     elif echo "$output" | grep -q "panic\|thread.*panicked"; then
         result="FAIL (Type checker crash)"

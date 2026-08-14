@@ -19,7 +19,7 @@ Linux only, on purpose.
 - **Everything immutable.** No mutation, no exceptions, no nulls. Iteration is `map`, `filter`, `reduce`, and a `for` that yields values.
 - **Errors cannot be ignored.** Result types like `s!e` must be handled where they occur, or it does not compile.
 - **No package manager.** 1180 standard library functions built in: HTTP, SQLite, JSON, crypto, ML, TUI, drawing.
-- **Built-in terminal IDE.** Syntax highlighting, live errors, profiling, themes. F7 runs your program.
+- **Built-in terminal IDE.** Syntax highlighting, live errors, profiling, themes. F7 rebuilds your program in under a second, Shift+F7 makes the shippable binary.
 - **Programs compile forever.** Every file pins its compiler version, and `nail` fetches and runs exactly that one.
 
 Full language reference: [nail_language_spec.md](nail_language_spec.md).

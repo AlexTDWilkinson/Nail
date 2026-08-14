@@ -22,8 +22,9 @@ run_one() {
     local output result
     output=$("$NAILC" "$file" --check-only 2>&1)
 
-    # Skip files that don't pass up to type checking (covered by earlier stages)
-    if ! echo "$output" | grep -q "Type check successful!"; then
+    # Skip files that don't pass up to type checking (covered by earlier
+    # stages). A clean check prints exactly `ok`.
+    if ! echo "$output" | grep -qx "ok"; then
         echo "SKIP" > "$RESULTS_DIR/$(echo "$file" | tr '/' '_').result"
         return
     fi

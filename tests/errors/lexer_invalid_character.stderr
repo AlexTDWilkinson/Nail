@@ -3,3 +3,4 @@ error: Unrecognized character: @
    |
  3 | count:i = 5 @ 3;
    |             ^
+1 error found before parsing

@@ -1155,8 +1155,9 @@ The bundle contains everything a build touches:
 - `cargo-home/` `config.toml` (the single source of build configuration) plus
   vendored sources for every crate the stdlib registry can emit
 - `nail/` the nail crate source that generated programs depend on
-- `cache/` a pre-warmed shared build cache, so the first build on a fresh
-  machine compiles only the user's program (seconds, not minutes)
+- `cache/` a pre-warmed shared build cache, warmed under both build profiles
+  (quick and release), so the first build on a fresh machine compiles only the
+  user's program (seconds, not minutes)
 
 Design decisions and why:
 
@@ -1166,8 +1167,9 @@ Design decisions and why:
   hold that path (the vendored sources and the linker) and the launcher rewrites
   both as it installs, reading the path the bundle was built at back out of that
   same file. The warm cache does not survive the move, so the launcher spends it
-  once by building one throwaway program while the person is still waiting on the
-  install, rather than leaving the cost in front of their first real build. An
+  once by building one throwaway program under each build profile while the
+  person is still waiting on the install, rather than leaving the cost in
+  front of their first real build. An
   install at the path the bundle was built at skips both steps.
 - **Full copy per version.** No layer sharing between versions. A pinned
   version must never meet a rustc it was not built against, and paying the full
@@ -2553,6 +2555,7 @@ value itself with `r value;`, and only the error case is written out with `e(...
 ## Development Environment
 
 - Nail's IDE on Linux is the default way to write Nail, and `nailc` with `nail run`, `nail build` and `nail check` is the command line route.
+- Two build profiles, chosen by intent rather than by flag. `nail run` and the IDE's F7 use a quick profile that rebuilds in well under a second. `nail build` and Shift+F7 pay for the fully optimized release build and leave the binary beside the source. Only release builds put a binary there, so a binary next to a `.nail` file is always the shippable one.
 - Opinionated code formatting enforced on save.
 
 ## Built-in Profiling

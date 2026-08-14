@@ -6,6 +6,7 @@ use crate::transpiler::Transpiler;
 // declared a second time here, so there is one Action enum and not two that
 // merely look alike.
 use nail::keymap::{Action, Resolution, VimMode};
+use nail::toolchain::BuildProfile;
 use crate::CodeError;
 use crate::Editor;
 use log::error;
@@ -55,7 +56,7 @@ use ratatui::{
 #[derive(Debug, PartialEq)]
 pub enum EditorMessage {
     Shutdown,
-    BuildStart,
+    BuildStart(BuildProfile),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2735,10 +2736,11 @@ fn run_action(editor: &mut Editor, action: Action, tx: &Sender<EditorMessage>, t
                 editor.build_status = BuildStatus::Failed("No example files found".to_string());
             }
         }
-        Action::Build => {
+        Action::Build | Action::BuildRelease => {
             match editor.build_status {
                 BuildStatus::Idle | BuildStatus::Failed(_) | BuildStatus::Complete(_) => {
-                    let _ = tx_build.send(EditorMessage::BuildStart);
+                    let profile = if action == Action::BuildRelease { BuildProfile::Release } else { BuildProfile::Quick };
+                    let _ = tx_build.send(EditorMessage::BuildStart(profile));
                 }
                 _ => {
                     // Don't allow new builds while one is in progress
@@ -2758,7 +2760,7 @@ fn run_action(editor: &mut Editor, action: Action, tx: &Sender<EditorMessage>, t
 /// added without someone deciding which side of that line it falls on.
 fn apply_action(editor: &mut Editor, action: Action) {
     match action {
-        Action::Quit | Action::SaveAndQuit | Action::Save | Action::CycleExampleFiles | Action::Build => {}
+        Action::Quit | Action::SaveAndQuit | Action::Save | Action::CycleExampleFiles | Action::Build | Action::BuildRelease => {}
         // The user saying the disk's copy wins: the buffer becomes whatever
         // the file says now, and the edits that were in it become one undo
         // step away rather than gone. The watcher reloads a clean buffer by
@@ -3161,8 +3163,8 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             }
         };
 
-        if recv_result == EditorMessage::BuildStart {
-            log::info!("Received build signal");
+        if let EditorMessage::BuildStart(build_profile) = recv_result {
+            log::info!("Received build signal for the {} profile", build_profile.name());
 
             // Step 1: Parse the content
             let mut editor = editor_arc.lock().unwrap();
@@ -3307,13 +3309,13 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
             let mut editor = editor_arc.lock().unwrap();
             editor.build_status = BuildStatus::Compiling;
             editor.compile_started = Some(compile_started);
-            editor.compile_estimate = read_build_estimate(deps_changed);
+            editor.compile_estimate = read_build_estimate(build_profile, deps_changed);
             drop(editor); // Release the lock
             let mut cargo = match &bundle {
                 Some(bundle) => bundle.cargo_command(),
                 None => Command::new("cargo"),
             };
-            let output = cargo.arg("build").arg("--release").current_dir(&build_dir).output();
+            let output = cargo.arg("build").arg("--profile").arg(build_profile.name()).current_dir(&build_dir).output();
             let compile_elapsed = compile_started.elapsed();
 
             match output {
@@ -3322,30 +3324,40 @@ pub fn build_thread_logic(editor_arc: Arc<Mutex<Editor>>, rx: Receiver<EditorMes
                         // Only a finished build is a fair estimate. A failed
                         // one stops at the first error, far short of the work
                         // the next successful build has to do.
-                        record_build_time(deps_changed, compile_elapsed);
+                        record_build_time(build_profile, deps_changed, compile_elapsed);
                         log::debug!("Compiler stdout: {}", String::from_utf8_lossy(&output.stdout));
 
-                        let binary_path = match &bundle {
-                            Some(bundle) => bundle.built_binary_path("nail_transpilation"),
-                            None => build_dir.join("target/release/nail_transpilation"),
-                        };
-                        // Beside the source and named after it, the same
-                        // place `nail build` puts it.
-                        let destination_path = match &filename {
-                            Some(name) => Path::new(name).with_extension(""),
-                            None => PathBuf::from("build"),
-                        };
-                        // Copy (not move) so cargo's target/ stays intact and the
-                        // next build can skip even the final link when unchanged.
-                        // Unlink first so copying succeeds even if the binary is running.
-                        let _ = fs::remove_file(&destination_path);
-                        if let Err(e) = fs::copy(&binary_path, &destination_path) {
-                            log::error!("Failed to copy binary: {}", e);
-                            let mut editor = editor_arc.lock().unwrap();
-                            editor.build_status = BuildStatus::Failed(format!("Failed to copy binary: {}", e));
+                        // Only a release build leaves a binary beside the
+                        // source, so a binary sitting next to its .nail file
+                        // is always the shippable one, never the quick
+                        // profile's un-inlined cousin. A quick build's whole
+                        // product is the verdict on the status line.
+                        if build_profile == BuildProfile::Release {
+                            let binary_path = match &bundle {
+                                Some(bundle) => bundle.built_binary_path("nail_transpilation", build_profile),
+                                None => build_dir.join("target").join(build_profile.name()).join("nail_transpilation"),
+                            };
+                            // Beside the source and named after it, the same
+                            // place `nail build` puts it.
+                            let destination_path = match &filename {
+                                Some(name) => Path::new(name).with_extension(""),
+                                None => PathBuf::from("build"),
+                            };
+                            // Copy (not move) so cargo's target/ stays intact and the
+                            // next build can skip even the final link when unchanged.
+                            // Unlink first so copying succeeds even if the binary is running.
+                            let _ = fs::remove_file(&destination_path);
+                            if let Err(e) = fs::copy(&binary_path, &destination_path) {
+                                log::error!("Failed to copy binary: {}", e);
+                                let mut editor = editor_arc.lock().unwrap();
+                                editor.build_status = BuildStatus::Failed(format!("Failed to copy binary: {}", e));
+                            } else {
+                                let mut editor = editor_arc.lock().unwrap();
+                                editor.build_status = BuildStatus::Complete(format!("Saved! {}", compiler_timings));
+                            }
                         } else {
                             let mut editor = editor_arc.lock().unwrap();
-                            editor.build_status = BuildStatus::Complete(format!("Saved! {}", compiler_timings));
+                            editor.build_status = BuildStatus::Complete(format!("Compiled! {}", compiler_timings));
                         }
                     } else {
                         log::error!("Compiler stderr: {}", String::from_utf8_lossy(&output.stderr));
@@ -3419,23 +3431,27 @@ pub fn write_config_values(pairs: &[(&str, String)]) {
 }
 
 /// A build that rebuilt dependencies and one that only recompiled the program
-/// are minutes apart, so each kind remembers its own duration and is only ever
-/// compared against its own kind.
-fn build_time_key(deps_changed: bool) -> &'static str {
-    if deps_changed {
-        "build_deps_nanos"
-    } else {
-        "build_code_nanos"
+/// are minutes apart, and a quick build and a release build of the same
+/// program are again a factor of sixty apart, so each kind remembers its own
+/// duration and is only ever compared against its own kind. The release keys
+/// predate the quick profile and keep their old names, so a project's
+/// recorded times survive the upgrade.
+fn build_time_key(profile: BuildProfile, deps_changed: bool) -> &'static str {
+    match (profile, deps_changed) {
+        (BuildProfile::Release, true) => "build_deps_nanos",
+        (BuildProfile::Release, false) => "build_code_nanos",
+        (BuildProfile::Quick, true) => "quick_build_deps_nanos",
+        (BuildProfile::Quick, false) => "quick_build_code_nanos",
     }
 }
 
-fn read_build_estimate(deps_changed: bool) -> Option<std::time::Duration> {
-    let nanos: u64 = read_config_value(build_time_key(deps_changed))?.parse().ok()?;
+fn read_build_estimate(profile: BuildProfile, deps_changed: bool) -> Option<std::time::Duration> {
+    let nanos: u64 = read_config_value(build_time_key(profile, deps_changed))?.parse().ok()?;
     Some(std::time::Duration::from_nanos(nanos))
 }
 
-fn record_build_time(deps_changed: bool, took: std::time::Duration) {
-    write_config_values(&[(build_time_key(deps_changed), (took.as_nanos() as u64).to_string())]);
+fn record_build_time(profile: BuildProfile, deps_changed: bool, took: std::time::Duration) {
+    write_config_values(&[(build_time_key(profile, deps_changed), (took.as_nanos() as u64).to_string())]);
 }
 
 /// A profiled program writes .nail_profile.json via tmp and rename, so a

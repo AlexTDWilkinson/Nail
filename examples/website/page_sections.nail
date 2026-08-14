@@ -373,7 +373,7 @@ nail hello.nail</pre></div>
             error is underlined where it is instead of guessed at by a plugin:
         </p>
         <ul class="point-list">
-            <li><strong>F7</strong> compiles what you are looking at into a release binary</li>
+            <li><strong>F7</strong> compiles what you are looking at in under a second, <strong>Shift+F7</strong> makes the release binary</li>
             <li><strong>F1</strong> documents the function under the cursor</li>
             <li>Ctrl+S saves, Ctrl+F finds, F6 changes the theme</li>
         </ul>

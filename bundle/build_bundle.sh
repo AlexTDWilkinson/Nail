@@ -84,6 +84,9 @@ cp -r "$REPO/src" "$ROOT/nail/src"
 # questions about the language, and the answer belongs to this version.
 cp -r "$REPO/assets" "$ROOT/nail/assets"
 cp "$REPO/nail_language_spec.md" "$ROOT/nail/"
+# The agent primer travels the same way: docs.rs embeds it so `nail docs
+# primer` answers offline, from the version that will compile the code.
+cp "$REPO/nail_for_agents.md" "$ROOT/nail/"
 
 # --- 4. Warmup projects ---------------------------------------------------
 # superset: every crate the registry can emit, all nail features.
@@ -125,6 +128,9 @@ rustflags = ["-C", "link-self-contained=yes"]
 EOF
 
 # --- 6. Warm the shared cache at its final path ---------------------------
+# Both profiles: release is what `nail build` and Shift+F7 run, quick is what
+# `nail run` and F7 run. Each compiles the dependency graph its own way and
+# caches it in its own directory, so each has to be warmed on its own.
 warm_build() {
     env -i \
         PATH="$ROOT/toolchain/bin:/usr/bin:/bin" \
@@ -132,10 +138,12 @@ warm_build() {
         CARGO_HOME="$ROOT/cargo-home" \
         CARGO_TARGET_DIR="$ROOT/cache/target" \
         CC_x86_64_unknown_linux_musl="$MUSL_CC" \
-        "$ROOT/toolchain/bin/cargo" build --release --manifest-path "$1/Cargo.toml"
+        "$ROOT/toolchain/bin/cargo" build --profile "$2" --manifest-path "$1/Cargo.toml"
 }
-warm_build "$ROOT/warmup/superset"
-warm_build "$ROOT/warmup/minimal"
+warm_build "$ROOT/warmup/superset" release
+warm_build "$ROOT/warmup/minimal" release
+warm_build "$ROOT/warmup/superset" quick
+warm_build "$ROOT/warmup/minimal" quick
 
 # --- 7. Package -----------------------------------------------------------
 # The warmup projects were scaffolding for building the cache. The cache itself

@@ -18,6 +18,12 @@ f no_functions(err:e):a:STDLIB_Function {
     r [];
 }
 
+// One function as the /llms-full.txt dump prints it: the signature on its
+// own line, the description indented under it.
+f stdlib_reference_entry(func:STDLIB_Function):s {
+    r string_concat([func.signature, `\n    `, func.description]);
+}
+
 f battery_row(expression:s, answer:s):h<s,s> {
     row:h<s,s> = hashmap_new();
     hashmap_set(row, `expression`, expression);

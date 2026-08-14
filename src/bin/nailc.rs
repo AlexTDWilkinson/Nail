@@ -20,6 +20,15 @@ fn print_stage_timings(stages: &[(&str, std::time::Duration)]) {
     eprintln!("compiler timings: {}, total {:.1}ms", parts.join(", "), total.as_secs_f64() * 1000.0);
 }
 
+/// Every string literal in a token stream, in order. Formatting must never
+/// change one, and comparing them is how `fmt` proves it did not.
+fn string_literals(tokens: &[nail::lexer::Token]) -> Vec<String> {
+    tokens
+        .iter()
+        .filter_map(|token| if let nail::lexer::TokenType::StringLiteral { value, .. } = &token.token_type { Some(value.clone()) } else { None })
+        .collect()
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     
@@ -28,7 +37,18 @@ fn main() {
         eprintln!("Options:");
         eprintln!("  --lex-only     Only run lexer and print tokens");
         eprintln!("  --parse-only   Only run lexer and parser, print AST");
-        eprintln!("  --check-only   Run lexer, parser, and type checker");
+        eprintln!("  --check-only   Run lexer, parser, and type checker. Prints `ok` on success");
+        eprintln!("  --ast          With --check-only, print the type-checked AST");
+        eprintln!("  --json         Report the result as one line of JSON on stdout, for tools");
+        eprintln!("                 driving the compiler: status, stage, and every diagnostic");
+        eprintln!("                 with its file, position, and help text");
+        eprintln!("  fmt <file>     Format a file in place. --stdout prints instead of writing,");
+        eprintln!("                 --check only reports whether the file would change");
+        eprintln!("  agents         Write the language primer into ./AGENTS.md, the briefing");
+        eprintln!("                 file coding agent tools read before touching a project");
+        eprintln!("  --docs=<name>  What the library or the specification says about <name>.");
+        eprintln!("                 Bare --docs= lists everything");
+        eprintln!("  --docs-json    The whole standard library registry as JSON");
         eprintln!("  --transpile    Run full pipeline and output Rust code");
         eprintln!("  --skip-check   Skip type checking and transpile directly");
         eprintln!("  --deps-only    Only output required Cargo dependencies");
@@ -56,6 +76,14 @@ fn main() {
     }
 
     let nail_path = args.iter().find_map(|arg| arg.strip_prefix("--nail-path=")).unwrap_or("..").to_string();
+
+    // The registry as data rather than prose, for tools that drive the
+    // compiler. Same source of truth as --docs, one line of JSON.
+    if args.iter().any(|arg| arg == "--docs-json") {
+        let functions = nail::parser::std_lib::stdlib::functions();
+        println!("{}", serde_json::to_string(&functions).expect("the registry serializes"));
+        return;
+    }
 
     // Looking a function up needs no input file either: the registry is the
     // whole answer, and it is the registry this compiler was built with, so
@@ -93,6 +121,14 @@ fn main() {
                     _ => {}
                 }
             }
+            println!("\nMeeting Nail cold, or briefing a coding agent? `nail docs primer` is the whole language on one page.");
+            return;
+        }
+
+        // The primer outranks everything: it is the page for someone (or
+        // some model) who does not yet know what to ask for.
+        if matches!(needle.as_str(), "primer" | "agent" | "agents" | "llm" | "llms" | "ai") {
+            println!("{}", nail::docs::primer());
             return;
         }
 
@@ -166,16 +202,120 @@ fn main() {
         return;
     }
 
+    // `nailc agents`: write the embedded primer into ./AGENTS.md, the file
+    // coding agent tools read before touching a project. One command instead
+    // of knowing to paste `--docs=primer` output by hand, and the text comes
+    // from this compiler, so it describes the Nail that will compile the
+    // project. Refuses to clobber, the same as `nail new`.
+    if args[1] == "agents" {
+        use std::io::IsTerminal;
+        let path = Path::new("AGENTS.md");
+        if path.exists() {
+            eprintln!("AGENTS.md already exists. Delete it first, or merge by hand: `nail docs primer` prints the text");
+            process::exit(1);
+        }
+        if let Err(error) = fs::write(path, nail::docs::primer()) {
+            eprintln!("Cannot write AGENTS.md: {}", error);
+            process::exit(1);
+        }
+        println!("AGENTS.md");
+        if std::io::stdout().is_terminal() {
+            println!("  Coding agents read this file before writing Nail. If the project also");
+            println!("  keeps a CLAUDE.md, mention AGENTS.md there, since some tools read only");
+            println!("  the first briefing file they find.");
+        }
+        return;
+    }
+
+    // `nailc fmt <file>`: the IDE's formatter from the command line, so code
+    // written by tools and agents can be normalized without opening the
+    // editor. The file must already parse. The formatter's guarantees hold
+    // for valid programs, and rewriting a broken file would only move its
+    // errors around. After formatting, the result is lexed and parsed again
+    // and every string literal is compared, so a formatter bug refuses to
+    // write rather than quietly damaging the file.
+    if args[1] == "fmt" {
+        let path = match args.get(2).filter(|argument| !argument.starts_with("--")) {
+            Some(path) => path,
+            None => {
+                eprintln!("usage: nailc fmt <file> [--stdout | --check]");
+                process::exit(1);
+            }
+        };
+        let source = match fs::read_to_string(path) {
+            Ok(source) => source,
+            Err(error) => {
+                eprintln!("Error reading file '{}': {}", path, error);
+                process::exit(1);
+            }
+        };
+
+        let program = lex_program(&source, Some(Path::new(path)));
+        let lexer_errors = nail::lexer::collect_lexer_errors(&program.tokens);
+        if !lexer_errors.is_empty() {
+            for error in &lexer_errors {
+                eprint!("{}", error.render_with_map(&program.source_map));
+            }
+            eprintln!("'{}' does not lex, so it was not formatted. Fix the errors first", path);
+            process::exit(1);
+        }
+        let original_strings = string_literals(&program.tokens);
+        if let Err(error) = parse(program.tokens) {
+            eprint!("{}", error.render_with_map(&program.source_map));
+            eprintln!("'{}' does not parse, so it was not formatted. Fix the errors first", path);
+            process::exit(1);
+        }
+
+        let lines: Vec<String> = source.lines().map(String::from).collect();
+        let mut formatted = nail::formatter::format_nail_code(&lines).join("\n");
+        formatted.push('\n');
+
+        let reformatted = lex_program(&formatted, Some(Path::new(path)));
+        let survived = nail::lexer::collect_lexer_errors(&reformatted.tokens).is_empty() && string_literals(&reformatted.tokens) == original_strings && parse(reformatted.tokens).is_ok();
+        if !survived {
+            eprintln!("Formatting '{}' would change what the code means, so nothing was written. This is a formatter bug worth reporting", path);
+            process::exit(1);
+        }
+
+        let changed = formatted != source;
+        if args.iter().any(|arg| arg == "--check") {
+            if changed {
+                println!("{}", path);
+                process::exit(1);
+            }
+            return;
+        }
+        if args.iter().any(|arg| arg == "--stdout") {
+            print!("{}", formatted);
+            return;
+        }
+        if changed {
+            if let Err(error) = fs::write(path, &formatted) {
+                eprintln!("Error writing '{}': {}", path, error);
+                process::exit(1);
+            }
+            println!("{}", path);
+        }
+        return;
+    }
+
     let filename = &args[1];
     let mut mode = args.get(2).map(|s| s.as_str()).unwrap_or("--transpile");
     let skip_check = args.iter().any(|arg| arg == "--skip-check");
     let to_stdout = args.iter().any(|arg| arg == "--stdout");
     let no_profile = args.iter().any(|arg| arg == "--no-profile");
     let wasm_target = args.iter().any(|arg| arg == "--target=wasm");
+    let json_output = args.iter().any(|arg| arg == "--json");
+    let ast_dump = args.iter().any(|arg| arg == "--ast");
     let output_path = args.iter().position(|arg| arg == "-o").and_then(|i| args.get(i + 1)).cloned();
     // Flags in the mode position mean the default mode with that flag applied
-    if mode == "-o" || mode == "--stdout" || mode == "--no-profile" || mode == "--target=wasm" {
+    if mode == "-o" || mode == "--stdout" || mode == "--no-profile" || mode == "--target=wasm" || mode == "--json" || mode == "--ast" {
         mode = "--transpile";
+    }
+    // Mode flags win wherever they sit among the arguments, so `--json
+    // --check-only` and `--check-only --json` mean the same thing.
+    if args.iter().any(|arg| arg == "--check-only") || ast_dump {
+        mode = "--check-only";
     }
     if args.iter().any(|arg| arg == "--run") {
         mode = "--run";
@@ -206,8 +346,10 @@ fn main() {
         mode = "--transpile-skip-check";
     }
 
-    // Machine-readable modes must not print pipeline banners to stdout
-    let quiet = matches!(mode, "--transpile" | "--transpile-skip-check" | "--deps-only" | "--cargo-toml" | "--stamp" | "--run" | "--build");
+    // Machine-readable modes must not print pipeline banners to stdout.
+    // --check-only is one of them: tools run it after every edit, and the
+    // answer they want is `ok` or the errors, not a narration of stages.
+    let quiet = json_output || matches!(mode, "--transpile" | "--transpile-skip-check" | "--deps-only" | "--cargo-toml" | "--stamp" | "--run" | "--build" | "--check-only");
     
     // Read the input file
     let input = match fs::read_to_string(filename) {
@@ -230,6 +372,15 @@ fn main() {
     // installed version: refusing to launch a file is a far worse failure than
     // compiling it, and by the time this runs the right compiler was chosen.
     if stamp_to.is_none() && nail::version_line::scan_header(input.as_bytes()).pin.is_none() {
+        if json_output {
+            let error = nail::common::CodeError {
+                message: format!("'{}' has no version line", filename),
+                code_span: nail::common::CodeSpan::default(),
+                help: Some(format!("add `nail latest` as line one, or run: nailc {} --stamp=latest", filename)),
+            };
+            println!("{}", nail::common::diagnostics_json("version", &[error], &nail::common::SourceMap::single(filename, &input)));
+            process::exit(1);
+        }
         eprintln!("error: '{}' has no version line", filename);
         eprintln!();
         eprintln!("Every Nail file says on its first line which compiler wrote it, so that it");
@@ -257,8 +408,14 @@ fn main() {
 
     let lexer_errors = nail::lexer::collect_lexer_errors(&tokens);
     if !lexer_errors.is_empty() {
-        for error in &lexer_errors {
-            eprint!("{}", error.render_with_map(&source_map));
+        if json_output {
+            println!("{}", nail::common::diagnostics_json("lex", &lexer_errors, &source_map));
+        } else {
+            for error in &lexer_errors {
+                eprint!("{}", error.render_with_map(&source_map));
+            }
+            let count = lexer_errors.len();
+            eprintln!("{} error{} found before parsing", count, if count == 1 { "" } else { "s" });
         }
         process::exit(1);
     }
@@ -285,7 +442,12 @@ fn main() {
             ast
         }
         Err(e) => {
-            eprint!("{}", e.render_with_map(&source_map));
+            if json_output {
+                println!("{}", nail::common::diagnostics_json("parse", std::slice::from_ref(&e), &source_map));
+            } else {
+                eprint!("{}", e.render_with_map(&source_map));
+                eprintln!("1 error found while parsing");
+            }
             process::exit(1);
         }
     };
@@ -320,13 +482,17 @@ fn main() {
                 checked_ast
             }
             Err(errors) => {
-                for error in &errors {
-                    eprint!("{}", error.render_with_map(&source_map));
-                }
-                let count = errors.len();
-                eprintln!("{} error{} found", count, if count == 1 { "" } else { "s" });
-                if mode != "--check-only" {
-                    eprintln!("\nUse --skip-check to transpile anyway");
+                if json_output {
+                    println!("{}", nail::common::diagnostics_json("check", &errors, &source_map));
+                } else {
+                    for error in &errors {
+                        eprint!("{}", error.render_with_map(&source_map));
+                    }
+                    let count = errors.len();
+                    eprintln!("{} error{} found", count, if count == 1 { "" } else { "s" });
+                    if mode != "--check-only" {
+                        eprintln!("\nUse --skip-check to transpile anyway");
+                    }
                 }
                 process::exit(1);
             }
@@ -348,8 +514,17 @@ fn main() {
     }
 
     if mode == "--check-only" {
-        println!("\nType-checked AST:");
-        println!("{:#?}", checked_ast);
+        // Success is one word. Tools run this after every edit, and the
+        // type-checked AST this used to dump buried the answer under
+        // thousands of lines nobody asked for. The dump is still there,
+        // behind --ast, for when the tree itself is the question.
+        if json_output {
+            println!("{}", serde_json::json!({"status": "ok"}));
+        } else if ast_dump {
+            println!("{:#?}", checked_ast);
+        } else {
+            println!("ok");
+        }
         print_stage_timings(&stage_timings);
         return;
     }
@@ -406,6 +581,12 @@ fn main() {
     // bundled cargo when there is one, then hand over to the result.
     if mode == "--run" || mode == "--build" {
         let package_name = "nail_transpilation";
+        // Running is iterating, so it gets the quick profile and its
+        // sub-second rebuilds. Building produces the binary that ships, so
+        // it pays for the full release profile. Only a release binary is
+        // ever copied beside the source, which keeps one invariant: a binary
+        // sitting next to its .nail file is always the shippable one.
+        let profile = if mode == "--run" { nail::toolchain::BuildProfile::Quick } else { nail::toolchain::BuildProfile::Release };
         let build_dir = Path::new(filename).parent().unwrap_or(Path::new(".")).join(".nail-build");
         if let Err(error) = fs::create_dir_all(build_dir.join("src")) {
             eprintln!("Cannot create {}: {}", build_dir.display(), error);
@@ -450,7 +631,7 @@ fn main() {
             Some(bundle) => bundle.cargo_command(),
             None => process::Command::new("cargo"),
         };
-        let status = cargo.arg("build").arg("--release").current_dir(&build_dir).status();
+        let status = cargo.arg("build").arg("--profile").arg(profile.name()).current_dir(&build_dir).status();
         match status {
             Ok(status) if status.success() => {}
             Ok(_) => process::exit(1),
@@ -461,8 +642,8 @@ fn main() {
         }
 
         let binary = match &bundle {
-            Some(bundle) => bundle.built_binary_path(package_name),
-            None => build_dir.join("target/release").join(package_name),
+            Some(bundle) => bundle.built_binary_path(package_name, profile),
+            None => build_dir.join("target").join(profile.name()).join(package_name),
         };
         if mode == "--build" {
             // Beside the source, named after it, so what was produced is

@@ -3,3 +3,4 @@ error: import_dangerous is not allowed inside a sandboxed import: a file brought
    |
  4 | import_dangerous(`test_import_helper.nail`)
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1 error found before parsing

@@ -80,7 +80,8 @@ on every deploy. Reads are relative to that directory: site files by bare
 name (`snippets/...`), repo files above it by `../../` (`../../README.md`).
 The shipped paths are listed in `DATA_PATHS` in `scripts/deploy.sh`,
 currently: `examples/website/`, `examples/mcp_dice_server.nail`, `tests/`,
-`nail_language_spec.md`, `README.md`, `wasm_demos/`, and `bundle/install.sh`
+`nail_language_spec.md`, `nail_for_agents.md` (served at /llms.txt),
+`README.md`, `wasm_demos/`, and `bundle/install.sh`
 (the script behind the `curl | sh` install one-liner). If you add an `fs_read`
 call to the website, add its path there or the deployed site panics on
 startup.

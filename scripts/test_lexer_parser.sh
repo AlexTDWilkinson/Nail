@@ -30,9 +30,11 @@ run_one() {
         expect_fail=true
     fi
 
-    if echo "$output" | grep -q "Lexer error"; then
+    # nailc names the stage in its failure summary: "found before parsing"
+    # is the lexer, "found while parsing" is the parser.
+    if echo "$output" | grep -q "found before parsing"; then
         if $expect_fail; then result="PASS (correctly rejected)"; else result="FAIL (Lexer)"; fi
-    elif echo "$output" | grep -q "Parse error"; then
+    elif echo "$output" | grep -q "found while parsing"; then
         if $expect_fail; then result="PASS (correctly rejected)"; else result="FAIL (Parser)"; fi
     else
         if $expect_fail; then result="FAIL (expected parse to reject this file)"; else result="PASS"; fi

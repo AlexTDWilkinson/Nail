@@ -624,6 +624,18 @@ impl Transpiler {
         manifest.push_str("[profile.release]\n");
         manifest.push_str("lto = \"thin\"\n");
         manifest.push_str("codegen-units = 1\n");
+        manifest.push('\n');
+        // The iteration profile behind `nail run` and the IDE's F7. LTO plus
+        // one codegen unit redoes whole-program optimization on every save,
+        // and LTO rules out incremental compilation entirely. Dropping both
+        // and going incremental turned a 39 second per-save rebuild of the
+        // website server into 0.6 seconds. `nail build` and Shift+F7 keep
+        // the release profile above, so a binary that ships loses nothing.
+        manifest.push_str("[profile.quick]\n");
+        manifest.push_str("inherits = \"release\"\n");
+        manifest.push_str("lto = \"off\"\n");
+        manifest.push_str("codegen-units = 16\n");
+        manifest.push_str("incremental = true\n");
         manifest
     }
     

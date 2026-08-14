@@ -3,3 +3,4 @@ error: Expected a parameter name or ')' here, but found '@'
    |
  3 | f lookup(@bad:s):s {
    | ^^^^^^^^^^^^^^^^
+1 error found before parsing

@@ -35,6 +35,7 @@ DATA_PATHS=(
 	examples/mcp_dice_server.nail
 	tests
 	nail_language_spec.md
+	nail_for_agents.md
 	README.md
 	wasm_demos
 	# Served at /install: the bootstrap one-liner the get-started section shows.

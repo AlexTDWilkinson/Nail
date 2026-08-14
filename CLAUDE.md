@@ -44,7 +44,7 @@ The server tests in `parser::std_lib::net` and the watch tests in
 `parser::std_lib::fs` bind fixed ports and fixed `/tmp` paths, so two test runs
 at once will fail each other. Re-run those alone before believing a failure.
 
-`./scripts/test_launcher.sh` reports 49 checks passing, and
+`./scripts/test_launcher.sh` reports 58 checks passing, and
 `./scripts/test_error_messages.sh` reports 32 passed, 0 failed.
 
 `./scripts/test_doc_examples.sh` compiles all 1180 registry examples and runs the 1047

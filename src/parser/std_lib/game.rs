@@ -22,9 +22,12 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-/// How the window starts out. `target_fps` caps how often the loop runs,
-/// and 120 is the ceiling: 0 means "as fast as makes sense", which is that
-/// same 120, because frames nobody's screen can show are just heat.
+/// How the window starts out. `target_fps` is honoured as written: the
+/// loop paces to whatever the config asks for, however high, and 0 runs
+/// unpaced - every frame the machine can make, a spinning core by choice,
+/// which is what a high refresh monitor wants. In a browser the compositor
+/// paces frames through requestAnimationFrame whatever this says, so the
+/// display's refresh rate is the ceiling there.
 /// `pixel_size` is how many screen pixels one drawn pixel covers: 1 is
 /// full resolution, 2 draws at half size and scales up chunky, which
 /// quarters the pixels the CPU rasterizer has to fill. Coordinates in the
@@ -561,11 +564,11 @@ where
     let width = u32::try_from(config.width).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a width a {} can have", config.width, backend::SURFACE_NOUN))?;
     let height = u32::try_from(config.height).ok().filter(|size| *size > 0).ok_or_else(|| format!("game_run: {} is not a height a {} can have", config.height, backend::SURFACE_NOUN))?;
 
-    // 120 frames a second is the ceiling whatever the config asks: an
-    // unpaced game would otherwise spin the machine drawing frames no
-    // screen shows. The browser backend paces by requestAnimationFrame and
-    // ignores this.
-    let paced_fps = if config.target_fps <= 0 { 120 } else { config.target_fps.min(120) };
+    // The config's target is honoured as written: a target_fps of 0 runs
+    // unpaced, exactly as game_run's documentation promises, and a 400Hz
+    // monitor is allowed to be one. The browser backend paces by
+    // requestAnimationFrame and ignores this.
+    let paced_fps = config.target_fps.max(0);
 
     // Every game carries a frame counter in its top right corner, on
     // whichever renderer is drawing. NAIL_GAME_NO_FPS=1 hides it.

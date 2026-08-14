@@ -190,6 +190,73 @@ impl CodeError {
     }
 }
 
+/// One diagnostic as a machine-readable record. `nailc --json` prints these
+/// so a tool driving the compiler can read positions and fixes as data
+/// instead of parsing the human rendering. Positions are 1-based and name
+/// the file the error is actually in, the same resolution the human
+/// rendering does. Fields whose value is unknown are omitted rather than
+/// filled with a placeholder.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DiagnosticRecord {
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_column: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
+}
+
+impl DiagnosticRecord {
+    pub fn from_error(error: &CodeError, map: &SourceMap) -> DiagnosticRecord {
+        match map.resolve(error.code_span.start_line) {
+            Some((file, line)) => {
+                // The end position only means something when it lands in the
+                // same file as the start, which it always does today. Spans
+                // are never zero-width, so a same-line end column equal to
+                // the start would be a lie worth omitting too.
+                let end_line = map.resolve(error.code_span.end_line).filter(|(end_file, _)| end_file.path == file.path).map(|(_, resolved)| resolved);
+                DiagnosticRecord {
+                    message: error.message.clone(),
+                    file: Some(file.path.clone()),
+                    line: Some(line),
+                    column: Some(error.code_span.start_column),
+                    end_line,
+                    end_column: end_line.map(|_| error.code_span.end_column),
+                    help: error.help.clone(),
+                }
+            }
+            None => DiagnosticRecord {
+                message: error.message.clone(),
+                file: Some(map.entry().path.clone()),
+                line: None,
+                column: None,
+                end_line: None,
+                end_column: None,
+                help: error.help.clone(),
+            },
+        }
+    }
+}
+
+/// The whole report `nailc --json` prints for a failed compile: which stage
+/// refused and every diagnostic it produced, as one line of JSON.
+pub fn diagnostics_json(stage: &str, errors: &[CodeError], map: &SourceMap) -> String {
+    let records: Vec<DiagnosticRecord> = errors.iter().map(|error| DiagnosticRecord::from_error(error, map)).collect();
+    serde_json::json!({
+        "status": "error",
+        "stage": stage,
+        "errors": records,
+    })
+    .to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CodeSpan {
     pub start_line: usize,

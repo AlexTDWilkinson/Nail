@@ -3,3 +3,4 @@ error: Expected '>' to close the type ':h<s,s'
    |
  3 | f lookup(config:h<s,s):s {
    |                ^^^^^^
+1 error found before parsing

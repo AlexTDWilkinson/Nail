@@ -175,6 +175,7 @@ pub enum Action {
     CycleExampleFiles,
     ToggleTheme,
     Build,
+    BuildRelease,
     ToggleLineNumbers,
     ToggleCurrentLineHighlight,
     ToggleBracketMatching,
@@ -344,7 +345,8 @@ pub const COMMANDS: &[Command] = &[
     // edits, this is how to say the disk's copy is the one to keep. The
     // discard is one recorded edit, so undo brings the edits back.
     Command { name: "Reload file from disk (discard edits, undo restores them)", keys: Keys::same("F9"), action: Action::ReloadFromDisk },
-    Command { name: "Build and run", keys: Keys::same("F7"), action: Action::Build },
+    Command { name: "Build (quick)", keys: Keys::same("F7"), action: Action::Build },
+    Command { name: "Build for shipping (release binary beside the source)", keys: Keys::same("Shift+F7"), action: Action::BuildRelease },
     // Ctrl+G is the emacs cancel key, so going to a line has no emacs chord.
     Command { name: "Go to line", keys: Keys::new("Ctrl+G", "Ctrl+G", ""), action: Action::GoToLineDialog },
     Command { name: "Go to symbol", keys: Keys::new("Ctrl+R", "gO", ""), action: Action::SymbolPicker },
@@ -564,6 +566,13 @@ fn common(key: KeyEvent) -> Option<Action> {
     return match key.code {
         KeyCode::F(5) => Some(Action::CycleExampleFiles),
         KeyCode::F(6) => Some(Action::ToggleTheme),
+        // Building answers two different questions. Unshifted is the fast
+        // one, "does it compile and how does it run": the quick profile,
+        // rebuilt in under a second. Shifted is the slow one, "give me the
+        // binary to ship": full release, copied beside the source. Only the
+        // shifted build leaves a binary there, so a binary sitting next to
+        // its .nail file is always the shippable one.
+        KeyCode::F(7) if shift => Some(Action::BuildRelease),
         KeyCode::F(7) => Some(Action::Build),
         KeyCode::F(3) if shift => Some(Action::FindPrevious),
         KeyCode::F(3) => Some(Action::FindNext),
@@ -1306,6 +1315,7 @@ mod tests {
         assert_eq!(emacs_key(KeyCode::Up, KeyModifiers::NONE), Resolution::Run(Action::CursorUp { extend: false }));
         assert_eq!(emacs_key(KeyCode::Home, KeyModifiers::NONE), Resolution::Run(Action::SmartHome));
         assert_eq!(emacs_key(KeyCode::F(7), KeyModifiers::NONE), Resolution::Run(Action::Build));
+        assert_eq!(emacs_key(KeyCode::F(7), KeyModifiers::SHIFT), Resolution::Run(Action::BuildRelease));
         assert_eq!(emacs_key(KeyCode::Char('a'), KeyModifiers::NONE), Resolution::Unbound);
     }
 
@@ -1325,6 +1335,7 @@ mod tests {
         assert_eq!(vim_key(VimMode::Insert, KeyCode::Char('s'), KeyModifiers::CONTROL), Resolution::Run(Action::Save));
         assert_eq!(vim_key(VimMode::Visual, KeyCode::Char('s'), KeyModifiers::CONTROL), Resolution::Run(Action::Save));
         assert_eq!(vim_key(VimMode::Normal, KeyCode::F(7), KeyModifiers::NONE), Resolution::Run(Action::Build));
+        assert_eq!(vim_key(VimMode::Normal, KeyCode::F(7), KeyModifiers::SHIFT), Resolution::Run(Action::BuildRelease));
         assert_eq!(vim_key(VimMode::Normal, KeyCode::Char('p'), KeyModifiers::CONTROL), Resolution::Run(Action::CommandPalette));
         assert_eq!(resolve(Keymap::Cua, VimMode::Normal, None, KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)), Resolution::Unbound);
     }
@@ -1336,6 +1347,7 @@ mod tests {
         assert_eq!(plain(KeyCode::F(5)), Some(Action::CycleExampleFiles));
         assert_eq!(plain(KeyCode::F(6)), Some(Action::ToggleTheme));
         assert_eq!(plain(KeyCode::F(7)), Some(Action::Build));
+        assert_eq!(with(KeyCode::F(7), KeyModifiers::SHIFT), Some(Action::BuildRelease));
         assert_eq!(plain(KeyCode::F(1)), Some(Action::ToggleCompletionDetail));
         assert_eq!(plain(KeyCode::F(2)), Some(Action::OpenSettings));
         assert_eq!(emacs_key(KeyCode::F(2), KeyModifiers::NONE), Resolution::Run(Action::OpenSettings));

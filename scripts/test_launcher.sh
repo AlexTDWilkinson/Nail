@@ -96,14 +96,43 @@ else
 fi
 check "an unknown subcommand still forwards" "notacommand" "$("$LAUNCHER" notacommand 2>&1)"
 
+# fmt is a compiler command reached by forwarding, the same road every
+# command a future release invents will travel. The store's nailc is real,
+# so the format actually happens.
+printf 'nail %s\nmessy:i=1+2;\nprint(messy);\n' "$VERSION" > messy.nail
+check "fmt names the file it rewrote" "messy.nail" "$("$LAUNCHER" fmt messy.nail 2>&1)"
+check "fmt wrote the canonical spacing" "messy:i = 1 + 2;" "$(sed -n 2p messy.nail)"
+check "docs primer is the agent briefing" "coding agents" "$("$LAUNCHER" docs primer 2>&1)"
+
+# `agents` briefs a project's coding agents: it writes the embedded primer
+# into ./AGENTS.md, and refuses to clobber one that is already there.
+check "agents writes the briefing file" "AGENTS.md" "$("$LAUNCHER" agents 2>&1)"
+check "agents wrote the primer" "Nail for coding agents" "$(head -1 AGENTS.md)"
+check "agents refuses to clobber" "already exists" "$("$LAUNCHER" agents 2>&1)"
+
+# `check` answers with one word, because tools run it after every edit and
+# the old type-checked AST dump buried the answer.
+CHECK_OUTPUT="$("$LAUNCHER" check demo.nail 2>&1)"
+if [[ "$CHECK_OUTPUT" == "ok" ]]; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo "FAIL: check should answer exactly ok"
+	echo "  got: $CHECK_OUTPUT"
+fi
+
 # Running a command with no arguments prints its help. Bare `nail` used to
 # open an empty editor, which nobody expects from a command line tool.
 check "bare nail prints the help" "Writing code:" "$("$LAUNCHER" 2>&1)"
 check "the help prefixes every command" "nail install <version>" "$("$LAUNCHER" help 2>&1)"
 check "the help leads with the explicit open" "nail open <file>" "$("$LAUNCHER" help 2>&1)"
+# run and build are different promises (quick rebuild vs shippable binary),
+# and the help is where a user learns that, so the wording is pinned.
+check "the help says run is the quick one" "compile a file quickly and run it" "$("$LAUNCHER" help 2>&1)"
+check "the help says build is the release one" "full release build" "$("$LAUNCHER" help 2>&1)"
 
 echo "== the other commands =="
-check "check type checks without building" "Type check successful" "$("$LAUNCHER" check demo 2>&1)"
+check "check type checks without building" "ok" "$("$LAUNCHER" check demo 2>&1)"
 check "check reports a broken file" "no version line" "$("$LAUNCHER" check naked 2>&1)"
 check "bare docs lists the whole library" "functions in" "$("$LAUNCHER" docs 2>&1)"
 check "bare docs is not the website" "archive" "$("$LAUNCHER" docs 2>&1 | head -1)"

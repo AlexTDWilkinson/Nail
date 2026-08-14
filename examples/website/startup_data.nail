@@ -63,6 +63,11 @@ install_script:s = safe(fs_read(`../../bundle/install.sh`), read_fallback);
 // depended on would be one more thing that has to stay correct forever.
 releases_tsv:s = safe(fs_read(`../../releases.tsv`), read_no_releases);
 
+// The agent primer, served at /llms.txt so a tool fetching documentation
+// over the network gets the whole language on one page. The same text ships
+// inside every compiler as `nail docs primer`.
+primer_text:s = danger(fs_read(`../../nail_for_agents.md`));
+
 // Same CPU-heavy work as the parallel example, on separate OS threads.
 // Timed, so the run output can show how long the whole block took.
 parallel_started:i = time_now_micros();

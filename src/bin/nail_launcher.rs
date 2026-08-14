@@ -167,12 +167,17 @@ fn usage() -> String {
         "  nail open <file>            open a file in the editor\n",
         "  nail open                   open the editor with nothing in it\n",
         "  nail new <file>             create a new file, ready to compile\n",
-        "  nail run <file>             compile a file and run it\n",
-        "  nail build <file>           compile a file, leaving the binary beside it\n",
+        "  nail run <file>             compile a file quickly and run it\n",
+        "  nail build <file>           full release build, binary left beside the file\n",
         "  nail check <file>           type check a file without building it\n",
+        "  nail fmt <file>             format a file to the one canonical style\n",
+        "  nail agents                 write the primer into ./AGENTS.md, so coding\n",
+        "                              agent tools are briefed on Nail automatically\n",
         "  nail test [pattern]         run every file in tests/, or those matching\n",
         "  nail docs                   every function in the standard library\n",
         "  nail docs <name>            what the library says about one of them\n",
+        "  nail docs primer            the whole language on one page, for briefing\n",
+        "                              a person or a coding agent meeting Nail cold\n",
         "\n",
         "The .nail extension is optional everywhere. `nail new hello` and\n",
         "`nail new hello.nail` do the same thing.\n",
@@ -718,8 +723,11 @@ fn relocate(installed: &Path) -> Fallible<bool> {
 ///
 /// Building one throwaway program here spends that time once, while they are
 /// already waiting on an install, and every build after it is a fraction of a
-/// second again. Failure is not fatal: a cold cache costs a slow first build,
-/// not a broken install, so there is nothing here worth refusing to run over.
+/// second again. It is built twice, once per profile, because the quick
+/// profile behind `nail run` and the release profile behind `nail build`
+/// each cache their dependencies separately. Failure is not fatal: a cold
+/// cache costs a slow first build, not a broken install, so there is nothing
+/// here worth refusing to run over.
 fn warm(store: &Store, version: &Version, installed: &Path) {
     let scratch = store.versions_dir().join(format!(".warmup-{}", version));
     let _cleanup = Cleanup(scratch.clone());
@@ -732,13 +740,16 @@ fn warm(store: &Store, version: &Version, installed: &Path) {
     }
 
     println!("finishing setup, so the first program you build does not have to");
-    let _ = Command::new(installed.join("bin/nailc"))
-        .arg(&source)
-        .arg("--build")
-        .current_dir(&scratch)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    // `--run` also runs the throwaway program, which is one harmless print.
+    for mode in ["--build", "--run"] {
+        let _ = Command::new(installed.join("bin/nailc"))
+            .arg(&source)
+            .arg(mode)
+            .current_dir(&scratch)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
 }
 
 /// Removes a directory when it goes out of scope, so a failed install leaves

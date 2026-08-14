@@ -27,6 +27,29 @@ use std::process::Command;
 /// toolchain's own musl libc and rust-lld, so linking needs zero system files.
 pub const BUNDLE_TARGET: &str = "x86_64-unknown-linux-musl";
 
+/// The two ways a program is built. `Quick` is the iteration profile behind
+/// `nail run` and the IDE's F7: no LTO, sixteen codegen units, incremental,
+/// so a save rebuilds in well under a second. `Release` is the shipping
+/// profile behind `nail build` and Shift+F7: thin LTO and one codegen unit,
+/// the slow build that earns the fast binary. Every generated Cargo.toml
+/// defines both, so the choice is only which one a build command names.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BuildProfile {
+    Quick,
+    Release,
+}
+
+impl BuildProfile {
+    /// The name `cargo build --profile` takes, which is also the directory
+    /// under target/ where cargo puts this profile's output.
+    pub fn name(self) -> &'static str {
+        match self {
+            BuildProfile::Quick => "quick",
+            BuildProfile::Release => "release",
+        }
+    }
+}
+
 
 pub struct BundledToolchain {
     root: PathBuf,
@@ -64,9 +87,9 @@ impl BundledToolchain {
 
     /// All projects share the bundle's target directory (see cargo_command),
     /// so the pre-warmed dependency cache shipped in the bundle applies to
-    /// every build. This is where cargo puts the release binary in it.
-    pub fn built_binary_path(&self, package_name: &str) -> PathBuf {
-        self.root.join("cache/target").join(BUNDLE_TARGET).join("release").join(package_name)
+    /// every build. This is where cargo puts a profile's binary in it.
+    pub fn built_binary_path(&self, package_name: &str, profile: BuildProfile) -> PathBuf {
+        self.root.join("cache/target").join(BUNDLE_TARGET).join(profile.name()).join(package_name)
     }
 
     fn cargo_binary(&self) -> PathBuf {

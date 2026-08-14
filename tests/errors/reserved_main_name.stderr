@@ -3,3 +3,4 @@ error: 'main' is a reserved keyword and cannot be used as an identifier
    |
  3 | f main():i {
    |   ^^^^
+1 error found before parsing

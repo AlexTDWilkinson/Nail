@@ -3,3 +3,4 @@ error: Nail has no 'while' loop: iterate with 'for', repeat with 'loop' and 'bre
    |
  3 | while count < 3 {
    | ^^^^^
+1 error found before parsing
