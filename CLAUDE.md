@@ -31,13 +31,14 @@ Generated files to watch for and delete:
 
 This is non-negotiable to maintain language stability and prevent regressions.
 
-A clean run currently reports 568/568 lexer/parser, 567/567 type checker and
-548/548 transpiler, with zero failures. Those counts are every `.nail` file in
+A clean run currently reports 606/606 lexer/parser, 605/605 type checker and
+586/586 transpiler, with zero failures. (These counts move whenever a test is
+added: what matters is that every number is a full pass.) Those counts are every `.nail` file in
 the repository, from the one shared list in `scripts/test_nail_files.sh`, rather than
-the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1332 passing
-(1371 with `--features "game audio"`), `cargo test --bin nail` reports 1355
-(the library's tests plus the editor's own), and `./scripts/test_e2e.sh` reports 376
-programs passing. Treat any number below that as a
+the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1335 passing
+(1350 with `--features fuzz`, which adds the fuzzer's own tests), `cargo test --bin nail`
+reports 1358 (the library's tests plus the editor's own), and `./scripts/test_e2e.sh`
+reports 410 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
 The server tests in `parser::std_lib::net` and the watch tests in
@@ -45,9 +46,9 @@ The server tests in `parser::std_lib::net` and the watch tests in
 at once will fail each other. Re-run those alone before believing a failure.
 
 `./scripts/test_launcher.sh` reports 58 checks passing, and
-`./scripts/test_error_messages.sh` reports 32 passed, 0 failed.
+`./scripts/test_error_messages.sh` reports 57 passed, 0 failed.
 
-`./scripts/test_doc_examples.sh` compiles all 1180 registry examples and runs the 1047
+`./scripts/test_doc_examples.sh` compiles all 1184 registry examples and runs the ones
 that can run unattended. The rest are named, with the reason, in
 `tests/doc_examples_needing_the_world.txt`, which is checked both ways: an
 example listed there that starts passing is reported so the line can be
@@ -78,6 +79,82 @@ named in any markdown file must exist where it says (bare names may live in
 `deploy/README.md`. Both `scripts/deploy.sh` and `deploy/releases.sh` run
 `cargo test --quiet --lib docs` before shipping anything, so stale
 documentation fails a deploy on the machine that runs it.
+
+## The fuzzer
+
+`./scripts/fuzz.sh smoke` writes a minute's worth of Nail programs, runs the
+compiler over every one of them, and reports anything that breaks an invariant
+the compiler must never break. Run it after touching the lexer, the parser, the
+checker, the transpiler or the formatter. It found five bugs in its first hour,
+including two the whole test suite had never covered.
+
+Three engines feed it, and they find different things:
+
+- **generate** writes well typed programs from a type environment, so about
+  95% of them reach the transpiler. This is what finds the codegen bugs.
+  Everything it knows how to write comes from the language primer, and its
+  library calls come from the registry, filtered by the registry's own
+  `is_sandbox_safe`, so a function added to the library is fuzzed the same day.
+- **mutate** bends the repository's own `.nail` files out of shape a few edits
+  at a time. About a quarter of what it produces still compiles. This is what
+  finds the crashes and the confused errors.
+- **imports** (`./scripts/fuzz.sh imports --cases=N`) writes two-file cases and
+  knows the answer each one is owed before it compiles: a helper that only
+  computes must be accepted, and one that reaches the world, in any of the ways
+  the registry says a function can, must be refused. Both pools come from the
+  registry at runtime, so a function added to the library is covered the day it
+  lands. It found four functions the policy allowed into a sandbox that should
+  never have been there.
+
+A fourth engine predicts. `./scripts/fuzz.sh predict <seed>` writes a program
+whose every value the generator worked out as it wrote it, so it knows the
+exact output the program owes. Those land in the queue with a `.stdout` beside
+them, and `build` runs them and compares byte for byte. That is the tier that
+can catch a wrong answer rather than a failure to build.
+
+The invariants live in `src/fuzz/oracle.rs`, one enum with a sentence each:
+no stage may panic, a program the checker accepts must transpile and must build
+as Rust, an error must point at a place that exists, formatting must be stable
+and must not change what a program means, the browser refusal must name exactly
+the calls a browser does not have, and highlighting must never crash, never
+change a character of the line, and agree with the lexer about what is a string
+and what is a number. Being refused is not a finding: most fuzzed programs are
+nonsense and refusing them is correct.
+
+The colorizer is held to those last three because it is a second reader of the
+language, written as a state machine per line so that half-typed code still
+colors sensibly. Where it and the compiler read the same text they have to
+agree, and the disagreements were real: numbers written against an operator
+(`80&&81`, `count%7`, `5!= 6`) were painted as plain text, and a whole number
+too large for an i was painted as a float. The comparison only runs on files
+that parse, because on anything less the colorizer is allowed its own reading.
+
+Everything is reproducible from one number. A finding names its seed, and
+`./scripts/fuzz.sh case <seed>` prints the exact program again. Findings land
+in `target/fuzz/findings` as a pair of files: the program, shrunk to the few
+lines that still break, and what it broke.
+
+The rustc tier is separate because it is a thousand times slower: a run keeps
+the programs that got all the way through, and `./scripts/fuzz.sh build`
+compiles them as bins of one shared cargo project. A program that type checks
+and then fails to build is the worst failure the compiler has, because what
+reaches the user is a wall of Rust they never wrote.
+
+Hard crashes are why workers are processes. A stack overflow aborts the process
+it happens in and no `catch_unwind` sees it, so the parent watches a progress
+file per worker: when a worker dies, the seed it was on is the program that
+killed it, and the parent rebuilds that program from the seed and shrinks it.
+
+Two limits keep the compiler off the stack's edge, and both are policy rather
+than accident: `MAX_NESTING_DEPTH` and `MAX_AST_DEPTH` in `src/parser.rs`, plus
+`MAX_TYPE_DEPTH` in `src/lexer.rs`. Every entry into the compiler runs on
+`common::with_compiler_stack`, so how much stack there is never depends on who
+called: `cargo test` runs the compiler on a two megabyte test thread, and the
+editor used to run it on one too.
+
+`cargo test --lib --features fuzz` runs the fuzzer's own tests, which include a
+hundred generated and mutated programs put through every invariant. That is the
+version that runs unattended.
 
 ## CRITICAL: Never Use Workarounds
 
@@ -177,6 +254,10 @@ HTML entities like `&lt;` are unaffected - this rule is about prose punctuation 
   transpiler. `./scripts/test_doc_examples.sh array_` checks one module
 - **`./scripts/test_error_messages.sh`** - Checks runtime error message wording against goldens
 - **`./scripts/check_all_features.sh`** - Verifies every feature-gated combination still compiles
+- **`./scripts/fuzz.sh smoke`** - A minute of generated and mutated programs
+  through every compiler stage, then rustc over the ones that got through.
+  Run it after touching the lexer, parser, checker, transpiler or formatter.
+  See "The fuzzer" above
 
 **Usage:**
 ```bash

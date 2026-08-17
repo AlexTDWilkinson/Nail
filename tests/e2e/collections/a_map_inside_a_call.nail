@@ -1,0 +1,5 @@
+nail latest
+f describe_all(labels:a:s):s {
+    r array_join(map one_label in labels { y string_to_uppercase(one_label); }, `|`);
+}
+print(describe_all([`a`, `b`]));

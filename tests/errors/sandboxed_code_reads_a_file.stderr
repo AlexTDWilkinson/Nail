@@ -1,0 +1,7 @@
+error: Sandboxed code brought in by import cannot access 'game_sprite_load': the 'game' module touches the machine
+  --> tests/import_sandbox_sprite_helper.nail:4:44
+   |
+ 4 |     r danger(game_sprite_load(`/etc/passwd`));
+   |                                            ^
+help: call 'game_sprite_load' from your own trusted code instead, or bring the file in with import_dangerous if you trust it
+1 error found

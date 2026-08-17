@@ -1,0 +1,15 @@
+nail latest
+f fallback_int(failure_value:e):i {
+    r -1;
+}
+numbers:a:i = [1, 2, 3];
+missing_value:i = safe(array_get(numbers, -1), fallback_int);
+empty_repeat:s = string_repeat(`ab`, -3);
+backwards:a:i = array_range(5, 1);
+infinite_ratio:f = 1.0 / 0.0;
+negative_root:f = math_sqrt(-4.0);
+print(missing_value);
+print(empty_repeat);
+print(backwards);
+print(infinite_ratio);
+print(negative_root);

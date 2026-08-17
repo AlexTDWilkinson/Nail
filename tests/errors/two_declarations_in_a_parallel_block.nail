@@ -1,0 +1,10 @@
+nail latest
+// Statements in a parallel block run at once, so two declarations of one name
+// have no order between them. Nail allowed it as ordinary rebinding, and the
+// Rust that came out bound one name twice in a single pattern.
+p
+    left_val:i = 10;
+    left_val:i = 30;
+    right_val:i = 20;
+/p
+print(left_val + right_val);

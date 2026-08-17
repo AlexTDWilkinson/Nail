@@ -1,0 +1,8 @@
+nail latest
+grid:a:a:a:i = [[[1, 2], [3]], [[4]]];
+flat_total:i = reduce outer_total plane_value in grid from 0 {
+    y outer_total + reduce middle_total row_value in plane_value from 0 {
+        y middle_total + reduce inner_total cell_value in row_value from 0 { y inner_total + cell_value; };
+    };
+};
+print(flat_total);

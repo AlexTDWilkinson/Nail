@@ -1,0 +1,25 @@
+nail latest
+// E2E: a value used inside spawn is still usable afterwards.
+// A spawned task outlives the statement, so it takes what it mentions with
+// it. Values in Nail are immutable and shareable, so the task gets a copy
+// and the program keeps its own. Before it did, this type checked and then
+// failed to build with "borrow of moved value".
+//
+// The background task prints nothing on purpose: it may run before or after
+// the main body finishes, and a test with two possible outputs is not a test.
+struct Reading {
+    label_text:s,
+    count_value:i
+}
+f describe(reading:Reading):s {
+    r reading.label_text;
+}
+sample_reading:Reading = Reading { label_text = `first`, count_value = 3 };
+numbers:a:i = [1, 2, 3];
+spawn {
+    quiet_label:s = describe(sample_reading);
+    quiet_total:i = reduce running_total item_value in numbers from 0 { y running_total + item_value; };
+}
+print(sample_reading.label_text);
+print(sample_reading.count_value);
+print(numbers);

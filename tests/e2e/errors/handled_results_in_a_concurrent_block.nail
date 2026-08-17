@@ -1,0 +1,17 @@
+nail latest
+f risky_total(numbers:a:i):i!e {
+    if {
+        array_length(numbers) == 0 -> { r e(`nothing to add`); },
+        else -> { r array_sum(numbers); }
+    }
+}
+f fallback_int(failure_value:e):i {
+    r -1;
+}
+nothing_at_all:a:i = [];
+c
+    first_total:i = safe(risky_total([1, 2]), fallback_int);
+    second_total:i = safe(risky_total(nothing_at_all), fallback_int);
+/c
+print(first_total);
+print(second_total);

@@ -1,0 +1,9 @@
+nail latest
+f find_big(numbers:a:i):i!e {
+    r find num_value in numbers { y num_value > 10; };
+}
+f fallback_int(failure_value:e):i {
+    r 0;
+}
+print(safe(find_big([1, 20, 3]), fallback_int));
+print(safe(find_big([1, 2, 3]), fallback_int));

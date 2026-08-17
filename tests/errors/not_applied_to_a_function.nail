@@ -1,0 +1,8 @@
+nail latest
+// '!' applied to a handler's name. Nothing checked what a unary operator was
+// applied to, so this passed every check and became Rust that tried to negate
+// a function.
+f show_error(failure_value:e):s {
+    r `oops`;
+}
+print(safe(fs_read(`missing.txt`), !show_error));

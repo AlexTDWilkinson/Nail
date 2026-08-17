@@ -1,0 +1,7 @@
+error: The enum 'Fruit' is declared inside a block, and Nail declares structs and enums at the top level of a file
+  --> tests/errors/enum_declared_inside_a_block.nail:7:9
+   |
+ 7 |         enum Fruit { Apple, Banana }
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: move the declaration up to the top level, next to the file's other declarations: a type belongs to the whole program rather than to one block
+1 error found

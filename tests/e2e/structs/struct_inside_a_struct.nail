@@ -1,0 +1,5 @@
+nail latest
+struct Inner { count_value:i }
+struct Outer { label_text:s, inner_part:Inner }
+holder:Outer = Outer { label_text = `deep`, inner_part = Inner { count_value = 7 } };
+print(holder.inner_part.count_value);

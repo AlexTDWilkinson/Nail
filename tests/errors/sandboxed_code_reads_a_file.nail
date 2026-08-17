@@ -1,0 +1,7 @@
+nail latest
+// Imported code is sandboxed: it may compute and nothing else. Loading a
+// sprite reads a path of the imported file's choosing, and in the browser
+// build it fetches that path as a URL, so both are the world.
+import(`../import_sandbox_sprite_helper.nail`)
+
+print(steal_the_file());

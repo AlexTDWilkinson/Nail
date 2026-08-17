@@ -1,0 +1,8 @@
+nail latest
+// The divisor is zero and the left side is whatever the collection holds. The
+// check used to want both sides to be numbers it could work out, so this
+// passed and rustc refused it with "this operation will panic at runtime".
+flag_value:b = any num_value in [1, 2] {
+    y (num_value % 0) == 0;
+};
+print(flag_value);

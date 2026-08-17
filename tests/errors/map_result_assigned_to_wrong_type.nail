@@ -1,0 +1,10 @@
+nail latest
+// A map produces an array of whatever its body yields, and this one is
+// declared as an array of text. The map's type used to come back as "an array
+// of anything", so any declared type at all was accepted here and the
+// mismatch surfaced as a Rust error instead.
+values:a:i = [1, 2, 3];
+labels:a:s = map num_value in values {
+    y num_value * 2;
+};
+print(labels);

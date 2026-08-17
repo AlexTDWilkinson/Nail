@@ -1,0 +1,7 @@
+nail latest
+struct Tally { name_text:s, count_value:i }
+tallies:a:Tally = [Tally { name_text = `a`, count_value = 2 }, Tally { name_text = `b`, count_value = 9 }];
+names:a:s = map one_tally in tallies { y one_tally.name_text; };
+busy:a:Tally = filter one_tally in tallies { y one_tally.count_value > 5; };
+print(names);
+print(array_length(busy));

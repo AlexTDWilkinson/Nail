@@ -1,0 +1,7 @@
+error: This arithmetic leaves the range of i every time it runs: 9223372036854775807 + 1
+  --> tests/errors/arithmetic_overflows_int.nail:4:35
+   |
+ 4 | sum_value:i = 9223372036854775807 + 1;
+   |                                   ^
+help: i holds whole numbers from -9223372036854775808 to 9223372036854775807. Work in f, or keep the numbers smaller
+1 error found

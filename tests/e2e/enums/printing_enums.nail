@@ -1,0 +1,5 @@
+nail latest
+enum Direction { North, South }
+heading:Direction = Direction::North;
+print(heading);
+print([Direction::North, Direction::South]);

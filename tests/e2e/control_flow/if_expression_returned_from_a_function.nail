@@ -1,0 +1,11 @@
+nail latest
+f classify(num_value:i):s {
+    r if {
+        num_value < 0 -> { r `below`; },
+        num_value == 0 -> { r `zero`; },
+        else -> { r `above`; }
+    };
+}
+print(classify(-2));
+print(classify(0));
+print(classify(9));

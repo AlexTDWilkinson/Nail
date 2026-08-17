@@ -1,0 +1,4 @@
+nail latest
+p
+/p
+print(`done`);

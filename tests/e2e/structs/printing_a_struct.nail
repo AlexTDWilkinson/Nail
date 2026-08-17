@@ -1,0 +1,4 @@
+nail latest
+struct Point { x_pos:i, y_pos:s }
+spot:Point = Point { x_pos = 1, y_pos = `here` };
+print(spot);

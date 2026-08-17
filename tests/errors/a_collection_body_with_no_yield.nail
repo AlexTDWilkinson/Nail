@@ -1,0 +1,8 @@
+nail latest
+// A collection body that yields nothing. It says nothing about each item, and
+// the Rust that came out of it was a block with no value where a boolean was
+// needed.
+greetings:a:s = [`hello`, `hi`];
+has_long_greeting:b = any greeting in greetings {
+};
+print(has_long_greeting);

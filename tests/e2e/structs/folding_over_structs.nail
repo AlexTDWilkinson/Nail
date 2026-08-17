@@ -1,0 +1,5 @@
+nail latest
+struct Reading { amount_value:i }
+readings:a:Reading = [Reading { amount_value = 2 }, Reading { amount_value = 5 }];
+total_value:i = reduce running_total item_value in readings from 0 { y running_total + item_value.amount_value; };
+print(total_value);

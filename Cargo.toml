@@ -21,6 +21,14 @@ path = "src/bin/nailc.rs"
 name = "nail-launcher"
 path = "src/bin/nail_launcher.rs"
 
+# The fuzzer. It drives the compiler's own stages over millions of generated
+# and mutated programs, so it lives with them rather than in a crate of its
+# own, and stays behind a feature so an ordinary build never carries it.
+[[bin]]
+name = "nail-fuzz"
+path = "src/bin/nail_fuzz.rs"
+required-features = ["fuzz"]
+
 
 [lib]
 name = "nail"
@@ -149,6 +157,9 @@ web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlE
 
 [features]
 default = []
+# The compiler's fuzzer (src/fuzz, and the nail-fuzz binary). No extra crates,
+# only code, so the cost of the feature is build time rather than dependencies.
+fuzz = []
 datafusion = ["dep:datafusion"]
 audio = ["dep:rodio"]
 email = ["dep:lettre"]

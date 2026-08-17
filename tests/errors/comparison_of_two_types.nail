@@ -1,0 +1,7 @@
+nail latest
+// A whole number compared with a fraction. Nail converts nothing on its own,
+// and this used to pass every check and then fail to build as Rust.
+count_value:i = 5;
+ratio_value:f = 2.5;
+flag_value:b = (count_value > ratio_value);
+print(flag_value);

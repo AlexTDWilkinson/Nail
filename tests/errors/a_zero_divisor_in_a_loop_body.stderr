@@ -1,0 +1,7 @@
+error: Taking the remainder by zero, which fails every time this line runs
+  --> tests/errors/a_zero_divisor_in_a_loop_body.nail:6:18
+   |
+ 6 |     y (num_value % 0) == 0;
+   |                  ^
+help: check the divisor before using it, and decide there what a zero should mean
+1 error found

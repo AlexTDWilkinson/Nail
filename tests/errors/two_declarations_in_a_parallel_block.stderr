@@ -1,0 +1,7 @@
+error: 'left_val' is declared twice inside this parallel block, where the statements run at once
+  --> tests/errors/two_declarations_in_a_parallel_block.nail:7:20
+   |
+ 7 |     left_val:i = 30;
+   |                    ^
+help: give the second one its own name: with no order between them there is no way to say which value the name would hold
+1 error found

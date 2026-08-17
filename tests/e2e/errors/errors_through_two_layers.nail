@@ -1,0 +1,18 @@
+nail latest
+f parse_it(text_value:s):i!e {
+    r int_from(text_value);
+}
+f fallback_int(failure_value:e):i {
+    r -1;
+}
+f double_or_fail(text_value:s):i!e {
+    parsed:i = safe(parse_it(text_value), fallback_int);
+    if {
+        parsed < 0 -> { r e(`could not read a number`); },
+        else -> { r parsed * 2; }
+    }
+}
+good_value:i = safe(double_or_fail(`21`), fallback_int);
+bad_value:i = safe(double_or_fail(`nope`), fallback_int);
+print(good_value);
+print(bad_value);

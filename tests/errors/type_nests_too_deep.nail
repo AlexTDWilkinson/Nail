@@ -1,0 +1,4 @@
+nail latest
+// A type nested deeper than the lexer will read.
+deep_items:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:i = [];
+print(deep_items);

@@ -1,0 +1,5 @@
+nail latest
+// The import never closes. The error used to be reported one line past the
+// end of the file, where an editor has nothing to underline.
+import(`../tests/test_import_helper.nail`
+print(`unreachable`);

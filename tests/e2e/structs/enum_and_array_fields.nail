@@ -1,0 +1,7 @@
+nail latest
+enum Level { Low, High }
+struct Reading { level_kind:Level, samples:a:i }
+one_reading:Reading = Reading { level_kind = Level::High, samples = [1, 2, 3] };
+total_value:i = reduce running_total sample_value in one_reading.samples from 0 { y running_total + sample_value; };
+print(one_reading.level_kind);
+print(total_value);

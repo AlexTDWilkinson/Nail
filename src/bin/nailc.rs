@@ -30,6 +30,13 @@ fn string_literals(tokens: &[nail::lexer::Token]) -> Vec<String> {
 }
 
 fn main() {
+    // The compiler runs on a stack of its own, because every stage reads a
+    // program by recursing through it and the default eight megabytes runs
+    // out on programs the parser is willing to accept.
+    nail::common::with_compiler_stack(compile);
+}
+
+fn compile() {
     let args: Vec<String> = env::args().collect();
     
     if args.len() < 2 {

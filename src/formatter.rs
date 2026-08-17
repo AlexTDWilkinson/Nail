@@ -62,15 +62,19 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
         // Check if this line has content followed by a closing brace (like "age:i}" or "age:i }")
         // Split it into two separate lines
         // Lines containing string literals are never split: the brace may be inside the string.
-        let needs_split = (trimmed.contains("}") && !trimmed.starts_with("}") &&
-                          !trimmed.contains("{") && !trimmed.contains("->") &&
-                          !trimmed.contains('`') &&
+        // Only the code part of the line is considered: a brace inside a
+        // trailing comment is text, and splitting the line there cut the
+        // comment in half and left a file that no longer lexes.
+        let code = code_before_comment(trimmed);
+        let needs_split = (code.contains("}") && !code.starts_with("}") &&
+                          !code.contains("{") && !code.contains("->") &&
+                          !code.contains('`') &&
                           !trimmed.starts_with("//")) &&
-                          trimmed.chars().filter(|&c| c != '}' && c != ' ').count() > 0;
+                          code.chars().filter(|&c| c != '}' && c != ' ').count() > 0;
         
         if needs_split {
             // Split the line at the closing brace
-            if let Some(brace_pos) = trimmed.rfind('}') {
+            if let Some(brace_pos) = code.rfind('}') {
                 let content_part = &trimmed[..brace_pos];
                 let brace_part = &trimmed[brace_pos..];
                 
@@ -139,8 +143,12 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
 
         formatted_lines.push(indented);
 
-        // Track if this line ends with a closing brace at indent level 0
-        last_line_had_closing_brace = (trimmed.ends_with('}') || formatted_content.ends_with('}')) && indent_level == 0;
+        // Track whether this line closed a top level block, which is what a
+        // blank line separates. The line has to be the brace itself: a
+        // one-line `if { ... }` also ends with a brace, and treating it as
+        // the end of a block meant formatting inserted another blank line
+        // every time it ran, so the file never settled.
+        last_line_had_closing_brace = (trimmed == "}" || formatted_content.trim() == "}") && indent_level == 0;
 
         // Increase indent after opening braces
         if trimmed.ends_with('{') || formatted_content.ends_with('{') {
@@ -156,6 +164,103 @@ pub fn format_nail_code(lines: &[String]) -> Vec<String> {
     }
 
     formatted_lines
+}
+
+/// Write an operator with one space on each side, unless the word in front of
+/// it would stop being that word.
+///
+/// Both halves matter. Trimming first is what makes formatting an already
+/// formatted line a no-op: writing " != " onto text that already ends in a
+/// space added another one on every pass. And `y`, `r`, `p` and `c` are
+/// keywords only when whitespace follows them, so `y+ 3` adds to a variable
+/// named y while `y + 3` yields 3. Those are different programs, and a
+/// formatter may not turn one into the other.
+fn push_spaced_operator(formatted: &mut String, operator: &str) {
+    if spacing_changes_the_word(formatted) {
+        formatted.push_str(operator);
+        formatted.push(' ');
+        return;
+    }
+    while formatted.ends_with(' ') {
+        formatted.pop();
+    }
+    formatted.push(' ');
+    formatted.push_str(operator);
+    formatted.push(' ');
+}
+
+/// Whether a space between the word just written and an operator would change
+/// what that word means. The lexer answers, by being asked the same question
+/// twice: once with the space and once without.
+fn spacing_changes_the_word(formatted: &str) -> bool {
+    let word: String = formatted.chars().rev().take_while(|character| character.is_alphanumeric() || *character == '_').collect::<Vec<char>>().into_iter().rev().collect();
+    if word.is_empty() {
+        return false;
+    }
+    let kind_of = |text: String| crate::lexer::lexer_without_imports(&text).first().map(|token| std::mem::discriminant(&token.token_type));
+    kind_of(format!("{} +", word)) != kind_of(format!("{}+", word))
+}
+
+/// The part of a line that is code, with any trailing comment cut off. A
+/// brace inside a comment is text rather than structure, and the difference
+/// decides whether a line is split in two.
+fn code_before_comment(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut in_string = false;
+    let mut index = 0;
+    while index < bytes.len() {
+        // Only ASCII is examined, and every byte of a multi-byte character
+        // has its high bit set, so none of them can be mistaken for one of
+        // these markers.
+        if bytes[index] == b'`' && (index == 0 || bytes[index - 1] != b'\\') {
+            in_string = !in_string;
+        } else if !in_string && bytes[index] == b'/' && bytes.get(index + 1) == Some(&b'/') {
+            return &line[..index];
+        }
+        index += 1;
+    }
+    line
+}
+
+/// Whether a '/' starts `/p` or `/c`, the tokens that close a parallel or a
+/// concurrent block. Each is one token and must not be spaced out the way
+/// division is. A name can follow a division sign with no space between them
+/// (`10 /price_total`), so the letter only closes a block when nothing that
+/// could continue a name comes after it.
+fn closes_a_block(chars: &std::iter::Peekable<std::str::Chars>) -> bool {
+    let mut lookahead = chars.clone();
+    match lookahead.next() {
+        Some('p') | Some('c') => !lookahead.next().map_or(false, |next| next.is_alphanumeric() || next == '_'),
+        _ => false,
+    }
+}
+
+/// Whether the '<' about to be written opens a hashmap type, `h<s,i>`, which
+/// is the only place in Nail where '<' is a bracket rather than a comparison.
+/// The letter has to stand alone to count: a name that happens to end in h,
+/// as in `path < limit`, is a comparison like any other.
+fn opens_a_hashmap_type(formatted: &str) -> bool {
+    let trimmed = formatted.trim_end();
+    let mut characters = trimmed.chars().rev();
+    if characters.next() != Some('h') {
+        return false;
+    }
+    !characters.next().map_or(false, |before| before.is_alphanumeric() || before == '_')
+}
+
+/// Whether what has been written so far ends in a name, as opposed to a
+/// keyword, a number or a symbol. The lexer decides, rather than a list of
+/// keywords kept here: `r`, `p`, `c` and `y` are keywords only in some
+/// positions, and one statement of that rule in the language is enough.
+fn preceding_word_is_a_name(formatted: &str) -> bool {
+    let word: String = formatted.trim_end().chars().rev().take_while(|character| character.is_alphanumeric() || *character == '_').collect::<Vec<char>>().into_iter().rev().collect();
+    if word.is_empty() {
+        return false;
+    }
+    // The word is lexed with the '(' that is about to follow it, because that
+    // is exactly the context the lexer uses to tell `y (x)` from `y(x)`.
+    let probe = format!("{} (", word);
+    matches!(crate::lexer::lexer_without_imports(&probe).first().map(|token| &token.token_type), Some(crate::lexer::TokenType::Identifier(_)))
 }
 
 pub fn format_nail_line(line: &str) -> String {
@@ -239,7 +344,7 @@ pub fn format_nail_line(line: &str) -> String {
 
                 if chars.peek() == Some(&'=') {
                     // ==
-                    formatted.push_str(" == ");
+                    push_spaced_operator(&mut formatted, "==");
                     chars.next();
                 } else if in_struct_init {
                     // = in struct initialization - no space before, one space after
@@ -250,13 +355,13 @@ pub fn format_nail_line(line: &str) -> String {
                     }
                 } else {
                     // = regular assignment
-                    formatted.push_str(" = ");
+                    push_spaced_operator(&mut formatted, "=");
                 }
             }
             '!' => {
                 if chars.peek() == Some(&'=') {
                     // !=
-                    formatted.push_str(" != ");
+                    push_spaced_operator(&mut formatted, "!=");
                     chars.next();
                 } else {
                     // Check if this is an error type (e.g., i!e, f!e, s!e)
@@ -279,15 +384,17 @@ pub fn format_nail_line(line: &str) -> String {
             '<' => {
                 if chars.peek() == Some(&'=') {
                     // <=
-                    while formatted.ends_with(' ') {
-                        formatted.pop();
-                    }
-                    formatted.push_str(" <= ");
+                    push_spaced_operator(&mut formatted, "<=");
                     chars.next();
                 } else {
-                    // Bare '<' is ambiguous between comparison and a generic
-                    // type like h<s,s>, so preserve it exactly as written.
-                    angle_depth += 1;
+                    // A '<' opens a type only in a hashmap type, h<s,s>.
+                    // Everywhere else it is less-than, and counting it as an
+                    // open bracket made the next '>=' on the line read as a
+                    // closing bracket followed by an assignment, which turned
+                    // 'count >= 1' into 'count > = 1'.
+                    if opens_a_hashmap_type(&formatted) {
+                        angle_depth += 1;
+                    }
                     formatted.push(ch);
                 }
             }
@@ -299,10 +406,7 @@ pub fn format_nail_line(line: &str) -> String {
                     formatted.push(ch);
                 } else if chars.peek() == Some(&'=') {
                     // >=
-                    while formatted.ends_with(' ') {
-                        formatted.pop();
-                    }
-                    formatted.push_str(" >= ");
+                    push_spaced_operator(&mut formatted, ">=");
                     chars.next();
                 } else {
                     // Bare '>' comparison: preserve as written.
@@ -317,17 +421,15 @@ pub fn format_nail_line(line: &str) -> String {
                     }
                     formatted.push_str(" -> ");
                     chars.next();
-                } else if ch == '-' && formatted.chars().last().map_or(true, |c| !c.is_alphanumeric() && c != ')') {
-                    // Don't add spaces around - if it's a negative number
+                } else if ch == '-' && (formatted.chars().last().map_or(true, |c| !c.is_alphanumeric() && c != ')') || !preceding_word_is_a_name(&formatted)) {
+                    // A minus sign rather than subtraction: nothing to
+                    // subtract from, or what comes before it is a keyword
+                    // rather than a value. `scan ... from-1 {` starts from
+                    // minus one, and spacing it into `from - 1` made it read
+                    // as a subtraction and changed the program.
                     formatted.push(ch);
                 } else {
-                    // Trim trailing space before adding operator with spaces
-                    while formatted.ends_with(' ') {
-                        formatted.pop();
-                    }
-                    formatted.push(' ');
-                    formatted.push(ch);
-                    formatted.push(' ');
+                    push_spaced_operator(&mut formatted, &ch.to_string());
                 }
             }
             '/' => {
@@ -335,18 +437,15 @@ pub fn format_nail_line(line: &str) -> String {
                 if chars.peek() == Some(&'/') {
                     // This is handled by the comment check above, but just in case
                     formatted.push(ch);
-                } else if chars.peek() == Some(&'p') {
-                    // This is /p for parallel end, keep it as one token without spaces
+                } else if closes_a_block(&chars) {
+                    // This is /p or /c, the end of a parallel or concurrent
+                    // block. Both are one token, and spacing one like
+                    // division leaves a file that no longer lexes.
                     formatted.push(ch);
-                    formatted.push(chars.next().unwrap()); // consume the 'p'
+                    formatted.push(chars.next().unwrap()); // consume the 'p' or the 'c'
                 } else {
                     // Regular division operator
-                    while formatted.ends_with(' ') {
-                        formatted.pop();
-                    }
-                    formatted.push(' ');
-                    formatted.push(ch);
-                    formatted.push(' ');
+                    push_spaced_operator(&mut formatted, "/");
                 }
             }
             ',' => {
@@ -365,9 +464,16 @@ pub fn format_nail_line(line: &str) -> String {
                 formatted.push(ch);
             }
             '(' => {
-                // Remove space before (
-                if formatted.ends_with(' ') {
-                    formatted.pop();
+                // A '(' straight after a name opens that name's arguments, so
+                // `print (message)` closes up into `print(message)`. After
+                // anything else the space is load bearing: `y (count + 1)`
+                // yields a value and `y(count + 1)` calls a function named y,
+                // which is a different program and usually not one that
+                // compiles.
+                if formatted.ends_with(' ') && preceding_word_is_a_name(&formatted) {
+                    while formatted.ends_with(' ') {
+                        formatted.pop();
+                    }
                 }
                 formatted.push(ch);
             }
@@ -395,7 +501,10 @@ mod tests {
     fn test_basic_operators() {
         assert_eq!(format_nail_line("x=5"), "x = 5");
         assert_eq!(format_nail_line("a+b"), "a + b");
-        assert_eq!(format_nail_line("c-d"), "c - d");
+        // A name rather than `c`, which opens a concurrent block: a minus
+        // after a keyword belongs to the number after it, not to a
+        // subtraction, and single letters are not names in Nail anyway.
+        assert_eq!(format_nail_line("count-depth"), "count - depth");
         assert_eq!(format_nail_line("e*f"), "e * f");
         assert_eq!(format_nail_line("g/h"), "g / h");
     }
@@ -490,7 +599,10 @@ mod tests {
     #[test]
     fn test_negative_numbers() {
         assert_eq!(format_nail_line("x = -5"), "x = -5");
-        assert_eq!(format_nail_line("y = a - -b"), "y = a - -b");
+        // 'y' keeps its operator glued to it, because a space after it turns
+        // it into the yield keyword. Any other name spaces out as usual.
+        assert_eq!(format_nail_line("y = a - -b"), "y= a - -b");
+        assert_eq!(format_nail_line("y_value = a - -b"), "y_value = a - -b");
         assert_eq!(format_nail_line("z = -10 + 5"), "z = -10 + 5");
     }
 
@@ -645,5 +757,65 @@ mod tests {
         assert_eq!(format_nail_line("/p"), "/p");
         assert_eq!(format_nail_line("task1:s = `hello`; /p"), "task1:s = `hello`; /p");
         assert_eq!(format_nail_line("p task1:i = 42; task2:s = `test`; /p"), "p task1:i = 42; task2:s = `test`; /p");
+    }
+
+    /// The fuzzer found each of these by formatting a program that compiled
+    /// and finding one that no longer did.
+    #[test]
+    fn test_formatting_never_changes_meaning() {
+        // A concurrent block ends with /c, which is one token. Spacing it
+        // like division left a file that no longer lexes.
+        assert_eq!(format_nail_line("/c"), "/c");
+        assert_eq!(format_nail_line("c label_one:s = `x`; /c"), "c label_one:s = `x`; /c");
+        // Division is still division, whatever letter follows it.
+        assert_eq!(format_nail_line("half_value:i = total_value / 2;"), "half_value:i = total_value / 2;");
+        assert_eq!(format_nail_line("share_value:i = total_value /count_value;"), "share_value:i = total_value / count_value;");
+
+        // '<' is a comparison, not an open bracket, so the '>=' after it is
+        // still one operator. Counting it as a bracket wrote 'count > = 1'.
+        assert_eq!(format_nail_line("flag_one:b = (age_value < 78) && (score_value >= 10);"), "flag_one:b = (age_value < 78) && (score_value >= 10);");
+        // The one place '<' really does open something is a hashmap type.
+        assert_eq!(format_nail_line("ages:h<s,i> = hashmap_new();"), "ages:h<s, i> = hashmap_new();");
+
+        // A '(' closes up against a name, because that is a call, and stays
+        // apart from a keyword, because 'y (count + 1)' yields a value while
+        // 'y(count + 1)' calls a function named y.
+        assert_eq!(format_nail_line("print (message_text);"), "print(message_text);");
+        assert_eq!(format_nail_line("y (count_value + 1);"), "y (count_value + 1);");
+        assert_eq!(format_nail_line("r (count_value + 1);"), "r (count_value + 1);");
+
+        // A keyword before a minus sign means the minus belongs to the number
+        // after it: `from-1` starts a fold at minus one, and `from - 1` is a
+        // subtraction, which is a different program.
+        assert_eq!(format_nail_line("running:a:i = scan acc num in items from-1 { y acc + num; };"), "running:a:i = scan acc num in items from-1 { y acc + num; };");
+        assert_eq!(format_nail_line("left_value:i = count_value-1;"), "left_value:i = count_value - 1;");
+
+        // A brace inside a comment is text. Splitting the line there cut the
+        // comment in half and left a file that no longer lexes.
+        let with_a_brace_in_a_comment = vec![
+            "nail latest".to_string(),
+            "total_value:i = 2;".to_string(),
+            "print(total_value); // prints 2 } and says so".to_string(),
+        ];
+        assert_eq!(format_nail_code(&with_a_brace_in_a_comment), with_a_brace_in_a_comment);
+
+        // Formatting a whole file twice changes nothing either. A one-line
+        // `if` at the top level ends with a brace, and counting that as the
+        // end of a block added a blank line on every pass.
+        let with_a_one_line_if = vec![
+            "nail latest".to_string(),
+            "count_value:i = 4;".to_string(),
+            "if { count_value > 3 -> { print(`big`); }, else -> { print(`small`); } }".to_string(),
+            "print(count_value);".to_string(),
+        ];
+        let once = format_nail_code(&with_a_one_line_if);
+        assert_eq!(format_nail_code(&once), once);
+
+        // Formatting an already formatted line changes nothing. '!=' used to
+        // add a space every pass, so a file grew a space each time it was
+        // saved and the formatter never reached a fixed point.
+        for line in ["print(3 != 3.5);", "count_one:i = 2 + 3;", "flag:b = (left_value >= right_value);", "half:i = total_value / 2;"] {
+            assert_eq!(format_nail_line(&format_nail_line(line)), format_nail_line(line), "formatting '{}' twice differs from once", line);
+        }
     }
 }

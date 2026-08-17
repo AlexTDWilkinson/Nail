@@ -1,0 +1,8 @@
+nail latest
+// A fold whose body never yields. There is nothing for the accumulator to
+// become, and the transpiler used to write a Rust block with no value in it.
+numbers:a:i = [1, 2, 3];
+total_value:i = reduce running_total item_value in numbers from 0 {
+    running_total + item_value;
+};
+print(total_value);

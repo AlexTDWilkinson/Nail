@@ -1,0 +1,7 @@
+nail latest
+// A struct with no name. A type that cannot be named cannot be used, and this
+// reached rustc as `struct  {`.
+struct {
+    next_count:i
+}
+print(`done`);

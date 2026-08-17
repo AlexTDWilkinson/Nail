@@ -1,0 +1,11 @@
+nail latest
+p
+    left_value:i = array_sum(array_range_inclusive(1, 10));
+    right_value:s = string_repeat(`ab`, 3);
+/p
+c
+    doubled_value:i = left_value * 2;
+    upper_value:s = string_to_uppercase(right_value);
+/c
+print(doubled_value);
+print(upper_value);

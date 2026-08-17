@@ -1,0 +1,6 @@
+error: There is no variable named 'item_value' in this scope
+  --> tests/errors/loop_iterator_after_the_loop.nail:8:7
+   |
+ 8 | print(item_value);
+   |       ^^^^^^^^^^
+1 error found

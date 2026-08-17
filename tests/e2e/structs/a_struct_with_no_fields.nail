@@ -1,0 +1,9 @@
+nail latest
+// E2E: a struct with no fields, and a function whose body does nothing.
+struct Marker {
+}
+f do_nothing():v {
+}
+one_marker:Marker = Marker { };
+do_nothing();
+print(one_marker);

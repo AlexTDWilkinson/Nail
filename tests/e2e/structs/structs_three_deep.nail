@@ -1,0 +1,12 @@
+nail latest
+struct Wheel { size_value:i }
+struct Axle { left_wheel:Wheel, right_wheel:Wheel }
+struct Car { front_axle:Axle, rear_axle:Axle }
+f wheel_of(size_value:i):Wheel {
+    r Wheel { size_value = size_value };
+}
+one_car:Car = Car {
+    front_axle = Axle { left_wheel = wheel_of(15), right_wheel = wheel_of(15) },
+    rear_axle = Axle { left_wheel = wheel_of(17), right_wheel = wheel_of(17) }
+};
+print(one_car.front_axle.left_wheel.size_value + one_car.rear_axle.right_wheel.size_value);

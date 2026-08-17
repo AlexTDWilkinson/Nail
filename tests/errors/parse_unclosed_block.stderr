@@ -3,5 +3,5 @@ error: Expected '}' but the file ended first
    |
  4 |     r value * 2;
    |                ^
-help: a block opened earlier is never closed — add the missing '}'
+help: a block opened earlier is never closed, so add the missing '}'
 1 error found while parsing

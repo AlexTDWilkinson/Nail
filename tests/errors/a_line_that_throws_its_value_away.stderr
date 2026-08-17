@@ -1,0 +1,7 @@
+error: This line is arithmetic and nothing else, so the value it works out is thrown away
+  --> tests/errors/a_line_that_throws_its_value_away.nail:5:4
+   |
+ 5 | (2 + 3 * 4);
+   |    ^
+help: give it a name to keep it: result:<type> = ...;
+1 error found

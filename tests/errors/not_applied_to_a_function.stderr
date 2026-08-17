@@ -1,0 +1,7 @@
+error: '!' turns a boolean around, and this is a function (fn(e):s)
+  --> tests/errors/not_applied_to_a_function.nail:8:36
+   |
+ 8 | print(safe(fs_read(`missing.txt`), !show_error));
+   |                                    ^
+help: compare it first, and turn the answer around: !(count == 0)
+1 error found

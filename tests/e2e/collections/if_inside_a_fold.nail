@@ -1,0 +1,8 @@
+nail latest
+counter_total:i = reduce running_total round_value in array_range(0, 5) from 0 {
+    y if {
+        round_value % 2 == 0 -> { r running_total + round_value; },
+        else -> { r running_total; }
+    };
+};
+print(counter_total);

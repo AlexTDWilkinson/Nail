@@ -1,0 +1,7 @@
+nail latest
+// An if whose only arm is the else. There is nothing for it to decide, and
+// the Rust that came out was an `else` with no `if` in front of it.
+saved_text:s = if {
+    else -> { r `only`; }
+};
+print(saved_text);

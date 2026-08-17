@@ -1,0 +1,7 @@
+nail latest
+// The divisor is a constant the compiler can work out, and it is zero.
+// Rust refuses to compile this outright, so leaving it would mean a program
+// that passed every check and then failed to build.
+zero_count:i = 0;
+total_count:i = 10 / zero_count;
+print(total_count);

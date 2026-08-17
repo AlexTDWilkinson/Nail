@@ -1,0 +1,9 @@
+nail latest
+// A name that does not exist, inside a yield. The yielded expression used to
+// be type checked but never visited, so this passed every check and became a
+// reference to a Rust variable that was never declared.
+numbers:a:i = [1, 2, 3];
+doubled:a:i = map item_value in numbers {
+    y undefined_name * item_value;
+};
+print(doubled);

@@ -1,0 +1,10 @@
+nail latest
+struct Job { name_text:s, weight_value:i }
+f heaviest(jobs:a:Job):Job!e {
+    r array_get(jobs, 0);
+}
+f fallback_job(failure_value:e):Job {
+    r Job { name_text = `none`, weight_value = 0 };
+}
+picked:Job = safe(heaviest([Job { name_text = `dig`, weight_value = 5 }]), fallback_job);
+print(picked.name_text);

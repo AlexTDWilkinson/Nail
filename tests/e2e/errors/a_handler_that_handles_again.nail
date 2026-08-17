@@ -1,0 +1,13 @@
+nail latest
+f divide_pair(top_value:i, bottom_value:i):i!e {
+    if {
+        bottom_value == 0 -> { r e(`cannot divide by zero`); },
+        else -> { r top_value / bottom_value; }
+    }
+}
+f handle_error(failure_value:e):i {
+    safe_result:i = safe(divide_pair(10, 2), handle_error);
+    r safe_result;
+}
+answer_value:i = safe(divide_pair(10, 0), handle_error);
+print(answer_value);

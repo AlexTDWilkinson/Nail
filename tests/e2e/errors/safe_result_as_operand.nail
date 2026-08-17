@@ -1,0 +1,19 @@
+nail latest
+// E2E: a handled result used as an operand and as a match scrutinee.
+// safe(...) becomes a Rust match, and Rust will not take a bare block as the
+// thing a match looks at, nor a match as the left side of an operator. Both
+// used to type check here and then fail to build.
+f fallback_int(failure_value:e):i {
+    r 0;
+}
+numbers:a:i = [1, 2, 3];
+first_big:i = safe(find item_value in numbers { y item_value > 1; }, fallback_int);
+doubled_value:i = (safe(find other_value in numbers { y other_value > 0; }, fallback_int) * 2);
+missing_value:i = safe(find absent_value in numbers { y absent_value > 99; }, fallback_int);
+compared_flag:b = (safe(find third_value in numbers { y third_value > 2; }, fallback_int) < 10);
+insisted_value:i = danger(array_get(numbers, 0));
+print(first_big);
+print(doubled_value);
+print(missing_value);
+print(compared_flag);
+print(insisted_value);

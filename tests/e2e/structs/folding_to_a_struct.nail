@@ -1,0 +1,13 @@
+nail latest
+struct Node { label_text:s, weight_value:i }
+f heavier(left_node:Node, right_node:Node):Node {
+    r if {
+        left_node.weight_value > right_node.weight_value -> { r left_node; },
+        else -> { r right_node; }
+    };
+}
+nodes:a:Node = [Node { label_text = `a`, weight_value = 1 }, Node { label_text = `b`, weight_value = 7 }, Node { label_text = `c`, weight_value = 3 }];
+winner:Node = reduce best_node one_node in nodes from Node { label_text = `none`, weight_value = -1 } {
+    y heavier(best_node, one_node);
+};
+print(winner.label_text);

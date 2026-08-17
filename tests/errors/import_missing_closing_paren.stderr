@@ -1,0 +1,6 @@
+error: This import is missing the ')' that closes it
+  --> tests/errors/import_missing_closing_paren.nail:4:1
+   |
+ 4 | import(`../tests/test_import_helper.nail`
+   | ^^^^^^
+1 error found before parsing

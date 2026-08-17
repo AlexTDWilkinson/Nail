@@ -1,0 +1,7 @@
+error: The body of 'any' never yields, so it says nothing about each item
+  --> tests/errors/a_collection_body_with_no_yield.nail:6:49
+   |
+ 6 | has_long_greeting:b = any greeting in greetings {
+   |                                                 ^
+help: end the body with what each item becomes: y item > 3;
+1 error found

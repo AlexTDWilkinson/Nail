@@ -1,0 +1,6 @@
+nail latest
+struct Person { name_text:s }
+people:h<s,Person> = hashmap_new();
+hashmap_set(people, `grug`, Person { name_text = `Grug` });
+found:Person = danger(hashmap_get(people, `grug`));
+print(found.name_text);

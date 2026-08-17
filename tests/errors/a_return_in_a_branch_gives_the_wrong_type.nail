@@ -1,0 +1,12 @@
+nail latest
+// A return inside an if arm handing back nothing, in a function that owes a
+// number. Only the last statement of a body was judged, so this passed every
+// check and reached rustc as `return print_macro!(...)`.
+f give_number():f {
+    if {
+        true -> { r print(`hi`); },
+        else -> { }
+    }
+    r 0.0;
+}
+print(give_number());

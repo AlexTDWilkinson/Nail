@@ -4,6 +4,11 @@ pub mod checker;
 pub mod colorizer;
 pub mod docs;
 pub mod embedded;
+/// The compiler's own fuzzer. Behind a feature because it is a development
+/// tool: nothing a shipped compiler does needs it, and a default build should
+/// not carry it.
+#[cfg(all(feature = "fuzz", not(target_arch = "wasm32")))]
+pub mod fuzz;
 pub mod formatter;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod keymap;

@@ -1,0 +1,10 @@
+nail latest
+f first_word(text_value:s):s!e {
+    parts:a:s = string_split(text_value, ` `);
+    r array_get(parts, 0);
+}
+f fallback_text(failure_value:e):s {
+    r `none`;
+}
+print(safe(first_word(`hello there`), fallback_text));
+print(safe(first_word(``), fallback_text));

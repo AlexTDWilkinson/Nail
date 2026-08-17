@@ -1,0 +1,15 @@
+nail latest
+// E2E: block shaped expressions used as operands.
+// An if, a reduce and an any each become a Rust block, and Rust reads
+// `{ ... } + 1` as a block followed by a stray operator, so the transpiler
+// has to parenthesize them. Before it did, all three of these type checked
+// and then failed to build.
+count_one:i = (if { true -> { r 1; }, else -> { r 2; } } + 3);
+numbers:a:i = [1, 2, 3];
+total_value:i = (reduce acc_sum num_item in numbers from 0 { y acc_sum + num_item; } * 2);
+flag_value:b = (any num_item in numbers { y num_item > 2; } || false);
+negated_value:i = -(if { false -> { r 5; }, else -> { r 7; } });
+print(count_one);
+print(total_value);
+print(flag_value);
+print(negated_value);

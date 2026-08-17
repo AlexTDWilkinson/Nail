@@ -1,0 +1,5 @@
+nail latest
+// Arithmetic on constants that leaves the range of i. Rust refuses to
+// compile it, so the checker reports it where it is written.
+sum_value:i = 9223372036854775807 + 1;
+print(sum_value);

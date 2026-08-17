@@ -1,0 +1,15 @@
+nail latest
+// A name declared in one branch of an if, used after the branch. Blocks
+// inside a function used to share the function's scope, so this passed every
+// check and the Rust that came out referred to a binding that had ended.
+f build_total():i {
+    first_value:i = 1;
+    if {
+        true -> {
+            second_value:i = 2;
+        },
+        else -> { }
+    }
+    r first_value + second_value;
+}
+print(build_total());

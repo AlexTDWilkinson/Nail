@@ -12,7 +12,7 @@ type BindingId = usize;
 
 /// Per-function (or per-program) bookkeeping that lets identifier references
 /// transpile to moves instead of clones. Nail is fully immutable, so replacing
-/// a clone with a move can never change behavior — a wrong decision here fails
+/// a clone with a move can never change behavior. A wrong decision here fails
 /// Rust compilation loudly rather than miscompiling silently.
 struct MoveContext {
     /// Remaining syntactic uses of each binding, in emission order. A use that
@@ -24,7 +24,7 @@ struct MoveContext {
     /// activated bindings may be moved.
     activated: HashSet<BindingId>,
     /// Bindings referenced anywhere execution can revisit the reference
-    /// (loop bodies, closure bodies, parallel blocks) — never moved.
+    /// (loop bodies, closure bodies, parallel blocks), never moved.
     never_move: HashSet<BindingId>,
     /// Declared type of each activated binding, used to emit Copy types
     /// (i/f/b) bare with no clone. Exact even when a name is shadowed by a
@@ -48,7 +48,7 @@ struct MoveContext {
 /// declarations get fresh ids, and parallel/concurrent block declarations bind
 /// in the enclosing scope (the emitter hoists them into a tuple `let`).
 /// A reference that resolves to nothing simply gets no map entry, which the
-/// move analysis treats as clone-only — the safe default.
+/// move analysis treats as clone-only, which is the safe default.
 struct BindingResolver {
     scopes: Vec<HashMap<String, BindingId>>,
     next_id: BindingId,
@@ -359,7 +359,7 @@ impl Transpiler {
             ASTNode::FunctionCall { name, args, .. } => {
                 let callee_async = if name == "safe" {
                     // safe(expr, handler): the handler is invoked at the call
-                    // site — a lambda handler is an async closure, a named
+                    // site: a lambda handler is an async closure, a named
                     // handler follows its own purity.
                     match args.get(1) {
                         Some(ASTNode::Identifier { name: handler, .. }) => !pure.contains(handler),
@@ -567,6 +567,15 @@ impl Transpiler {
 
     /// Every stdlib function this program uses that cannot exist in a
     /// browser, sorted. Empty means the program is fit for `--target=wasm`.
+    /// Every standard library function the program calls, sorted. The fuzzer
+    /// compares this against the registry's own answer about what a browser
+    /// has, which is how the browser refusal is held honest.
+    pub fn stdlib_functions_used(&self) -> Vec<String> {
+        let mut used: Vec<String> = self.used_stdlib_functions.iter().cloned().collect();
+        used.sort();
+        return used;
+    }
+
     pub fn wasm_unsupported_functions(&self) -> Vec<String> {
         let mut blockers: Vec<String> = self.used_stdlib_functions.iter().filter(|name| !stdlib_registry::is_stdlib_fn_wasm_safe(name)).cloned().collect();
         blockers.sort();
@@ -1105,6 +1114,39 @@ impl Transpiler {
 
     /// The declared type of a reference: exact per-binding type when resolved,
     /// otherwise the name-keyed fallback (binders, cross-context references).
+    /// Whether an expression already produces a result, and so is handed back
+    /// from a fallible function as it stands.
+    ///
+    /// Wrapping one in `Ok(...)` builds a result holding a result. That is
+    /// what `r int_from(text);` and `r find num in numbers { ... };` inside a
+    /// function returning `i!e` used to produce: both type check in Nail,
+    /// where each side reads `i!e`, and neither built as Rust.
+    fn produces_a_result(&self, node: &ASTNode) -> bool {
+        match node {
+            // The error constructor is a result by definition.
+            ASTNode::FunctionCall { name, .. } if name == "e" => true,
+            ASTNode::FunctionCall { name, .. } => matches!(
+                stdlib_registry::get_stdlib_function(name).map(|function| function.return_type.clone()).or_else(|| self.function_return_types.get(name).cloned()),
+                Some(NailDataTypeDescriptor::Result(_))
+            ),
+            // Searching a collection answers with the element or with the
+            // fact that nothing matched.
+            ASTNode::FindExpression { .. } => true,
+            ASTNode::Identifier { name, code_span, .. } => matches!(self.reference_type(name, code_span), Some(NailDataTypeDescriptor::Result(_))),
+            // An if used as a value is a result when the branches are.
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+                let branches = condition_branches.iter().map(|(_, branch)| branch.as_ref()).chain(else_branch.iter().map(|branch| branch.as_ref()));
+                branches.clone().count() > 0 && branches.into_iter().all(|branch| self.produces_a_result(branch))
+            }
+            ASTNode::Block { statements, .. } => match statements.last() {
+                Some(ASTNode::ReturnDeclaration { statement, .. }) | Some(ASTNode::YieldDeclaration { statement, .. }) => self.produces_a_result(statement),
+                Some(last) => self.produces_a_result(last),
+                None => false,
+            },
+            _ => false,
+        }
+    }
+
     fn reference_type(&self, name: &str, code_span: &CodeSpan) -> Option<&NailDataTypeDescriptor> {
         self.resolve_binding(name, code_span)
             .and_then(|id| self.move_contexts.last().and_then(|context| context.binding_types.get(&id)))
@@ -1164,10 +1206,10 @@ impl Transpiler {
 
     /// How a parallel collection operation (map/filter/all/any/find) is
     /// emitted, decided by context and body purity:
-    /// - Sync: inside a pure fn — plain rayon chain, no runtime involved.
-    /// - AsyncPure: async context, pure body — rayon inside spawn_blocking so
+    /// - Sync: inside a pure fn, a plain rayon chain with no runtime involved.
+    /// - AsyncPure: async context with a pure body, rayon inside spawn_blocking so
     ///   tokio core threads aren't blocked, but plain closures (no block_on).
-    /// - AsyncBlockOn: async context, body does async work — rayon inside
+    /// - AsyncBlockOn: async context whose body does async work, rayon inside
     ///   spawn_blocking with a per-element block_on.
     fn parallel_iter_mode(&self, body: &ASTNode) -> ParallelIterMode {
         // A browser has one thread and no blocking executor, so every
@@ -1200,7 +1242,7 @@ impl Transpiler {
 
     /// Shared opening of a parallel collection operation (map/filter). The
     /// iterable is evaluated first (it may await in async context), then the
-    /// rayon chain runs — wrapped in spawn_blocking in async contexts.
+    /// rayon chain runs, wrapped in spawn_blocking in async contexts.
     /// Per-capture clones keep the closures from moving outer variables
     /// (E0507). Callers emit the body then write_parallel_iter_close.
     fn write_parallel_iter_open(&mut self, iterator: &str, index_iterator: &Option<String>, iterable: &ASTNode, body: &ASTNode, rayon_method: &str, mode: ParallelIterMode, output: &mut String) -> Result<(), CodeError> {
@@ -1820,11 +1862,35 @@ impl Transpiler {
         self.transpile_node_internal(node, output, true)
     }
 
-    /// Transpile an operand of a binary/unary operation, parenthesizing nested
-    /// operations so the emitted Rust preserves the AST's grouping instead of
-    /// being regrouped by Rust's own operator precedence.
+    /// Transpile an operand of a binary/unary operation, parenthesizing
+    /// anything that is not a single value.
+    ///
+    /// Two different reasons need the same parentheses. A nested operation
+    /// needs them so the emitted Rust keeps the grouping the Nail tree
+    /// already decided, instead of being regrouped by Rust's precedence.
+    /// A block shaped expression, which is what an if, a map, a reduce, an
+    /// any and their siblings become, needs them because Rust reads
+    /// `{ ... } + 1` as a block followed by a stray operator rather than as
+    /// arithmetic, and `{ ... } || flag` as a block followed by a closure.
+    ///
+    /// The test names the shapes that never need parentheses rather than the
+    /// ones that do, so a construct added to the language later is
+    /// parenthesized by default rather than broken by default.
     fn transpile_operand(&mut self, node: &ASTNode, output: &mut String) -> Result<(), CodeError> {
-        let needs_parens = matches!(node, ASTNode::BinaryOperation { .. } | ASTNode::UnaryOperation { .. });
+        let is_a_single_value = matches!(
+            node,
+            ASTNode::Identifier { .. }
+                | ASTNode::NumberLiteral { .. }
+                | ASTNode::StringLiteral { .. }
+                | ASTNode::BooleanLiteral { .. }
+                | ASTNode::FunctionCall { .. }
+                | ASTNode::StructFieldAccess { .. }
+                | ASTNode::NestedFieldAccess { .. }
+                | ASTNode::EnumVariant { .. }
+                | ASTNode::ArrayLiteral { .. }
+                | ASTNode::StructInstantiation { .. }
+        );
+        let needs_parens = !is_a_single_value;
         if needs_parens {
             write!(output, "(")?;
         }
@@ -2296,7 +2362,7 @@ impl Transpiler {
                 write!(output, "{}}}", self.indent())?;
             }
             ASTNode::FindExpression { iterator, index_iterator, iterable, body, .. } => {
-                // Find: first matching element (by original order — rayon's
+                // Find: first matching element (by original order, since rayon's
                 // find_first) or an error. Parallel with short-circuit.
                 let result_expr = if index_iterator.is_some() {
                     "__search_result.map(|__pair| __pair.1).ok_or_else(|| \"find: no element matched the condition\".to_string())"
@@ -2359,19 +2425,32 @@ impl Transpiler {
                 }
             }
             ASTNode::SpawnBlock { body, .. } => {
-                // Spawn a new async task
+                // Spawn a new async task, cloning whatever it uses from
+                // around it first. The task outlives the statement, so an
+                // `async move` block takes ownership of everything it
+                // mentions, and the program cannot use those values again
+                // afterwards. Nail values are immutable and shareable, so a
+                // copy per task is what the language says happens here. This
+                // is what parallel blocks already do with their captures.
+                let mut bound = HashSet::new();
+                let mut free = std::collections::BTreeSet::new();
+                Self::collect_free_variables(body, &mut bound, &mut free);
                 if add_semicolons {
-                    writeln!(output, "{}tokio::spawn(async move {{", self.indent())?;
+                    write!(output, "{}tokio::spawn({{ ", self.indent())?;
                 } else {
-                    writeln!(output, "tokio::spawn(async move {{")?;
+                    write!(output, "tokio::spawn({{ ")?;
                 }
+                for name in &free {
+                    write!(output, "let {0} = {0}.clone(); ", name)?;
+                }
+                writeln!(output, "async move {{")?;
                 self.indent_level += 1;
                 self.transpile_node_internal(body, output, true)?;
                 self.indent_level -= 1;
                 if add_semicolons {
-                    writeln!(output, "{}}}){};", self.indent(), if add_semicolons { "" } else { "" })?;
+                    writeln!(output, "{}}} }});", self.indent())?;
                 } else {
-                    write!(output, "}})")?;
+                    write!(output, "}} }})")?;
                 }
             }
             ASTNode::BreakStatement { .. } => {
@@ -2465,13 +2544,9 @@ impl Transpiler {
                         false
                     };
 
-                    // Check if the statement is already an error (e() call)
-                    let is_error_call = match statement.as_ref() {
-                        ASTNode::FunctionCall { name, .. } => name == "e",
-                        _ => false,
-                    };
+                    let already_a_result = self.produces_a_result(statement);
 
-                    if needs_ok_wrap && !is_error_call {
+                    if needs_ok_wrap && !already_a_result {
                         write!(output, "Ok(")?;
                         self.transpile_node_internal(statement, output, false)?;
                         write!(output, ")")?;
@@ -2719,19 +2794,37 @@ impl Transpiler {
                 write!(output, "{}", self.indent())?;
             }
 
-            // Generate: match expression { Ok(v) => v, Err(e) => (handler)(e) }
-            // awaiting the handler only when it is actually async
+            // Generate: (match (expression) { Ok(v) => v, Err(e) => (handler)(e) })
+            // awaiting the handler only when it is actually async.
+            //
+            // Both sets of parentheses are load bearing. Rust will not take a
+            // bare block as the thing a match looks at, so an expression that
+            // becomes a block (a find, a reduce, an if) has to be wrapped or
+            // its opening brace reads as the start of the match arms. And the
+            // match as a whole is wrapped because it may be an operand:
+            // `match ... {} < count` does not parse either.
             let handler_is_sync = matches!(&args[1], ASTNode::Identifier { name: handler, .. } if self.pure_functions.contains(handler));
-            write!(output, "match ")?;
+            write!(output, "(match (")?;
             self.transpile_node_internal(&args[0], output, false)?;
-            write!(output, " {{ Ok(v) => v, Err(e) => (")?;
+            write!(output, ") {{ Ok(v) => v, Err(e) => ")?;
+
+            // An async handler's call is boxed, the same way every other call
+            // to a user function is. A handler is allowed to reach the call it
+            // is handling for, directly or round a longer loop, and an async
+            // function that reaches itself without a box is a future of
+            // infinite size, which Rust refuses to compile.
+            if handler_is_sync {
+                write!(output, "(")?;
+            } else {
+                write!(output, "Box::pin((")?;
+            }
 
             // The second argument is a handler function name or lambda
             self.transpile_node_internal(&args[1], output, false)?;
             if handler_is_sync {
-                write!(output, ")(e) }}")?;
+                write!(output, ")(e) }})")?;
             } else {
-                write!(output, ")(e).await }}")?;
+                write!(output, ")(e)).await }})")?;
             }
 
             if add_indent {
@@ -2749,6 +2842,10 @@ impl Transpiler {
                 write!(output, "{}", self.indent())?;
             }
 
+            // Parenthesized because the value being unwrapped may be a block:
+            // Rust reads `{ ... }.unwrap_or_else(...)` as a block and then a
+            // stray method call.
+            write!(output, "(")?;
             // Check if the argument is a function call that needs .await
             if let ASTNode::FunctionCall { name: inner_name, args: inner_args, .. } = &args[0] {
                 // It's a function call - transpile it properly with .await if needed
@@ -2757,7 +2854,7 @@ impl Transpiler {
                 // Not a function call, transpile normally
                 self.transpile_node_internal(&args[0], output, false)?;
             }
-            write!(output, ".unwrap_or_else(|nail_error| panic!(\"🔨 Nail Error: {{}}\", nail_error))")?;
+            write!(output, ").unwrap_or_else(|nail_error| panic!(\"🔨 Nail Error: {{}}\", nail_error))")?;
 
             if add_indent {
                 writeln!(output, ";")?;

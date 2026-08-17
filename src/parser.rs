@@ -246,11 +246,82 @@ pub struct ParserState {
     // wraps each imported file's tokens in SandboxStart/SandboxEnd markers,
     // and nesting simply nests the marker pairs.
     sandbox_depth: usize,
+    // How many expressions, statements and blocks are open at this point.
+    // Reading them is recursive, so this is what stops a file from running the
+    // stack out. See MAX_NESTING_DEPTH.
+    depth: usize,
+    // How deep the type currently being read is. Types have their own, much
+    // tighter limit, and their own counter so that a type written inside
+    // deeply nested code is still judged on its own nesting.
+    type_depth: usize,
 }
 
+/// How deeply expressions, statements and blocks may nest before the parser
+/// refuses the file. Every level is a stack frame, so a file nesting thousands
+/// of levels deep would abort the process instead of producing an error a
+/// person can read. Hand-written code nests a handful of levels.
+pub const MAX_NESTING_DEPTH: usize = 128;
+
+/// How deep the finished tree may be. The parser's own limit is not enough on
+/// its own: `1 + 1 + 1 + ...` is read by a loop rather than by recursion, so a
+/// long chain builds a tree thousands of levels deep without the parser ever
+/// nesting. Every later pass (the checker, the transpiler, the formatter)
+/// walks that tree recursively, so the depth is checked once here, where the
+/// tree is finished and every one of those passes is downstream.
+pub const MAX_AST_DEPTH: usize = 512;
+
 pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, CodeError> {
-    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None, sandbox_depth: 0 };
-    parse_inner(&mut state)
+    let mut state = ParserState { tokens: tokens.into_iter().peekable(), current_token: None, previous_token: None, sandbox_depth: 0, depth: 0, type_depth: 0 };
+    let ast = parse_inner(&mut state)?;
+    if let Some(code_span) = node_below_depth_limit(&ast) {
+        return Err(CodeError {
+            message: format!("This expression nests more than {} levels deep, which is deeper than the compiler will read", MAX_AST_DEPTH),
+            help: Some("give the pieces names and combine the names, or build the values in an array and fold them with reduce".to_string()),
+            code_span,
+        });
+    }
+    Ok(ast)
+}
+
+/// The span of the first node deeper than the limit, or None when the whole
+/// tree is within it. The walk is a loop over an explicit stack rather than
+/// recursion, because a function that recurses to measure depth crashes on
+/// exactly the trees it exists to reject.
+fn node_below_depth_limit(root: &ASTNode) -> Option<CodeSpan> {
+    let mut stack: Vec<(&ASTNode, usize)> = vec![(root, 0)];
+    while let Some((node, depth)) = stack.pop() {
+        if depth > MAX_AST_DEPTH {
+            return Some(node.code_span());
+        }
+        for child in node.children() {
+            stack.push((child, depth + 1));
+        }
+    }
+    None
+}
+
+/// Run one parse step one level deeper, refusing to go past MAX_NESTING_DEPTH.
+/// Every recursive path through the parser passes through a statement, a
+/// primary expression or a type annotation, so counting those three counts
+/// every way a file can nest.
+fn nested<T>(state: &mut ParserState, what: &str, parse_step: impl FnOnce(&mut ParserState) -> Result<T, CodeError>) -> Result<T, CodeError> {
+    if state.depth >= MAX_NESTING_DEPTH {
+        let code_span = state
+            .tokens
+            .peek()
+            .map(|token| token.code_span.clone())
+            .or_else(|| state.previous_token.as_ref().map(|token| token.code_span.clone()))
+            .unwrap_or_default();
+        return Err(CodeError {
+            message: format!("This {} nests more than {} levels deep, which is deeper than the compiler will read", what, MAX_NESTING_DEPTH),
+            help: Some("give the inner pieces names and use the names, so each piece stays shallow".to_string()),
+            code_span,
+        });
+    }
+    state.depth += 1;
+    let result = parse_step(state);
+    state.depth -= 1;
+    result
 }
 
 fn parse_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
@@ -346,6 +417,10 @@ fn parse_field_access_chain(state: &mut ParserState, mut node: ASTNode) -> Resul
 }
 
 fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    nested(state, "expression", parse_primary_inner)
+}
+
+fn parse_primary_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     if let Some(token) = state.tokens.peek().cloned() {
         let node = match token.token_type {
             TokenType::Operator(op) if op.is_unary() || op == Operation::Sub => {
@@ -428,6 +503,10 @@ fn parse_primary(state: &mut ParserState) -> Result<ASTNode, CodeError> {
 }
 
 fn parse_statement(state: &mut ParserState) -> Result<ASTNode, CodeError> {
+    nested(state, "statement", parse_statement_inner)
+}
+
+fn parse_statement_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
     match state.tokens.peek() {
         Some(token) => match &token.token_type {
             TokenType::StructDeclaration(_) => parse_struct_declaration(state),
@@ -533,7 +612,7 @@ fn expect_token(state: &mut ParserState, expected: TokenType) -> Result<CodeSpan
         }
     } else {
         log::error!("expect_token else branch error: {:?}", expected);
-        let help = if expected == TokenType::BlockClose { Some("a block opened earlier is never closed — add the missing '}'".to_string()) } else { None };
+        let help = if expected == TokenType::BlockClose { Some("a block opened earlier is never closed, so add the missing '}'".to_string()) } else { None };
         Err(CodeError {
             help,
             message: format!("Expected {} but the file ended first", describe_token(&expected)),
@@ -595,8 +674,8 @@ fn parse_function_call(state: &mut ParserState, name: String) -> Result<ASTNode,
 }
 
 fn parse_struct_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    if let Some(Token { token_type: TokenType::StructDeclaration(struct_declaration_data), .. }) = advance(state) {
-        let code_span = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
+    // The declaration's own span. See parse_enum_declaration.
+    if let Some(Token { token_type: TokenType::StructDeclaration(struct_declaration_data), code_span, .. }) = advance(state) {
         let mut struct_fields = struct_declaration_data.fields.into_iter();
 
         let struct_name = struct_declaration_data.name;
@@ -710,8 +789,10 @@ fn parse_array_literal(state: &mut ParserState) -> Result<ASTNode, CodeError> {
 }
 
 fn parse_enum_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError> {
-    if let Some(Token { token_type: TokenType::EnumDeclaration(nail_enum_data), .. }) = advance(state) {
-        let code_span = state.previous_token.as_ref().map(|t| t.code_span.clone()).unwrap_or(CodeSpan::default());
+    // The declaration's own span, not the span of whatever came before it:
+    // `previous_token` at this point is the token in front of the enum, so an
+    // enum written inside a block was reported against the block's brace.
+    if let Some(Token { token_type: TokenType::EnumDeclaration(nail_enum_data), code_span, .. }) = advance(state) {
         let enum_name = nail_enum_data.name;
         let mut enum_tokens = nail_enum_data.variants.into_iter();
 
@@ -893,6 +974,24 @@ fn parse_const_declaration(state: &mut ParserState) -> Result<ASTNode, CodeError
 }
 
 fn parse_type_annotation(state: &mut ParserState) -> Result<NailDataTypeDescriptor, CodeError> {
+    // A type's own limit, the same one the lexer holds a type to when it
+    // reads one in a single token, so `a:a:...:i` is refused at the same
+    // depth however it reaches the compiler.
+    if state.type_depth >= crate::lexer::MAX_TYPE_DEPTH {
+        let code_span = state.tokens.peek().map(|token| token.code_span.clone()).or_else(|| state.previous_token.as_ref().map(|token| token.code_span.clone())).unwrap_or_default();
+        return Err(CodeError {
+            message: format!("This type nests more than {} levels deep, which is deeper than any type the compiler will read", crate::lexer::MAX_TYPE_DEPTH),
+            help: Some("a type this deep is almost always a typo: an array of arrays of numbers is 'a:a:i'".to_string()),
+            code_span,
+        });
+    }
+    state.type_depth += 1;
+    let result = nested(state, "type", parse_type_annotation_inner);
+    state.type_depth -= 1;
+    result
+}
+
+fn parse_type_annotation_inner(state: &mut ParserState) -> Result<NailDataTypeDescriptor, CodeError> {
     // Parse a type annotation that appears after a colon
     // This handles: i, f, s, b, a:i, a:s, StructName, EnumName, etc.
     

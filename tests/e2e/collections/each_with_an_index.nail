@@ -1,0 +1,4 @@
+nail latest
+each item_value idx_value in [`a`, `b`, `c`] {
+    print(array_join([string_from(idx_value), item_value], `:`));
+}

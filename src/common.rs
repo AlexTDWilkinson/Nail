@@ -342,6 +342,62 @@ impl SourceMap {
     }
 }
 
+/// How much stack the compiler runs on.
+///
+/// Reading a program is recursive at every stage, and a stack frame in an
+/// unoptimized build of the transpiler is large, so an expression a few dozen
+/// levels deep can use more stack than a thread is given by default. A thread
+/// created without asking gets eight megabytes on the main thread and two on
+/// any other, and the compiler runs on both: `cargo test` runs it on a test
+/// thread, and the editor runs it on a worker. This is the one number that
+/// makes all of those the same, and it is far larger than the deepest program
+/// the parser will accept (see MAX_AST_DEPTH).
+pub const COMPILER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// Run the compiler on a stack of its own.
+///
+/// Every entry into the pipeline goes through here, so that how much stack is
+/// available never depends on who called. Depth limits in the parser decide
+/// what a program may do, and this decides that those limits mean the same
+/// thing everywhere.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn with_compiler_stack<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+    // Already on one: run here. This is what lets a caller that compiles
+    // thousands of programs in a row (the fuzzer) pay for the thread once
+    // instead of once per program, while a caller that compiles one program
+    // still gets the stack without having to know about any of this.
+    if ALREADY_ON_ONE.with(|flag| flag.get()) {
+        return work();
+    }
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("nail-compiler".to_string())
+            .stack_size(COMPILER_STACK_BYTES)
+            .spawn_scoped(scope, || {
+                ALREADY_ON_ONE.with(|flag| flag.set(true));
+                work()
+            })
+            .expect("the compiler thread starts")
+            .join()
+            // A panic inside the compiler is resumed on the calling thread, so
+            // callers that catch panics (the fuzzer) still see them, and
+            // callers that do not still get the usual crash.
+            .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+thread_local! {
+    static ALREADY_ON_ONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A browser has one thread and no way to ask for a bigger stack, so there
+/// the compiler simply runs where it was called.
+#[cfg(target_arch = "wasm32")]
+pub fn with_compiler_stack<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+    work()
+}
+
 #[cfg(test)]
 mod source_map_tests {
     use super::*;

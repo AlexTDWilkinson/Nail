@@ -1,0 +1,7 @@
+error: The body of 'map' yields 2 times, and each item becomes one value
+  --> tests/errors/a_body_that_yields_twice.nail:8:11
+   |
+ 8 |     y name;
+   |           ^
+help: keep one yield at the end, and choose between values inside it: y if { ... };
+1 error found

@@ -1,0 +1,11 @@
+nail latest
+ages:h<s,i> = hashmap_new();
+hashmap_set(ages, `grug`, 30);
+hashmap_set(ages, `thog`, 40);
+keys_list:a:s = hashmap_keys(ages);
+print(array_length(keys_list));
+missing:i = safe(hashmap_get(ages, `nobody`), fallback_int);
+print(missing);
+f fallback_int(failure_value:e):i {
+    r -1;
+}

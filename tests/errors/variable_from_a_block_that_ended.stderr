@@ -1,0 +1,7 @@
+error: 'second_value' was declared inside a block that has ended, so it cannot be used here
+  --> tests/errors/variable_from_a_block_that_ended.nail:13:21
+   |
+13 |     r first_value + second_value;
+   |                     ^^^^^^^^^^^^
+help: declare it before the block if the code after the block needs it
+1 error found

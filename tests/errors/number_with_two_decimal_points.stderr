@@ -1,0 +1,6 @@
+error: '1.2.' has more than one decimal point, and a number has at most one
+  --> tests/errors/number_with_two_decimal_points.nail:5:19
+   |
+ 5 | version_value:f = 1.2.0;
+   |                   ^^^^
+1 error found before parsing

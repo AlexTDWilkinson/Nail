@@ -1,0 +1,7 @@
+error: '>' needs both sides to be the same type, but the left is an integer (i) and the right is a float (f)
+  --> tests/errors/comparison_of_two_types.nail:6:29
+   |
+ 6 | flag_value:b = (count_value > ratio_value);
+   |                             ^
+help: nothing converts on its own: wrap the whole number with danger(float_from(...)), or the fraction with danger(int_from(...))
+1 error found

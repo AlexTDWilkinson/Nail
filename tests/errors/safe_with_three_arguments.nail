@@ -1,0 +1,18 @@
+nail latest
+// A malformed safe(...) inside another call's argument. Arguments of a
+// program's own functions were type checked but never visited, so a mistake
+// inside one only surfaced in the transpiler.
+f half_of(num_value:i):i!e {
+    if {
+        num_value > 100 -> { r e(`too big`); },
+        else -> { r num_value / 2; }
+    }
+}
+f fallback_int(failure_value:e):i {
+    r 0;
+}
+f double_it(num_value:i):i {
+    r num_value * 2;
+}
+bad_value:i = double_it(safe(half_of(4), fallback_int, fallback_int));
+print(bad_value);

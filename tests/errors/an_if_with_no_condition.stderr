@@ -1,0 +1,7 @@
+error: This 'if' has no condition, so there is nothing for it to decide
+  --> tests/errors/an_if_with_no_condition.nail:5:23
+   |
+ 5 |     else -> { r `only`; }
+   |                       ^
+help: write the condition it was meant to test, or drop the if and keep the block on its own
+1 error found

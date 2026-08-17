@@ -21,5 +21,6 @@ Linux only, on purpose.
 - **No package manager.** 1180 standard library functions built in: HTTP, SQLite, JSON, crypto, ML, TUI, drawing.
 - **Built-in terminal IDE.** Syntax highlighting, live errors, profiling, themes. F7 rebuilds your program in under a second, Shift+F7 makes the shippable binary.
 - **Programs compile forever.** Every file pins its compiler version, and `nail` fetches and runs exactly that one.
+- **The compiler is fuzzed.** Millions of generated and mutated programs an hour, held to invariants it may never break: no input crashes a stage, and anything the type checker accepts builds as Rust. A Nail program should never fail with a Rust error you did not write.
 
 Full language reference: [nail_language_spec.md](nail_language_spec.md).

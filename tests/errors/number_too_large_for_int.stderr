@@ -1,0 +1,7 @@
+error: The number 99999999999999999999999 is outside the range of i
+  --> tests/errors/number_too_large_for_int.nail:5:15
+   |
+ 5 | big_value:i = 99999999999999999999999;
+   |               ^^^^^^^^^^^^^^^^^^^^^^^
+help: i holds whole numbers from -9223372036854775808 to 9223372036854775807. For a number larger than that, keep it as text, or work in f
+1 error found

@@ -629,9 +629,19 @@ fn lexer_inner(input: &str, state: &mut LexerState, current_file: Option<&Path>,
                                     }
                                     }
                                 } else {
+                                    // Pointed at the import itself rather than
+                                    // at wherever reading stopped: an import
+                                    // whose ')' is missing runs to the end of
+                                    // the file, and an error reported there is
+                                    // an error on a line that does not exist.
                                     tokens.push(Token {
-                                        token_type: TokenType::LexerError("Expected ')' after import filepath".to_string()),
-                                        code_span: CodeSpan { start_line: state.line, end_line: state.line, start_column: state.column, end_column: state.column },
+                                        token_type: TokenType::LexerError("This import is missing the ')' that closes it".to_string()),
+                                        code_span: CodeSpan {
+                                            start_line: lexer_output.start_line,
+                                            end_line: lexer_output.end_line,
+                                            start_column: lexer_output.start_column,
+                                            end_column: lexer_output.end_column,
+                                        },
                                     });
                                 }
                             } else {
@@ -943,27 +953,29 @@ fn is_comment(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
 }
 
 fn is_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
-    let mut lookahead = chars.clone();
-    if let Some(first) = lookahead.next() {
-        if first == '/' {
-            if let Some(second) = lookahead.next() {
-                return second == 'p';
-            }
-        }
-    }
-    false
+    closes_a_block(chars, 'p')
 }
 
 fn is_concurrent_end(chars: &mut std::iter::Peekable<std::str::Chars>) -> bool {
+    closes_a_block(chars, 'c')
+}
+
+/// Whether what comes next is `/p` or `/c`, the tokens that close a parallel
+/// or a concurrent block, rather than a division sign in front of a name.
+///
+/// The letter has to end the token. Reading `/p` greedily meant that
+/// `total_value /price_value`, division written the way most languages let
+/// you write it, became the end of a parallel block followed by a variable
+/// called `rice_value`, and the error that came out named neither of them.
+fn closes_a_block(chars: &std::iter::Peekable<std::str::Chars>, letter: char) -> bool {
     let mut lookahead = chars.clone();
-    if let Some(first) = lookahead.next() {
-        if first == '/' {
-            if let Some(second) = lookahead.next() {
-                return second == 'c';
-            }
-        }
+    if lookahead.next() != Some('/') {
+        return false;
     }
-    false
+    if lookahead.next() != Some(letter) {
+        return false;
+    }
+    !lookahead.next().map_or(false, |next| is_in_alphabet_or_number(next) || next == '_')
 }
 
 fn lex_parallel_end(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut LexerState) -> LexerOutput {
@@ -1148,6 +1160,13 @@ fn lex_struct_declaration(chars: &mut std::iter::Peekable<std::str::Chars>, stat
         }
     }
 
+    // A struct is a type, and a type without a name cannot be written down
+    // anywhere else, so there is nothing it could be for. Leaving it unnamed
+    // reached rustc as `struct  {`.
+    if struct_name.is_empty() {
+        return LexerOutput { token_type: TokenType::LexerError("This struct has no name, and a type has to have one to be used".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
+    }
+
     // Check for opening brace
     if chars.peek() != Some(&'{') {
         return LexerOutput { token_type: TokenType::LexerError("Expected '{' after struct name".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
@@ -1267,6 +1286,11 @@ fn lex_enum_delcaration(chars: &mut std::iter::Peekable<std::str::Chars>, state:
         } else {
             break;
         }
+    }
+
+    // Same as a struct: a type with no name cannot be named anywhere else.
+    if enum_name.is_empty() {
+        return LexerOutput { token_type: TokenType::LexerError("This enum has no name, and a type has to have one to be used".to_string()), start_line, start_column, end_line: state.line, end_column: state.column };
     }
 
     // Check for opening brace
@@ -1516,10 +1540,16 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
                 }
                 Some(c) => {
                     // A '/' can open a comment ('p  // note'), which is a
-                    // statement context, or be division ('p / 2'), which is not
+                    // statement context, or be division ('p / 2'), which is not.
+                    // It can also close the block this very keyword opened, as
+                    // in an empty 'p /p', which is a statement context too: an
+                    // empty parallel block used to be read as a variable named
+                    // p and reported as a name that is too short.
                     let starts_comment = c == '/' && second_after_whitespace == Some('/');
+                    let closes_the_block = c == '/' && matches!(second_after_whitespace, Some('p') | Some('c'));
                     // These characters indicate 'p' is being used as a variable/identifier
                     let is_identifier_context = !starts_comment
+                        && !closes_the_block
                         && matches!(c,
                             '.' | ':' | '(' | '+' | '-' | '*' | '/' | '=' |
                             '<' | '>' | ';' | ',' | ')' | ']' | '}' | '|'
@@ -1584,8 +1614,11 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
                     // A '/' can open a comment ('c  // note'), which is a
                     // statement context, or be division ('c / 2'), which is not
                     let starts_comment = c == '/' && second_after_whitespace == Some('/');
+                    // The same rule as above: `/p` and `/c` close a block rather than divide.
+                    let closes_the_block = c == '/' && matches!(second_after_whitespace, Some('p') | Some('c'));
                     // These characters indicate 'c' is being used as a variable/identifier
                     let is_identifier_context = !starts_comment
+                        && !closes_the_block
                         && matches!(c,
                             '.' | ':' | '(' | '+' | '-' | '*' | '/' | '=' |
                             '<' | '>' | ';' | ',' | ')' | ']' | '}' | '|'
@@ -1739,7 +1772,21 @@ fn lex_type_system_type(chars: &mut std::iter::Peekable<std::str::Chars>, state:
     }
 }
 
+/// How deeply one type may nest. `a:a:i` is two levels, `h<s,a:i>` is two.
+/// Reading a type is recursive, and recursion is stack, so a type written
+/// thousands of levels deep has to become an error rather than an abort. Real
+/// types nest two or three levels, so this is far past anything written on
+/// purpose and still cheap to prove.
+pub const MAX_TYPE_DEPTH: usize = 32;
+
 fn parse_type(t: &str) -> Result<NailDataTypeDescriptor, String> {
+    parse_type_at_depth(t, 0)
+}
+
+fn parse_type_at_depth(t: &str, depth: usize) -> Result<NailDataTypeDescriptor, String> {
+    if depth > MAX_TYPE_DEPTH {
+        return Err(format!("This type nests more than {} levels deep, which is deeper than any type the compiler will read", MAX_TYPE_DEPTH));
+    }
     match t {
         "i" => Ok(NailDataTypeDescriptor::Int),
         "f" => Ok(NailDataTypeDescriptor::Float),
@@ -1774,8 +1821,8 @@ fn parse_type(t: &str) -> Result<NailDataTypeDescriptor, String> {
                 let key_type_str = inner[..comma_pos].trim();
                 let value_type_str = inner[comma_pos + 1..].trim();
 
-                let key_type = parse_type(key_type_str)?;
-                let value_type = parse_type(value_type_str)?;
+                let key_type = parse_type_at_depth(key_type_str, depth + 1)?;
+                let value_type = parse_type_at_depth(value_type_str, depth + 1)?;
 
                 Ok(NailDataTypeDescriptor::HashMap(Box::new(key_type), Box::new(value_type)))
             } else {
@@ -1790,7 +1837,7 @@ fn parse_type(t: &str) -> Result<NailDataTypeDescriptor, String> {
             if type_name.chars().next().map_or(false, |c| c.is_uppercase()) {
                 Ok(NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Struct(type_name))))
             } else {
-                let element_type = parse_type(&type_name)?;
+                let element_type = parse_type_at_depth(&type_name, depth + 1)?;
                 Ok(NailDataTypeDescriptor::Array(Box::new(element_type)))
             }
         }
@@ -1835,7 +1882,38 @@ fn lex_number(chars: &mut std::iter::Peekable<std::str::Chars>, state: &mut Lexe
             number.push(c);
             advance(chars, state);
         } else if c == '.' {
-            // If there's a decimal point, mark it as a float
+            // A '.' belongs to the number only when a digit follows it. That
+            // keeps `1..5` two tokens rather than one impossible number, and
+            // it is what makes a second decimal point an error here rather
+            // than a Rust error later: `1.2.0` used to lex as one float, type
+            // check, and reach rustc as `1.2.0f64`.
+            let mut lookahead = chars.clone();
+            lookahead.next();
+            let next = lookahead.peek().copied();
+            // Two dots are a range, and the number ends before them.
+            if next == Some('.') {
+                break;
+            }
+            if !next.map_or(false, |next| next.is_digit(10)) {
+                advance(chars, state);
+                return LexerOutput {
+                    token_type: TokenType::LexerError(format!("'{}.' has a decimal point with no digits after it, and a number needs at least one", number)),
+                    start_line,
+                    start_column,
+                    end_line: state.line,
+                    end_column: state.column,
+                };
+            }
+            if is_float {
+                advance(chars, state);
+                return LexerOutput {
+                    token_type: TokenType::LexerError(format!("'{}.' has more than one decimal point, and a number has at most one", number)),
+                    start_line,
+                    start_column,
+                    end_line: state.line,
+                    end_column: state.column,
+                };
+            }
             is_float = true;
             number.push(c);
             advance(chars, state);

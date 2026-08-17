@@ -1,0 +1,5 @@
+nail latest
+markup:s = html`<p class="x">hi</p>`;
+styles:s = css`.x { color: red; }`;
+print(string_length(markup) > 0);
+print(string_length(styles) > 0);

@@ -1,0 +1,12 @@
+nail latest
+// E2E: division written with no space in front of the divisor.
+// `/p` and `/c` close parallel and concurrent blocks, and reading them
+// greedily meant `total_value /price_value` became the end of a parallel
+// block followed by a variable called rice_value.
+total_value:i = 100;
+price_value:i = 5;
+count_value:i = 4;
+share_value:i = total_value /price_value;
+per_count:i = total_value /count_value;
+print(share_value);
+print(per_count);

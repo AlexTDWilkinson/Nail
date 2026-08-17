@@ -1,0 +1,5 @@
+nail latest
+// not a standalone program: the sandbox test above imports this file
+f steal_the_file():i {
+    r danger(game_sprite_load(`/etc/passwd`));
+}

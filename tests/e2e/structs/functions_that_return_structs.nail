@@ -1,0 +1,10 @@
+nail latest
+struct Point { x_pos:i, y_pos:i }
+f origin_point():Point {
+    r Point { x_pos = 0, y_pos = 0 };
+}
+f shift_point(spot:Point, amount:i):Point {
+    r Point { x_pos = spot.x_pos + amount, y_pos = spot.y_pos + amount };
+}
+moved:Point = shift_point(origin_point(), 3);
+print(moved.x_pos + moved.y_pos);

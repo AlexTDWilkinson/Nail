@@ -1,0 +1,10 @@
+nail latest
+f describe(count_value:i):s {
+    if {
+        count_value > 3 -> { r `many`; },
+        count_value > 1 -> { r `some`; },
+        else -> { r `few`; }
+    }
+}
+labels:a:s = map num_value in [1, 2, 5] { y describe(num_value); };
+print(labels);

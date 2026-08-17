@@ -1,0 +1,10 @@
+nail latest
+// Two yields in one body. Each item becomes one value, so there is no answer
+// to which of the two it becomes, and the Rust that came out was two
+// expressions with nothing between them.
+names:a:s = [`ann`, `bo`];
+labels:a:s = map name in names {
+    y string_to_uppercase(name);
+    y name;
+};
+print(labels);

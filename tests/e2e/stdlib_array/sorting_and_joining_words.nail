@@ -1,0 +1,8 @@
+nail latest
+words:a:s = [`pear`, `fig`, `apple`];
+sorted_words:a:s = array_sort(words);
+first_word:s = danger(array_get(sorted_words, 0));
+joined:s = array_join(sorted_words, `,`);
+print(first_word);
+print(joined);
+print(array_contains(words, `fig`));

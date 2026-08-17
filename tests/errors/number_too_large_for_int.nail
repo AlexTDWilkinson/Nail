@@ -1,0 +1,6 @@
+nail latest
+// The number is larger than an i can hold. Rust refuses to compile a literal
+// out of range for its type, so the checker has to say so first, in Nail's
+// own words and pointing at the number.
+big_value:i = 99999999999999999999999;
+print(big_value);

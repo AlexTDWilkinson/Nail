@@ -1,6 +1,7 @@
-error: Cannot access variable 'outer_value' from outside function scope. Functions can only use parameters and local variables.
+error: 'outer_value' belongs to code outside this function, and a function sees only its parameters and its own variables
   --> tests/errors/function_scope_violation.nail:6:16
    |
  6 |     r amount + outer_value;
    |                ^^^^^^^^^^^
+help: pass it in as a parameter: f name(outer_value:<type>) ...
 1 error found

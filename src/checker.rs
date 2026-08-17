@@ -114,6 +114,18 @@ struct AnalyzerState {
     struct_spans: HashMap<String, CodeSpan>,
     in_loop: bool,
     function_scope: Option<usize>,  // Track the scope of the current function
+    /// Set just before a function's body is visited. The body shares the
+    /// scope its parameters live in, and every other block gets one of its
+    /// own. Without this, a block inside a function reused the function's
+    /// scope, so a name declared in one branch of an `if` was still visible
+    /// after the branch, and the Rust that came out referred to a binding
+    /// that had ended.
+    body_shares_the_current_scope: bool,
+    /// Whole numbers the compiler already knows, by the scope and name they
+    /// were declared under. A binding is written once, so a constant stays
+    /// constant, and knowing its value is what lets `count / zero_count` be
+    /// caught here instead of by rustc. See fold_int.
+    known_ints: HashMap<(usize, String), i64>,
 }
 
 /// Type names the transpiler emits unqualified in generated Rust (String, Vec<...>,
@@ -137,6 +149,298 @@ fn new_analyzer_state() -> AnalyzerState {
         struct_spans: HashMap::new(),
         in_loop: false,
         function_scope: None,
+        body_shares_the_current_scope: false,
+        known_ints: HashMap::new(),
+    }
+}
+
+/// What the compiler could work out about a whole-number expression without
+/// running it.
+///
+/// This exists because rustc refuses to compile arithmetic it can work out and
+/// finds broken: `10 / 0` and `<the largest i> + 1` are both hard errors, not
+/// warnings. A Nail program that passes every check and then fails to build is
+/// the one failure the checker exists to prevent, so anything rustc would
+/// refuse has to be refused here first, in Nail's own words.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Folded {
+    /// The value, worked out.
+    Int(i64),
+    /// Whole-number arithmetic the compiler can work out, and working it out
+    /// leaves the range of i.
+    Overflows,
+    /// Not something the compiler can work out ahead of time.
+    Unknown,
+}
+
+/// The value of a whole-number expression, when the compiler can work it out
+/// from literals and constants it has already seen. Anything else is Unknown,
+/// which is always a safe answer: it only means no error is reported here.
+fn fold_int(node: &ASTNode, state: &AnalyzerState, scope: usize) -> Folded {
+    match node {
+        ASTNode::NumberLiteral { value, data_type: NailDataTypeDescriptor::Int, .. } => match value.parse::<i64>() {
+            Ok(number) => Folded::Int(number),
+            // Out of range literals are reported where they are written, so
+            // this stays quiet rather than reporting the same number twice.
+            Err(_) => Folded::Unknown,
+        },
+        ASTNode::UnaryOperation { operator: Operation::Neg, operand, .. } => match fold_int(operand, state, scope) {
+            Folded::Int(number) => number.checked_neg().map_or(Folded::Overflows, Folded::Int),
+            other => other,
+        },
+        ASTNode::BinaryOperation { left, operator, right, .. } => {
+            let (Folded::Int(left_value), Folded::Int(right_value)) = (fold_int(left, state, scope), fold_int(right, state, scope)) else {
+                return Folded::Unknown;
+            };
+            let outcome = match operator {
+                Operation::Add => left_value.checked_add(right_value),
+                Operation::Sub => left_value.checked_sub(right_value),
+                Operation::Mul => left_value.checked_mul(right_value),
+                Operation::Div => left_value.checked_div(right_value),
+                Operation::Mod => left_value.checked_rem(right_value),
+                _ => return Folded::Unknown,
+            };
+            // A zero divisor lands here too, and is reported at the operator
+            // that has it rather than as an overflow.
+            outcome.map_or(Folded::Overflows, Folded::Int)
+        }
+        ASTNode::Identifier { name, .. } => {
+            let mut scope_for_traversal = scope;
+            loop {
+                if let Some(number) = state.known_ints.get(&(scope_for_traversal, name.clone())) {
+                    return Folded::Int(*number);
+                }
+                if scope_for_traversal == GLOBAL_SCOPE {
+                    return Folded::Unknown;
+                }
+                scope_for_traversal = state.scope_arena.get_scope(scope_for_traversal).parent;
+            }
+        }
+        _ => Folded::Unknown,
+    }
+}
+
+/// A statement that is only a value computes something and then throws it
+/// away. Nail has no bare expression statements: a value is given a name or it
+/// is not written. One that slipped through became a Rust expression with no
+/// semicolon after it, which is not a program.
+fn report_a_dropped_value(statement: &ASTNode, state: &mut AnalyzerState) {
+    let what = match statement {
+        ASTNode::BinaryOperation { .. } | ASTNode::UnaryOperation { .. } => "arithmetic",
+        ASTNode::Identifier { .. } => "a name",
+        ASTNode::NumberLiteral { .. } | ASTNode::StringLiteral { .. } | ASTNode::BooleanLiteral { .. } => "a value",
+        ASTNode::ArrayLiteral { .. } => "an array",
+        ASTNode::StructInstantiation { .. } => "a struct",
+        ASTNode::StructFieldAccess { .. } | ASTNode::NestedFieldAccess { .. } => "a field",
+        ASTNode::EnumVariant { .. } => "an enum value",
+        _ => return,
+    };
+    add_error_with_help(
+        state,
+        format!("This line is {} and nothing else, so the value it works out is thrown away", what),
+        Some("give it a name to keep it: result:<type> = ...;".to_string()),
+        &mut statement.code_span(),
+    );
+}
+
+/// Every return inside a function's own control flow, judged against what the
+/// function promised. Nested functions and lambdas are left alone: their
+/// returns belong to them. Collection bodies are left alone too, because a
+/// return in one is already refused as the wrong keyword there.
+fn check_every_return(name: &str, data_type: &NailDataTypeDescriptor, body: &ASTNode, state: &mut AnalyzerState) {
+    let mut inner: Vec<&ASTNode> = match body {
+        ASTNode::Block { statements, .. } => statements.iter().collect(),
+        _ => return,
+    };
+    // The last statement is judged by the caller, with a message that names
+    // the function's promise, so it is skipped here.
+    let last = match body {
+        ASTNode::Block { statements, .. } => statements.last().map(|statement| statement as *const ASTNode),
+        _ => None,
+    };
+    let mut returns: Vec<(&ASTNode, CodeSpan)> = Vec::new();
+    while let Some(node) = inner.pop() {
+        match node {
+            ASTNode::ReturnDeclaration { statement, code_span, .. } => {
+                if last != Some(node as *const ASTNode) {
+                    returns.push((statement.as_ref(), code_span.clone()));
+                }
+            }
+            ASTNode::IfStatement { condition_branches, else_branch, .. } => {
+                for (_, branch) in condition_branches {
+                    inner.push(branch.as_ref());
+                }
+                inner.extend(else_branch.iter().map(|branch| branch.as_ref()));
+            }
+            ASTNode::Block { statements, .. } => inner.extend(statements.iter()),
+            _ => {}
+        }
+    }
+    for (returned, span) in returns {
+        let actual = check_type(returned, state);
+        let compatible = match data_type {
+            NailDataTypeDescriptor::Result(expected_inner) => {
+                matches!(returned, ASTNode::FunctionCall { name, .. } if name == "e") || type_compatible(data_type, &actual) || type_compatible(expected_inner, &actual)
+            }
+            _ => type_compatible(data_type, &actual),
+        };
+        if !compatible {
+            add_error_with_help(
+                state,
+                format!("Function '{}' is declared to return {} but this return gives {}", name, data_type.describe(), actual.describe()),
+                Some(format!("every way out of a function hands back the same kind of value, so this one has to give {}", data_type.describe())),
+                &mut span.clone(),
+            );
+        }
+    }
+}
+
+/// A collection operation says what each item becomes, and it says it once,
+/// with `y`. A body with no yield collects nothing, and one with two says two
+/// different things about the same item. Both used to reach the transpiler,
+/// which wrote a Rust block with no value in it for the first and two
+/// expressions with nothing between them for the second.
+///
+/// Only the body's own statements are counted. A yield inside an if arm is
+/// that arm's answer rather than a second answer from the body.
+fn require_a_yield(operation: &str, body: &ASTNode, state: &mut AnalyzerState, example: &str) -> bool {
+    let yields = match body {
+        ASTNode::Block { statements, .. } => statements.iter().filter(|statement| matches!(statement, ASTNode::YieldDeclaration { .. } | ASTNode::ReturnDeclaration { .. })).count(),
+        _ => 0,
+    };
+    if yields == 0 {
+        add_error_with_help(
+            state,
+            format!("The body of '{}' never yields, so it says nothing about each item", operation),
+            Some(format!("end the body with what each item becomes: {}", example)),
+            &mut body.code_span(),
+        );
+    }
+    if yields > 1 {
+        add_error_with_help(
+            state,
+            format!("The body of '{}' yields {} times, and each item becomes one value", operation, yields),
+            Some("keep one yield at the end, and choose between values inside it: y if { ... };".to_string()),
+            &mut body.code_span(),
+        );
+    }
+    yields == 1
+}
+
+/// Inside a parallel or concurrent block every statement runs at once, so two
+/// declarations of one name have no order between them: neither shadows the
+/// other, and there is no answer to which value the name holds afterwards.
+/// Elsewhere redeclaring a name is the documented way to rebind it, and it
+/// works because the statements run one after another.
+fn check_one_name_each(kind: &str, statements: &[ASTNode], state: &mut AnalyzerState) {
+    let mut seen: Vec<&str> = Vec::new();
+    for statement in statements {
+        let ASTNode::ConstDeclaration { name, code_span, .. } = statement else { continue };
+        if seen.contains(&name.as_str()) {
+            add_error_with_help(
+                state,
+                format!("'{}' is declared twice inside this {} block, where the statements run at once", name, kind),
+                Some("give the second one its own name: with no order between them there is no way to say which value the name would hold".to_string()),
+                &mut code_span.clone(),
+            );
+        }
+        seen.push(name.as_str());
+    }
+}
+
+/// Structs and enums belong to the whole program, so they are declared at the
+/// top level of a file.
+///
+/// A type declared inside a block reads as if it escapes the block, because
+/// the checker resolves it everywhere afterwards, but the transpiler writes it
+/// where it stands, inside a Rust block, and nothing outside can name it. One
+/// of the two had to give, and a type that belongs to one branch of one `if`
+/// is not a thing Nail has.
+fn check_declarations_are_top_level(ast: &ASTNode, state: &mut AnalyzerState) {
+    let ASTNode::Program { statements, .. } = ast else { return };
+    // The walk starts below the top-level statements, so a declaration that
+    // is itself one is fine and everything under one is not.
+    let mut stack: Vec<&ASTNode> = statements.iter().flat_map(|statement| statement.children()).collect();
+    while let Some(node) = stack.pop() {
+        let (kind, name, code_span) = match node {
+            ASTNode::StructDeclaration { name, code_span, .. } => ("struct", name, code_span),
+            ASTNode::EnumDeclaration { name, code_span, .. } => ("enum", name, code_span),
+            other => {
+                stack.extend(other.children());
+                continue;
+            }
+        };
+        add_error_with_help(
+            state,
+            format!("The {} '{}' is declared inside a block, and Nail declares structs and enums at the top level of a file", kind, name),
+            Some("move the declaration up to the top level, next to the file's other declarations: a type belongs to the whole program rather than to one block".to_string()),
+            &mut code_span.clone(),
+        );
+    }
+}
+
+/// Every number written anywhere in the program, checked against the range of
+/// the type it is written as.
+///
+/// This is a walk of the whole tree rather than a case in the main visit,
+/// because a literal can sit anywhere a value can, and the main visit does not
+/// reach all of those places. The fuzzer found the gap: a number too large for
+/// an i, passed as an argument to a function, went unreported all the way to
+/// rustc.
+fn check_number_literals(ast: &ASTNode, state: &mut AnalyzerState) {
+    let mut stack: Vec<&ASTNode> = vec![ast];
+    while let Some(node) = stack.pop() {
+        match node {
+            // A negated number is one number, to Nail and to Rust alike, so
+            // the sign is part of what is range checked. The smallest i can
+            // only be written this way, and judging the digits alone would
+            // refuse it.
+            ASTNode::UnaryOperation { operator: Operation::Neg, operand, .. } if matches!(**operand, ASTNode::NumberLiteral { .. }) => {
+                if let ASTNode::NumberLiteral { value, data_type, code_span, .. } = &**operand {
+                    let value = value.clone();
+                    let data_type = data_type.clone();
+                    let mut code_span = code_span.clone();
+                    check_number_literal(&value, &data_type, true, state, &mut code_span);
+                }
+            }
+            ASTNode::NumberLiteral { value, data_type, code_span, .. } => {
+                let value = value.clone();
+                let data_type = data_type.clone();
+                let mut code_span = code_span.clone();
+                check_number_literal(&value, &data_type, false, state, &mut code_span);
+            }
+            other => stack.extend(other.children()),
+        }
+    }
+}
+
+/// A number written in the source has to fit the type it is written as. Rust
+/// refuses to compile a literal outside its type's range, so a literal that
+/// cannot fit is reported here, pointing at the number itself.
+fn check_number_literal(value: &str, data_type: &NailDataTypeDescriptor, negated: bool, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+    let written = if negated && !value.starts_with('-') { format!("-{}", value) } else { value.to_string() };
+    match data_type {
+        NailDataTypeDescriptor::Int => {
+            if written.parse::<i64>().is_err() {
+                add_error_with_help(
+                    state,
+                    format!("The number {} is outside the range of i", written),
+                    Some(format!("i holds whole numbers from {} to {}. For a number larger than that, keep it as text, or work in f", i64::MIN, i64::MAX)),
+                    code_span,
+                );
+            }
+        }
+        NailDataTypeDescriptor::Float => {
+            if written.parse::<f64>().map_or(false, |number| !number.is_finite()) {
+                add_error_with_help(
+                    state,
+                    format!("The number {} is outside the range of f", written),
+                    Some(format!("f holds numbers up to about {:e}, and this one is larger", f64::MAX)),
+                    code_span,
+                );
+            }
+        }
+        _ => {}
     }
 }
 
@@ -148,6 +452,8 @@ pub fn checker(ast: &mut ASTNode) -> Result<(), Vec<CodeError>> {
     }
 
     visit_node(ast, &mut state);
+    check_number_literals(ast, &mut state);
+    check_declarations_are_top_level(ast, &mut state);
     check_recursive_structs(&mut state);
     check_unused_symbols(&mut state);
     check_sandboxed_code(ast, &mut state);
@@ -201,6 +507,28 @@ fn check_sandboxed_code(ast: &ASTNode, state: &mut AnalyzerState) {
         let mut references = HashSet::new();
         collect_calls_and_references(body, &mut calls, &mut references);
         let caller = if directly_sandboxed { None } else { Some(function_name) };
+        // A background block is not a call, so the call walk never sees it,
+        // and its contents are sandbox checked like any other code. What is
+        // left is the thread itself: imported code that spawns takes a piece
+        // of the program and keeps it, which is the same seizure that denies
+        // it a sleep or a terminal.
+        for code_span in spawn_blocks_in(body) {
+            let mut span = code_span;
+            match caller {
+                None => add_error_with_help(
+                    state,
+                    "Sandboxed code brought in by import cannot spawn background work: it may compute and hand back an answer, and nothing else".to_string(),
+                    Some("do the work in the function and let your own code decide whether to spawn it".to_string()),
+                    &mut span,
+                ),
+                Some(name) => add_error_with_help(
+                    state,
+                    format!("'{}' is reachable from sandboxed code brought in by import, so it cannot spawn background work", name),
+                    Some(format!("keep '{}' out of reach of imported code, or bring that file in with import_dangerous if you trust it", name)),
+                    &mut span,
+                ),
+            }
+        }
         for (call_name, code_span) in calls {
             check_sandboxed_stdlib_call(call_name, code_span, caller, state);
         }
@@ -268,6 +596,20 @@ fn collect_sandboxed_const_initializers<'a>(node: &'a ASTNode, initializers: &mu
 /// Function calls (with call-site spans) and identifier references inside a
 /// subtree. References matter because naming a function, for example passing
 /// an error handler to safe(), reaches it just as surely as calling it.
+/// Every spawn block inside a body, by where it is written. A spawn is a
+/// statement rather than a call, so the call walk cannot see one.
+fn spawn_blocks_in(node: &ASTNode) -> Vec<CodeSpan> {
+    let mut found = Vec::new();
+    let mut stack = vec![node];
+    while let Some(current) = stack.pop() {
+        if let ASTNode::SpawnBlock { code_span, .. } = current {
+            found.push(code_span.clone());
+        }
+        stack.extend(current.children());
+    }
+    found
+}
+
 fn collect_calls_and_references<'a>(node: &'a ASTNode, calls: &mut Vec<(&'a str, CodeSpan)>, references: &mut HashSet<&'a str>) {
     match node {
         ASTNode::FunctionCall { name, code_span, .. } => {
@@ -521,7 +863,8 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
                 }
             }
 
-            // Check each top-level statement
+            // Check each top-level statement. Nothing reads a program's last
+            // value, so a bare value anywhere at the top level is thrown away.
             for statement in statements.iter_mut() {
                 // Check if this is a function call used as a statement
                 if let ASTNode::FunctionCall { name, args, code_span, scope } = statement {
@@ -533,6 +876,7 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
                         add_error_with_help(state, format!("The value returned by '{}' is silently discarded here", name), Some(format!("assign it to a variable: result:<type> = {}(...); Nail has no bare expression statements for value-returning calls", name)), code_span);
                     }
                 } else {
+                    report_a_dropped_value(statement, state);
                     visit_node(statement, state);
                 }
             }
@@ -548,7 +892,26 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
             // like safe() is allowed where reading an outer variable is not.
             if let Some(func_scope) = state.function_scope {
                 if !is_function_reference(state, name) && !check_variable_in_function_scope(state, name, func_scope) {
-                    add_error(state, format!("Cannot access variable '{}' from outside function scope. Functions can only use parameters and local variables.", name), code_span);
+                    // Three different mistakes reach this line, and saying
+                    // the same thing about all of them sent people looking in
+                    // the wrong place. A name declared in a block that has
+                    // ended is the common one, and it has nothing to do with
+                    // reaching outside the function.
+                    match where_the_name_lives(state, name, func_scope) {
+                        NameHome::InsideABlockThatEnded => add_error_with_help(
+                            state,
+                            format!("'{}' was declared inside a block that has ended, so it cannot be used here", name),
+                            Some("declare it before the block if the code after the block needs it".to_string()),
+                            code_span,
+                        ),
+                        NameHome::OutsideTheFunction => add_error_with_help(
+                            state,
+                            format!("'{}' belongs to code outside this function, and a function sees only its parameters and its own variables", name),
+                            Some(format!("pass it in as a parameter: f name({}:<type>) ...", name)),
+                            code_span,
+                        ),
+                        NameHome::Nowhere => add_error(state, format!("There is no variable named '{}' in this scope", name), code_span),
+                    }
                     return;
                 }
             }
@@ -584,19 +947,29 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
         }
         ASTNode::ReturnDeclaration { statement, code_span, .. } => visit_return_declaration(statement, state, code_span),
         ASTNode::YieldDeclaration { statement, code_span, .. } => visit_yield_declaration(statement, state, code_span),
-        ASTNode::ParallelBlock { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
-        ASTNode::ConcurrentBlock { statements, .. } => statements.iter_mut().for_each(|statement| visit_node(statement, state)),
+        ASTNode::ParallelBlock { statements, .. } => {
+            check_one_name_each("parallel", statements, state);
+            statements.iter_mut().for_each(|statement| visit_node(statement, state));
+        }
+        ASTNode::ConcurrentBlock { statements, .. } => {
+            check_one_name_each("concurrent", statements, state);
+            statements.iter_mut().for_each(|statement| visit_node(statement, state));
+        }
         ASTNode::Block { statements, scope, .. } => {
-            // If scope is already set (e.g., for function bodies), use it
-            // Otherwise create a new scope for blocks
-            let needs_new_scope = *scope == 0;
+            // A function's body shares the scope its parameters live in.
+            // Every other block gets its own, so the names it declares end
+            // with it.
+            let needs_new_scope = !std::mem::take(&mut state.body_shares_the_current_scope);
             if needs_new_scope {
                 let block_scope = state.scope_arena.push_scope();
                 *scope = block_scope;
             }
 
-            // Visit all statements in the block
-            for statement in statements.iter_mut() {
+            // Visit all statements in the block. The last one is the block's
+            // value, which an if used as an expression hands back, so only the
+            // ones before it can throw a value away.
+            let last_index = statements.len().saturating_sub(1);
+            for (index, statement) in statements.iter_mut().enumerate() {
                 // Check if this is a function call used as a statement
                 if let ASTNode::FunctionCall { name, args, code_span, scope } = statement {
                     let return_type = visit_function_call(name, args, state, *scope, code_span);
@@ -607,6 +980,9 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
                         add_error_with_help(state, format!("The value returned by '{}' is silently discarded here", name), Some(format!("assign it to a variable: result:<type> = {}(...); Nail has no bare expression statements for value-returning calls", name)), code_span);
                     }
                 } else {
+                    if index != last_index {
+                        report_a_dropped_value(statement, state);
+                    }
                     visit_node(statement, state);
                 }
             }
@@ -619,7 +995,9 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
         }
         ASTNode::LambdaDeclaration { params, body, code_span, .. } => visit_lambda_declaration(params, body, state, code_span),
         ASTNode::StringLiteral { .. } => {},  // Literals don't need additional processing
-        ASTNode::NumberLiteral { .. } => {},
+        // Numbers are range checked in one pass over the finished tree, by
+        // check_number_literals, so that no path into a literal can miss one.
+        ASTNode::NumberLiteral { .. } => {}
         ASTNode::BooleanLiteral { .. } => {},
         ASTNode::StructInstantiationField { value, .. } => visit_node(value, state),
         ASTNode::StructInstantiation { name, fields, code_span, .. } => {
@@ -699,8 +1077,11 @@ fn visit_function_declaration(
         add_symbol(state, Symbol { name: param_name.clone(), data_type: param_type, is_used: false });
     });
 
-    // Visit the function body
+    // Visit the function body. It shares this scope rather than opening one
+    // of its own, because the parameters are already here.
+    state.body_shares_the_current_scope = true;
     visit_node(body, state);
+    state.body_shares_the_current_scope = false;
 
     // Check function return
     check_function_return(name, return_type, body, state, code_span);
@@ -810,14 +1191,58 @@ fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value
         );
     }
 
+    // Remember whole numbers the compiler can work out, so arithmetic further
+    // down the file can be judged against the real value rather than against a
+    // name. A name declared again in the same scope replaces what was known
+    // about it, and a value the compiler cannot work out erases it.
+    if *data_type == NailDataTypeDescriptor::Int {
+        match fold_int(value, state, declaring_scope) {
+            Folded::Int(number) => {
+                state.known_ints.insert((declaring_scope, name.to_string()), number);
+            }
+            _ => {
+                state.known_ints.remove(&(declaring_scope, name.to_string()));
+            }
+        }
+    }
+
     // Add the symbol using the declared type
     add_symbol(state, Symbol { name: name.to_string(), data_type: data_type.clone(), is_used: false });
 }
 
-fn visit_unary_operation(_operator: &Operation, operand: &mut ASTNode, state: &mut AnalyzerState, _code_span: &mut CodeSpan) {
-    // Type checking will happen in a separate phase after visiting
-    // Just visit the operand for now
+fn visit_unary_operation(operator: &Operation, operand: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     visit_node(operand, state);
+
+    // What the operator is applied to has to be the kind of value it works
+    // on. Nothing checked this at all, so `!some_function` passed every check
+    // and became Rust that tried to negate a function.
+    let operand_type = check_type(operand, state);
+    if is_concrete_type(&operand_type) {
+        match operator {
+            Operation::Not if operand_type != NailDataTypeDescriptor::Boolean => add_error_with_help(
+                state,
+                format!("'!' turns a boolean around, and this is {}", operand_type.describe()),
+                Some("compare it first, and turn the answer around: !(count == 0)".to_string()),
+                code_span,
+            ),
+            Operation::Neg if !matches!(operand_type, NailDataTypeDescriptor::Int | NailDataTypeDescriptor::Float) => add_error_with_help(
+                state,
+                format!("'-' negates a number, and this is {}", operand_type.describe()),
+                None,
+                code_span,
+            ),
+            _ => {}
+        }
+    }
+
+    if *operator == Operation::Neg && fold_int(operand, state, state.scope_arena.current_scope()) == Folded::Overflows {
+        add_error_with_help(
+            state,
+            "Negating this number leaves the range of i".to_string(),
+            Some(format!("i holds whole numbers from {} to {}, and the smallest of those has no positive twin", i64::MIN, i64::MAX)),
+            code_span,
+        );
+    }
 }
 
 fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
@@ -845,6 +1270,71 @@ fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut 
         }
     }
 
+    // Both sides of an operator have to be the same type. Nail converts
+    // nothing on its own, so `count > 2.5` with a whole number on the left is
+    // a mistake, and one that used to pass every check and then fail to build
+    // as Rust, which is the failure this whole stage exists to prevent.
+    // Types that failed to resolve earlier are left alone: the error that
+    // made them unresolvable was already reported.
+    if !matches!(operator, Operation::Not) {
+        let left_type = check_type(left, state);
+        let right_type = check_type(right, state);
+        if is_concrete_type(&left_type) && is_concrete_type(&right_type) && left_type != right_type {
+            let help = match (&left_type, &right_type) {
+                (NailDataTypeDescriptor::Int, NailDataTypeDescriptor::Float) | (NailDataTypeDescriptor::Float, NailDataTypeDescriptor::Int) => {
+                    Some("nothing converts on its own: wrap the whole number with danger(float_from(...)), or the fraction with danger(int_from(...))".to_string())
+                }
+                _ => Some("nothing converts on its own, so both sides have to be built as the same type".to_string()),
+            };
+            add_error_with_help(state, format!("'{}' needs both sides to be the same type, but the left is {} and the right is {}", operator, left_type.describe(), right_type.describe()), help, code_span);
+        }
+    }
+
+    // Arithmetic the compiler can work out, and which fails when it does.
+    // Rust refuses to compile either of these, so leaving them to Rust means
+    // a Nail program that passed every check and then failed to build. Only
+    // the operation where the failure first happens is reported, so a longer
+    // expression does not report the same failure at every level above it.
+    let scope = state.scope_arena.current_scope();
+
+    // A zero divisor is a failure whatever it is divided into, so only the
+    // divisor has to be a number the compiler can work out. Asking for both
+    // sides missed `item % 0` inside a loop, where the left side is whatever
+    // the collection holds.
+    if matches!(operator, Operation::Div | Operation::Mod) && fold_int(right, state, scope) == Folded::Int(0) {
+        let what = if *operator == Operation::Div { "Dividing" } else { "Taking the remainder" };
+        add_error_with_help(
+            state,
+            format!("{} by zero, which fails every time this line runs", what),
+            Some("check the divisor before using it, and decide there what a zero should mean".to_string()),
+            code_span,
+        );
+    }
+
+    if let (Folded::Int(left_value), Folded::Int(right_value)) = (fold_int(left, state, scope), fold_int(right, state, scope)) {
+        match operator {
+            Operation::Div | Operation::Mod if right_value == 0 => {}
+            Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod => {
+                let outcome = match operator {
+                    Operation::Add => left_value.checked_add(right_value),
+                    Operation::Sub => left_value.checked_sub(right_value),
+                    Operation::Mul => left_value.checked_mul(right_value),
+                    Operation::Div => left_value.checked_div(right_value),
+                    _ => left_value.checked_rem(right_value),
+                };
+                if outcome.is_none() {
+                    add_error_with_help(
+                        state,
+                        format!("This arithmetic leaves the range of i every time it runs: {} {} {}", left_value, operator, right_value),
+                        Some(format!("i holds whole numbers from {} to {}. Work in f, or keep the numbers smaller", i64::MIN, i64::MAX)),
+                        code_span,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
     // A result is not a number and not comparable either, so an operator that
     // reaches one is the same mistake as assigning one to a plain variable:
     // the error was never dealt with. Left unsaid, this passed every check and
@@ -869,6 +1359,19 @@ fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut 
 }
 
 fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], else_branch: &mut Option<Box<ASTNode>>, state: &mut AnalyzerState) {
+    // An if with no condition tests nothing, so only its else can ever run.
+    // The Rust that came out of one was an `else` with no `if` in front of it.
+    if condition_branches.is_empty() {
+        if let Some(branch) = else_branch.as_ref() {
+            add_error_with_help(
+                state,
+                "This 'if' has no condition, so there is nothing for it to decide".to_string(),
+                Some("write the condition it was meant to test, or drop the if and keep the block on its own".to_string()),
+                &mut branch.code_span(),
+            );
+        }
+    }
+
     // When if is used as an expression (e.g., x = if {...}), the branches can contain return statements
     // to return values from the if expression itself. We need to temporarily allow returns.
     let prev_context = state.return_context.clone();
@@ -905,7 +1408,7 @@ fn visit_map_expression(iterator: &str, index_iterator: &Option<String>, iterabl
         NailDataTypeDescriptor::String => NailDataTypeDescriptor::String, // Each character
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'map' works on arrays and strings, but this is neither — it is just {}", iterable_type.describe()), collection_op_help("map", iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'map' works on arrays and strings, but this is neither, it is just {}", iterable_type.describe()), collection_op_help("map", iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
@@ -948,20 +1451,7 @@ fn visit_map_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     // Restore the context
     state.return_context = prev_context;
     
-    // Verify the body contains a yield statement (or return statement for compatibility)
-    let mut has_yield = false;
-    if let ASTNode::Block { statements, .. } = body {
-        for stmt in statements {
-            if matches!(stmt, ASTNode::YieldDeclaration { .. } | ASTNode::ReturnDeclaration { .. }) {
-                has_yield = true;
-                break;
-            }
-        }
-    }
-    
-    if !has_yield {
-        add_error(state, "Map expression must contain a yield statement".to_string(), &mut body.code_span());
-    }
+    require_a_yield("map", body, state, "y item * 2;");
     
     // The scope itself is kept - later type checking resolves through it -
     // but it stops being the current one, so the iterator cannot shadow
@@ -985,7 +1475,7 @@ fn visit_for_loop(iterator: &str, iterable: &mut ASTNode, initial_value: &mut Op
         NailDataTypeDescriptor::String => NailDataTypeDescriptor::String, // Could be char in future
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'for' loops over arrays and strings, but this is neither — it is just {}", iterable_type.describe()), collection_op_help("for", iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'for' loops over arrays and strings, but this is neither, it is just {}", iterable_type.describe()), collection_op_help("for", iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
@@ -1015,10 +1505,14 @@ fn visit_for_loop(iterator: &str, iterable: &mut ASTNode, initial_value: &mut Op
     
     // Restore the original context
     state.return_context = prev_context;
-    
-    // NOTE: We don't pop the loop scope here because type checking happens later
-    // and needs access to all scopes. Scopes will be preserved throughout
-    // the entire type checking process.
+
+    // The scope itself stays in the arena, because later type checking
+    // resolves names through it, but it stops being the current one: the
+    // iterator and anything declared in the body belong to the loop. Leaving
+    // it current meant they stayed visible after the loop, so a use of the
+    // iterator below the closing brace passed every check and then failed to
+    // build as Rust, where the binding really had ended.
+    state.scope_arena.exit_scope();
 }
 
 fn visit_filter_expression(iterator: &str, index_iterator: &Option<String>, iterable: &mut ASTNode, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
@@ -1036,7 +1530,7 @@ fn visit_filter_expression(iterator: &str, index_iterator: &Option<String>, iter
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'filter' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("filter", iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'filter' works on arrays of values, but this is not an array, it is just {}", iterable_type.describe()), collection_op_help("filter", iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
@@ -1079,7 +1573,8 @@ fn visit_filter_expression(iterator: &str, index_iterator: &Option<String>, iter
     
     // Check that body returns boolean
     let body_type = check_type(body, state);
-    if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
+    if !require_a_yield("filter", body, state, "y item > 3;") {
+    } else if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
         add_error(state, format!("The body of 'filter' must return a boolean (whether to keep each item), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
@@ -1109,7 +1604,7 @@ fn visit_fold_expression(operation: &str, accumulator: &str, iterator: &str, ind
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'{}' works on arrays of values, but this is not an array — it is just {}", operation, iterable_type.describe()), collection_op_help(operation, iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'{}' works on arrays of values, but this is not an array, it is just {}", operation, iterable_type.describe()), collection_op_help(operation, iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
@@ -1158,7 +1653,31 @@ fn visit_fold_expression(operation: &str, accumulator: &str, iterator: &str, ind
     
     // Restore context
     state.return_context = prev_context;
-    
+
+    // A fold has to say what the accumulator becomes, and it says it with a
+    // yield. Without one there is nothing to accumulate, and the transpiler
+    // wrote a Rust block with no value in it.
+    let yields = match body {
+        ASTNode::Block { statements, .. } => statements.iter().filter(|statement| matches!(statement, ASTNode::YieldDeclaration { .. } | ASTNode::ReturnDeclaration { .. })).count(),
+        _ => 0,
+    };
+    if yields == 0 {
+        add_error_with_help(
+            state,
+            format!("The body of '{}' never yields, so there is nothing for '{}' to become", operation, accumulator),
+            Some(format!("end the body with the new value: y {} + {};", accumulator, iterator)),
+            &mut body.code_span(),
+        );
+    }
+    if yields > 1 {
+        add_error_with_help(
+            state,
+            format!("The body of '{}' yields {} times, and '{}' becomes one value each time round", operation, yields, accumulator),
+            Some("keep one yield at the end, and choose between values inside it: y if { ... };".to_string()),
+            &mut body.code_span(),
+        );
+    }
+
     // The scope itself is kept - later type checking resolves through it -
     // but it stops being the current one, so the iterator cannot shadow
     // anything after the block.
@@ -1180,7 +1699,7 @@ fn visit_each_expression(iterator: &str, index_iterator: &Option<String>, iterab
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'each' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("each", iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'each' works on arrays of values, but this is not an array, it is just {}", iterable_type.describe()), collection_op_help("each", iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
@@ -1234,7 +1753,7 @@ fn visit_find_expression(iterator: &str, index_iterator: &Option<String>, iterab
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'find' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("find", iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'find' works on arrays of values, but this is not an array, it is just {}", iterable_type.describe()), collection_op_help("find", iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
@@ -1277,7 +1796,8 @@ fn visit_find_expression(iterator: &str, index_iterator: &Option<String>, iterab
     
     // Check that body returns boolean
     let body_type = check_type(body, state);
-    if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
+    if !require_a_yield("find", body, state, "y item > 3;") {
+    } else if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
         add_error(state, format!("The body of 'find' must return a boolean (whether each item is the one to find), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
@@ -1302,7 +1822,7 @@ fn visit_all_expression(iterator: &str, index_iterator: &Option<String>, iterabl
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'all' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("all", iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'all' works on arrays of values, but this is not an array, it is just {}", iterable_type.describe()), collection_op_help("all", iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
@@ -1345,7 +1865,8 @@ fn visit_all_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     
     // Check that body returns boolean
     let body_type = check_type(body, state);
-    if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
+    if !require_a_yield("all", body, state, "y item > 3;") {
+    } else if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
         add_error(state, format!("The body of 'all' must return a boolean (whether each item passes the check), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
@@ -1370,7 +1891,7 @@ fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterabl
         NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
         _ => {
             if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'any' works on arrays of values, but this is not an array — it is just {}", iterable_type.describe()), collection_op_help("any", iterable), &mut iterable.code_span());
+                add_error_with_help(state, format!("'any' works on arrays of values, but this is not an array, it is just {}", iterable_type.describe()), collection_op_help("any", iterable), &mut iterable.code_span());
             }
             NailDataTypeDescriptor::FailedToResolve
         }
@@ -1413,7 +1934,8 @@ fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     
     // Check that body returns boolean
     let body_type = check_type(body, state);
-    if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
+    if !require_a_yield("any", body, state, "y item > 3;") {
+    } else if body_type != NailDataTypeDescriptor::Boolean && !body_type.is_unresolved() {
         add_error(state, format!("The body of 'any' must return a boolean (whether each item passes the check), but it returns {}", body_type.describe()), &mut body.code_span());
     }
     
@@ -1722,7 +2244,7 @@ fn check_recursive_structs(state: &mut AnalyzerState) {
                     let mut span = state.struct_spans.get(start).cloned().unwrap_or_default();
                     add_error(
                         state,
-                        format!("Struct '{}' contains itself (directly or through other structs), which would make it infinitely sized; store it in an array field or restructure the types", start),
+                        format!("Struct '{}' contains itself (directly or through other structs), which would make it infinitely sized. Store it in an array field, or restructure the types", start),
                         &mut span,
                     );
                     stack.clear();
@@ -1999,6 +2521,13 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
             }
 
             let mut has_error = false;
+            // Each argument is visited before it is judged, so that a mistake
+            // inside one (an undefined name, a malformed safe(...)) is
+            // reported here rather than surviving all the way to the
+            // transpiler. Stdlib calls have always done this.
+            for arg in args.iter_mut() {
+                visit_node(arg, state);
+            }
             for (i, (arg, expected_type)) in args.iter().zip(param_types.iter()).enumerate() {
                 let arg_type = check_type(arg, state);
                 if arg_type != *expected_type {
@@ -2039,7 +2568,7 @@ fn visit_return_declaration(expr: &mut ASTNode, state: &mut AnalyzerState, code_
     }
 }
 
-fn visit_yield_declaration(expr: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+fn visit_yield_declaration(expr: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     match state.return_context {
         ReturnContext::None => {
             add_error(state, "Yield statement outside of collection operation".to_string(), code_span);
@@ -2047,13 +2576,18 @@ fn visit_yield_declaration(expr: &ASTNode, state: &mut AnalyzerState, code_span:
         ReturnContext::Function => {
             add_error_with_help(
                 state,
-                "'y' (yield) cannot be used here — it is only valid inside collection operation blocks (map, filter, reduce, ...)".to_string(),
+                "'y' (yield) cannot be used here, it is only valid inside collection operation blocks (map, filter, reduce, ...)".to_string(),
                 Some("use 'r' (return) to produce a value from this block".to_string()),
                 code_span,
             );
         }
         ReturnContext::CollectionExpression => {
-            // Collection yield - type check the expression
+            // A yielded expression is code like any other, so it is visited
+            // like any other: the names in it have to resolve and the calls
+            // in it have to exist. Type checking it alone was not enough, and
+            // an undefined name inside a yield passed every check and then
+            // became a reference to a Rust variable that was never declared.
+            visit_node(expr, state);
             check_type(expr, state);
         }
     }
@@ -2113,7 +2647,16 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
         ASTNode::NumberLiteral { data_type, .. } => data_type.clone(),
         ASTNode::StringLiteral { .. } => NailDataTypeDescriptor::String,
         ASTNode::BooleanLiteral { .. } => NailDataTypeDescriptor::Boolean,
-        ASTNode::Identifier { name, .. } => lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), name).map_or(NailDataTypeDescriptor::OneOf(vec![]), |s| s.data_type.clone()),
+        // The node's own scope when it has one, and the current scope
+        // otherwise. An expression inside a map or a function body is often
+        // type checked long after that scope stopped being the current one,
+        // and looking it up from the current scope finds nothing: that is why
+        // a map's element type used to come back as "anything", which let a
+        // map be assigned to a variable of any type at all.
+        ASTNode::Identifier { name, scope, .. } => {
+            let start = if *scope != GLOBAL_SCOPE { *scope } else { state.scope_arena.current_scope() };
+            lookup_symbol(&state.scope_arena, start, name).map_or(NailDataTypeDescriptor::OneOf(vec![]), |symbol| symbol.data_type.clone())
+        }
         ASTNode::ReturnDeclaration { statement, .. } => check_type(statement, state),
         ASTNode::YieldDeclaration { statement, .. } => check_type(statement, state),
         ASTNode::UnaryOperation { operator, operand, .. } => {
@@ -2319,20 +2862,20 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
             // If no return statements, it's a void loop
             NailDataTypeDescriptor::Void
         }
-        ASTNode::MapExpression { iterable, .. } => {
-            // Map expressions always return an array
-            // For proper type checking, we rely on the visit phase which has the proper scope
-            // Here we just return a generic array type based on the iterable
-            
-            let iterable_type = check_type(iterable, state);
-            match iterable_type {
-                NailDataTypeDescriptor::Array(element_type) => {
-                    // Map transforms elements, so we can't know the output type without analyzing the body
-                    // Return Array<Any> and let the visit phase do proper type checking
-                    NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any))
-                }
-                _ => NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::Any))
-            }
+        ASTNode::MapExpression { body, .. } => {
+            // A map is an array of whatever its body yields. Answering "an
+            // array of anything" instead meant a map could be assigned to a
+            // variable of any type at all without complaint, and the mismatch
+            // surfaced as a Rust error. The body's scope is still in the
+            // arena from the visit, so the yielded expression resolves here.
+            let element_type = match body.as_ref() {
+                ASTNode::Block { statements, .. } => statements.iter().rev().find_map(|statement| match statement {
+                    ASTNode::YieldDeclaration { statement, .. } | ASTNode::ReturnDeclaration { statement, .. } => Some(check_type(statement, state)),
+                    _ => None,
+                }),
+                _ => None,
+            };
+            NailDataTypeDescriptor::Array(Box::new(element_type.unwrap_or(NailDataTypeDescriptor::Any)))
         }
         ASTNode::FilterExpression { iterable, .. } => {
             // Filter returns the same array type as the input
@@ -2504,6 +3047,45 @@ fn lookup_symbol<'a>(arena: &'a ScopeArena, scope: usize, name: &str) -> Option<
 /// Whether a name refers to a declared function rather than to a value.
 fn is_function_reference(state: &AnalyzerState, name: &str) -> bool {
     matches!(lookup_symbol(&state.scope_arena, GLOBAL_SCOPE, name).map(|symbol| &symbol.data_type), Some(NailDataTypeDescriptor::Fn(_, _)))
+}
+
+/// Where a name that failed to resolve inside a function actually lives, so
+/// the error can say which of three different mistakes this is.
+enum NameHome {
+    /// In a block of this function that has already ended.
+    InsideABlockThatEnded,
+    /// In code outside this function altogether.
+    OutsideTheFunction,
+    /// Nowhere at all: it was never declared.
+    Nowhere,
+}
+
+fn where_the_name_lives(state: &AnalyzerState, name: &str, function_scope: usize) -> NameHome {
+    let mut found_outside = false;
+    for index in 0..state.scope_arena.scopes.len() {
+        if !state.scope_arena.get_scope(index).symbols.contains_key(name) {
+            continue;
+        }
+        // Walk up from the scope that holds it: reaching the function's own
+        // scope means the name belongs to this function, in a block that is
+        // no longer open.
+        let mut walker = index;
+        loop {
+            if walker == function_scope {
+                return NameHome::InsideABlockThatEnded;
+            }
+            if walker == GLOBAL_SCOPE {
+                break;
+            }
+            walker = state.scope_arena.get_scope(walker).parent;
+        }
+        found_outside = true;
+    }
+    if found_outside {
+        NameHome::OutsideTheFunction
+    } else {
+        NameHome::Nowhere
+    }
 }
 
 fn check_variable_in_function_scope(state: &AnalyzerState, name: &str, function_scope: usize) -> bool {
@@ -2701,7 +3283,7 @@ fn collection_op_help(op: &str, iterable: &ASTNode) -> Option<String> {
         ASTNode::Identifier { name, .. } => format!("[{}]", name),
         _ => "[...]".to_string(),
     };
-    Some(format!("'{}' runs its body once for each element of a collection, and a single value has no elements to loop over; if you meant a one-element array, write {}", op, wrapped))
+    Some(format!("'{}' runs its body once for each element of a collection, and a single value has no elements to loop over. If a one-element array was meant, write {}", op, wrapped))
 }
 
 fn add_error_with_help(state: &mut AnalyzerState, message: String, help: Option<String>, code_span: &mut CodeSpan) {
@@ -2834,6 +3416,12 @@ fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &
     let _ = check_type(body, state);
     let data_type = &resolve_custom_type(state, data_type);
 
+    // Every way out of the function, not only the last statement. A return
+    // inside an if arm hands a value back just as much, and one that handed
+    // back the wrong kind used to pass every check: `r print(message);` in a
+    // function that owes a number reached rustc as `return print_macro!(..)`.
+    check_every_return(name, data_type, body, state);
+
     let last_statement = match body {
         ASTNode::Block { statements, .. } => statements.last(),
         _ => None,
@@ -2845,7 +3433,7 @@ fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &
 
             // Compare with the same compatibility rules declarations use:
             // type_compatible treats unresolvable actuals (Any,
-            // FailedToResolve — e.g. empty array literals — and OneOf
+            // FailedToResolve (empty array literals, for one) and OneOf
             // sentinels) as wildcards instead of false mismatches
             let types_compatible = match data_type {
                 // For Result types, allow returning the bare inner type

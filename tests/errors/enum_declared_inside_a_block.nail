@@ -1,0 +1,12 @@
+nail latest
+// A type declared inside a block. The checker used to resolve it everywhere
+// afterwards while the transpiler wrote it inside a Rust block, where nothing
+// outside could name it.
+if {
+    true -> {
+        enum Fruit { Apple, Banana }
+    },
+    else -> { }
+}
+picked:Fruit = Fruit::Apple;
+print(picked);

@@ -1,0 +1,7 @@
+error: Function 'give_number' is declared to return a float (f) but this return gives void (v)
+  --> tests/errors/a_return_in_a_branch_gives_the_wrong_type.nail:7:32
+   |
+ 7 |         true -> { r print(`hi`); },
+   |                                ^
+help: every way out of a function hands back the same kind of value, so this one has to give a float (f)
+1 error found

@@ -1,0 +1,7 @@
+nail latest
+ratio_value:f = 2.5;
+half_value:f = 0.5;
+sum_value:f = ratio_value + half_value;
+print(sum_value);
+print(1.0);
+print([1.5, 2.0]);

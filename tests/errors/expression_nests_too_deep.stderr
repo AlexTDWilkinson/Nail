@@ -1,0 +1,7 @@
+error: This expression nests more than 128 levels deep, which is deeper than the compiler will read
+  --> tests/errors/expression_nests_too_deep.nail:5:143
+   |
+ 5 | deep_value:i = ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))));
+   |                                                                                                                                               ^
+help: give the inner pieces names and use the names, so each piece stays shallow
+1 error found while parsing

@@ -1,0 +1,6 @@
+nail latest
+// A number with two decimal points. It used to lex as one float, type check,
+// and reach rustc as `1.2.0f64`. The colorizer found it: the editor painted
+// it as ordinary text while the compiler was calling it a number.
+version_value:f = 1.2.0;
+print(version_value);

@@ -1,0 +1,12 @@
+nail latest
+f label_for(num_value:i):s!e {
+    if {
+        num_value < 0 -> { r e(`negative`); },
+        else -> { r string_from(num_value); }
+    }
+}
+f fallback_text(failure_value:e):s {
+    r `?`;
+}
+labels:a:s = map num_value in [3, -1, 8] { y safe(label_for(num_value), fallback_text); };
+print(labels);

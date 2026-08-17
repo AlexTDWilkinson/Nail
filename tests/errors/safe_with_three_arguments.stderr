@@ -1,0 +1,6 @@
+error: safe expects 2 arguments, got 3
+  --> tests/errors/safe_with_three_arguments.nail:17:68
+   |
+17 | bad_value:i = double_it(safe(half_of(4), fallback_int, fallback_int));
+   |                                                                    ^
+1 error found

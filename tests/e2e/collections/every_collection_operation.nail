@@ -1,0 +1,12 @@
+nail latest
+numbers:a:i = array_range(1, 6);
+squares:a:i = map num_value in numbers { y num_value * num_value; };
+evens:a:i = filter square_value in squares { y square_value % 2 == 0; };
+running:a:i = scan running_total square_value in squares from 0 { y running_total + square_value; };
+any_big:b = any square_value in squares { y square_value > 20; };
+all_positive:b = all square_value in squares { y square_value > 0; };
+print(squares);
+print(evens);
+print(running);
+print(any_big);
+print(all_positive);

@@ -1,0 +1,6 @@
+error: This struct has no name, and a type has to have one to be used
+  --> tests/errors/a_struct_with_no_name.nail:4:1
+   |
+ 4 | struct {
+   | ^^^^^^^
+1 error found before parsing

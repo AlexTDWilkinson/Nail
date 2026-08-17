@@ -1,0 +1,7 @@
+error: This type nests more than 32 levels deep, which is deeper than any type the compiler will read
+  --> tests/errors/type_nests_too_deep.nail:3:76
+   |
+ 3 | deep_items:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:a:i = [];
+   |                                                                            ^
+help: a type this deep is almost always a typo: an array of arrays of numbers is 'a:a:i'
+1 error found while parsing

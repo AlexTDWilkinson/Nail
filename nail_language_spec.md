@@ -229,6 +229,24 @@ f handle_float_error(e:s):f { r 0.0; }
 count:f = safe(float_from(5), handle_float_error);  // Valid, handles error safely.
 ```
 
+Both sides of an operator have to be the same type. Nothing converts on its
+own, so a whole number and a fraction are never compared or added directly:
+
+```nail-refused
+count:i = 5;
+ratio:f = 2.5;
+bigger:b = count > ratio;
+```
+
+Convert one of them first, and handle the conversion's error:
+
+```nail
+count:i = 5;
+ratio:f = 2.5;
+bigger:b = danger(float_from(count)) > ratio;
+print(bigger);
+```
+
 ### 5.4 Composite Types
 
 #### 5.4.1 Arrays
@@ -338,7 +356,7 @@ doubled:a:i = map num in numbers {
 
 // Map with index access (no comma between iterators)
 indexed_values:a:s = map num idx in numbers {
-    y array_join([`Index `, danger(string_from(idx)), `: `, danger(string_from(num))], ``);
+    y array_join([`Index `, string_from(idx), `: `, string_from(num)], ``);
 };
 
 // Note: To map over characters in a string, first convert to array
@@ -413,17 +431,17 @@ Each performs side effects without collecting values:
 ```nail-fragment
 // Print each element (statement form, no assignment)
 each num in numbers {
-    print(array_join([`Number: `, danger(string_from(num))], ``));
+    print(array_join([`Number: `, string_from(num)], ``));
 }
 
 // With index (no comma between iterators)
 each num idx in numbers {
-    print(array_join([`[`, danger(string_from(idx)), `]: `, danger(string_from(num))], ``));
+    print(array_join([`[`, string_from(idx), `]: `, string_from(num)], ``));
 }
 
 // Each can also be assigned to a variable (expression form)
 each_result:v = each num in numbers {
-    print(array_join([`Number: `, danger(string_from(num))], ``));
+    print(array_join([`Number: `, string_from(num)], ``));
 };
 ```
 
@@ -2573,6 +2591,32 @@ The grammar sections below state the language's rules formally.
 
 #  Nail Language Grammar in EBNF
 
+
+## Scope
+
+A name lives from where it is declared to the end of the block that holds it.
+A block is a function body, an `if` arm, a loop body, a collection operation's
+body, or a bare `{ ... }`. Code after the block cannot see what the block
+declared, and neither can the Rust the program becomes:
+
+```nail-refused
+if {
+    true -> {
+        answer:i = 42;
+    },
+    else -> { }
+}
+print(answer);
+```
+
+Declare it before the block when the code after the block needs it. A loop's
+iterator belongs to the loop the same way, and a function body sees only its
+own parameters and its own declarations: there are no globals inside a
+function.
+
+Structs and enums are declared at the top level of a file. A type belongs to
+the whole program rather than to one block, so declaring one inside an `if` or
+a loop is refused.
 
 ## Type System and Declarations
 

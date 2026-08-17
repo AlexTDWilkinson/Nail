@@ -1,0 +1,5 @@
+nail latest
+struct Point { x_pos:i, y_pos:i }
+spots:a:Point = [Point { x_pos = 1, y_pos = 2 }, Point { x_pos = 3, y_pos = 4 }];
+totals:a:i = map spot in spots { y spot.x_pos + spot.y_pos; };
+print(totals);

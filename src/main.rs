@@ -4041,16 +4041,28 @@ fn main() -> Result<(), io::Error> {
     let editor_for_build = Arc::clone(&shared_editor);
     let editor_for_lex = Arc::clone(&shared_editor);
 
-    // Launch the lexer and parser thread
-    thread::spawn(move || {
-        lex_and_parse_thread_logic(editor_for_lex, rx_lex);
-    });
+    // Launch the lexer and parser thread. Both this and the build thread
+    // below run the compiler, and reading a program is recursive at every
+    // stage, so they are given the compiler's stack rather than the two
+    // megabytes a thread gets by default. Without it a deeply nested
+    // expression takes the whole editor down with it.
+    thread::Builder::new()
+        .name("nail-lex".to_string())
+        .stack_size(nail::common::COMPILER_STACK_BYTES)
+        .spawn(move || {
+            lex_and_parse_thread_logic(editor_for_lex, rx_lex);
+        })
+        .expect("the lexer thread starts");
 
     // Launch the build thread
     let tx_draw_for_build = tx_draw.clone();
-    thread::spawn(move || {
-        build_thread_logic(editor_for_build, rx_build, tx_draw_for_build);
-    });
+    thread::Builder::new()
+        .name("nail-build".to_string())
+        .stack_size(nail::common::COMPILER_STACK_BYTES)
+        .spawn(move || {
+            build_thread_logic(editor_for_build, rx_build, tx_draw_for_build);
+        })
+        .expect("the build thread starts");
 
     // Launch the key handling thread
     let tx_draw_for_key = tx_draw.clone();

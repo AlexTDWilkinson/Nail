@@ -1,0 +1,6 @@
+error: There is no variable named 'undefined_name' in this scope
+  --> tests/errors/yield_of_an_undefined_name.nail:7:7
+   |
+ 7 |     y undefined_name * item_value;
+   |       ^^^^^^^^^^^^^^
+1 error found

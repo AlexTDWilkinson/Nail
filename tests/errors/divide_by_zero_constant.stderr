@@ -1,0 +1,7 @@
+error: Dividing by zero, which fails every time this line runs
+  --> tests/errors/divide_by_zero_constant.nail:6:20
+   |
+ 6 | total_count:i = 10 / zero_count;
+   |                    ^
+help: check the divisor before using it, and decide there what a zero should mean
+1 error found

@@ -79,6 +79,25 @@ pub struct ColorScheme {
 }
 
 /// Convert a hex color string (e.g., "#FF5733") to a `tui::style::Color`
+/// Whether a word is a number the way Nail writes one: digits, with an
+/// optional minus sign and at most one decimal point. Asking the standard
+/// library to parse it instead would also accept `inf` and `1e9`, which Nail
+/// has no syntax for.
+fn is_a_number(word: &str) -> bool {
+    let digits = word.strip_prefix('-').unwrap_or(word);
+    if digits.is_empty() {
+        return false;
+    }
+    let mut parts = digits.split('.');
+    let whole = parts.next().unwrap_or("");
+    let fraction = parts.next();
+    if parts.next().is_some() {
+        return false;
+    }
+    let all_digits = |text: &str| !text.is_empty() && text.chars().all(|character| character.is_ascii_digit());
+    all_digits(whole) && fraction.map_or(true, all_digits)
+}
+
 pub fn hex_to_color(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
 
@@ -1343,7 +1362,7 @@ fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: 
             colored_spans.push(colorize_single_char(ch, theme));
             prev_was_colon = ch == ':';
             pos += 1;
-        } else if matches!(ch, '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/') {
+        } else if matches!(ch, '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '&' | '|' | '%') {
             // Potentially multi-character operator
             let mut token_end = pos + 1;
             
@@ -1355,21 +1374,19 @@ fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: 
                    (ch == '!' && next_ch == '=') ||
                    (ch == '<' && next_ch == '=') ||
                    (ch == '>' && next_ch == '=') ||
-                   (ch == '/' && next_ch == 'p') {
+                   (ch == '&' && next_ch == '&') ||
+                   (ch == '|' && next_ch == '|') ||
+                   (ch == '/' && (next_ch == 'p' || next_ch == 'c')) {
                     token_end += 1;
                 }
             }
             
-            // Special case for error types (e.g., i!e)
-            if ch == '!' && pos > 0 && token_end < chars.len() && chars[token_end] == 'e' {
-                let prev_ch = chars[pos - 1];
-                if matches!(prev_ch, 'i' | 'f' | 's' | 'b' | 'a') {
-                    // This is part of an error type, handled elsewhere
-                    pos += 1;
-                    continue;
-                }
-            }
-            
+            // A '!' that ends a result type is part of the word before it and
+            // is taken there. Reaching here with one means it stands alone, so
+            // it is painted as the operator it is: skipping it silently
+            // dropped the character from what the editor drew, and a file on
+            // screen that differs from the file on disk is the one thing a
+            // colorizer may never do.
             let token: String = chars[token_start..token_end].iter().collect();
             colored_spans.push(Span::styled(token, Style::default().fg(theme.operator)));
             prev_was_colon = false;
@@ -1382,14 +1399,19 @@ fn colorize_non_string_content_preserve_positions(content: &str, colored_spans: 
             while token_end < chars.len() && loop_counter < 1000 {
                 loop_counter += 1;
                 let ch = chars[token_end];
-                if ch.is_whitespace() || matches!(ch, '(' | ')' | '{' | '}' | '[' | ']' | ',' | ';' | ':' | '=' | '<' | '>' | '+' | '-' | '*' | '/') {
-                    // Special case: don't break on ! if it's part of an error type
-                    if ch == '!' && token_end + 1 < chars.len() && chars[token_end + 1] == 'e' {
-                        let token_so_far: String = chars[token_start..token_end].iter().collect();
-                        if token_so_far.chars().all(|c| matches!(c, 'i' | 'f' | 's' | 'b' | 'a')) {
-                            token_end += 2; // Include !e
-                            continue;
-                        }
+                // The characters a word can end at. `&`, `|`, `%` and `!`
+                // are operators like the rest, and leaving them out meant
+                // `count%2`, `80&&81` and `5!= 6`, written without spaces,
+                // were one long word the colorizer could make nothing of, so
+                // the numbers in them were painted as plain text. A `!` that
+                // belongs to a result type is the exception just below.
+                if ch.is_whitespace() || matches!(ch, '(' | ')' | '{' | '}' | '[' | ']' | ',' | ';' | ':' | '=' | '<' | '>' | '+' | '-' | '*' | '/' | '&' | '|' | '%' | '!') {
+                    // A '!' followed by 'e' ends a result type and belongs to
+                    // the word: `i!e`, and `Job!e` just as much, since a
+                    // struct name can be the value a result carries.
+                    if ch == '!' && chars.get(token_end + 1) == Some(&'e') && token_end > token_start {
+                        token_end += 2; // Include !e
+                        continue;
                     }
                     break;
                 }
@@ -1488,9 +1510,14 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
             }
         }
 
-        // Numbers
-        _ if word.parse::<i64>().is_ok() => Span::styled(word.to_string(), Style::default().fg(theme.signed_int)),
-        _ if word.parse::<f64>().is_ok() => Span::styled(word.to_string(), Style::default().fg(theme.float)),
+        // Numbers. Whole or fractional by how the number is written, which is
+        // how the compiler reads it, rather than by whether it happens to fit
+        // an i64: a whole number too large to hold is still a whole number,
+        // and painting it as a float said the wrong thing about it.
+        _ if is_a_number(word) => {
+            let color = if word.contains('.') { theme.float } else { theme.signed_int };
+            Span::styled(word.to_string(), Style::default().fg(color))
+        }
 
         // String literals (Nail uses backticks). A word containing one is
         // either a string or a tagged string's opening, html`<p>hi</p>`.
@@ -1658,6 +1685,51 @@ mod tests {
             for (what, fg, bg) in pairs {
                 assert_floor(name, what, fg, bg, text_floor);
             }
+        }
+    }
+
+    /// The fuzzer compares what the compiler reads with what the editor
+    /// paints, and each of these was a disagreement it found.
+    #[test]
+    fn numbers_are_painted_as_numbers_wherever_they_sit() {
+        let theme = test_theme();
+        let content = vec![Line::from(vec![Span::raw("total:i = 80&&81; share:i = total%7; big:i = 18446744073709551616; ratio:f = 2.5;")])];
+
+        let result = colorize_code(content, &theme);
+        let colored: Vec<(String, Option<Color>)> = result[0].spans.iter().map(|span| (span.content.to_string(), span.style.fg)).collect();
+
+        // '&&' and '%' end a word like every other operator. Without that,
+        // `80&&81` was one long word the colorizer could make nothing of.
+        for number in ["80", "81", "7"] {
+            let found = colored.iter().find(|(text, _)| text == number).unwrap_or_else(|| panic!("{} should be its own span, got {:?}", number, colored));
+            assert_eq!(found.1, Some(theme.signed_int), "{} is a whole number", number);
+        }
+        // A whole number too large for an i is still a whole number.
+        let big = colored.iter().find(|(text, _)| text == "18446744073709551616").expect("the large number should be its own span");
+        assert_eq!(big.1, Some(theme.signed_int));
+        let ratio = colored.iter().find(|(text, _)| text == "2.5").expect("the fraction should be its own span");
+        assert_eq!(ratio.1, Some(theme.float));
+    }
+
+    /// Whatever else colouring does, the text it hands back is the text it was
+    /// given. The editor draws that, so a dropped character is a file that
+    /// looks different on screen from the file on disk.
+    #[test]
+    fn colouring_never_changes_a_character_of_the_line() {
+        let theme = test_theme();
+        let lines = [
+            "f heaviest(jobs:a:Job):Job!e {",
+            "half:i = safe(half_of(4), fallback_int);",
+            "flag:b = (count>3&&other<9) || 5!= 6;",
+            "page:s = html`<p class=\"x\">hi</p>`;",
+            "share:i = total /count;",
+            "c",
+            "/c",
+        ];
+        for line in lines {
+            let result = colorize_code(vec![Line::from(vec![Span::raw(line.to_string())])], &theme);
+            let drawn: String = result[0].spans.iter().map(|span| span.content.to_string()).collect();
+            assert_eq!(drawn, line, "colouring changed the line");
         }
     }
 

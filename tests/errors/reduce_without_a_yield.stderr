@@ -1,0 +1,7 @@
+error: The body of 'reduce' never yields, so there is nothing for 'running_total' to become
+  --> tests/errors/reduce_without_a_yield.nail:6:31
+   |
+ 6 |     running_total + item_value;
+   |                               ^
+help: end the body with the new value: y running_total + item_value;
+1 error found

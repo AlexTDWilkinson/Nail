@@ -840,6 +840,20 @@ const SANDBOX_DENIED_FUNCTIONS: &[(&str, &str)] = &[
     ("term_is_tty", SANDBOX_READS_MACHINE_STATE),
     ("term_width", SANDBOX_READS_MACHINE_STATE),
     ("term_height", SANDBOX_READS_MACHINE_STATE),
+    // Drawing is arithmetic on shapes, but these two read what they are given
+    // the path of: a file on a real machine, and in the browser build a URL
+    // they fetch. Either one is imported code choosing what to reach.
+    ("game_sprite_load", SANDBOX_TOUCHES_MACHINE),
+    ("game3d_mesh_load", SANDBOX_TOUCHES_MACHINE),
+    // Opening a window is the same seizure of the program that tui_run is:
+    // it takes the process over and reads the keyboard and the mouse until it
+    // is done. Imported code may compute a frame, never run the loop.
+    ("game_run", SANDBOX_SEIZES_RESOURCE),
+    ("game3d_run", SANDBOX_SEIZES_RESOURCE),
+    // Logging to stderr is allowed because stderr cannot exfiltrate. This one
+    // creates or appends to a path of its choosing and rebinds where the whole
+    // program's logging goes, which is neither.
+    ("log_set_file", SANDBOX_TOUCHES_MACHINE),
 ];
 
 /// Functions allowed inside sandboxed code even though their module is otherwise

@@ -1,0 +1,7 @@
+error: Sandboxed code brought in by import cannot spawn background work: it may compute and hand back an answer, and nothing else
+  --> tests/import_sandbox_spawn_helper.nail:4:5
+   |
+ 4 |     spawn {
+   |     ^
+help: do the work in the function and let your own code decide whether to spawn it
+1 error found

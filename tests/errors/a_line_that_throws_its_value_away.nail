@@ -1,0 +1,6 @@
+nail latest
+// A line that is only arithmetic. Nail has no bare expression statements, and
+// nothing at the top level reads a value, so this computes and drops it. It
+// used to pass every check and become a Rust expression with no semicolon.
+(2 + 3 * 4);
+print(`done`);
