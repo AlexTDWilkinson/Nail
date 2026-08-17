@@ -1,6 +1,6 @@
 error: 'http_server' needs 'handle_request' to take (the struct 'HTTP_Request', a hashmap (h<s,s>)) and return the struct 'HTTP_Response', but it takes (the struct 'HTTP_Request') and returns a string (s)
-  --> tests/errors/request_handler_wrong_signature.nail:17:25
+  --> tests/errors/request_handler_wrong_signature.nail:17:1
    |
 17 | http_server(8080, config);
-   |                         ^
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
 1 error found

@@ -440,7 +440,7 @@ fn parse_primary_inner(state: &mut ParserState) -> Result<ASTNode, CodeError> {
                     if name == "f" {
                         parse_inline_function_declaration(state)?
                     } else {
-                        parse_function_call(state, name)?
+                        parse_function_call(state, name, token.code_span.clone())?
                     }
                 } else if matches!(state.tokens.peek().map(|t| &t.token_type), Some(TokenType::BlockOpen)) && name.chars().next().map_or(false, |c| c.is_uppercase()) {
                     // This is a struct instantiation
@@ -657,7 +657,7 @@ fn expect_identifier(state: &mut ParserState) -> Result<String, CodeError> {
     }
 }
 
-fn parse_function_call(state: &mut ParserState, name: String) -> Result<ASTNode, CodeError> {
+fn parse_function_call(state: &mut ParserState, name: String, name_span: CodeSpan) -> Result<ASTNode, CodeError> {
     let _ = expect_token(state, TokenType::ParenthesisOpen)?;
     let mut args = Vec::new();
     while state.tokens.peek().map_or(false, |t| t.token_type != TokenType::ParenthesisClose) {
@@ -668,7 +668,19 @@ fn parse_function_call(state: &mut ParserState, name: String) -> Result<ASTNode,
             break;
         }
     }
-    let code_span = expect_token(state, TokenType::ParenthesisClose)?;
+    let closing_span = expect_token(state, TokenType::ParenthesisClose)?;
+
+    // The call's span runs from its name to its closing parenthesis, so an
+    // error about a call underlines the call. It used to be the closing
+    // parenthesis alone, which put a single caret under ')' while the message
+    // talked about the function, and on a declaration the caret landed on the
+    // semicolon after it.
+    let code_span = CodeSpan {
+        start_line: name_span.start_line,
+        start_column: name_span.start_column,
+        end_line: closing_span.end_line,
+        end_column: closing_span.end_column,
+    };
 
     Ok(ASTNode::FunctionCall { name, args, code_span, scope: GLOBAL_SCOPE })
 }

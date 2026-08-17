@@ -285,11 +285,17 @@ fn check_every_return(name: &str, data_type: &NailDataTypeDescriptor, body: &AST
             _ => type_compatible(data_type, &actual),
         };
         if !compatible {
+            let (says_where, signature) = value_source(returned, &actual, state, format!("this return gives {}", actual.describe()));
+            let mut span = if returned.code_span().start_line == 0 { span } else { returned.code_span() };
+            let advice = format!("every way out of a function hands back the same kind of value, so this one has to give {}", data_type.describe());
             add_error_with_help(
                 state,
-                format!("Function '{}' is declared to return {} but this return gives {}", name, data_type.describe(), actual.describe()),
-                Some(format!("every way out of a function hands back the same kind of value, so this one has to give {}", data_type.describe())),
-                &mut span.clone(),
+                format!("Function '{}' is declared to return {} but {}", name, data_type.describe(), says_where),
+                Some(match &signature {
+                    Some(signature) => format!("{}, and {}", signature, advice),
+                    None => advice,
+                }),
+                &mut span,
             );
         }
     }
@@ -1137,6 +1143,58 @@ fn shadowed_outer_variable(state: &AnalyzerState, declaring_scope: usize, name: 
     }
 }
 
+/// How an error names the value it is refusing, when that value came from a
+/// call. A call site shows no types at all: reading `content:s = fs_read(...)`
+/// gives no way to see that fs_read hands back a result, so an error saying
+/// only "its value is a result" left the reader to go and look the function up
+/// before they could understand what was wrong. Naming the function and
+/// printing its signature answers that inside the error.
+///
+/// The signature comes from the registry for a library function and from the
+/// symbol table for one the program declared, which has the types but not the
+/// parameter names. Nothing here knows about any particular function.
+fn called_function(value: &ASTNode, state: &AnalyzerState) -> Option<(String, String)> {
+    let ASTNode::FunctionCall { name, .. } = value else { return None };
+    // e() is the error constructor, not a function anyone can look up, and it
+    // is written where an error is meant rather than called for a value.
+    if name == "e" {
+        return None;
+    }
+    if let Some(function) = crate::stdlib_registry::get_stdlib_function(name) {
+        return Some((name.clone(), function.nail_signature(name)));
+    }
+    let symbol = lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), name)?;
+    let NailDataTypeDescriptor::Fn(parameter_types, return_type) = &symbol.data_type else { return None };
+    let parameters: Vec<String> = parameter_types.iter().map(|parameter_type| parameter_type.to_string()).collect();
+    return Some((name.clone(), format!("{}({}):{}", name, parameters.join(", "), return_type)));
+}
+
+/// The three ways to handle a result, followed by an example of doing it here.
+/// Every error about a result that was never handled ends with this, so the
+/// sentence is written once.
+fn results_must_be_handled(example: String) -> String {
+    return format!(
+        "results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. {}",
+        example
+    );
+}
+
+/// The call to put inside danger(...) in an example fix: the function that
+/// produced the result, when a call produced it.
+fn call_for_example(value: &ASTNode, state: &AnalyzerState) -> String {
+    return called_function(value, state).map_or("...".to_string(), |(function_name, _)| format!("{}(...)", function_name));
+}
+
+/// The two things an error needs to say about a value it is refusing: how to
+/// name its type, and the signature to show in the help when a call produced
+/// it. `fallback` is the phrasing for a value that came from anywhere else.
+fn value_source(value: &ASTNode, value_type: &NailDataTypeDescriptor, state: &AnalyzerState, fallback: String) -> (String, Option<String>) {
+    match called_function(value, state) {
+        Some((function_name, signature)) => (format!("{} returns {}", function_name, value_type.describe()), Some(signature)),
+        None => (fallback, None),
+    }
+}
+
 fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
     // Shadowing a variable from an enclosing scope is refused: the shadow
     // dies with this block, so code after the block sees the outer value
@@ -1170,24 +1228,35 @@ fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value
     // (already reported) doesn't cascade into a second confusing error here.
     let data_type = &resolve_custom_type(state, data_type);
     let value_type = check_type(value, state);
+    // A mismatch is about the value, so it underlines the value rather than
+    // the whole declaration, whose span ends on the semicolon.
+    let mut value_span = value.code_span();
+    if value_span.start_line == 0 {
+        value_span = code_span.clone();
+    }
+    let (says_where, signature) = value_source(value, &value_type, state, format!("its value is {}", value_type.describe()));
     if let NailDataTypeDescriptor::Result(inner) = &value_type {
         if !matches!(data_type, NailDataTypeDescriptor::Result(_)) {
+            let handling = results_must_be_handled(format!("For example: {}:{} = danger({});", name, inner, call_for_example(value, state)));
             add_error_with_help(
                 state,
-                format!("'{}' is declared as {} but its value is {}", name, data_type.describe(), value_type.describe()),
-                Some(format!(
-                    "results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: {}:{} = danger(...);",
-                    name, inner
-                )),
-                code_span,
+                format!("'{}' is declared as {} but {}", name, data_type.describe(), says_where),
+                Some(match &signature {
+                    Some(signature) => format!("{}, and {}", signature, handling),
+                    None => handling,
+                }),
+                &mut value_span,
             );
         }
     } else if is_concrete_type(data_type) && is_concrete_type(&value_type) && *data_type != value_type {
         add_error_with_help(
             state,
-            format!("'{}' is declared as {} but its value is {}", name, data_type.describe(), value_type.describe()),
-            Some(format!("either change the declaration to '{}:{}' or make the value {}", name, value_type, data_type.describe())),
-            code_span,
+            format!("'{}' is declared as {} but {}", name, data_type.describe(), says_where),
+            Some(match &signature {
+                Some(signature) => format!("{}, so either change the declaration to '{}:{}' or make the value {}", signature, name, value_type, data_type.describe()),
+                None => format!("either change the declaration to '{}:{}' or make the value {}", name, value_type, data_type.describe()),
+            }),
+            &mut value_span,
         );
     }
 
@@ -1279,7 +1348,11 @@ fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut 
     if !matches!(operator, Operation::Not) {
         let left_type = check_type(left, state);
         let right_type = check_type(right, state);
-        if is_concrete_type(&left_type) && is_concrete_type(&right_type) && left_type != right_type {
+        // A result on either side is the unhandled error reported just below,
+        // and it is the mistake worth naming: complaining that the two sides
+        // are different types as well says the same thing twice.
+        let holds_result = matches!(left_type, NailDataTypeDescriptor::Result(_)) || matches!(right_type, NailDataTypeDescriptor::Result(_));
+        if is_concrete_type(&left_type) && is_concrete_type(&right_type) && left_type != right_type && !holds_result {
             let help = match (&left_type, &right_type) {
                 (NailDataTypeDescriptor::Int, NailDataTypeDescriptor::Float) | (NailDataTypeDescriptor::Float, NailDataTypeDescriptor::Int) => {
                     Some("nothing converts on its own: wrap the whole number with danger(float_from(...)), or the fraction with danger(int_from(...))".to_string())
@@ -1344,14 +1417,22 @@ fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut 
         for operand in [&*left, &*right] {
             let operand_type = check_type(&mut operand.clone(), state);
             if let NailDataTypeDescriptor::Result(inner) = &operand_type {
+                let signature = called_function(operand, state).map(|(_, signature)| signature);
+                let advice = results_must_be_handled(format!("Name it first, then use it: value:{} = danger({});", inner, call_for_example(operand, state)));
+                // The operand is the unhandled result, so that is what the
+                // caret goes under rather than the operator between them.
+                let mut operand_span = operand.code_span();
+                if operand_span.start_line == 0 {
+                    operand_span = code_span.clone();
+                }
                 add_error_with_help(
                     state,
                     format!("'{}' cannot work on {}", operator, operand_type.describe()),
-                    Some(format!(
-                        "results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. Name it first, then use it: value:{} = danger(...);",
-                        inner
-                    )),
-                    code_span,
+                    Some(match &signature {
+                        Some(signature) => format!("{}, and {}", signature, advice),
+                        None => advice,
+                    }),
+                    &mut operand_span,
                 );
             }
         }
@@ -2189,9 +2270,18 @@ fn visit_struct_instantiation(name: &str, fields: &mut [ASTNode], state: &mut An
                 Some((_, declared_type)) => {
                     let value_type = check_type(value, state);
                     if is_concrete_type(declared_type) && is_concrete_type(&value_type) && *declared_type != value_type && value_type != NailDataTypeDescriptor::Any {
-                        add_error(
+                        let (says_where, signature) = value_source(value, &value_type, state, format!("its value is {}", value_type.describe()));
+                        let advice = match &value_type {
+                            NailDataTypeDescriptor::Result(_) => results_must_be_handled(format!("For example: {} = danger({})", field_name, call_for_example(value, state))),
+                            _ => format!("either make the value {} or declare '{}' as '{}' in the struct", declared_type.describe(), field_name, value_type),
+                        };
+                        add_error_with_help(
                             state,
-                            format!("Field '{}' of struct '{}' is declared as {} but its value is {}", field_name, name, declared_type.describe(), value_type.describe()),
+                            format!("Field '{}' of struct '{}' is declared as {} but {}", field_name, name, declared_type.describe(), says_where),
+                            Some(match &signature {
+                                Some(signature) => format!("{}, and {}", signature, advice),
+                                None => advice,
+                            }),
                             &mut field_span.clone(),
                         );
                     }
@@ -3447,11 +3537,23 @@ fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &
             };
 
             if !types_compatible {
+                let (says_where, signature) = value_source(statement, &actual_return_type, state, format!("this return statement gives {}", actual_return_type.describe()));
+                let advice = format!("either change the function's declared return type to '{}' or return {}", actual_return_type, data_type.describe());
+                // The return is what is wrong, not the signature line the
+                // function opens with, so the caret goes on the value being
+                // returned wherever that value knows where it is.
+                let mut return_span = statement.code_span();
+                if return_span.start_line == 0 {
+                    return_span = code_span.clone();
+                }
                 add_error_with_help(
                     state,
-                    format!("Function '{}' is declared to return {} but this return statement gives {}", name, data_type.describe(), actual_return_type.describe()),
-                    Some(format!("either change the function's declared return type to '{}' or return {}", actual_return_type, data_type.describe())),
-                    code_span,
+                    format!("Function '{}' is declared to return {} but {}", name, data_type.describe(), says_where),
+                    Some(match &signature {
+                        Some(signature) => format!("{}, and {}", signature, advice),
+                        None => advice,
+                    }),
+                    &mut return_span,
                 );
             }
         }

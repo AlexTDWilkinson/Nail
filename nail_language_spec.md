@@ -979,10 +979,10 @@ Example of the required shape:
 
 ```
 error: 'count' is declared as an integer (i) but its value is a string (s)
-  --> tests/errors/type_mismatch_declaration.nail:3:18
+  --> tests/errors/type_mismatch_declaration.nail:3:11
    |
  3 | count:i = `hello`;
-   |                  ^
+   |           ^^^^^^^
 help: either change the declaration to 'count:s' or make the value an integer (i)
 ```
 
@@ -3404,7 +3404,7 @@ doubled:a:i = map num in numbers {
 
 #### Void Function Assignment Error
 ```
-'result' is declared as a string (s) but its value is void (v)
+'result' is declared as a string (s) but print returns void (v)
 ```
 **Solution**: A void call can only be assigned to a name declared `:v`:
 ```nail

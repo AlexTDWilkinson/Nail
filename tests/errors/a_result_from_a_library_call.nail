@@ -1,0 +1,5 @@
+nail latest
+// A call site shows no types, so an error about the value it produced has to
+// say which function produced it and what that function gives back.
+content:s = fs_read(`config.txt`);
+print(content);

@@ -1,0 +1,7 @@
+error: 'content' is declared as a string (s) but fs_read returns a result (s!e) that may contain an error
+  --> tests/errors/a_result_from_a_library_call.nail:4:13
+   |
+ 4 | content:s = fs_read(`config.txt`);
+   |             ^^^^^^^^^^^^^^^^^^^^^
+help: fs_read(path:s):s!e, and results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: content:s = danger(fs_read(...));
+1 error found

@@ -483,6 +483,18 @@ pub struct StdlibFunction {
     pub example: &'static str,
 }
 
+impl StdlibFunction {
+    /// The function written the way a Nail programmer writes it:
+    /// `fs_read(path:s):s!e`. A call site shows no types at all, so this is
+    /// what an error message, a completion and the F1 sheet all show to say
+    /// what a function takes and what it gives back. The name is not stored on
+    /// the function, so the caller passes the one the registry filed it under.
+    pub fn nail_signature(&self, name: &str) -> String {
+        let parameters: Vec<String> = self.parameters.iter().map(|parameter| format!("{}:{}", parameter.name, parameter.param_type)).collect();
+        return format!("{}({}):{}", name, parameters.join(", "), self.return_type);
+    }
+}
+
 lazy_static! {
     pub static ref STDLIB_FUNCTIONS: HashMap<&'static str, StdlibFunction> = {
         let mut m = HashMap::new();

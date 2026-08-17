@@ -1,7 +1,7 @@
 error: 'labels' is declared as an array (a:s) but its value is an array (a:i)
-  --> tests/errors/map_result_assigned_to_wrong_type.nail:9:2
+  --> tests/errors/map_result_assigned_to_wrong_type.nail:7:14
    |
- 9 | };
-   |  ^
+ 7 | labels:a:s = map num_value in values {
+   |              ^
 help: either change the declaration to 'labels:a:i' or make the value an array (a:s)
 1 error found

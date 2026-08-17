@@ -1,6 +1,6 @@
 error: 'math_sqrt' expects its parameter 'value' to be a float (f), but this argument is a string (s)
-  --> tests/errors/wrong_argument_type.nail:3:28
+  --> tests/errors/wrong_argument_type.nail:3:12
    |
  3 | result:f = math_sqrt(`four`);
-   |                            ^
+   |            ^^^^^^^^^^^^^^^^^
 1 error found

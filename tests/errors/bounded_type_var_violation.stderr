@@ -1,11 +1,11 @@
 error: 'math_divide' expects its parameter 'numerator' to be an integer (i) or a float (f), but this argument is a string (s)
-  --> tests/errors/bounded_type_var_violation.nail:3:43
+  --> tests/errors/bounded_type_var_violation.nail:3:19
    |
  3 | result:s = danger(math_divide(`ten`, `two`));
-   |                                           ^
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
 error: 'math_divide' expects its parameter 'denominator' to be an integer (i) or a float (f), but this argument is a string (s)
-  --> tests/errors/bounded_type_var_violation.nail:3:43
+  --> tests/errors/bounded_type_var_violation.nail:3:19
    |
  3 | result:s = danger(math_divide(`ten`, `two`));
-   |                                           ^
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
 2 errors found

@@ -1060,13 +1060,7 @@ impl Editor {
         for (name, func) in STDLIB_FUNCTIONS.iter() {
             let category = func.module.display_name();
 
-            // Build function signature
-            let mut signature = format!("{}(", name);
-            for (i, param) in func.parameters.iter().enumerate() {
-                if i > 0 { signature.push_str(", "); }
-                signature.push_str(&format!("{}:{}", param.name, param.param_type));
-            }
-            signature.push_str(&format!("):{}", func.return_type));
+            let signature = func.nail_signature(name);
             
             self.stdlib_functions.push(StdLibFunction {
                 name: name.to_string(),
@@ -4323,16 +4317,7 @@ impl Editor {
                 let mut completions = Vec::new();
 
                 for (name, func) in crate::stdlib_registry::functions_starting_with(&prefix) {
-                    // Build function signature
-                    let params: Vec<String> = func.parameters.iter()
-                        .map(|p| format!("{}:{}", p.name, p.param_type))
-                        .collect();
-
-                    let signature = if params.is_empty() {
-                        format!("{}():{}", name, func.return_type)
-                    } else {
-                        format!("{}({}):{}", name, params.join(", "), func.return_type)
-                    };
+                    let signature = func.nail_signature(name);
 
                     completions.push(CompletionItem {
                         label: name.to_string(),

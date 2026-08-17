@@ -1,0 +1,9 @@
+nail latest
+// A field takes a plain value, so the result a call hands back has to be
+// handled before it gets there. The error names the call that produced it.
+struct Config {
+    name:s,
+    port:i
+}
+settings:Config = Config { name = fs_read(`config.txt`), port = 8080 };
+print(settings.name);

@@ -1,0 +1,7 @@
+error: Field 'name' of struct 'Config' is declared as a string (s) but fs_read returns a result (s!e) that may contain an error
+  --> tests/errors/a_result_in_a_struct_field.nail:8:35
+   |
+ 8 | settings:Config = Config { name = fs_read(`config.txt`), port = 8080 };
+   |                                   ^^^^^^^^^^^^^^^^^^^^^
+help: fs_read(path:s):s!e, and results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: name = danger(fs_read(...))
+1 error found

@@ -1,7 +1,7 @@
-error: 'parsed' is declared as an integer (i) but its value is a result (i!e) that may contain an error
-  --> tests/errors/result_not_handled.nail:3:27
+error: 'parsed' is declared as an integer (i) but int_from returns a result (i!e) that may contain an error
+  --> tests/errors/result_not_handled.nail:3:12
    |
  3 | parsed:i = int_from(`abc`);
-   |                           ^
-help: results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: parsed:i = danger(...);
+   |            ^^^^^^^^^^^^^^^
+help: int_from(value:T: i|f|s|b):i!e, and results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: parsed:i = danger(int_from(...));
 1 error found
