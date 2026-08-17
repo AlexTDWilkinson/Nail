@@ -682,7 +682,7 @@ Nail 0.1.0 installed
             so there is nothing left to write down.
         </p>
         <h3 style="margin-top: 2.5rem;">The three states of line one</h3>
-        <table class="release-table">
+        <div class="release-wrap"><table class="release-table">
             <thead><tr><th>Line one</th><th>What happens</th><th>Who writes it</th></tr></thead>
             <tbody>
                 <tr>
@@ -702,7 +702,7 @@ Nail 0.1.0 installed
                     <td>Nobody</td>
                 </tr>
             </tbody>
-        </table>
+        </table></div>
         <p>
             No ranges, no carets, no "any 0.3.x". A range means the same file compiling differently
             next year, which is the drift this exists to prevent, so the grammar cannot express
@@ -769,7 +769,7 @@ $ nail update . --yes
 1 file(s) do not compile under 0.1.1 and were left alone:
   ./my_old_app.nail</pre></div>
         <p>And on disk, that is the whole of it:</p>
-        <table class="release-table">
+        <div class="release-wrap"><table class="release-table">
             <thead><tr><th>File</th><th>Line one before</th><th>Line one after</th><th>Why</th></tr></thead>
             <tbody>
                 <tr>
@@ -798,7 +798,7 @@ $ nail update . --yes
                     <td>Tracks the newest release already, so there is nothing to move</td>
                 </tr>
             </tbody>
-        </table>
+        </table></div>
         <p>
             my_old_app.nail is not a problem to be solved before the others can move. Fix it and run
             the command again, or leave it on 0.1.0 for as long as it is useful. Migration is a
@@ -1240,7 +1240,7 @@ f release_row(line:s, newest:s):s {
         <td><code>{{version}}</code> {{{marker}}}</td>
         <td>{{date}}</td>
         <td>{{size}} MB</td>
-        <td><a href="/versions/{{version}}/x86_64-linux" hx-boost="false" download="nail-{{version}}-linux-x86_64.tar.xz">nail-{{version}}-linux-x86_64.tar.xz</a></td>
+        <td class="release-file"><a href="/versions/{{version}}/x86_64-linux" hx-boost="false" download="nail-{{version}}-linux-x86_64.tar.xz">nail-{{version}}-linux-x86_64.tar.xz</a></td>
     </tr>`, values));
 }
 

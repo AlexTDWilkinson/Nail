@@ -430,6 +430,17 @@ f generate_css():s {
         letter-spacing: 0.02em;
     }
 
+    /* On a narrow screen a long label spans most of the block and sits on
+       top of the first line of code. Put it in the flow instead, above the
+       code and still hugging the right edge. */
+    @media (max-width: 700px) {
+        .code-label {
+            position: static;
+            display: table;
+            margin: 0 0 0.75rem auto;
+        }
+    }
+
     /* A slow sheet of light drifting over each code block, so every token
        colour shimmers within its own hue. The overlay is one oversized
        pseudo-element whose only animated property is transform, which the
@@ -979,13 +990,31 @@ f generate_css():s {
     // The downloads table. It borrows the benchmark table's shape, and adds a
     // badge for whichever release `latest` currently points at.
     release_styles:s = css`
-    /* The file column carries a whole filename, which is wider than a phone.
-       It scrolls inside its own box rather than pushing the page sideways. */
+    /* A release table wider than the screen scrolls inside its own box
+       rather than pushing the page sideways. */
     .release-wrap {
         overflow-x: auto;
     }
 
-    .release-table td:last-child {
+    /* Below this width the prose columns get squeezed into slivers and every
+       row grows a dozen lines tall. Hold a readable width and let the wrap
+       scroll instead. */
+    .release-wrap .release-table {
+        min-width: 46rem;
+    }
+
+    .release-table td {
+        vertical-align: top;
+    }
+
+    /* Only the downloads file cell stays on one line, so the browser does not
+       break the filename at its hyphens. Prose columns wrap normally. */
+    .release-table .release-file {
+        white-space: nowrap;
+    }
+
+    /* A pin like nail 0.1.0 reads as one token. Never split it across lines. */
+    .release-table code {
         white-space: nowrap;
     }
 
