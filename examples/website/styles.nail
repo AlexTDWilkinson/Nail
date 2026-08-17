@@ -75,6 +75,16 @@ f generate_css():s {
         outline-offset: 2px;
     }
 
+    /* Firefox has no ::-webkit-scrollbar, and its default bar is a wide grey
+       slab that reads as part of the page rather than part of the code block.
+       These two properties are inherited, so one declaration on the root
+       thins every scrollbar on the site, the ones inside code blocks
+       included. */
+    :root {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.18) transparent;
+    }
+
     ::-webkit-scrollbar {
         width: 10px;
         height: 10px;
@@ -395,9 +405,17 @@ f generate_css():s {
         color: var(--text-primary);
         padding: 2rem;
         border-radius: 0.5rem;
-        overflow-x: auto;
         margin: 2rem 0;
         position: relative;
+        /* The pre inside does the scrolling, so this box must not. The
+           shimmer overlay below is deliberately larger than the box, and a
+           box that scrolls counts an overlay hanging past its right and
+           bottom edges as somewhere to scroll to: every block grew a
+           scrollbar on both axes leading nowhere, beside the pre's own. Clip
+           keeps the overlay inside without making a scroll box of it, and
+           hidden says the same to a browser too old to know clip. */
+        overflow: hidden;
+        overflow: clip;
         /* A grid or flex child refuses to shrink below its content unless it
            is told it may, and a block of code is wider than a phone. Without
            this the block pushes its whole column wide and the page scrolls
@@ -532,8 +550,14 @@ f generate_css():s {
 
     .rust-details .code-example {
         margin-top: 0.5rem;
+    }
+
+    /* A long Rust translation is worth a look, not a whole screen of
+       scrolling past. The height belongs to the pre, which is the one thing
+       in the box that scrolls. */
+    .rust-details .code-example pre {
         max-height: 420px;
-        overflow-y: auto;
+        overflow: auto;
     }`;
 
     stdlib_styles:s = css`
