@@ -490,8 +490,38 @@ impl StdlibFunction {
     /// what a function takes and what it gives back. The name is not stored on
     /// the function, so the caller passes the one the registry filed it under.
     pub fn nail_signature(&self, name: &str) -> String {
-        let parameters: Vec<String> = self.parameters.iter().map(|parameter| format!("{}:{}", parameter.name, parameter.param_type)).collect();
-        return format!("{}({}):{}", name, parameters.join(", "), self.return_type);
+        let parameters: Vec<String> =
+            self.parameters.iter().map(|parameter| format!("{}:{}", parameter.name, parameter.param_type.without_type_var_bounds())).collect();
+        let mut signature = format!("{}({}):{}", name, parameters.join(", "), self.return_type.without_type_var_bounds());
+
+        // A type variable that accepts only some types says so once, after the
+        // signature, in the order the signature introduces them. The same
+        // variable in two positions means the same type in both, which is why
+        // the variable is named at all rather than replaced by its bounds.
+        let mut bounded: Vec<(String, Vec<NailDataTypeDescriptor>)> = Vec::new();
+        for position in self.parameters.iter().map(|parameter| &parameter.param_type).chain(std::iter::once(&self.return_type)) {
+            for (variable, bounds) in position.bounded_type_vars() {
+                if !bounded.iter().any(|(seen, _)| *seen == variable) {
+                    bounded.push((variable, bounds));
+                }
+            }
+        }
+        if !bounded.is_empty() {
+            let clauses: Vec<String> = bounded
+                .iter()
+                .map(|(variable, bounds)| {
+                    let names: Vec<String> = bounds.iter().map(|bound| bound.to_string()).collect();
+                    let accepted = match names.split_last() {
+                        Some((last, [])) => last.clone(),
+                        Some((last, rest)) => format!("{} or {}", rest.join(", "), last),
+                        None => String::new(),
+                    };
+                    format!("{} is {}", variable, accepted)
+                })
+                .collect();
+            signature.push_str(&format!(" where {}", clauses.join(", ")));
+        }
+        return signature;
     }
 }
 

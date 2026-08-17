@@ -27,11 +27,10 @@ pub fn functions() -> Vec<STDLIB_Function> {
     let mut functions: Vec<STDLIB_Function> = STDLIB_FUNCTIONS
         .iter()
         .map(|(name, function)| {
-            let parameters: Vec<String> = function.parameters.iter().map(|parameter| format!("{}:{}", parameter.name, parameter.param_type)).collect();
             STDLIB_Function {
                 name: name.to_string(),
                 module: function.module.display_name().to_string(),
-                signature: format!("{}({}):{}", name, parameters.join(", "), function.return_type),
+                signature: function.nail_signature(name),
                 description: function.description.to_string(),
                 example: function.example.to_string(),
             }

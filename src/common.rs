@@ -106,6 +106,47 @@ impl NailDataTypeDescriptor {
         }
     }
 
+    /// The same type with every type variable's bounds dropped. A signature
+    /// prints `T` at each position the variable appears and says what T
+    /// accepts once at the end, because repeating the bounds inline read as
+    /// `value:T: i|f|s|b`, two colons deep before the reader reached the type.
+    pub fn without_type_var_bounds(&self) -> NailDataTypeDescriptor {
+        match self {
+            NailDataTypeDescriptor::TypeVar(name, _) => NailDataTypeDescriptor::TypeVar(name.clone(), Vec::new()),
+            NailDataTypeDescriptor::Array(inner) => NailDataTypeDescriptor::Array(Box::new(inner.without_type_var_bounds())),
+            NailDataTypeDescriptor::HashMap(key, value) => NailDataTypeDescriptor::HashMap(Box::new(key.without_type_var_bounds()), Box::new(value.without_type_var_bounds())),
+            NailDataTypeDescriptor::Result(inner) => NailDataTypeDescriptor::Result(Box::new(inner.without_type_var_bounds())),
+            NailDataTypeDescriptor::Fn(parameters, return_type) => NailDataTypeDescriptor::Fn(
+                parameters.iter().map(|parameter| parameter.without_type_var_bounds()).collect(),
+                Box::new(return_type.without_type_var_bounds()),
+            ),
+            NailDataTypeDescriptor::OneOf(types) => NailDataTypeDescriptor::OneOf(types.iter().map(|one| one.without_type_var_bounds()).collect()),
+            other => other.clone(),
+        }
+    }
+
+    /// Every type variable in this type that restricts what it accepts, in the
+    /// order it appears, as (name, the types it accepts). A signature uses
+    /// this to explain its variables after printing them.
+    pub fn bounded_type_vars(&self) -> Vec<(String, Vec<NailDataTypeDescriptor>)> {
+        match self {
+            NailDataTypeDescriptor::TypeVar(name, bounds) if !bounds.is_empty() => vec![(name.clone(), bounds.clone())],
+            NailDataTypeDescriptor::Array(inner) | NailDataTypeDescriptor::Result(inner) => inner.bounded_type_vars(),
+            NailDataTypeDescriptor::HashMap(key, value) => {
+                let mut found = key.bounded_type_vars();
+                found.extend(value.bounded_type_vars());
+                found
+            }
+            NailDataTypeDescriptor::Fn(parameters, return_type) => {
+                let mut found: Vec<(String, Vec<NailDataTypeDescriptor>)> = parameters.iter().flat_map(|parameter| parameter.bounded_type_vars()).collect();
+                found.extend(return_type.bounded_type_vars());
+                found
+            }
+            NailDataTypeDescriptor::OneOf(types) => types.iter().flat_map(|one| one.bounded_type_vars()).collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// True when this type is an internal placeholder meaning "the checker could
     /// not work out the type", usually because an earlier error (undefined
     /// variable, bad call, ...) was already reported. Follow-up errors about

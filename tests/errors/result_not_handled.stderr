@@ -3,5 +3,5 @@ error: 'parsed' is declared as an integer (i) but int_from returns a result (i!e
    |
  3 | parsed:i = int_from(`abc`);
    |            ^^^^^^^^^^^^^^^
-help: int_from(value:T: i|f|s|b):i!e, and results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: parsed:i = danger(int_from(...));
+help: int_from(value:T):i!e where T is i, f, s or b, and results must be handled where they occur: danger(...) to crash on error, expect(...) to fall back to a default, or safe(..., handler) to run an error handler. For example: parsed:i = danger(int_from(...));
 1 error found
