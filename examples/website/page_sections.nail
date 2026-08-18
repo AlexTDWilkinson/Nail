@@ -1307,6 +1307,18 @@ nail hello.nail</pre></div>
             right one. Nothing below this line is something you should have to do.
             <a href="/#start">Get started</a> has the rest.
         </p>
+        <h3>Why sudo?</h3>
+        <p>
+            Because these files carry every dependency already compiled, and compiled code is
+            only reusable at the path it was built at. Cargo decides that by fingerprints holding
+            absolute paths, so a toolchain unpacked somewhere else throws its own cache away and
+            recompiles five hundred crates the first time you build anything. One fixed path,
+            <code>/opt/nail</code>, is what makes the download honest. The store is handed to
+            whoever ran the install, so nothing after it needs root, and
+            <code>sudo rm -rf /opt/nail /usr/local/bin/nail</code> removes it.
+            <a href="/#start">The longer answer</a> covers what else one path buys and what it
+            costs.
+        </p>
         <h3>A version, by name</h3>
         <p>Same fetch, you just say when.</p>
         <div class="code-example"><span class="code-label">Shell</span><pre>nail install {{example}}</pre></div>
