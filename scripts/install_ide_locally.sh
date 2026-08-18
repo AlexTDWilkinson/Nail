@@ -28,14 +28,10 @@ esac
 
 VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
 
-# The same order nail itself uses: whatever was asked for, then a home install,
-# then a machine-wide one. A home install is the default now, so looking only
-# in /opt would miss most of them.
-USER_STORE="${XDG_DATA_HOME:-$HOME/.local/share}/nail"
+# The same store nail itself uses, which is one path on every machine.
+# NAIL_ROOT is for a throwaway layout that is not an install.
 if [ -n "${NAIL_ROOT:-}" ]; then
 	ROOT="$NAIL_ROOT"
-elif [ -d "$USER_STORE/versions/$VERSION" ]; then
-	ROOT="$USER_STORE"
 else
 	ROOT=/opt/nail
 fi

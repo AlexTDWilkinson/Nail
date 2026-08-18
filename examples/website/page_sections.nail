@@ -327,39 +327,50 @@ f generate_get_started():s {
         <p>One download. No Rust to install, no C compiler, nothing else on the machine.</p>
     </div>
     <div class="philosophy-content">
-        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sh
+        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh
 
 # Opens the file in Nail's own IDE
 nail hello.nail</pre></div>
         <p>
-            That installs into your home directory. It asks for no administrator rights, writes
-            nothing outside <code>~/.local</code>, and <code>rm -rf ~/.local/share/nail</code>
-            is the uninstaller. A language is not a decision about your machine, so it does not
-            get to make one.
+            That installs to <code>/opt/nail</code> and hands the directory to the user who ran
+            it. The sudo is for that one command and nothing after it: installing a version,
+            updating, reclaiming disk and removing versions are all yours to do without it.
+            <code>sudo rm -rf /opt/nail /usr/local/bin/nail</code> is the uninstaller.
         </p>
-        <h3 style="margin-top: 2.5rem;">Or install it for the whole machine</h3>
+        <h3 style="margin-top: 2.5rem;">Why it needs sudo</h3>
         <p>
-            Same script, run as root. It installs to <code>/opt/nail</code> instead, and hands
-            that directory to the user who ran it, so nothing afterwards needs root again.
+            Because a release ships with every dependency already compiled, and that only works
+            at one fixed path. Cargo decides whether compiled code can be reused by fingerprints
+            that contain absolute paths. A cache warmed at one path and read from another is
+            thrown away, and the first program you build recompiles five hundred crates instead
+            of using the ones you just downloaded. Installing everywhere means installing at the
+            same place everywhere, and <code>/opt</code> is where a machine keeps software that
+            did not come from its package manager.
         </p>
-        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh</pre></div>
-        <p>What that buys, and only this:</p>
+        <p>What one path buys, beyond the cache being real:</p>
         <ul class="point-list">
             <li><strong>nail on PATH for everyone</strong>, through <code>/usr/local/bin</code>:
                 root shells, cron jobs, build agents and accounts that never log in
-                interactively. The home install goes in <code>~/.local/bin</code>, which most
-                systems add at login but nothing else can count on</li>
+                interactively</li>
             <li><strong>.nail files get their icon and their open-with entry for every account</strong>,
                 not only yours</li>
             <li><strong>Gigabytes land outside your home directory</strong>, which matters where
                 home is a network mount, a small partition, or something a backup copies nightly</li>
+            <li><strong>One copy of a version, not one per person</strong>, on a machine where
+                more than one person writes Nail</li>
         </ul>
         <p>
-            What it does not buy is a toolchain several people share. The store is handed to
-            whoever ran the install, and so is the build cache inside it, so everyone else can
-            run what is there but cannot build with it or add a version. A second person writing
-            Nail on the same machine wants their own home install, which is the default and
-            costs them nothing.
+            The honest limit: the store belongs to whoever ran the install. Everyone on the
+            machine can run what is there, but a second person who wants to add a version needs
+            it handed over with <code>sudo chown -R $USER /opt/nail</code>. That is the trade for
+            one shared, prebuilt toolchain rather than several private half-built ones.
+        </p>
+        <p>
+            And if giving an installer one sudo is a line you would rather not cross, that is a
+            perfectly reasonable line and Nail is not the right tool for you. Nothing here will
+            try to talk you round. The alternative was a home install that quietly recompiled
+            everything the toolchain had already compiled, and shipping something that pretends
+            to be prebuilt is worse than asking once.
         </p>
         <p>
             <strong>nail</strong> is the only command and the only thing on your PATH. It reads
@@ -716,11 +727,11 @@ Nail 0.1.0 installed
         </p>
         <div class="code-example" style="margin: 1.5rem 0;"><span class="code-label">Terminal</span><pre>$ nail which my_app.nail
 my_app.nail pins 0.1.0
-/home/you/.local/share/nail/versions/0.1.0/bin/nail
+/opt/nail/versions/0.1.0/bin/nail
 
 $ nail which work_in_progress.nail
 work_in_progress.nail says \`nail latest\`, newest installed is 0.1.1
-/home/you/.local/share/nail/versions/0.1.1/bin/nail</pre></div>
+/opt/nail/versions/0.1.1/bin/nail</pre></div>
         <h3 style="margin-top: 2.5rem;">nail fetch: take a whole project offline</h3>
         <p>
             A checkout can pin several versions at once, because one file was frozen last year and
@@ -1286,7 +1297,7 @@ f generate_downloads_page(releases_tsv:s, nav_html:s):s {
         <p>You do not normally need this page. nail fetches the version a file asks for, by itself</p>
     </div>
     <div class="philosophy-content">
-        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sh
+        <div class="code-example"><span class="code-label">Shell</span><pre>curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh
 
 # Opens the file in Nail's own IDE
 nail hello.nail</pre></div>

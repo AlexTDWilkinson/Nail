@@ -163,21 +163,24 @@ spawn {
     announce(`from the background`);
 }
 
-// p runs statements on real threads at once, c overlaps their waiting
+// p gives each statement its own thread, for work that computes
 p
     left:i = array_sum(array_range_inclusive(1, 1000));
     right:i = array_sum(array_range_inclusive(1, 2000));
 /p
+
+// c overlaps waiting on one thread, for reads, requests and sleeps, so the
+// block costs its slowest wait instead of the sum of them
 c
-    doubled:i = half * 2;
-    tripled:i = half * 3;
+    time_sleep(0.01);
+    time_sleep(0.01);
 /c
 
 // import splices in another file, sandboxed so it can only compute, and
 // import_dangerous splices one in with the sandbox off. Each needs a second
 // file, so they are the one pair not shown running on this screen.
 
-print(total + left + right + grug_age + first_even + doubled + tripled);
+print(total + left + right + grug_age + first_even + half);
 ```
 
 ## What the compiler refuses on purpose

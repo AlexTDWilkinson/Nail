@@ -7,7 +7,7 @@ A programming language for grug brain devs, inspired by [grugbrain.dev](https://
 Everything is on the website: install, interactive examples, the full standard library, the playground. The site is itself a Nail program.
 
 ```bash
-curl -fsSL https://nail.alex-wilkinson.ca/install | sh
+curl -fsSL https://nail.alex-wilkinson.ca/install | sudo sh
 ```
 
 Linux only, on purpose.
@@ -15,7 +15,7 @@ Linux only, on purpose.
 ## Core features
 
 - **Transpiles to Rust.** Write simple Nail, get fast native binaries.
-- **Async by default.** Every function is async, and `p ... /p` blocks run in parallel.
+- **Async by default.** Every function is async. `p ... /p` puts each statement on its own core for work that computes, `c ... /c` overlaps waits on one thread for work that reads, requests or sleeps.
 - **Everything immutable.** No mutation, no exceptions, no nulls. Iteration is `map`, `filter`, `reduce`, and a `for` that yields values.
 - **Errors cannot be ignored.** Result types like `s!e` must be handled where they occur, or it does not compile.
 - **No package manager.** 1180 standard library functions built in: HTTP, SQLite, JSON, crypto, ML, TUI, drawing.

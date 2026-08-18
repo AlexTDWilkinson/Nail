@@ -44,11 +44,13 @@ use std::time::{Duration, SystemTime};
 // Frozen constants
 // ---------------------------------------------------------------------------
 
-/// Where installed versions live when Nail was installed for the whole
-/// machine. That is the opt-in install, because nothing here needs root: the
-/// default puts the same layout under the user's own data directory, so
-/// installing a language is not a decision about the machine.
-const SYSTEM_STORE: &str = "/opt/nail";
+/// Where installed versions live. One path, on every machine, and not
+/// negotiable: cargo records absolute paths in its fingerprints, so the build
+/// cache a release ships with is only valid at the path it was warmed at. A
+/// store somewhere else means every dependency recompiles on first use, which
+/// is the one thing a prebuilt toolchain exists to prevent. Installing costs
+/// one sudo. Nothing after it does.
+const STORE: &str = "/opt/nail";
 
 /// The one URL The launcher knows, forever. Overridable for testing a release
 /// before it is announced.
@@ -273,59 +275,13 @@ impl Binary {
     }
 }
 
-/// Where versions live when nothing says otherwise.
-///
-/// The store this launcher was installed into wins, because an installer puts
-/// it at `<store>/bin/nail` and so its own path is the answer whenever there
-/// is one. That is what keeps a machine with both kinds of install honest:
-/// each nail uses the store it came from rather than both reaching for the
-/// same directory and one of them being unable to write to it.
-///
-/// Failing that, a machine-wide store is used when one is already there, so a
-/// machine set up that way keeps working and does not quietly grow a second
-/// copy of several gigabytes in a home directory. Otherwise the store is the
-/// user's own, which is where the default install puts it and which needs no
-/// permission from anybody.
+/// The store, which is the same directory on every machine. `NAIL_STORE` moves
+/// it, for the test suite and for trying a layout without touching a real
+/// install, and a store anywhere else gives up the prebuilt cache: cargo
+/// fingerprints hold absolute paths, so a release warmed at one path and used
+/// from another rebuilds every dependency it has.
 fn default_store() -> PathBuf {
-    if let Some(root) = store_around_me() {
-        return root;
-    }
-    let system = PathBuf::from(SYSTEM_STORE);
-    if system.join("versions").is_dir() {
-        return system;
-    }
-    return user_store();
-}
-
-/// The store this binary is sitting in, if it is sitting in one. `/proc/self/exe`
-/// is already resolved, so the symlink that puts nail on PATH leads back here
-/// rather than to itself. A development checkout matches nothing and falls
-/// through, which is what keeps `cargo run` from inventing a store.
-fn store_around_me() -> Option<PathBuf> {
-    let executable = std::env::current_exe().ok()?;
-    let bin = executable.parent()?;
-    if bin.file_name()? != "bin" {
-        return None;
-    }
-    let root = bin.parent()?;
-    if !root.join("versions").is_dir() {
-        return None;
-    }
-    return Some(root.to_path_buf());
-}
-
-/// The per-user store, at the place the desktop specification puts data a
-/// program keeps for itself. Falls back to the machine-wide path only when
-/// there is no home directory to speak of, which happens in init scripts and
-/// some containers.
-fn user_store() -> PathBuf {
-    if let Some(data) = std::env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()) {
-        return PathBuf::from(data).join("nail");
-    }
-    if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
-        return PathBuf::from(home).join(".local/share/nail");
-    }
-    return PathBuf::from(SYSTEM_STORE);
+    return PathBuf::from(STORE);
 }
 
 impl Store {
@@ -336,12 +292,6 @@ impl Store {
         let root = std::env::var_os("NAIL_STORE").map(PathBuf::from).unwrap_or_else(default_store);
         let origin = std::env::var("NAIL_ORIGIN").unwrap_or_else(|_| DEFAULT_ORIGIN.to_string());
         return Store { root, origin };
-    }
-
-    /// Whether this is the machine-wide store, which is the only case where
-    /// anything nail cannot fix by itself needs root.
-    fn is_system(&self) -> bool {
-        return self.root == Path::new(SYSTEM_STORE);
     }
 
     fn versions_dir(&self) -> PathBuf {
@@ -639,28 +589,20 @@ fn install(store: &Store, version: &Version) -> Fallible<()> {
     store.touch(version);
     println!("Nail {} installed", version);
 
-    if relocate(&destination)? {
-        warm(store, version, &destination);
-    }
     return Ok(());
 }
 
-/// What to do about a store that cannot be written to. Only the machine-wide
-/// one is ever somebody else's to grant, and saying so is the difference
-/// between a fixable problem and a person reaching for sudo out of habit.
+/// What to do about a store that cannot be written to. The installer hands the
+/// store to whoever ran it, so this means somebody else installed Nail on this
+/// machine, and saying so is the difference between a fixable problem and a
+/// person reaching for sudo out of habit.
 fn permission_hint(store: &Store) -> String {
-    if store.is_system() {
-        return format!(
-            "That store is the machine-wide one, and it belongs to whoever installed it.\n\
-             Either ask them to install this version, take the store over with\n  \
-             sudo chown -R $USER {}\n\
-             or install nail for yourself, which needs nobody's permission:\n  \
-             curl -fsSL {}/install | sh",
-            store.root.display(),
-            store.origin
-        );
-    }
-    return format!("That directory is your own, so something has changed the permissions on {}.", store.root.display());
+    return format!(
+        "That store belongs to whoever installed Nail on this machine.\n\
+         Either ask them to install this version, or take the store over with\n  \
+         sudo chown -R $USER {}",
+        store.root.display()
+    );
 }
 
 /// Whether a version could be installed into this directory. Reading the
@@ -683,72 +625,6 @@ fn can_write(path: &Path) -> bool {
             return true;
         }
         Err(_) => return false,
-    }
-}
-
-/// A release is built at one absolute path and installed at whichever path
-/// this machine's store is, and those are the same only on the machine that
-/// cut the release. Two settings hold that path, both in the bundle's cargo
-/// configuration: where the vendored crate sources are, and which linker to
-/// use. Rewriting them is all it takes to make a release work anywhere.
-///
-/// The path it was built at is read back out of that same file rather than
-/// recorded beside it, so a release published before any of this existed
-/// relocates too.
-///
-/// Reports whether anything actually moved.
-fn relocate(installed: &Path) -> Fallible<bool> {
-    let config = installed.join("cargo-home/config.toml");
-    let text = fs::read_to_string(&config).map_err(|error| format!("cannot read {}: {}", config.display(), error))?;
-
-    let built_at = text
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("directory = \"")?.strip_suffix('"')?.strip_suffix("/cargo-home/vendor").map(str::to_string))
-        .ok_or_else(|| format!("{} does not say where its vendored crates are", config.display()))?;
-
-    let destination = installed.to_string_lossy().to_string();
-    if built_at == destination {
-        return Ok(false);
-    }
-
-    fs::write(&config, text.replace(&built_at, &destination)).map_err(|error| format!("cannot rewrite {}: {}", config.display(), error))?;
-    return Ok(true);
-}
-
-/// Cargo records absolute paths in its fingerprints, so the build cache a
-/// release ships with is stale the moment that release is installed anywhere
-/// other than the path it was built at. Left alone, the first program anybody
-/// compiles pays to rebuild every dependency the standard library has, which
-/// is most of a minute of silence in the worst possible place to put one.
-///
-/// Building one throwaway program here spends that time once, while they are
-/// already waiting on an install, and every build after it is a fraction of a
-/// second again. It is built twice, once per profile, because the quick
-/// profile behind `nail run` and the release profile behind `nail build`
-/// each cache their dependencies separately. Failure is not fatal: a cold
-/// cache costs a slow first build, not a broken install, so there is nothing
-/// here worth refusing to run over.
-fn warm(store: &Store, version: &Version, installed: &Path) {
-    let scratch = store.versions_dir().join(format!(".warmup-{}", version));
-    let _cleanup = Cleanup(scratch.clone());
-    if fs::create_dir_all(&scratch).is_err() {
-        return;
-    }
-    let source = scratch.join("warmup.nail");
-    if fs::write(&source, format!("nail {}\nprint(`hello from nail`);\n", version)).is_err() {
-        return;
-    }
-
-    println!("finishing setup, so the first program you build does not have to");
-    // `--run` also runs the throwaway program, which is one harmless print.
-    for mode in ["--build", "--run"] {
-        let _ = Command::new(installed.join("bin/nailc"))
-            .arg(&source)
-            .arg(mode)
-            .current_dir(&scratch)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
     }
 }
 
@@ -1448,20 +1324,9 @@ fn command_import(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
     let versions = store.versions_dir();
     fs::create_dir_all(&versions).map_err(|error| format!("cannot create {}: {}", versions.display(), error))?;
 
-    // A release exported from another machine was built for that machine's
-    // store, which is rarely this one's, so whatever arrives gets the same
-    // treatment a downloaded release gets.
-    let before = store.installed();
+    // A release is built for one path and used at that path, so a release
+    // exported from another machine unpacks and works as-is.
     unpack(&source, &versions)?;
-    for version in store.installed() {
-        if before.contains(&version) {
-            continue;
-        }
-        let installed = store.version_dir(&version);
-        if relocate(&installed)? {
-            warm(store, &version, &installed);
-        }
-    }
 
     println!("imported. `nail list` to see what arrived");
     return Ok(ExitCode::SUCCESS);
@@ -1476,7 +1341,7 @@ fn command_doctor(store: &Store) -> Fallible<ExitCode> {
         }
     };
 
-    println!("store {} ({})\n", store.root.display(), if store.is_system() { "machine-wide" } else { "yours alone" });
+    println!("store {}\n", store.root.display());
 
     report(have("tar"), "tar is available for unpacking releases".to_string());
     report(have("xz"), "xz is available, which is what tar unpacks a release with".to_string());

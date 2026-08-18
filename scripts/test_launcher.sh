@@ -157,10 +157,10 @@ check "list shows the version" "$VERSION" "$("$LAUNCHER" list 2>&1)"
 check "doctor passes on a good store" "nothing wrong" "$("$LAUNCHER" doctor 2>&1 | tail -1)"
 check "doctor names the store it is talking about" "$NAIL_STORE" "$("$LAUNCHER" doctor 2>&1 | head -1)"
 
-# Nail installs into a directory of the user's own, so a release built on the
-# release machine lands at a path it was not built at. Two settings inside it
-# hold that path and import rewrites both, which is also what makes a release
-# exported from one machine work on another.
+# Every release is built for /opt/nail and used from /opt/nail, so an imported
+# release is unpacked as it is: nothing inside it is rewritten, and the paths
+# it was built with are the paths it runs at. What import has to get right is
+# that the release arrives whole and shows up as installed.
 FOREIGN="$WORK/foreign/0.9.9"
 mkdir -p "$FOREIGN/bin" "$FOREIGN/cargo-home" "$FOREIGN/toolchain/bin" "$FOREIGN/nail"
 BUILT_AT=/opt/nail/versions/0.9.9
@@ -171,16 +171,11 @@ directory = "$BUILT_AT/cargo-home/vendor"
 [target.x86_64-unknown-linux-musl]
 linker = "$BUILT_AT/toolchain/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
 EOF
-# Enough of a release to count as installed. bin/nailc is not executable, so
-# the warm-up build that follows a relocation fails at once instead of trying
-# to compile anything, which is all this needs it to do.
 touch "$FOREIGN/bin/nail" "$FOREIGN/bin/nailc" "$FOREIGN/toolchain/bin/cargo" "$FOREIGN/nail/Cargo.toml"
 tar -cf "$WORK/foreign.tar" -C "$WORK/foreign" 0.9.9
 "$LAUNCHER" import "$WORK/foreign.tar" >/dev/null 2>&1
 FOREIGN_CONFIG="$NAIL_STORE/versions/0.9.9/cargo-home/config.toml"
-check "import moves the vendored sources to where they landed" "directory = \"$NAIL_STORE/versions/0.9.9/cargo-home/vendor\"" "$(grep directory "$FOREIGN_CONFIG")"
-check "import moves the linker too" "linker = \"$NAIL_STORE/versions/0.9.9/toolchain" "$(grep linker "$FOREIGN_CONFIG")"
-check "nothing is left pointing at the machine that built it" "left=0" "left=$(grep -c "$BUILT_AT" "$FOREIGN_CONFIG" || true)"
+check "an imported release keeps the paths it was built with" "directory = \"$BUILT_AT/cargo-home/vendor\"" "$(grep directory "$FOREIGN_CONFIG")"
 check "the imported release is installed" "0.9.9" "$("$LAUNCHER" list 2>&1)"
 "$LAUNCHER" remove 0.9.9 >/dev/null 2>&1
 
@@ -194,14 +189,14 @@ ln -sf "$(command -v tar)" "$ONLY_TAR/tar"
 check "a missing xz is named, before anything is downloaded" "\`xz\` is not installed" "$(PATH="$ONLY_TAR" "$LAUNCHER" import "$WORK/foreign.tar" 2>&1)"
 check "doctor checks for xz as well as tar" "xz is available" "$("$LAUNCHER" doctor 2>&1)"
 
-# Which store nail uses is decided by where nail itself is, so a machine with
-# both a home install and a machine-wide one has each using its own. Without
-# this the two would race for one directory and whoever did not own it would
-# be unable to install anything.
+# There is one store, at one path, on every machine. A release ships its
+# dependencies already compiled and cargo fingerprints hold absolute paths, so
+# a store anywhere else would throw that cache away. NAIL_STORE moves it for
+# this test suite and nothing else does.
 OWN="$WORK/own-store"
 mkdir -p "$OWN/bin" "$OWN/versions"
 cp "$LAUNCHER" "$OWN/bin/nail"
-check "nail uses the store it was installed into" "store $OWN" "$(env -u NAIL_STORE "$OWN/bin/nail" doctor 2>&1 | head -1)"
+check "the store is the same path wherever nail was run from" "store /opt/nail" "$(env -u NAIL_STORE "$OWN/bin/nail" doctor 2>&1 | head -1)"
 check "gc has nothing to take" "nothing to reclaim" "$("$LAUNCHER" gc 2>&1)"
 check "config round-trips" "warn = 2GB" "$("$LAUNCHER" config warn 2GB 2>&1)"
 check "config rejects nonsense" "not a size" "$("$LAUNCHER" config warn banana 2>&1)"

@@ -1160,10 +1160,13 @@ restamp.
 ### Distribution
 
 Nail ships as **one immutable bundle per release**, installed at
-`<store>/versions/<version>`. The store is `~/.local/share/nail` by default and
-`/opt/nail` for a machine-wide install. The promise: download, install, open, it
-works. Offline. No Rust installation, no C compiler, no crates.io, nothing else
-on the machine, and no administrator rights.
+`/opt/nail/versions/<version>`. That path is fixed on every machine, which is
+what the install needs sudo for: a bundle carries its dependencies already
+compiled, and cargo decides reuse by fingerprints holding absolute paths, so a
+store anywhere else throws the shipped cache away and recompiles everything on
+first build. The store is handed to whoever ran the install, so nothing after
+it needs root. The promise: download, install, open, it works. Offline. No Rust
+installation, no C compiler, no crates.io, nothing else on the machine.
 
 The bundle contains everything a build touches:
 
@@ -1261,9 +1264,8 @@ download to restore is worse than nagging.
 
 `bundle/build_bundle.sh` assembles and warms a bundle (the only step needing
 network and a musl C compiler, a build-machine concern), `bundle/install.sh` is
-the one-time bootstrap that installs the launcher and hands the store to the user
-(into their home directory by default, needing no root at all, and into `/opt/nail`
-when run under sudo),
+the one-time bootstrap that installs the launcher into `/opt/nail` under sudo
+and hands the store to the user who ran it,
 and `bundle/test_bundle.sh` is the release gate: on a machine with no Rust, no
 cc and no network, compile and run a Nail program using only the bundle. A
 release that fails the gate does not ship. `deploy/releases.sh` uploads a built
@@ -3093,72 +3095,115 @@ each num in numbers {
 ```
 
 
-## Parallel Blocks
+## Parallel and Concurrent Blocks
 
-Nail's parallel blocks allow you to execute multiple operations concurrently, automatically leveraging async/await patterns when transpiled to Rust.
+Two blocks run their statements at the same time, and one question decides
+which you want: is that time spent computing, or waiting?
+
+- `p ... /p` gives every statement its own operating system thread, so the
+  statements run on different cores. Reach for it when the work is your own
+  computation.
+- `c ... /c` runs every statement as an async task on one thread, so their
+  waits overlap. Reach for it when the work is a request, a file read, a
+  database query, or a sleep.
+
+```nail-fragment
+// Waiting: three reads, all idle. One thread is plenty.
+c
+    weather:s = danger(fs_read(`weather.txt`));
+    news:s = danger(fs_read(`news.txt`));
+    prices:s = danger(fs_read(`prices.txt`));
+/c
+
+// Computing: three cores, three real workloads.
+p
+    hash_a:s = crypto_hash_sha256(block_one);
+    hash_b:s = crypto_hash_sha256(block_two);
+    hash_c:s = crypto_hash_sha256(block_three);
+/p
+```
+
+Both blocks share one shape and one scoping rule: a name declared inside is an
+ordinary immutable value on the line after the block, with no await left to
+forget and nothing mutable to lock.
+
+### What each one costs
+
+`c` transpiles to Rust's `tokio::join!`. One thread starts every statement, and
+each task hands that thread on the moment it waits, so three waits cost the
+longest one instead of the sum. Waiting takes no CPU, which is why a single
+thread can hold thousands of pending waits. What `c` cannot do is make
+computation faster: one thread is still doing the computing, so a statement
+that computes for two seconds without ever waiting holds the thread for two
+seconds while the others sit behind it.
+
+`p` transpiles to one `std::thread::spawn` per statement, and joins every
+thread before the block ends. Three threads land on three cores, and three
+cores really do compute at the same time. A thread costs microseconds to start
+and a stack to keep, which is nothing for three computations and far too much
+for three hundred sleeping reads.
+
+Put another way: `c` buys overlap, `p` buys cores. If the machine's CPU meter
+would sit near zero while the statement runs, reach for `c`. If it would peg a
+core, reach for `p`.
 
 ### Syntax
 
 ```nail-fragment
 p
-    // Each statement runs concurrently
-    task1:s = expensive_operation();
-    task2:i = fetch_from_api();
+    // Each statement gets its own thread
+    parsed_rows:a:s = parse_every_line(raw_text);
+    checksum:s = crypto_hash_sha256(raw_text);
     print(`Processing in parallel!`);
-    calculation:i = compute_result();
+    sorted_names:a:s = array_sort(names);
 /p
 ```
 
 ### Key Points:
 
-- All statements inside a parallel block execute at the same time
+- All statements inside the block start at the same time, and the block ends
+  when the slowest one finishes
 - Variables declared inside can be used after the block completes
-- Each statement transpiles to its own `std::thread::spawn`, and the block joins every thread before continuing, so the statements run on separate cores
-- No semicolon needed after the closing brace
-- Ideal for I/O operations, API calls, or independent computations
+- In `p`, each statement transpiles to its own `std::thread::spawn` and the
+  block joins every thread before continuing, so the statements run on
+  separate cores
+- In `c`, each statement becomes an async task inside one `tokio::join!`, so
+  their waits overlap on a single thread
+- No semicolon needed after the closing `/p` or `/c`
+- `p` is for independent computation, `c` is for I/O and API calls
 
 ### Realistic Examples:
 
 ```nail-fragment
-// Example 1: Parallel API calls for a dashboard
-p
+// Example 1: a dashboard's three API calls, which are all waiting
+c
     user_profile:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://api.example.com/user/123`, headers, ``));
     recent_orders:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://api.example.com/orders?user=123`, headers, ``));
     account_balance:HTTP_Response = danger(http_request(HTTP_Method::Get, `https://api.example.com/balance/123`, headers, ``));
-/p
+/c
 
-// All data is available after parallel block completes
+// All three responses are available after the block, and it cost one request
 print(`Profile: `, user_profile.body);
 print(`Orders: `, recent_orders);
 print(`Balance: `, account_balance);
 
-// Example 2: Parallel file processing
-files:a:s = [`data1.txt`, `data2.txt`, `data3.txt`];
-p
+// Example 2: reading three files, which is also waiting
+c
     content1:s = danger(fs_read(`data1.txt`));
     content2:s = danger(fs_read(`data2.txt`));
     content3:s = danger(fs_read(`data3.txt`));
-/p
-
-// Process all content together
-all_content:s = array_join([content1, content2, content3], `\n`);
-```
-
-### Concurrent Blocks
-
-A `c ... /c` block has the same shape and the same scoping as a parallel
-block, but transpiles to Rust's `tokio::join!`: every statement becomes an
-async task on the runtime rather than its own operating system thread. Reach
-for `c` when the statements spend their time waiting (requests, file reads,
-sleeps), and for `p` when they spend it computing.
-
-```nail-fragment
-c
-    weather:s = danger(fs_read(`weather.txt`));
-    news:s = danger(fs_read(`news.txt`));
 /c
 
-report:s = string_concat([weather, news]);
+all_content:s = array_join([content1, content2, content3], `\n`);
+
+// Example 3: hashing those three files, which is computation, so it wants cores
+p
+    digest1:s = crypto_hash_sha256(content1);
+    digest2:s = crypto_hash_sha256(content2);
+    digest3:s = crypto_hash_sha256(content3);
+/p
+
+report:s = array_join([digest1, digest2, digest3], `\n`);
 ```
 
 ## Structs
