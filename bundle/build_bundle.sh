@@ -128,6 +128,14 @@ rustflags = ["-C", "link-self-contained=yes"]
 EOF
 
 # --- 6. Warm the shared cache at its final path ---------------------------
+# From empty every time. Cargo never removes an artifact it has stopped using,
+# and this cache is reused build after build, so every change to the
+# dependency graph left the previous graph's rlibs behind to be tarred up and
+# downloaded forever. One release cache had 1095 rlibs for 512 crates, nine
+# copies of rustls among them, three generations deep. A cold warm build costs
+# this machine half an hour and costs every downloader nothing.
+rm -rf "$ROOT/cache"
+
 # Both profiles: release is what `nail build` and Shift+F7 run, quick is what
 # `nail run` and F7 run. Each compiles the dependency graph its own way and
 # caches it in its own directory, so each has to be warmed on its own.
