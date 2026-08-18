@@ -52,6 +52,11 @@ use std::time::{Duration, SystemTime};
 /// one sudo. Nothing after it does.
 const STORE: &str = "/opt/nail";
 
+/// Everyone on the machine builds against the one warm cache in that store,
+/// and building writes to it, so whoever builds has to be able to. This group
+/// is who that is.
+const GROUP: &str = "nail";
+
 /// The one URL The launcher knows, forever. Overridable for testing a release
 /// before it is announced.
 const DEFAULT_ORIGIN: &str = "https://nail.alex-wilkinson.ca";
@@ -122,6 +127,7 @@ fn run(arguments: &[String]) -> Fallible<ExitCode> {
         "export" => command_export(&store, tail),
         "import" => command_import(&store, tail),
         "doctor" => command_doctor(&store),
+        "share" => command_share(tail),
         "self-update" => command_self_update(&store),
         "config" => command_config(tail),
         "new" => command_new(&store, tail),
@@ -197,6 +203,7 @@ fn usage() -> String {
         "  nail update <path>          move files to a newer version, if they still compile\n",
         "  nail export <version> <to>  save a version for a machine with no network\n",
         "  nail import <file>          install one from that file\n",
+        "  nail share <user>           let another account on this machine build\n",
         "  nail doctor                 check the install over\n",
         "  nail self-update            replace nail itself\n",
         "  nail config <key> [value]   warn, auto, auto-at, keep-days\n",
@@ -592,16 +599,17 @@ fn install(store: &Store, version: &Version) -> Fallible<()> {
     return Ok(());
 }
 
-/// What to do about a store that cannot be written to. The installer hands the
-/// store to whoever ran it, so this means somebody else installed Nail on this
-/// machine, and saying so is the difference between a fixable problem and a
-/// person reaching for sudo out of habit.
-fn permission_hint(store: &Store) -> String {
+/// What to do about a store that cannot be written to. Building writes to the
+/// shared cache, so this is what somebody sees when they are not in the group
+/// that shares it, which is every account created after Nail was installed.
+fn permission_hint(_store: &Store) -> String {
+    let who = std::env::var("USER").unwrap_or_else(|_| "your-username".to_string());
     return format!(
-        "That store belongs to whoever installed Nail on this machine.\n\
-         Either ask them to install this version, or take the store over with\n  \
-         sudo chown -R $USER {}",
-        store.root.display()
+        "Everyone on this machine shares one copy of Nail, and this account has not been let\n     \
+         in yet. One command from anyone who can use sudo:\n       \
+         sudo nail share {}\n     \
+         then open a new terminal, or run `newgrp {}` in this one.",
+        who, GROUP
     );
 }
 
@@ -1329,6 +1337,26 @@ fn command_import(store: &Store, arguments: &[String]) -> Fallible<ExitCode> {
     unpack(&source, &versions)?;
 
     println!("imported. `nail list` to see what arrived");
+    return Ok(ExitCode::SUCCESS);
+}
+
+/// Adds somebody to the `nail` group, which is who can build. Everyone with an
+/// account when Nail was installed is already in it, so this is for accounts
+/// made afterwards. It is one call to usermod, and it is here rather than in a
+/// note in the documentation because the error a person hits says to run it.
+fn command_share(arguments: &[String]) -> Fallible<ExitCode> {
+    let user = match arguments.first() {
+        Some(name) => name.clone(),
+        None => std::env::var("SUDO_USER").or_else(|_| std::env::var("USER")).map_err(|_| "usage: nail share <user>")?,
+    };
+    let status = Command::new("usermod").arg("-aG").arg(GROUP).arg(&user).status().map_err(|error| format!("cannot run usermod: {}", error))?;
+    if !status.success() {
+        return Err(format!(
+            "could not add {} to the {} group. Adding somebody needs root:\n  sudo nail share {}",
+            user, GROUP, user
+        ));
+    }
+    println!("{} can build with Nail. It applies to their next login, or to this shell after `newgrp {}`", user, GROUP);
     return Ok(ExitCode::SUCCESS);
 }
 

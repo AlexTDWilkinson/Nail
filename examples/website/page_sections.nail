@@ -360,10 +360,13 @@ nail hello.nail</pre></div>
                 more than one person writes Nail</li>
         </ul>
         <p>
-            The honest limit: the store belongs to whoever ran the install. Everyone on the
-            machine can run what is there, but a second person who wants to add a version needs
-            it handed over with <code>sudo chown -R $USER /opt/nail</code>. That is the trade for
-            one shared, prebuilt toolchain rather than several private half-built ones.
+            Everyone on the machine shares it. A build writes its own compiled artifacts in
+            beside the ones that came with the download, so anybody who builds has to be able to
+            write the store, and the <code>nail</code> group is who can. Every account on the
+            machine joins during the install. An account made later gets added with one command,
+            <code>sudo nail share bob</code>, and applies at their next login. Which means a
+            version you installed is a version they already have, and dependencies you compiled
+            are dependencies they never will.
         </p>
         <p>
             And if giving an installer one sudo is a line you would rather not cross, that is a

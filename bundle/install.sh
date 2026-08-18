@@ -170,6 +170,22 @@ step "nail installed to ${bold}$ROOT/bin/nail$off"
 # update itself.
 chown -R "$OWNER" "$ROOT"
 
+# Everyone on the machine builds against one warm cache, which means everyone
+# who builds has to be able to write it: a build writes compiled artifacts into
+# the store, there is no such thing as a read-only cargo cache. The `nail`
+# group is who that is. Every human account joins now, and `nail share <user>`
+# adds anyone made later. setgid keeps new files in the group, and the default
+# ACL keeps them group-writable whatever umask the writer had.
+groupadd -f nail
+for account in $(awk -F: '$3 >= 1000 && $3 < 65000 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd); do
+	usermod -aG nail "$account" 2>/dev/null || true
+done
+chgrp -R nail "$ROOT"
+chmod -R g+w "$ROOT"
+find "$ROOT" -type d -exec chmod g+s {} +
+command -v setfacl >/dev/null && setfacl -R -d -m g:nail:rwx "$ROOT" 2>/dev/null || true
+step "shared with everyone on this machine, through the ${bold}nail$off group"
+
 # One name. The symlink is root-owned and never changes again, because
 # `nail self-update` rewrites what it points at rather than the link.
 ln -sf "$ROOT/bin/nail" "$BIN_DIR/nail"

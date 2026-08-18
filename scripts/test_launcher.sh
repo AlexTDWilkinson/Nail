@@ -197,6 +197,9 @@ OWN="$WORK/own-store"
 mkdir -p "$OWN/bin" "$OWN/versions"
 cp "$LAUNCHER" "$OWN/bin/nail"
 check "the store is the same path wherever nail was run from" "store /opt/nail" "$(env -u NAIL_STORE "$OWN/bin/nail" doctor 2>&1 | head -1)"
+# Adding somebody to the group needs root, and the failure has to name the
+# command that works rather than leaving usermod's exit code to speak.
+check "share says how to run it with the rights it needs" "sudo nail share" "$("$LAUNCHER" share nobodyatall 2>&1)"
 check "gc has nothing to take" "nothing to reclaim" "$("$LAUNCHER" gc 2>&1)"
 check "config round-trips" "warn = 2GB" "$("$LAUNCHER" config warn 2GB 2>&1)"
 check "config rejects nonsense" "not a size" "$("$LAUNCHER" config warn banana 2>&1)"

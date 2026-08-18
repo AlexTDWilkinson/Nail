@@ -634,6 +634,15 @@ fn compile() {
             }
         }
 
+        // Said before the build rather than after cargo trips over it, because
+        // cargo's version of this names a path nobody chose and no way out.
+        if let Some(bundle) = &bundle {
+            if let Some(problem) = bundle.build_permission_problem() {
+                eprintln!("{}", problem);
+                process::exit(1);
+            }
+        }
+
         let mut cargo = match &bundle {
             Some(bundle) => bundle.cargo_command(),
             None => process::Command::new("cargo"),

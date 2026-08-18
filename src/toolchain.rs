@@ -117,6 +117,32 @@ impl BundledToolchain {
         }
         command
     }
+
+    /// Everyone on the machine builds against the one warm cache in the store,
+    /// and a build writes its own artifacts in beside it, so a person who
+    /// cannot write the store cannot build. That is every account created
+    /// after Nail was installed, and what they are owed is the command that
+    /// fixes it rather than a permission error from cargo about a path they
+    /// never chose.
+    pub fn build_permission_problem(&self) -> Option<String> {
+        let target = self.root.join("cache/target");
+        let probe = target.join(".nail-write-probe");
+        if std::fs::File::create(&probe).is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            return None;
+        }
+        let who = std::env::var("USER").unwrap_or_else(|_| "your-username".to_string());
+        return Some(format!(
+            "error: This account has not been let in to the Nail on this machine yet\n\
+             help: Everyone here shares one copy of Nail with its library already built, which is\n      \
+             why a program compiles in seconds rather than minutes. Joining takes one command\n      \
+             from anyone who can use sudo:\n\n        \
+             sudo nail share {}\n\n      \
+             Then open a new terminal, or run `newgrp nail` in this one. Until then you can run\n      \
+             programs other people have built, but not build your own.",
+            who
+        ));
+    }
 }
 
 /// Guards on the things a release has to get right, which are exactly the
