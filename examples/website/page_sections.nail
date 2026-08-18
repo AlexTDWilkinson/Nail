@@ -359,14 +359,10 @@ nail hello.nail</pre></div>
             <li><strong>One copy of a version, not one per person</strong>, on a machine where
                 more than one person writes Nail</li>
         </ul>
-        <p>
-            Everyone on the machine shares it. A build writes its own compiled artifacts in
-            beside the ones that came with the download, so anybody who builds has to be able to
-            write the store, and the <code>nail</code> group is who can. Every account on the
-            machine joins during the install. An account made later gets added with one command,
-            <code>sudo nail share bob</code>, and applies at their next login. Which means a
-            version you installed is a version they already have, and dependencies you compiled
-            are dependencies they never will.
+        <p style="font-size: 0.95rem;">
+            Sharing a machine with someone? Every account on it can build, and they share the
+            one already-built library, so nothing compiles twice. An account created after the
+            install joins with <code>sudo nail share bob</code>.
         </p>
         <p>
             And if giving an installer one sudo is a line you would rather not cross, that is a
