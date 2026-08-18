@@ -150,6 +150,12 @@ warm_build "$ROOT/warmup/minimal" quick
 # is what ships, so they do not need to.
 rm -rf "$ROOT/warmup"
 
+# Incremental compilation caches are keyed to the absolute paths and mtimes of
+# the machine that wrote them, so cargo on any other machine reads none of it
+# and starts over. The quick profile is incremental by design, which put 1.2GB
+# of unusable state in the warm cache and about 400MB of it in the download.
+find "$ROOT/cache/target" -type d -name incremental -prune -exec rm -rf {} +
+
 # The archive holds one directory named for the version, which is exactly what
 # the launcher unpacks into /opt/nail/versions.
 #
