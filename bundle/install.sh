@@ -269,5 +269,6 @@ printf '  file does the same.\n'
 printf '\n  %sWhat is on this machine so far is the launcher and nothing else. The first\n' "$dim"
 printf '  time you open a Nail file it downloads the version that file names, which is\n'
 printf '  over a gigabyte and happens once for that version. After that it is offline,\n'
-printf '  and programs compile in seconds, because what came down has every library\n'
-printf '  already built.%s\n\n' "$off"
+printf '  and programs compile in seconds, because that download includes the standard\n'
+printf '  library in its entirety, already built. There is no package manager: nothing to\n'
+printf '  add to a project, nothing to resolve, nothing to keep up to date.%s\n\n' "$off"
