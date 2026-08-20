@@ -1,6 +1,0 @@
-nail latest
-// E2E: loop whose body breaks immediately produces no output
-loop {
-    break;
-}
-print(`loop exited`);

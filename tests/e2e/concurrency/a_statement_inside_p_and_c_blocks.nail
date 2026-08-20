@@ -1,0 +1,18 @@
+nail latest
+// A bare statement (an if, not a declaration or call) is legal inside p and
+// c blocks, and its inner declarations must come out as Rust statements,
+// semicolons included
+
+messages:a:s = [`ready`];
+
+p
+if { array_length(messages) > 0 -> { checked:i = 1; print(checked); }, else -> { } }
+count:i = array_length(messages);
+/p
+print(count);
+
+c
+if { true -> { marker:s = `marked`; print(marker); }, else -> { } }
+label:s = `done`;
+/c
+print(label);

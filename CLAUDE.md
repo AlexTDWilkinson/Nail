@@ -31,24 +31,24 @@ Generated files to watch for and delete:
 
 This is non-negotiable to maintain language stability and prevent regressions.
 
-A clean run currently reports 606/606 lexer/parser, 605/605 type checker and
-586/586 transpiler, with zero failures. (These counts move whenever a test is
+A clean run currently reports 587/587 lexer/parser, 586/586 type checker and
+567/567 transpiler, with zero failures. (These counts move whenever a test is
 added: what matters is that every number is a full pass.) Those counts are every `.nail` file in
 the repository, from the one shared list in `scripts/test_nail_files.sh`, rather than
-the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1335 passing
-(1350 with `--features fuzz`, which adds the fuzzer's own tests), `cargo test --bin nail`
-reports 1358 (the library's tests plus the editor's own), and `./scripts/test_e2e.sh`
-reports 410 programs passing. Treat any number below that as a
+the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1359 passing
+(1374 with `--features fuzz`, which adds the fuzzer's own tests), `cargo test --bin nail`
+reports 1382 (the library's tests plus the editor's own), and `./scripts/test_e2e.sh`
+reports 398 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
 The server tests in `parser::std_lib::net` and the watch tests in
 `parser::std_lib::fs` bind fixed ports and fixed `/tmp` paths, so two test runs
 at once will fail each other. Re-run those alone before believing a failure.
 
-`./scripts/test_launcher.sh` reports 58 checks passing, and
-`./scripts/test_error_messages.sh` reports 57 passed, 0 failed.
+`./scripts/test_launcher.sh` reports 57 checks passing, and
+`./scripts/test_error_messages.sh` reports 61 passed, 0 failed.
 
-`./scripts/test_doc_examples.sh` compiles all 1184 registry examples and runs the ones
+`./scripts/test_doc_examples.sh` compiles all 1189 registry examples and runs the ones
 that can run unattended. The rest are named, with the reason, in
 `tests/doc_examples_needing_the_world.txt`, which is checked both ways: an
 example listed there that starts passing is reported so the line can be

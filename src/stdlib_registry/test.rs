@@ -86,7 +86,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         custom_type_imports: vec![],
         module: StdlibModule::Test,
         parameters: vec![nail_param!(message: s)],
-        return_type: nail_type!(never),
+        return_type: nail_type!(v),
         diverging: true,
         description: "Fails immediately, for a branch a test must never reach. Never returns.",
         example: "test_fail(`the fallback branch ran`);",

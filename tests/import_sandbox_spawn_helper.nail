@@ -1,8 +1,0 @@
-nail latest
-// not a standalone program: the sandbox test above imports this file
-f keep_a_thread():i {
-    spawn {
-        busy_total:i = array_sum(array_range(0, 100));
-    }
-    r 1;
-}

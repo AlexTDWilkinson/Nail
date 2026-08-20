@@ -13,7 +13,6 @@ pub enum NailDataTypeDescriptor {
     Struct(String),
     Enum(String),
     Void,
-    Never, // For functions that never return (like panic, todo)
     Error,
     OneOf(Vec<NailDataTypeDescriptor>),
     Fn(Vec<NailDataTypeDescriptor>, Box<NailDataTypeDescriptor>),
@@ -35,7 +34,6 @@ impl fmt::Display for NailDataTypeDescriptor {
             NailDataTypeDescriptor::Struct(name) => write!(f, "{}", name),
             NailDataTypeDescriptor::Enum(name) => write!(f, "{}", name),
             NailDataTypeDescriptor::Void => write!(f, "v"),
-            NailDataTypeDescriptor::Never => write!(f, "!"),
             NailDataTypeDescriptor::Error => write!(f, "e"),
             NailDataTypeDescriptor::Result(inner) => write!(f, "{}!e", inner),
             NailDataTypeDescriptor::TypeVar(name, bounds) => {
@@ -98,7 +96,6 @@ impl NailDataTypeDescriptor {
             NailDataTypeDescriptor::TypeVar(_, bounds) if !bounds.is_empty() => bounds.iter().map(|b| b.describe()).collect::<Vec<_>>().join(" or "),
             NailDataTypeDescriptor::TypeVar(_, _) => "any type".to_string(),
             NailDataTypeDescriptor::Any => "any type".to_string(),
-            NailDataTypeDescriptor::Never => "a value that never returns (!)".to_string(),
             NailDataTypeDescriptor::OneOf(types) if !types.is_empty() => types.iter().map(|t| t.describe()).collect::<Vec<_>>().join(" or "),
             // Internal placeholders for types the checker could not work out
             // (e.g. because of an earlier error); never show their debug names.

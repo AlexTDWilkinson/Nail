@@ -1,4 +1,4 @@
-error: Nail has no 'while' loop: iterate with 'for', repeat with 'loop' and 'break', accumulate with 'reduce'
+error: Nail has no 'while' loop: walk a collection with 'each', accumulate with 'reduce', repeat until something changes with a function that calls itself, and run until the program ends with 'forever'
   --> tests/errors/while_is_not_nail.nail:3:1
    |
  3 | while count < 3 {

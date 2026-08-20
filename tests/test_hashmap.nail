@@ -34,14 +34,14 @@ print(`Map length after remove: `, len2);
 // Test keys
 keys:a:s = hashmap_keys(map1);
 print(`Keys in map:`);
-for key in keys {
+each key in keys {
     print(`  - `, key);
 }
 
 // Test values
 values:a:s = hashmap_values(map1);
 print(`Values in map:`);
-for value in values {
+each value in values {
     print(`  - `, value);
 }
 

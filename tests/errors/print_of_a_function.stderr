@@ -1,0 +1,7 @@
+error: Cannot print a function: 'show_error' is a function's name, not something it returned
+  --> tests/errors/print_of_a_function.nail:5:7
+   |
+ 5 | print(show_error);
+   |       ^^^^^^^^^^
+help: write print(show_error(...)) with its arguments to print what it returns
+1 error found

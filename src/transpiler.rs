@@ -96,35 +96,11 @@ impl BindingResolver {
             }
             // Function bodies get their own move context and resolver.
             ASTNode::FunctionDeclaration { .. } => {}
-            // Lambda bodies also get their own context, but this walk still
-            // resolves their free references so collect_never_move can pin the
-            // captured outer bindings. Params shadow outer names.
-            ASTNode::LambdaDeclaration { params, body, .. } => {
-                self.scoped(|resolver| {
-                    for (param_name, _) in params {
-                        resolver.bind(param_name);
-                    }
-                    resolver.walk(body);
-                });
-            }
             ASTNode::Block { statements, .. } => {
                 self.scoped(|resolver| {
                     for statement in statements {
                         resolver.walk(statement);
                     }
-                });
-            }
-            ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, .. } => {
-                self.walk(iterable);
-                if let Some(initial_value) = initial_value {
-                    self.walk(initial_value);
-                }
-                self.scoped(|resolver| {
-                    resolver.bind(iterator);
-                    if let Some(filter) = filter {
-                        resolver.walk(filter);
-                    }
-                    resolver.walk(body);
                 });
             }
             ASTNode::MapExpression { iterator, index_iterator, iterable, body, .. }
@@ -154,13 +130,8 @@ impl BindingResolver {
                     resolver.walk(body);
                 });
             }
-            ASTNode::Loop { index_iterator, body, .. } => {
-                self.scoped(|resolver| {
-                    if let Some(index_iterator) = index_iterator {
-                        resolver.bind(index_iterator);
-                    }
-                    resolver.walk(body);
-                });
+            ASTNode::Forever { body, .. } => {
+                self.scoped(|resolver| resolver.walk(body));
             }
             _ => {
                 for child in Transpiler::ast_children(node) {
@@ -324,7 +295,7 @@ impl Transpiler {
     /// never declared the crate.
     fn ast_names_hashmap(node: &ASTNode) -> bool {
         let here = match node {
-            ASTNode::FunctionDeclaration { params, data_type, .. } | ASTNode::LambdaDeclaration { params, data_type, .. } => {
+            ASTNode::FunctionDeclaration { params, data_type, .. } => {
                 params.iter().any(|(_, param_type)| Self::type_names_hashmap(param_type)) || Self::type_names_hashmap(data_type)
             }
             ASTNode::ConstDeclaration { data_type, .. } | ASTNode::StructDeclarationField { data_type, .. } => Self::type_names_hashmap(data_type),
@@ -350,17 +321,16 @@ impl Transpiler {
     }
 
     /// Whether evaluating this node requires an async context, given the
-    /// current optimistic set of pure user functions. Function and lambda
-    /// declarations don't propagate: their bodies run in their own context.
+    /// current optimistic set of pure user functions. Function declarations
+    /// don't propagate: their bodies run in their own context.
     fn node_needs_async(node: &ASTNode, pure: &HashSet<String>) -> bool {
         match node {
-            ASTNode::ParallelBlock { .. } | ASTNode::ConcurrentBlock { .. } | ASTNode::SpawnBlock { .. } => true,
-            ASTNode::FunctionDeclaration { .. } | ASTNode::LambdaDeclaration { .. } => false,
+            ASTNode::ParallelBlock { .. } | ASTNode::ConcurrentBlock { .. } => true,
+            ASTNode::FunctionDeclaration { .. } => false,
             ASTNode::FunctionCall { name, args, .. } => {
                 let callee_async = if name == "safe" {
                     // safe(expr, handler): the handler is invoked at the call
-                    // site: a lambda handler is an async closure, a named
-                    // handler follows its own purity.
+                    // site and follows its own purity.
                     match args.get(1) {
                         Some(ASTNode::Identifier { name: handler, .. }) => !pure.contains(handler),
                         _ => true,
@@ -674,9 +644,6 @@ impl Transpiler {
             ASTNode::ConstDeclaration { value, .. } => {
                 self.collect_used_functions(value);
             }
-            ASTNode::LambdaDeclaration { body, .. } => {
-                self.collect_used_functions(body);
-            }
             ASTNode::StructInstantiation { fields, .. } => {
                 for field in fields {
                     if let ASTNode::StructInstantiationField { value, .. } = field {
@@ -692,10 +659,6 @@ impl Transpiler {
                 if let Some(else_b) = else_branch {
                     self.collect_used_functions(else_b);
                 }
-            }
-            ASTNode::ForLoop { iterable, body, .. } => {
-                self.collect_used_functions(iterable);
-                self.collect_used_functions(body);
             }
             ASTNode::MapExpression { iterable, body, .. } => {
                 self.collect_used_functions(iterable);
@@ -726,10 +689,7 @@ impl Transpiler {
                 self.collect_used_functions(iterable);
                 self.collect_used_functions(body);
             }
-            ASTNode::Loop { body, .. } => {
-                self.collect_used_functions(body);
-            }
-            ASTNode::SpawnBlock { body, .. } => {
+            ASTNode::Forever { body, .. } => {
                 self.collect_used_functions(body);
             }
             ASTNode::BinaryOperation { left, right, .. } => {
@@ -771,8 +731,6 @@ impl Transpiler {
             ASTNode::NumberLiteral { .. } | 
             ASTNode::BooleanLiteral { .. } | 
             ASTNode::Identifier { .. } |
-            ASTNode::BreakStatement { .. } |
-            ASTNode::ContinueStatement { .. } |
             ASTNode::StructDeclaration { .. } |
             ASTNode::EnumDeclaration { .. } |
             ASTNode::StructDeclarationField { .. } |
@@ -805,13 +763,6 @@ impl Transpiler {
                 }
                 Self::collect_free_variables(body, &mut inner_bound, free);
             }
-            ASTNode::LambdaDeclaration { params, body, .. } => {
-                let mut inner_bound = bound.clone();
-                for (param_name, _) in params {
-                    inner_bound.insert(param_name.clone());
-                }
-                Self::collect_free_variables(body, &mut inner_bound, free);
-            }
             ASTNode::FunctionCall { args, .. } => {
                 for arg in args {
                     Self::collect_free_variables(arg, bound, free);
@@ -829,18 +780,6 @@ impl Transpiler {
                 if let Some(else_b) = else_branch {
                     Self::collect_free_variables(else_b, &mut bound.clone(), free);
                 }
-            }
-            ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, .. } => {
-                Self::collect_free_variables(iterable, bound, free);
-                if let Some(init) = initial_value {
-                    Self::collect_free_variables(init, bound, free);
-                }
-                let mut inner_bound = bound.clone();
-                inner_bound.insert(iterator.clone());
-                if let Some(filter_expr) = filter {
-                    Self::collect_free_variables(filter_expr, &mut inner_bound, free);
-                }
-                Self::collect_free_variables(body, &mut inner_bound, free);
             }
             ASTNode::MapExpression { iterator, index_iterator, iterable, body, .. }
             | ASTNode::FilterExpression { iterator, index_iterator, iterable, body, .. }
@@ -867,15 +806,9 @@ impl Transpiler {
                 }
                 Self::collect_free_variables(body, &mut inner_bound, free);
             }
-            ASTNode::Loop { index_iterator, body, .. } => {
+            ASTNode::Forever { body, .. } => {
                 let mut inner_bound = bound.clone();
-                if let Some(idx) = index_iterator {
-                    inner_bound.insert(idx.clone());
-                }
                 Self::collect_free_variables(body, &mut inner_bound, free);
-            }
-            ASTNode::SpawnBlock { body, .. } => {
-                Self::collect_free_variables(body, &mut bound.clone(), free);
             }
             ASTNode::BinaryOperation { left, right, .. } => {
                 Self::collect_free_variables(left, bound, free);
@@ -916,8 +849,6 @@ impl Transpiler {
             ASTNode::StringLiteral { .. }
             | ASTNode::NumberLiteral { .. }
             | ASTNode::BooleanLiteral { .. }
-            | ASTNode::BreakStatement { .. }
-            | ASTNode::ContinueStatement { .. }
             | ASTNode::StructDeclaration { .. }
             | ASTNode::StructDeclarationField { .. }
             | ASTNode::EnumDeclaration { .. }
@@ -966,7 +897,7 @@ impl Transpiler {
                 // Emitted as a raw name outside the Identifier arm: pin it.
                 count(code_span, struct_name, counts);
             }
-            ASTNode::FunctionDeclaration { .. } | ASTNode::LambdaDeclaration { .. } => {}
+            ASTNode::FunctionDeclaration { .. } => {}
             _ => {
                 for child in Self::ast_children(node) {
                     Self::count_variable_uses(child, resolution, counts);
@@ -976,7 +907,7 @@ impl Transpiler {
     }
 
     /// Collect every binding referenced in a region that execution can
-    /// revisit (loop bodies, closure bodies, parallel/spawn blocks) or that is
+    /// revisit (loop bodies, closure bodies, parallel blocks) or that is
     /// captured by a lambda. Those bindings are never moved. Expressions a
     /// construct evaluates exactly once in the enclosing flow (a loop's
     /// iterable, a reduce's initial value) are NOT part of the region.
@@ -1004,7 +935,6 @@ impl Transpiler {
                 }
             }
             ASTNode::FunctionDeclaration { .. } => {} // own context, cannot capture
-            ASTNode::LambdaDeclaration { body, .. } => mark_all(&[body.as_ref()], out),
             ASTNode::MapExpression { iterable, body, .. }
             | ASTNode::FilterExpression { iterable, body, .. }
             | ASTNode::EachExpression { iterable, body, .. }
@@ -1019,23 +949,12 @@ impl Transpiler {
                 Self::collect_never_move(initial_value, revisitable, resolution, out);
                 mark_all(&[body.as_ref()], out);
             }
-            ASTNode::ForLoop { iterable, initial_value, filter, body, .. } => {
-                Self::collect_never_move(iterable, revisitable, resolution, out);
-                if let Some(initial_value) = initial_value {
-                    Self::collect_never_move(initial_value, revisitable, resolution, out);
-                }
-                if let Some(filter) = filter {
-                    mark_all(&[filter.as_ref()], out);
-                }
-                mark_all(&[body.as_ref()], out);
-            }
-            ASTNode::Loop { body, .. } => mark_all(&[body.as_ref()], out),
+            ASTNode::Forever { body, .. } => mark_all(&[body.as_ref()], out),
             ASTNode::ParallelBlock { statements, .. } | ASTNode::ConcurrentBlock { statements, .. } => {
                 for statement in statements {
                     Self::collect_never_move(statement, true, resolution, out);
                 }
             }
-            ASTNode::SpawnBlock { body, .. } => mark_all(&[body.as_ref()], out),
             _ => {
                 for child in Self::ast_children(node) {
                     Self::collect_never_move(child, revisitable, resolution, out);
@@ -2099,90 +2018,6 @@ impl Transpiler {
                     }
                 }
             }
-            ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, .. } => {
-                if let Some(element_type) = self.iterable_element_type(iterable) {
-                    self.record_variable_type(iterator, element_type);
-                }
-                // Check if the loop body contains return statements (collecting values)
-                let has_returns = self.has_return_statements(body);
-
-                if has_returns {
-                    // Generate an imperative collecting loop (since everything is async)
-                    if add_semicolons {
-                        write!(output, "{}", self.indent())?;
-                    }
-                    write!(output, "{{")?;
-                    writeln!(output)?;
-                    self.indent_level += 1;
-                    writeln!(output, "{}let mut __result = Vec::new();", self.indent())?;
-                    write!(output, "{}for {} in ", self.indent(), iterator)?;
-                    self.transpile_iterable(iterable, true, output)?;
-                    writeln!(output, " {{")?;
-                    self.indent_level += 1;
-
-                    // The when clause skips elements that don't match
-                    if let Some(filter_condition) = filter {
-                        write!(output, "{}if !(", self.indent())?;
-                        self.transpile_node_internal(filter_condition, output, false)?;
-                        writeln!(output, ") {{ continue; }}")?;
-                    }
-
-                    // Extract and transpile the yield expression
-                    if let ASTNode::Block { statements, .. } = body.as_ref() {
-                        for stmt in statements {
-                            if let ASTNode::YieldDeclaration { statement, .. } = stmt {
-                                write!(output, "{}__result.push(", self.indent())?;
-                                self.transpile_node_internal(statement, output, false)?;
-                                writeln!(output, ");")?;
-                                break;
-                            } else if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
-                                // Legacy return statement support
-                                write!(output, "{}__result.push(", self.indent())?;
-                                self.transpile_node_internal(statement, output, false)?;
-                                writeln!(output, ");")?;
-                                break;
-                            } else {
-                                // Regular statement before yield/return
-                                self.transpile_node_internal(stmt, output, true)?;
-                            }
-                        }
-                    }
-                    
-                    self.indent_level -= 1;
-                    writeln!(output, "{}}}", self.indent())?;
-                    writeln!(output, "{}__result", self.indent())?;
-                    self.indent_level -= 1;
-                    write!(output, "{}}}", self.indent())?;
-                } else {
-                    // Generate a simple for loop for side effects
-                    if !add_semicolons {
-                        // When used as an expression, wrap in braces to return ()
-                        write!(output, "{{")?;
-                    }
-                    
-                    if add_semicolons {
-                        write!(output, "{}for {} in ", self.indent(), iterator)?;
-                    } else {
-                        write!(output, " for {} in ", iterator)?;
-                    }
-                    self.transpile_iterable(iterable, true, output)?;
-                    writeln!(output, " {{")?;
-                    self.indent_level += 1;
-                    // The when clause skips elements that don't match
-                    if let Some(filter_condition) = filter {
-                        write!(output, "{}if !(", self.indent())?;
-                        self.transpile_node_internal(filter_condition, output, false)?;
-                        writeln!(output, ") {{ continue; }}")?;
-                    }
-                    self.transpile_node_internal(body, output, true)?;
-                    self.indent_level -= 1;
-                    if add_semicolons {
-                        writeln!(output, "{}}}", self.indent())?;
-                    } else {
-                        write!(output, "}}; () }}")?;
-                    }
-                }
-            }
             ASTNode::MapExpression { iterator, index_iterator, iterable, body, .. } => {
                 // Map expressions collect values using Rayon for parallelism
                 if add_semicolons {
@@ -2359,7 +2194,11 @@ impl Transpiler {
                 writeln!(output, "{}}}", self.indent())?;
                 writeln!(output, "{}()", self.indent())?; // Each returns unit
                 self.indent_level -= 1;
-                write!(output, "{}}}", self.indent())?;
+                if add_semicolons {
+                    writeln!(output, "{}}}", self.indent())?;
+                } else {
+                    write!(output, "{}}}", self.indent())?;
+                }
             }
             ASTNode::FindExpression { iterator, index_iterator, iterable, body, .. } => {
                 // Find: first matching element (by original order, since rayon's
@@ -2379,92 +2218,19 @@ impl Transpiler {
                 // Any: parallel with short-circuit on the first hit
                 self.write_parallel_search(iterator, index_iterator, iterable, body, output, add_semicolons, "any", false, "__search_result")?;
             }
-            ASTNode::Loop { index_iterator, body, .. } => {
-                if let Some(index_name) = index_iterator {
-                    self.record_variable_type(index_name, NailDataTypeDescriptor::Int);
-                    // Loop with index iterator - needs mutable counter outside loop
-                    if add_semicolons {
-                        writeln!(output, "{}{{", self.indent())?;
-                        self.indent_level += 1;
-                        writeln!(output, "{}let mut __loop_index: i64 = 0;", self.indent())?;
-                        writeln!(output, "{}loop {{", self.indent())?;
-                    } else {
-                        writeln!(output, "{{")?;
-                        writeln!(output, "let mut __loop_index: i64 = 0;")?;
-                        writeln!(output, "loop {{")?;
-                    }
-                    self.indent_level += 1;
-                    // Make index available inside loop as immutable
-                    writeln!(output, "{}let {} = __loop_index;", self.indent(), index_name)?;
-                    writeln!(output, "{}__loop_index += 1;", self.indent())?;
-                    self.transpile_node_internal(body, output, true)?;
-                    self.indent_level -= 1;
-                    if add_semicolons {
-                        writeln!(output, "{}}}", self.indent())?;
-                        self.indent_level -= 1;
-                        writeln!(output, "{}}}", self.indent())?;
-                    } else {
-                        writeln!(output, "}}")?;
-                        write!(output, "}}")?;
-                    }
-                } else {
-                    // Simple loop without index
-                    if add_semicolons {
-                        writeln!(output, "{}loop {{", self.indent())?;
-                    } else {
-                        writeln!(output, "loop {{")?;
-                    }
-                    self.indent_level += 1;
-                    self.transpile_node_internal(body, output, true)?;
-                    self.indent_level -= 1;
-                    if add_semicolons {
-                        writeln!(output, "{}}}", self.indent())?;
-                    } else {
-                        write!(output, "}}")?;
-                    }
-                }
-            }
-            ASTNode::SpawnBlock { body, .. } => {
-                // Spawn a new async task, cloning whatever it uses from
-                // around it first. The task outlives the statement, so an
-                // `async move` block takes ownership of everything it
-                // mentions, and the program cannot use those values again
-                // afterwards. Nail values are immutable and shareable, so a
-                // copy per task is what the language says happens here. This
-                // is what parallel blocks already do with their captures.
-                let mut bound = HashSet::new();
-                let mut free = std::collections::BTreeSet::new();
-                Self::collect_free_variables(body, &mut bound, &mut free);
+            ASTNode::Forever { body, .. } => {
                 if add_semicolons {
-                    write!(output, "{}tokio::spawn({{ ", self.indent())?;
+                    writeln!(output, "{}loop {{", self.indent())?;
                 } else {
-                    write!(output, "tokio::spawn({{ ")?;
+                    writeln!(output, "loop {{")?;
                 }
-                for name in &free {
-                    write!(output, "let {0} = {0}.clone(); ", name)?;
-                }
-                writeln!(output, "async move {{")?;
                 self.indent_level += 1;
                 self.transpile_node_internal(body, output, true)?;
                 self.indent_level -= 1;
                 if add_semicolons {
-                    writeln!(output, "{}}} }});", self.indent())?;
+                    writeln!(output, "{}}}", self.indent())?;
                 } else {
-                    write!(output, "}} }})")?;
-                }
-            }
-            ASTNode::BreakStatement { .. } => {
-                if add_semicolons {
-                    writeln!(output, "{}break;", self.indent())?;
-                } else {
-                    write!(output, "break")?;
-                }
-            }
-            ASTNode::ContinueStatement { .. } => {
-                if add_semicolons {
-                    writeln!(output, "{}continue;", self.indent())?;
-                } else {
-                    write!(output, "continue")?;
+                    write!(output, "}}")?;
                 }
             }
             ASTNode::ParallelBlock { statements, .. } => {
@@ -2621,36 +2387,6 @@ impl Transpiler {
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
             }
-            ASTNode::LambdaDeclaration { params, body, .. } => {
-                // Generate a regular closure that returns an async block
-                write!(output, "move |")?;
-                for (i, (param_name, param_type)) in params.iter().enumerate() {
-                    if i > 0 {
-                        write!(output, ", ")?;
-                    }
-                    write!(output, "{}: {}", param_name, self.rust_type(param_type, ""))?;
-                }
-                write!(output, "| {{ async move {{ ")?;
-
-                let param_names: Vec<String> = params.iter().map(|(param_name, _)| param_name.clone()).collect();
-                self.push_move_context(body, &param_names);
-                for (param_name, param_type) in params {
-                    self.activate_param(param_name, param_type);
-                }
-
-                // Transpile the body inline
-                if let ASTNode::Block { statements, .. } = body.as_ref() {
-                    for (i, stmt) in statements.iter().enumerate() {
-                        if i > 0 {
-                            write!(output, "; ")?;
-                        }
-                        self.transpile_node_internal(stmt, output, false)?;
-                    }
-                }
-
-                self.pop_move_context();
-                write!(output, " }} }}")?;
-            }
             ASTNode::StructInstantiation { name, fields, .. } => {
                 // Check if this is a stdlib struct and use the full path if so
                 let struct_name = if let Some(full_path) = self.stdlib_types.get(name) {
@@ -2716,7 +2452,6 @@ impl Transpiler {
             NailDataTypeDescriptor::Struct(name) => self.stdlib_types.get(name).cloned().unwrap_or_else(|| name.to_string()),
             NailDataTypeDescriptor::Enum(name) => self.stdlib_types.get(name).cloned().unwrap_or_else(|| name.to_string()),
             NailDataTypeDescriptor::Void => "()".to_string(),
-            NailDataTypeDescriptor::Never => "!".to_string(),
             NailDataTypeDescriptor::Error => "String".to_string(),
             NailDataTypeDescriptor::Array(inner) => format!("Vec<{}>", self.rust_type(inner, _name)),
             NailDataTypeDescriptor::Any => "Box<dyn std::any::Any>".to_string(),
@@ -2819,7 +2554,7 @@ impl Transpiler {
                 write!(output, "Box::pin((")?;
             }
 
-            // The second argument is a handler function name or lambda
+            // The second argument is the handler function's name
             self.transpile_node_internal(&args[1], output, false)?;
             if handler_is_sync {
                 write!(output, ")(e) }})")?;
@@ -3089,6 +2824,11 @@ impl Transpiler {
         let mut var_names = Vec::new();
         let mut expressions = Vec::new();
         let mut declarations = Vec::new();
+        // A declaration's value and a bare call are expressions, and the
+        // task's value is what they produce. Anything else (an if, a loop) is
+        // a statement: it produces nothing and has to be emitted in statement
+        // form, semicolons included, or the Rust inside it does not parse.
+        let mut runs_as_statement = Vec::new();
 
         for stmt in statements.iter() {
             match stmt {
@@ -3096,16 +2836,19 @@ impl Transpiler {
                     var_names.push(name.clone());
                     expressions.push(value.as_ref());
                     declarations.push((name.clone(), data_type.clone(), code_span.clone()));
+                    runs_as_statement.push(false);
                 }
                 ASTNode::FunctionCall { .. } => {
                     // Function calls that don't assign to variables get a placeholder name
                     var_names.push("_".to_string());
                     expressions.push(stmt);
+                    runs_as_statement.push(false);
                 }
                 _ => {
                     // Other statements get placeholder names
                     var_names.push("_".to_string());
                     expressions.push(stmt);
+                    runs_as_statement.push(true);
                 }
             }
         }
@@ -3130,7 +2873,15 @@ impl Transpiler {
 
             // For const declarations, return just the value expression
             // For other expressions, return the expression itself
-            self.transpile_node_internal(expr, output, false)?;
+            if runs_as_statement[i] {
+                writeln!(output)?;
+                self.indent_level += 1;
+                self.transpile_node_internal(expr, output, true)?;
+                self.indent_level -= 1;
+                write!(output, "{}", self.indent())?;
+            } else {
+                self.transpile_node_internal(expr, output, false)?;
+            }
 
             write!(output, " }}")?;
         }
@@ -3156,6 +2907,11 @@ impl Transpiler {
         let mut var_names = Vec::new();
         let mut expressions = Vec::new();
         let mut declarations = Vec::new();
+        // A declaration's value and a bare call are expressions, and the
+        // task's value is what they produce. Anything else (an if, a loop) is
+        // a statement: it produces nothing and has to be emitted in statement
+        // form, semicolons included, or the Rust inside it does not parse.
+        let mut runs_as_statement = Vec::new();
 
         for stmt in statements.iter() {
             match stmt {
@@ -3163,16 +2919,19 @@ impl Transpiler {
                     var_names.push(name.clone());
                     expressions.push(value.as_ref());
                     declarations.push((name.clone(), data_type.clone(), code_span.clone()));
+                    runs_as_statement.push(false);
                 }
                 ASTNode::FunctionCall { .. } => {
                     // Function calls that don't assign to variables get a placeholder name
                     var_names.push("_".to_string());
                     expressions.push(stmt);
+                    runs_as_statement.push(false);
                 }
                 _ => {
                     // Other statements get placeholder names
                     var_names.push("_".to_string());
                     expressions.push(stmt);
+                    runs_as_statement.push(true);
                 }
             }
         }
@@ -3203,7 +2962,15 @@ impl Transpiler {
                 write!(output, "let {0} = {0}.clone(); ", var_name)?;
             }
             write!(output, "move || {{ __rt_handle.block_on(async move {{ ")?;
-            self.transpile_node_internal(expr, output, false)?;
+            if runs_as_statement[i] {
+                writeln!(output)?;
+                self.indent_level += 1;
+                self.transpile_node_internal(expr, output, true)?;
+                self.indent_level -= 1;
+                write!(output, "{}", self.indent())?;
+            } else {
+                self.transpile_node_internal(expr, output, false)?;
+            }
             writeln!(output, " }}) }} }});")?;
         }
         

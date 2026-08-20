@@ -186,8 +186,8 @@ f prof_row_html(row:ProfRow, wall_nanos:i):s {
 f generate_profile_fragment(dump:s):s {
     wall:i = safe(json_get_int(dump, `wall_nanos`), prof_json_zero);
     count:i = safe(json_array_length(dump, `functions`), prof_json_zero);
-    all_rows:a:ProfRow = map idx in array_range(0, count) {
-        prefix:s = array_join([`functions.`, string_from(idx), `.`], ``);
+    all_rows:a:ProfRow = map index in array_range(0, count) {
+        prefix:s = array_join([`functions.`, string_from(index), `.`], ``);
         y ProfRow {
             name = safe(json_get_string(dump, array_join([prefix, `name`], ``)), prof_json_blank),
             calls = safe(json_get_int(dump, array_join([prefix, `calls`], ``)), prof_json_zero),

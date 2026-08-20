@@ -1,5 +1,5 @@
 nail latest
 // E2E: filter with index parameter keeping elements greater than their index
 nums:a:i = [5, 0, 7, 2];
-above_index:a:i = filter num idx in nums { y num > idx; };
+above_index:a:i = filter num index in nums { y num > index; };
 print(above_index);

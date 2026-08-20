@@ -1,5 +1,0 @@
-nail latest
-// E2E: for loop over an array of structs
-struct Cell { value:i }
-cells:a:Cell = [Cell { value = 1 }, Cell { value = 2 }, Cell { value = 3 }];
-for cell in cells { print(cell.value); }

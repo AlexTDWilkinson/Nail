@@ -15,8 +15,8 @@ f compute_factorial(num:i):i {
 
 // Another CPU-intensive function
 f compute_sum_to_n(limit:i):i {
-    sum:i = reduce acc idx in array_range(1, limit + 1) from 0 {
-        y acc + idx;
+    sum:i = reduce acc index in array_range(1, limit + 1) from 0 {
+        y acc + index;
     };
     r sum;
 }

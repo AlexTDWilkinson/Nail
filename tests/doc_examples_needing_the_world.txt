@@ -136,3 +136,7 @@ todo                           # ends the program on purpose
 tui_run                        # needs a terminal
 xlsx_read                      # needs a file that is not there
 xlsx_sheets                    # needs a file that is not there
+sched_run                      # serves forever
+sched_every                    # serves forever
+net_tcp_serve                  # serves forever
+net_udp_serve                  # serves forever

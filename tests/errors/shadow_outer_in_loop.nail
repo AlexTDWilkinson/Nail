@@ -1,6 +1,6 @@
 nail latest
 sum:i = 0;
-for num in [1, 2, 3] {
+each num in [1, 2, 3] {
     sum:i = sum + num;
 }
 print(sum);

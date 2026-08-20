@@ -1,7 +1,0 @@
-nail latest
-// Imported code is sandboxed, and a background block keeps a piece of the
-// program running after the answer is handed back, which is a resource
-// rather than a computation.
-import(`../import_sandbox_spawn_helper.nail`)
-
-print(keep_a_thread());

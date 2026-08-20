@@ -6,5 +6,5 @@ f fib(num:i):i {
         else -> { r fib(num - 1) + fib(num - 2); }
     };
 }
-sequence:a:i = map idx in array_range(0, 10) { y fib(idx); };
+sequence:a:i = map index in array_range(0, 10) { y fib(index); };
 print(sequence);

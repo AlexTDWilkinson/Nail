@@ -9,8 +9,8 @@ greetings:a:s = [`Hello`, `Hola`, `Bonjour`, `Guten Tag`, `Ciao`];
 languages:a:s = [`English`, `Spanish`, `French`, `German`, `Italian`];
 
 // Create formatted greetings using map
-formatted_greetings:a:s = map greeting idx in greetings {
-    language:s = danger(array_get(languages, idx));
+formatted_greetings:a:s = map greeting index in greetings {
+    language:s = danger(array_get(languages, index));
     y array_join([greeting, ` (`, language, `)`], ``);
 };
 

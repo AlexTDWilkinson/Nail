@@ -1,9 +1,0 @@
-nail latest
-total_value:i = 0;
-loop round_value {
-    if {
-        round_value >= 3 -> { break; },
-        else -> { print(round_value); }
-    }
-}
-print(total_value);

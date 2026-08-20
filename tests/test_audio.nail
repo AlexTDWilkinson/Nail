@@ -9,8 +9,8 @@ print(`is there a sound device:`);
 print(can_beep);
 
 // Playing is synchronous - the call returns when the sound has finished - so
-// a notification beep is one line. To carry on while it plays, put it in a
-// spawn block.
+// a notification beep is one line. To carry on while it plays, run it in a
+// c block beside the other work.
 //
 //   danger(audio_play_tone(440.0, 0.2, 0.2));
 //   danger(audio_play_file(`done.wav`));

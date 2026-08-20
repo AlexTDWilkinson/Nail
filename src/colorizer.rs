@@ -1483,7 +1483,7 @@ fn colorize_word(word: &str, theme: &ColorScheme) -> Span<'static> {
         "c" | "v" => Span::styled(word.to_string(), Style::default().fg(theme.keyword)), // const/var keywords
 
         // Collection/iteration language constructs (lexer keywords, not stdlib functions)
-        "map" | "filter" | "reduce" | "scan" | "each" | "find" | "all" | "any" | "loop" | "for" | "in" | "from" | "when" | "break" | "continue" | "spawn" => {
+        "map" | "filter" | "reduce" | "scan" | "each" | "find" | "all" | "any" | "forever" | "in" | "from" => {
             Span::styled(word.to_string(), Style::default().fg(theme.function))
         }
 

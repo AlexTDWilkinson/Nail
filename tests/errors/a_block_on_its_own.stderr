@@ -1,0 +1,7 @@
+error: A block on its own does nothing in Nail
+  --> tests/errors/a_block_on_its_own.nail:2:1
+   |
+ 2 | {
+   | ^
+help: a block belongs to an if branch, a function, a forever block or a collection operation. Statements that go together go on consecutive lines, and a name that is only needed for a moment is still declared where it is used
+1 error found while parsing

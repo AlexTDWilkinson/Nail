@@ -2,7 +2,7 @@ nail latest
 // The iterator belongs to the loop. Using it after the closing brace used to
 // pass every check, because the loop's scope stayed current, and then failed
 // to build as Rust where the binding really had ended.
-for item_value in [1, 2, 3] {
+each item_value in [1, 2, 3] {
     print(item_value);
 }
 print(item_value);

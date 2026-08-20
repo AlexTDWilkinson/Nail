@@ -53,10 +53,10 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
             "The integer back to its dotted v4 form.",
             "address:s = danger(net_ip_from_int(16909060));";
         "net_tcp_serve" [Tokio] => "std_lib::net::tcp_serve", (host: s, port: i) -> (v!e),
-            "Accepts TCP connections and speaks a line-at-a-time protocol: each line a client sends is answered by the program's handle_line(line:s):s function, and an empty reply sends nothing back. Blocks forever, so it runs in a spawn block. Bind `127.0.0.1` to stay behind a reverse proxy, `0.0.0.0` to face the world.",
-            "f handle_line(line:s):s {\n    r string_concat([`you said: `, line]);\n}\n\nspawn { danger(net_tcp_serve(`127.0.0.1`, 4000)); }";
+            "Accepts TCP connections and speaks a line-at-a-time protocol: each line a client sends is answered by the program's handle_line(line:s):s function, and an empty reply sends nothing back. Blocks forever, so it runs in a c block beside the rest of the program. Bind `127.0.0.1` to stay behind a reverse proxy, `0.0.0.0` to face the world.",
+            "f handle_line(line:s):s {\n    r string_concat([`you said: `, line]);\n}\n\ndanger(net_tcp_serve(`127.0.0.1`, 4000));";
         "net_udp_serve" [Tokio] => "std_lib::net::udp_serve", (host: s, port: i) -> (v!e),
-            "Answers UDP datagrams: each one is passed as text to the program's handle_packet(packet:s):s function, and a non-empty reply goes back to whoever asked. Blocks forever, so it runs in a spawn block.",
-            "f handle_packet(text:s):s {\n    r string_concat([`heard: `, text]);\n}\n\nspawn { danger(net_udp_serve(`0.0.0.0`, 27015)); }";
+            "Answers UDP datagrams: each one is passed as text to the program's handle_packet(packet:s):s function, and a non-empty reply goes back to whoever asked. Blocks forever, so it runs in a c block beside the rest of the program.",
+            "f handle_packet(text:s):s {\n    r string_concat([`heard: `, text]);\n}\n\ndanger(net_udp_serve(`0.0.0.0`, 27015));";
     }
 }

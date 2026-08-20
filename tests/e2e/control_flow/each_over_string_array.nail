@@ -1,0 +1,6 @@
+nail latest
+// E2E: each loop over a string array
+words:a:s = [`red`, `green`, `blue`];
+each word in words {
+    print(word);
+}

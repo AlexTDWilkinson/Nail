@@ -51,6 +51,7 @@ pub mod game3d;
 #[cfg(feature = "game")]
 pub(crate) mod game_gpu;
 pub mod geo;
+pub mod graph;
 pub mod hashmap;
 pub mod hex;
 pub mod i18n;

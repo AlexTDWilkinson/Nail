@@ -1,0 +1,7 @@
+schema then api then seed then web then cdn
+false
+1
+api, web, cdn
+schema -> api -> web -> cdn
+home -> park -> office
+2.5

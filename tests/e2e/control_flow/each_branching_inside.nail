@@ -1,0 +1,6 @@
+nail latest
+// E2E: if statement branching inside a for loop body
+nums:a:i = [1, 2, 3, 4];
+each num in nums {
+    if { num % 2 == 0 -> { print(num, `even`); }, else -> { print(num, `odd`); } }
+}

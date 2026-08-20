@@ -1,0 +1,5 @@
+nail latest
+f show_error(error_msg:e):s {
+    r `none`;
+}
+print(show_error);

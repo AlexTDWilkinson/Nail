@@ -1,6 +1,0 @@
-nail latest
-// E2E: loop index auto-increments from zero until break at five
-loop idx {
-    if { idx >= 5 -> { break; }, else -> { print(idx); } }
-}
-print(`counted`);

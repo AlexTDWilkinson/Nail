@@ -1,7 +1,7 @@
 nail latest
 // E2E: any with index parameter, true and false cases
 nums:a:i = [9, 1, 9];
-has_match:b = any num idx in nums { y num == idx; };
+has_match:b = any num index in nums { y num == index; };
 print(has_match);
-impossible:b = any num idx in nums { y num + idx == 100; };
+impossible:b = any num index in nums { y num + index == 100; };
 print(impossible);

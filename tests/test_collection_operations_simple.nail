@@ -6,11 +6,8 @@ nail latest
 //    each num in array { ... }
 // 2. Expression statements (function calls): no assignment, semicolon required
 //    print(`hello`);
-// 3. Expression assignment: variable:type = expression;
-//    result:v = each num in array { ... };
-//    result:v = print(`hello`);
-// 
-// For void-returning operations, forms 1 and 2 are more natural than form 3.
+//
+// A void result cannot be bound to a name: a v is nothing to hold.
 
 // Test data
 numbers:a:i = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -21,8 +18,8 @@ doubled:a:i = map num in numbers {
 };
 
 // MAP with index: Transform with position info
-indexed_sums:a:i = map num idx in numbers {
-    y num + idx;
+indexed_sums:a:i = map num index in numbers {
+    y num + index;
 };
 
 // FILTER: Keep only even numbers
@@ -31,8 +28,8 @@ evens:a:i = filter num in numbers {
 };
 
 // FILTER with index: Keep elements greater than their index
-greater_than_index:a:i = filter num idx in numbers {
-    y num > idx;
+greater_than_index:a:i = filter num index in numbers {
+    y num > index;
 };
 
 // REDUCE: Sum all numbers
@@ -41,8 +38,8 @@ total:i = reduce acc num in numbers from 0 {
 };
 
 // REDUCE with index: Weighted sum
-weighted_sum:i = reduce acc num idx in numbers from 0 {
-    weight:i = idx + 1;
+weighted_sum:i = reduce acc num index in numbers from 0 {
+    weight:i = index + 1;
     y acc + (num * weight);
 };
 
@@ -53,8 +50,8 @@ first_big:i = danger(find num in numbers {
 
 // FIND with index: First number one greater than its index (true for every
 // element here, so this returns the first: 1)
-equal_to_index:i = danger(find num idx in numbers {
-    y num == idx + 1;
+equal_to_index:i = danger(find num index in numbers {
+    y num == index + 1;
 });
 
 // ALL: Check if all numbers are positive
@@ -63,8 +60,8 @@ all_positive:b = all num in numbers {
 };
 
 // ALL with index: Check if all are greater than their index
-all_gt_index:b = all num idx in numbers {
-    y num > idx;
+all_gt_index:b = all num index in numbers {
+    y num > index;
 };
 
 // ANY: Check if any number is greater than 8
@@ -73,8 +70,8 @@ any_big:b = any num in numbers {
 };
 
 // ANY with index: Check if any equal their index
-any_eq_index:b = any num idx in numbers {
-    y num == idx;
+any_eq_index:b = any num index in numbers {
+    y num == index;
 };
 
 // EACH: Print each number (side effects) - Statement form (recommended)
@@ -82,19 +79,13 @@ each num in numbers {
     print(`Number: `, num);
 }
 
-// EACH with index: Print with position - Expression assignment form
-each_result:v = each num idx in numbers {
-    print(`[`, idx, `] = `, num);
-};
+// EACH with index: Print with position
+each num index in numbers {
+    print(`[`, index, `] = `, num);
+}
 
-// Demonstrate both syntaxes for other void-returning functions
-print(`--- Testing print function both ways ---`);
-
-// Statement form (recommended) - no assignment, but still needs semicolon for function calls
+// A void-returning call is a statement: no assignment, semicolon required
 print(`This is statement form`);
-
-// Expression assignment form - with assignment and semicolon
-print_result:v = print(`This is expression assignment form`);
 
 // Print results
 print(`=== Collection Operations Test Results ===`);

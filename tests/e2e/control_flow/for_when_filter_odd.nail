@@ -1,6 +1,0 @@
-nail latest
-// E2E: for loop with when clause keeping only odd numbers
-nums:a:i = [1, 2, 3, 4, 5, 6];
-for num in nums when num % 2 == 1 {
-    print(num);
-}

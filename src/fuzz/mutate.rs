@@ -23,7 +23,7 @@ const NUMBERS: &[&str] = &["0", "1", "-1", "9223372036854775807", "-922337203685
 
 /// Pieces of syntax to drop into a line, chosen because each one changes the
 /// shape of the program rather than only its text.
-const FRAGMENTS: &[&str] = &["{", "}", "(", ")", "[", "]", ";", ":", ",", "->", "!", "r ", "y ", "f ", "if {", "else -> {", "break;", "continue;", "danger(", "safe(", "expect(", "p", "/p", "c", "/c", "`", "e(`x`)", "..", "..=", "&&", "||", "=="];
+const FRAGMENTS: &[&str] = &["{", "}", "(", ")", "[", "]", ";", ":", ",", "->", "!", "r ", "y ", "f ", "if {", "else -> {", "danger(", "safe(", "expect(", "p", "/p", "c", "/c", "`", "e(`x`)", "..", "..=", "&&", "||", "=="];
 
 /// Build the case for one seed: a corpus file with a handful of edits.
 pub fn case(seed: u64, corpus: &Corpus) -> (String, String) {

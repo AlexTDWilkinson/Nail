@@ -327,10 +327,9 @@ fn pool(sandbox_safe: bool) -> &'static [Call] {
 /// arguments or its result are shapes a case cannot build a value of.
 fn callable(name: &'static str, function: &crate::stdlib_registry::StdlibFunction) -> Option<Call> {
     // A registry name the lexer reads as one of the language's own words is
-    // not written as a call at all. `spawn` is the block form `spawn { ... }`
-    // and is in the registry only so the transpiler knows what it costs, so a
-    // case that wrote `spawn()` would be refused by the parser rather than by
-    // the sandbox. Asking the lexer keeps that list out of here.
+    // not written as a call at all, so a case that wrote it as one would be
+    // refused by the parser rather than by the sandbox. Asking the lexer
+    // keeps that list out of here.
     if !reads_as_a_name(name) {
         return None;
     }
@@ -561,7 +560,7 @@ impl Writer {
                 // Buried in a block as often as not, because a sandbox that
                 // refused an honest call for sitting inside a loop would be
                 // just as broken as one that let a dishonest one through.
-                body.extend(self.buried(statement, false));
+                body.extend(self.buried(statement));
             }
         }
         let answer = self.literal(&Ty::Int);
@@ -577,7 +576,7 @@ impl Writer {
         let mut body = Vec::new();
         if let Some(call) = self.pick(false) {
             let statement = self.statement_calling(&call);
-            body.extend(self.buried(statement, true));
+            body.extend(self.buried(statement));
         }
         let answer = self.literal(&Ty::Int);
         body.push(format!("    r {};", answer));
@@ -589,18 +588,12 @@ impl Writer {
     /// walk that finds it has to go all the way down. Nothing is added to the
     /// block but the statement itself, so a case that is refused is refused
     /// for the call it was written around.
-    ///
-    /// `may_spawn` says whether a background block is one of the wrappings.
-    /// Sandboxed code may not spawn at all, since a spawned block keeps a
-    /// piece of the program after the answer is handed back, so only a case
-    /// that is meant to be refused may use one.
-    fn buried(&mut self, statement: String, may_spawn: bool) -> Vec<String> {
-        match self.rng.gen_range(0..3) {
+    fn buried(&mut self, statement: String) -> Vec<String> {
+        match self.rng.gen_range(0..2) {
             0 => {
                 let item = self.fresh("item");
-                vec![format!("    for {} in [1, 2] {{", item), format!("        {}", statement), "    }".to_string()]
+                vec![format!("    each {} in [1, 2] {{", item), format!("        {}", statement), "    }".to_string()]
             }
-            1 if may_spawn => vec!["    spawn {".to_string(), format!("        {}", statement), "    }".to_string()],
             _ => vec![format!("    {}", statement)],
         }
     }

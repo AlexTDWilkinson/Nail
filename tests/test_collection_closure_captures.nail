@@ -7,8 +7,8 @@ names:a:s = [`Alice`, `Bob`, `Carol`];
 threshold:i = 3;
 
 // Outer variable captured by index inside a map body
-titled:a:s = map name idx in names {
-    prefix:s = danger(array_get(prefixes, idx % 2));
+titled:a:s = map name index in names {
+    prefix:s = danger(array_get(prefixes, index % 2));
     y array_join([prefix, name], ` `);
 };
 

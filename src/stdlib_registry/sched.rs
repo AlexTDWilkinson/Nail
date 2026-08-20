@@ -16,13 +16,13 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         }],
         return_type: nail_type!((v!e)),
         diverging: false,
-        description: "Runs jobs on their cron schedules, forever - each due moment calls the program's handle_job(name:s):v function with the job's name. Jobs run one at a time in this loop, so they never overlap. Blocks forever, so it runs in a spawn block beside the rest of the program. The error case is a cron expression that does not parse.",
-        example: "f handle_job(name:s):v { print(name); }\n\nspawn { danger(sched_run([SCHED_Job { name = `cleanup`, cron = `0 3 * * *` }])); }",
+        description: "Runs jobs on their cron schedules, forever - each due moment calls the program's handle_job(name:s):v function with the job's name. Jobs run one at a time in this loop, so they never overlap. Blocks forever, so it runs in a c block beside the server. The error case is a cron expression that does not parse.",
+        example: "f handle_job(name:s):v { print(name); }\n\ndanger(sched_run([SCHED_Job { name = `cleanup`, cron = `0 3 * * *` }]));",
     });
 
     simple_fns! { m, Sched:
         "sched_every" [Tokio] => "std_lib::sched::every", (name: s, seconds: i) -> (v!e),
-            "Calls the program's handle_job(name:s):v function with the given name every so many seconds, forever. The wait is between finishes, not starts, so slow work never overlaps itself. Blocks forever, so it runs in a spawn block.",
-            "f handle_job(name:s):v {\n    print(name);\n}\n\nspawn { danger(sched_every(`heartbeat`, 60)); }";
+            "Calls the program's handle_job(name:s):v function with the given name every so many seconds, forever. The wait is between finishes, not starts, so slow work never overlaps itself. Blocks forever, so it runs in a c block beside the rest of the program.",
+            "f handle_job(name:s):v {\n    print(name);\n}\n\ndanger(sched_every(`heartbeat`, 60));";
     }
 }

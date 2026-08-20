@@ -37,6 +37,13 @@ f announce(message:s):v {
     print(message);
 }
 
+f first_square_past(limit:i, candidate:i):i {
+    if {
+        candidate * candidate > limit -> { r candidate; },
+        else -> { r first_square_past(limit, candidate + 1); }
+    }
+}
+
 // Everything is immutable, and every declaration carries its type
 coordinate_total:i = add_coordinates(Point { x_pos = 3, y_pos = 4 });
 ratio:f = 2.5;
@@ -69,27 +76,23 @@ total:i = reduce acc num in evens from 0 { y acc + num; };
 // scan keeps every step, find, all and any answer questions, each is for
 // side effects, and any of them can also take an index iterator
 running:a:i = scan acc num in numbers from 0 { y acc + num; };
-first_even:i = danger(find num idx in numbers { y num % 2 == 0; });
+first_even:i = danger(find num index in numbers { y num % 2 == 0; });
 all_positive:b = all num in numbers { y num > 0; };
 any_negative:b = any num in numbers { y num < 0; };
 each num in numbers { print(num); }
 
-// for walks a collection, when filters as it walks
-for num in numbers when num > 3 {
-    print(num);
-}
+// a search that stops is a function that calls itself until it has the answer
+print(first_square_past(50, 0));
 
-// loop counts up until break
-loop count {
-    if {
-        count < 2 -> { continue; },
-        else -> { break; }
+// forever runs until the program ends: servers, watchers, heartbeats.
+// Nothing runs behind the program's back, so a forever function runs in a
+// c block beside whatever else lives as long as the program. This one is
+// declared and not called, so the tour itself can end
+f heartbeat():v {
+    forever {
+        announce(`still here`);
+        time_sleep(60.0);
     }
-}
-
-// spawn runs a block in the background
-spawn {
-    announce(`from the background`);
 }
 
 // p runs statements on real threads at once, c overlaps their waiting

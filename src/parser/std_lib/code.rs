@@ -23,7 +23,6 @@ fn token_class(token_type: &TokenType) -> Option<&'static str> {
         TokenType::BooleanLiteral(_) => Some("tok-kw"),
         TokenType::IfDeclaration
         | TokenType::ElseDeclaration
-        | TokenType::ForDeclaration
         | TokenType::MapDeclaration
         | TokenType::FilterDeclaration
         | TokenType::ReduceDeclaration
@@ -32,12 +31,9 @@ fn token_class(token_type: &TokenType) -> Option<&'static str> {
         | TokenType::FindDeclaration
         | TokenType::AllDeclaration
         | TokenType::AnyDeclaration
-        | TokenType::LoopKeyword
+        | TokenType::ForeverKeyword
         | TokenType::InKeyword
         | TokenType::FromKeyword
-        | TokenType::WhenKeyword
-        | TokenType::BreakKeyword
-        | TokenType::ContinueKeyword
         | TokenType::Return
         | TokenType::Yield
         | TokenType::ImportKeyword
@@ -45,11 +41,10 @@ fn token_class(token_type: &TokenType) -> Option<&'static str> {
         TokenType::ParallelStart
         | TokenType::ParallelEnd
         | TokenType::ConcurrentStart
-        | TokenType::ConcurrentEnd
-        | TokenType::SpawnKeyword => Some("tok-cb"),
+        | TokenType::ConcurrentEnd => Some("tok-cb"),
         TokenType::FunctionName(_) => Some("tok-fn"),
         TokenType::TypeDeclaration(_) | TokenType::FunctionReturnTypeDeclaration(_) | TokenType::EnumVariant(_) => Some("tok-ty"),
-        TokenType::Operator(_) | TokenType::Assignment | TokenType::ArrowAssignment | TokenType::Range | TokenType::RangeInclusive | TokenType::Dot => Some("tok-op"),
+        TokenType::Operator(_) | TokenType::Assignment | TokenType::ArrowAssignment | TokenType::Dot => Some("tok-op"),
         TokenType::LexerError(_) => Some("tok-err"),
         _ => None,
     }

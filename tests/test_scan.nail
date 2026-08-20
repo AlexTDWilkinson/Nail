@@ -31,8 +31,8 @@ peaks:a:i = scan acc sale in [100, 50, 300, 200] from 0 {
 };
 
 // The index is available, as in every other collection operation.
-weighted:a:i = scan acc sale idx in sales from 0 {
-    y acc + sale * idx;
+weighted:a:i = scan acc sale index in sales from 0 {
+    y acc + sale * index;
 };
 
 // Scanning strings builds up each prefix.

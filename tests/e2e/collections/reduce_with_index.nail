@@ -1,5 +1,5 @@
 nail latest
 // E2E: reduce with index parameter computing weighted sum
 nums:a:i = [5, 5, 5];
-weighted:i = reduce acc num idx in nums from 0 { y acc + num * idx; };
+weighted:i = reduce acc num index in nums from 0 { y acc + num * index; };
 print(weighted);

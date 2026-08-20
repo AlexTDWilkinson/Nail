@@ -103,7 +103,6 @@ pub enum TokenType {
     ParallelEnd,                             // For /p keyword
     ConcurrentStart,                         // For c keyword
     ConcurrentEnd,                           // For /c keyword
-    ForDeclaration,                          // For for keyword
     MapDeclaration,                          // For map keyword
     FilterDeclaration,                       // For filter keyword
     ReduceDeclaration,                       // For reduce keyword
@@ -112,15 +111,9 @@ pub enum TokenType {
     FindDeclaration,                         // For find keyword
     AllDeclaration,                          // For all keyword
     AnyDeclaration,                          // For any keyword
-    LoopKeyword,                             // For loop keyword (infinite loops)
-    SpawnKeyword,                            // For spawn keyword (background tasks)
+    ForeverKeyword,                             // For loop keyword (infinite loops)
     InKeyword,                               // For in keyword
     FromKeyword,                             // For from keyword (initial accumulator)
-    WhenKeyword,                             // For when keyword (filtering)
-    BreakKeyword,                            // For break keyword
-    ContinueKeyword,                         // For continue keyword
-    Range,                                   // For .. operator
-    RangeInclusive,                          // For ..= operator
     Assignment,                              // For assignment ie =
     ArrowAssignment,                         // For arrow assignment ie ->
     Identifier(String),                      // For variable names, etc.
@@ -167,8 +160,6 @@ impl TokenType {
             TokenType::EndOfFile => "the end of the file".to_string(),
             TokenType::Identifier(name) => format!("the name '{}'", name),
             TokenType::Colon => "':'".to_string(),
-            TokenType::Range => "'..'".to_string(),
-            TokenType::RangeInclusive => "'..='".to_string(),
             TokenType::Integer(value) => format!("the number '{}'", value),
             TokenType::Float(value) => format!("the number '{}'", value),
             TokenType::BooleanLiteral(value) => format!("the boolean '{}'", value),
@@ -194,7 +185,6 @@ impl TokenType {
             TokenType::ParallelEnd => "the '/p' (end parallel) keyword".to_string(),
             TokenType::ConcurrentStart => "the 'c' (concurrent) keyword".to_string(),
             TokenType::ConcurrentEnd => "the '/c' (end concurrent) keyword".to_string(),
-            TokenType::ForDeclaration => "the 'for' keyword".to_string(),
             TokenType::MapDeclaration => "the 'map' keyword".to_string(),
             TokenType::FilterDeclaration => "the 'filter' keyword".to_string(),
             TokenType::ReduceDeclaration => "the 'reduce' keyword".to_string(),
@@ -203,13 +193,9 @@ impl TokenType {
             TokenType::FindDeclaration => "the 'find' keyword".to_string(),
             TokenType::AllDeclaration => "the 'all' keyword".to_string(),
             TokenType::AnyDeclaration => "the 'any' keyword".to_string(),
-            TokenType::LoopKeyword => "the 'loop' keyword".to_string(),
-            TokenType::SpawnKeyword => "the 'spawn' keyword".to_string(),
+            TokenType::ForeverKeyword => "the 'forever' keyword".to_string(),
             TokenType::InKeyword => "the 'in' keyword".to_string(),
             TokenType::FromKeyword => "the 'from' keyword".to_string(),
-            TokenType::WhenKeyword => "the 'when' keyword".to_string(),
-            TokenType::BreakKeyword => "the 'break' keyword".to_string(),
-            TokenType::ContinueKeyword => "the 'continue' keyword".to_string(),
             TokenType::Return => "the 'r' (return) keyword".to_string(),
             TokenType::Yield => "the 'y' (yield) keyword".to_string(),
             TokenType::LexerError(_) => "an invalid token".to_string(),
@@ -1368,11 +1354,9 @@ fn is_identifier_or_keyword(c: char) -> bool {
 }
 
 fn validate_identifier_name(identifier: &str) -> Option<String> {
-    // Check if identifier is a single letter - all single letter identifiers are forbidden
-    // EXCEPT 'e' which is used for error returns (e.g., r e("error message"))
-    // AND type annotations: i, f, s, b, v, a, h
-    // AND common struct field names: x, y, z, w (for coordinates/vectors)
-    let valid_single_letters = ["e", "i", "f", "s", "b", "v", "a", "h", "x", "y", "z", "w"];
+    // Every single-letter identifier is refused, except 'e' (the error
+    // constructor, as in r e(`message`)) and the type letters.
+    let valid_single_letters = ["e", "i", "f", "s", "b", "v", "a", "h"];
     if identifier.len() == 1 && identifier.chars().all(|c| c.is_alphabetic()) && !valid_single_letters.contains(&identifier) {
         Some("Variable name too short. Must use descriptive names.".to_string())
     } else {
@@ -1470,10 +1454,11 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "await" => TokenType::LexerError("'await' is a reserved keyword and cannot be used as an identifier".to_string()),
         "move" => TokenType::LexerError("'move' is a reserved keyword and cannot be used as an identifier".to_string()),
         "match" => TokenType::LexerError("'match' is a reserved keyword and cannot be used as an identifier".to_string()),
-        "loop" => TokenType::LoopKeyword,
-        "spawn" => TokenType::SpawnKeyword,
-        "while" => TokenType::LexerError("Nail has no 'while' loop: iterate with 'for', repeat with 'loop' and 'break', accumulate with 'reduce'".to_string()),
-        "for" => TokenType::ForDeclaration,
+        "forever" => TokenType::ForeverKeyword,
+        "loop" => TokenType::LexerError("Nail has no 'loop': a block that runs until the program ends is written forever { }, and a collection is walked with 'each'".to_string()),
+        "spawn" => TokenType::LexerError("Nail has no 'spawn': nothing runs behind the program's back. Run things at once with c ... /c, which ends when all of them have ended".to_string()),
+        "while" => TokenType::LexerError("Nail has no 'while' loop: walk a collection with 'each', accumulate with 'reduce', repeat until something changes with a function that calls itself, and run until the program ends with 'forever'".to_string()),
+        "for" => TokenType::LexerError("Nail has no 'for' loop: walk a collection with 'each', and build one with 'map', 'filter', 'reduce' or 'scan'".to_string()),
         "map" => TokenType::MapDeclaration,
         "filter" => TokenType::FilterDeclaration,
         "reduce" => TokenType::ReduceDeclaration,
@@ -1484,9 +1469,8 @@ fn lex_identifier_or_keyword(chars: &mut std::iter::Peekable<std::str::Chars>, s
         "any" => TokenType::AnyDeclaration,
         "in" => TokenType::InKeyword,
         "from" => TokenType::FromKeyword,
-        "when" => TokenType::WhenKeyword,
-        "break" => TokenType::BreakKeyword,
-        "continue" => TokenType::ContinueKeyword,
+        "break" => TokenType::LexerError("Nail has no 'break': a 'forever' block runs until the program ends, so walk a collection with 'each', leave a forever block inside a function with 'r', or repeat until something changes with a function that calls itself".to_string()),
+        "continue" => TokenType::LexerError("Nail has no 'continue': choose the elements with 'filter' before the loop instead of skipping them inside it".to_string()),
         "return" => TokenType::LexerError("'return' is a reserved keyword and cannot be used as an identifier".to_string()),
         "yield" => TokenType::LexerError("'yield' is a reserved keyword and cannot be used as an identifier".to_string()),
         "ref" => TokenType::LexerError("'ref' is a reserved keyword and cannot be used as an identifier".to_string()),
@@ -2248,13 +2232,10 @@ fn lex_double_character_token(chars: &mut std::iter::Peekable<std::str::Chars>, 
         },
         '.' => match advance(chars, state) {
             Some('.') => {
-                // Check for ..= (inclusive range)
                 if chars.peek() == Some(&'=') {
                     advance(chars, state);
-                    TokenType::RangeInclusive
-                } else {
-                    TokenType::Range
                 }
+                TokenType::LexerError("Nail has no range syntax: array_range(start, end) and array_range_inclusive(start, end) build the array".to_string())
             },
             _ => panic!("Unrecognized operator: {}", operator),
         },

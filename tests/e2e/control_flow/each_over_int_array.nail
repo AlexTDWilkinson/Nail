@@ -1,0 +1,6 @@
+nail latest
+// E2E: each loop over an int array
+nums:a:i = [10, 20, 30];
+each num in nums {
+    print(num);
+}

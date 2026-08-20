@@ -342,22 +342,21 @@ impl Generator {
     fn statement(&mut self, depth: usize) {
         // Deeper statements stay simple, so a program's size stays in the
         // hundreds of lines rather than exploding.
-        let choice = if depth >= 2 { self.rng.gen_range(0..3) } else { self.rng.gen_range(0..13) };
+        let choice = if depth >= 2 { self.rng.gen_range(0..3) } else { self.rng.gen_range(0..12) };
         match choice {
             0 | 1 => self.declaration(),
             2 => {
                 let Some(binding) = self.pick_binding_of_any_type() else { return self.declaration() };
                 self.emit(&format!("print({});", binding.name));
             }
-            3 => self.for_loop(depth),
+            3 => self.each_statement(depth),
             4 => self.if_statement(depth),
-            5 => self.block(depth),
+            5 => self.if_statement(depth),
             6 => self.each_statement(depth),
             7 => self.parallel_block(),
             8 => self.hashmap_statements(),
-            9 => self.counting_loop(),
-            10 => self.spawn_block(depth),
-            11 => self.stdlib_statement(),
+            9 => self.parallel_block(),
+            10 => self.stdlib_statement(),
             _ => self.declaration(),
         }
     }
@@ -384,42 +383,6 @@ impl Generator {
         self.bind(read_name, value_type);
     }
 
-    /// `loop` counts up until something breaks out of it. The body always
-    /// reaches a break, because a generated program that never ends is a
-    /// generated program that hangs the fuzzer.
-    fn counting_loop(&mut self) {
-        let counter = self.fresh("round");
-        let limit = self.rng.gen_range(1..4);
-        self.emit(&format!("loop {} {{", counter));
-        self.indent += 1;
-        self.emit("if {");
-        self.indent += 1;
-        self.emit(&format!("{} < {} -> {{", counter, limit));
-        self.indent += 1;
-        self.emit("continue;");
-        self.indent -= 1;
-        self.emit("},");
-        self.emit("else -> {");
-        self.indent += 1;
-        self.emit("break;");
-        self.indent -= 1;
-        self.emit("}");
-        self.indent -= 1;
-        self.emit("}");
-        self.indent -= 1;
-        self.emit("}");
-    }
-
-    fn spawn_block(&mut self, depth: usize) {
-        self.emit("spawn {");
-        self.indent += 1;
-        self.scopes.push(Vec::new());
-        self.statement(depth + 2);
-        self.scopes.pop();
-        self.indent -= 1;
-        self.emit("}");
-    }
-
     /// A library call that returns nothing, which can stand on its own as a
     /// statement. Calls that return a value cannot: Nail has no bare
     /// expression statements.
@@ -439,25 +402,6 @@ impl Generator {
         let value = self.expression(&ty, 0);
         self.emit(&format!("{}:{} = {};", name, ty.written(), value));
         self.bind(name, ty);
-    }
-
-    fn for_loop(&mut self, depth: usize) {
-        let element = self.scalar_type();
-        let array = self.expression(&Ty::Array(Box::new(element.clone())), 0);
-        let item = self.fresh("item");
-        // `when` filters as the loop walks, and is worth generating half the
-        // time because it is a clause nothing else exercises.
-        let filter = if self.rng.gen_bool(0.5) { format!(" when {}", self.comparison_on(&item, &element)) } else { String::new() };
-        self.emit(&format!("for {} in {}{} {{", item, array, filter));
-        self.indent += 1;
-        self.scopes.push(vec![Binding { name: item.clone(), ty: element }]);
-        self.emit(&format!("print({});", item));
-        for _ in 0..self.rng.gen_range(0..2) {
-            self.statement(depth + 1);
-        }
-        self.scopes.pop();
-        self.indent -= 1;
-        self.emit("}");
     }
 
     fn each_statement(&mut self, depth: usize) {
@@ -494,18 +438,6 @@ impl Generator {
         self.scopes.pop();
         self.indent -= 1;
         self.emit("}");
-        self.indent -= 1;
-        self.emit("}");
-    }
-
-    fn block(&mut self, depth: usize) {
-        self.emit("{");
-        self.indent += 1;
-        self.scopes.push(Vec::new());
-        for _ in 0..self.rng.gen_range(1..3) {
-            self.statement(depth + 1);
-        }
-        self.scopes.pop();
         self.indent -= 1;
         self.emit("}");
     }
@@ -1446,7 +1378,7 @@ impl Predicting {
             2 => self.print_statement(),
             3 | 4 => self.walk(),
             5 => self.branch(depth),
-            6 => self.nested_block(depth),
+            6 => self.branch(depth),
             7 => self.parallel_block(),
             _ => self.declaration(),
         }
@@ -1509,24 +1441,6 @@ impl Predicting {
         Some(())
     }
 
-    fn nested_block(&mut self, depth: usize) -> Option<()> {
-        self.emit("{");
-        self.indent += 1;
-        self.scopes.push(Vec::new());
-        let statements = self.rng.gen_range(1..3);
-        for _ in 0..statements {
-            self.statement(depth + 1)?;
-        }
-        self.scopes.pop();
-        self.indent -= 1;
-        self.emit("}");
-        Some(())
-    }
-
-    /// Declarations on real threads, whose values are visible afterwards.
-    /// Nothing inside prints, because what a thread prints arrives whenever
-    /// the thread gets to it, and an expected output has to be one order
-    /// rather than several.
     fn parallel_block(&mut self) -> Option<()> {
         let concurrent = self.rng.gen_bool(0.5);
         self.emit(if concurrent { "c" } else { "p" });
@@ -1551,8 +1465,7 @@ impl Predicting {
 
     /// A loop that prints each item, which is the one place a generated
     /// program's output has a shape rather than a length: the collection
-    /// decides how many lines come out, and a `when` clause decides which of
-    /// them do.
+    /// decides how many lines come out.
     fn walk(&mut self) -> Option<()> {
         let element = self.printable_scalar();
         let (source, source_value) = self.expression(&Ty::Array(Box::new(element.clone())), 0)?;
@@ -1562,8 +1475,6 @@ impl Predicting {
         let item = self.fresh("item");
         let representative = items.first().cloned().unwrap_or_else(|| stand_in(&element));
         self.scopes.push(vec![Known { name: item.clone(), ty: element.clone(), value: representative }]);
-        let each = self.rng.gen_bool(0.4);
-        let mut filter = if !each && self.rng.gen_bool(0.5) { self.expression(&Ty::Bool, 1).map(|(expr, _)| expr) } else { None };
         let mut prints = vec![Expr::Name(item.clone())];
         if self.rng.gen_bool(0.5) {
             let ty = self.printable_scalar();
@@ -1574,25 +1485,20 @@ impl Predicting {
         self.scopes.pop();
 
         // The body runs once per item, so every item has to be worked out,
-        // not only the first. When one of them cannot be, the extra print and
-        // the clause go and the loop keeps the item print, which always can.
-        let mut lines = self.walk_output(&items, &item, &filter, &prints);
+        // not only the first. When one of them cannot be, the extra print
+        // goes and the loop keeps the item print, which always can.
+        let mut lines = self.walk_output(&items, &item, &prints);
         if lines.is_none() {
             prints.truncate(1);
-            filter = None;
-            lines = self.walk_output(&items, &item, &filter, &prints);
+            lines = self.walk_output(&items, &item, &prints);
         }
         let lines = lines?;
 
-        let clause = match &filter {
-            Some(condition) => format!(" when {}", condition.written()?),
-            None => String::new(),
-        };
         let mut written = Vec::new();
         for expr in &prints {
             written.push(expr.written()?);
         }
-        self.emit(&format!("{} {} in {}{} {{", if each { "each" } else { "for" }, item, source_text, clause));
+        self.emit(&format!("each {} in {} {{", item, source_text));
         self.indent += 1;
         for text in written {
             self.emit(&format!("print({});", text));
@@ -1606,19 +1512,12 @@ impl Predicting {
     }
 
     /// What a loop prints, worked out item by item.
-    fn walk_output(&self, items: &[Value], item: &str, filter: &Option<Expr>, prints: &[Expr]) -> Option<Vec<String>> {
+    fn walk_output(&self, items: &[Value], item: &str, prints: &[Expr]) -> Option<Vec<String>> {
         let base = self.environment();
         let mut lines = Vec::new();
         for element in items {
             let mut bindings = base.clone();
             bindings.push((item.to_string(), element.clone()));
-            if let Some(condition) = filter {
-                match condition.evaluate(&mut bindings, &self.functions)? {
-                    Value::Bool(true) => {}
-                    Value::Bool(false) => continue,
-                    _ => return None,
-                }
-            }
             for expr in prints {
                 let value = expr.evaluate(&mut bindings, &self.functions)?;
                 if !sane(&value) {

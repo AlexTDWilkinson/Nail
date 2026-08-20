@@ -31,7 +31,6 @@ macro_rules! nail_type {
     (b) => { NailDataTypeDescriptor::Boolean };
     (v) => { NailDataTypeDescriptor::Void };
     (e) => { NailDataTypeDescriptor::Error };
-    (never) => { NailDataTypeDescriptor::Never };
     ([ $($inner:tt)+ ]) => { NailDataTypeDescriptor::Array(Box::new(nail_type!($($inner)+))) };
     ((h $key:tt $value:tt)) => { NailDataTypeDescriptor::HashMap(Box::new(nail_type!($key)), Box::new(nail_type!($value))) };
     (($inner:tt !e)) => { NailDataTypeDescriptor::Result(Box::new(nail_type!($inner))) };
@@ -120,6 +119,7 @@ mod fs;
 mod game;
 mod game3d;
 mod geo;
+mod graph;
 mod hashmap;
 mod hex;
 mod i18n;
@@ -361,6 +361,7 @@ stdlib_modules! {
     Convert => "std_lib::convert", "convert_",
     Color => "std_lib::color", "color_",
     Geo => "std_lib::geo", "geo_",
+    Graph => "std_lib::graph", "graph_",
     Array => "std_lib::array", "array_",
     Math => "std_lib::math", "math_",
     Linalg => "std_lib::linalg", "linalg_",
@@ -561,6 +562,7 @@ lazy_static! {
         game::register(&mut m);
         game3d::register(&mut m);
         geo::register(&mut m);
+        graph::register(&mut m);
         hashmap::register(&mut m);
         hex::register(&mut m);
         i18n::register(&mut m);
@@ -1058,6 +1060,17 @@ lazy_static! {
                 fields.insert("stdout".to_string(), NailDataTypeDescriptor::String);
                 fields.insert("stderr".to_string(), NailDataTypeDescriptor::String);
                 fields.insert("exit_code".to_string(), NailDataTypeDescriptor::Int);
+                fields
+            }
+        });
+
+        // GRAPH_Path struct
+        m.insert("GRAPH_Path", StdlibTypeInfo {
+            name: "GRAPH_Path".to_string(),
+            fields: {
+                let mut fields = HashMap::new();
+                fields.insert("nodes".to_string(), NailDataTypeDescriptor::Array(Box::new(NailDataTypeDescriptor::String)));
+                fields.insert("cost".to_string(), NailDataTypeDescriptor::Float);
                 fields
             }
         });
@@ -2258,7 +2271,7 @@ mod stdlib_types_drift_tests {
     fn stdlib_function_names_carry_their_namespace() {
         // The language's own words, which belong to no library and are spelled
         // the way the grammar spells them.
-        const LANGUAGE_BUILTINS: &[&str] = &["danger", "safe", "expect", "panic", "todo", "spawn", "print", "print_no_newline"];
+        const LANGUAGE_BUILTINS: &[&str] = &["danger", "safe", "expect", "panic", "todo", "print", "print_no_newline"];
         for (name, function) in STDLIB_FUNCTIONS.iter() {
             if LANGUAGE_BUILTINS.contains(name) {
                 continue;
@@ -2331,6 +2344,7 @@ mod stdlib_types_drift_tests {
     #[test]
     fn stdlib_types_match_real_structs() {
         assert_matches_registry::<crate::parser::std_lib::url::URL_Parts>("URL_Parts");
+        assert_matches_registry::<crate::parser::std_lib::graph::GRAPH_Path>("GRAPH_Path");
         assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Options>("PROCESS_Options");
         assert_matches_registry::<crate::parser::std_lib::process::PROCESS_Result>("PROCESS_Result");
         assert_matches_registry::<crate::parser::std_lib::csv::CSV_Options>("CSV_Options");
@@ -2411,7 +2425,7 @@ mod stdlib_types_drift_tests {
     /// stdlib type without extending the drift test.
     #[test]
     fn all_stdlib_types_are_drift_tested() {
-        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "HTTP_Events", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input", "GAME3D_Camera", "GAME3D_Draw", "GAME3D_Environment", "GAME3D_ScreenPoint", "GAME3D_Ray", "GAME3D_Shader"];
+        let covered = ["ARGS_Option", "ARGS_Parsed", "ML_Split", "ML_Linear", "ML_Tree", "ML_Clusters", "ML_Scores", "ML_BoostConfig", "ML_Boost", "ML_Regression", "ML_OneHot", "ML_Forest", "TUI_Line", "TUI_Screen", "TUI_Event", "LINALG_Vec2", "LINALG_Vec3", "LINALG_Mat3", "CSV_Options", "CSV_Reader", "HTTP_Config", "HTTP_Cookie", "HTTP_Static", "HTTP_Part", "HTTP_Retry", "HTTP_Request", "HTTP_Response", "DB_SQLite", "DB_Result", "DB_DataFusion", "DB_DataFusion_Result", "EMAIL_Server", "DB_Postgres", "DB_PostgresResult", "STDLIB_Function", "URL_Parts", "GRAPH_Path", "PROCESS_Options", "PROCESS_Result", "FS_Reader", "FS_Watcher", "FEED_Entry", "FEED_Feed", "DB_Valkey", "EMAIL_Attachment", "HTTP_Websocket", "HTTP_Events", "PROCESS_Handle", "SCHED_Job", "GEO_Point", "MCP_Tool", "GAME_Config", "GAME_Shape", "GAME_Frame", "GAME_Input", "GAME3D_Camera", "GAME3D_Draw", "GAME3D_Environment", "GAME3D_ScreenPoint", "GAME3D_Ray", "GAME3D_Shader"];
         for type_name in STDLIB_TYPES.keys() {
             assert!(covered.contains(type_name), "STDLIB_TYPES entry '{}' has no drift test - add it to stdlib_types_match_real_structs", type_name);
         }
@@ -2559,7 +2573,6 @@ mod example_tests {
             "html_sanitize(markdown_to_html(comment))"
         );
         // A keyword form has no call to cut out, so the line stands as it is.
-        assert_eq!(example_snippet("spawn", "spawn { print(`hi`); }"), "spawn { print(`hi`); }");
 
         let mut unbalanced: Vec<String> = Vec::new();
         for (name, function) in STDLIB_FUNCTIONS.iter() {

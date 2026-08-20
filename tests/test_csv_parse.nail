@@ -9,7 +9,7 @@ asok,all,"every one, without exception"`;
 rows:a:h<s,s> = danger(csv_parse(text, csv_default_options()));
 print(`row count: `, array_length(rows));
 
-for row in rows {
+each row in rows {
     print(danger(hashmap_get(row, `word_english`)), ` => `, danger(hashmap_get(row, `definition`)));
 }
 

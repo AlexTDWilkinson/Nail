@@ -55,7 +55,7 @@ golden in the same commit.
 - Hashmap iteration order is not deterministic: never print `hashmap_keys` /
   `hashmap_values` results directly. Sort them first with `array_sort`, or
   assert via `hashmap_get` / `hashmap_len` / `hashmap_contains_key`
-- Don't print from inside `c`/`p`/`spawn` concurrency constructs when ordering
+- Don't print from inside `c`/`p` concurrency constructs when ordering
   could race: compute inside, print after the block
 - Avoid float operations with inexact decimal results (`0.1 + 0.2`). Stick to
   halves and quarters, which print exactly
@@ -114,12 +114,11 @@ total:i      = reduce acc num in nums from 0 { y acc + num; };
 first_big:i  = danger(find num in nums { y num > 3; });
 all_pos:b    = all num in nums { y num > 0; };
 any_big:b    = any num in nums { y num > 4; };
-with_idx:a:i = map num idx in nums { y num + idx; };
+with_index:a:i = map num index in nums { y num + index; };
 
 // loops
-for num in nums { print(num); }
-for num in nums when num > 2 { print(num); }
-loop idx { if { idx >= 3 -> { break; }, else -> { print(idx); } } }
+each num in nums { print(num); }
+f first_past(limit:i, candidate:i):i { if { candidate > limit -> { r candidate; }, else -> { r first_past(limit, candidate + 1); } } }
 
 // structs and enums
 struct Point { x_coord:i, y_coord:i }
@@ -148,8 +147,8 @@ Common pitfalls:
   `danger(...)` or `safe(...)`
 - Function names come from the stdlib registry (`src/stdlib_registry/`), which
   is the source of truth for names, parameter types, and return types
-- Don't name variables after keywords (`map`, `filter`, `from`, `when`,
-  `in`, `loop`, `while`, `import`, ...)
+- Don't name variables after keywords (`map`, `filter`, `from`, `in`,
+  `forever`, `while`, `import`, ...)
 
 ## When a test fails
 

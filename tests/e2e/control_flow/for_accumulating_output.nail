@@ -1,5 +1,0 @@
-nail latest
-// E2E: for loop building progressively longer output lines
-for width in array_range_inclusive(1, 4) {
-    print(string_repeat(`#`, width));
-}

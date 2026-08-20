@@ -1,0 +1,9 @@
+nail latest
+// E2E: a bare forever block inside a function, left by the first return it reaches
+f first_word():s {
+    forever {
+        r `once`;
+    }
+}
+print(first_word());
+print(`after forever`);

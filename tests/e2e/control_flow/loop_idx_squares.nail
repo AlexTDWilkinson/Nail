@@ -1,5 +1,0 @@
-nail latest
-// E2E: loop with auto-incrementing index printing squares
-loop idx {
-    if { idx >= 4 -> { break; }, else -> { print(idx * idx); } }
-}

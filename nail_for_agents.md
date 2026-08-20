@@ -41,7 +41,10 @@ These are the traps for a generator that assumes Python, JavaScript, or Rust:
 - No reassignment and no mutation, ever. `count = 2;` on an existing name is
   refused. Declaring the name again (shadowing) is legal. Accumulation across
   a collection is what `reduce` and `scan` are for.
-- No `while` loop. `for` walks collections, `loop` counts up until `break`.
+- No `for` loop, no `while` loop, no `break`, no `continue`. `each` walks a
+  collection, `map`, `filter`, `reduce` and `scan` build one, `forever` runs
+  until the program ends (servers, background work), and a function that calls itself
+  repeats until something changes.
 - No lambdas and no closures. A callback is an ordinary named function,
   declared at the top level and passed by name.
 - A function body sees only its parameters. There are no globals inside
@@ -108,6 +111,13 @@ f announce(message:s):v {
     print(message);
 }
 
+f first_square_past(limit:i, candidate:i):i {
+    if {
+        candidate * candidate > limit -> { r candidate; },
+        else -> { r first_square_past(limit, candidate + 1); }
+    }
+}
+
 // Everything is immutable, and every declaration carries its type
 coordinate_total:i = add_coordinates(Point { x_pos = 3, y_pos = 4 });
 ratio:f = 2.5;
@@ -140,27 +150,23 @@ total:i = reduce acc num in evens from 0 { y acc + num; };
 // scan keeps every step, find, all and any answer questions, each is for
 // side effects, and any of them can also take an index iterator
 running:a:i = scan acc num in numbers from 0 { y acc + num; };
-first_even:i = danger(find num idx in numbers { y num % 2 == 0; });
+first_even:i = danger(find num index in numbers { y num % 2 == 0; });
 all_positive:b = all num in numbers { y num > 0; };
 any_negative:b = any num in numbers { y num < 0; };
 each num in numbers { print(num); }
 
-// for walks a collection, when filters as it walks
-for num in numbers when num > 3 {
-    print(num);
-}
+// a search that stops is a function that calls itself until it has the answer
+print(first_square_past(50, 0));
 
-// loop counts up until break
-loop count {
-    if {
-        count < 2 -> { continue; },
-        else -> { break; }
+// forever runs until the program ends: servers, watchers, heartbeats.
+// Nothing runs behind the program's back, so a forever function runs in a
+// c block beside whatever else lives as long as the program. This one is
+// declared and not called, so the tour itself can end
+f heartbeat():v {
+    forever {
+        announce(`still here`);
+        time_sleep(60.0);
     }
-}
-
-// spawn runs a block in the background
-spawn {
-    announce(`from the background`);
 }
 
 // p gives each statement its own thread, for work that computes
@@ -193,11 +199,19 @@ count:i = 1;
 count = 2;
 ```
 
-A while loop. Use `for`, `loop`, or a collection operation:
+A while loop. Use `each`, `forever`, or a collection operation:
 
 ```nail-refused
 while true {
     print(`spin`);
+}
+```
+
+A for loop. `each` walks a collection, with the index if wanted:
+
+```nail-refused
+for num in numbers {
+    print(num);
 }
 ```
 

@@ -1,0 +1,11 @@
+nail latest
+// E2E: a search that stops is a function that calls itself until it has the
+// answer. There is no loop to leave, each call either returns or asks the next.
+f first_square_past(limit:i, candidate:i):i {
+    if {
+        candidate * candidate > limit -> { r candidate; },
+        else -> { r first_square_past(limit, candidate + 1); }
+    }
+}
+print(first_square_past(50, 0));
+print(first_square_past(0, 0));

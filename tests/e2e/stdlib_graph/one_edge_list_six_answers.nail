@@ -1,0 +1,27 @@
+nail latest
+// One dependency graph asked every question the module answers
+
+edges_from:a:s = [`schema`, `schema`, `api`, `web`];
+edges_to:a:s = [`api`, `seed`, `web`, `cdn`];
+
+build_order:a:s = danger(graph_topological_sort(edges_from, edges_to));
+print(array_join(build_order, ` then `));
+
+stuck:b = danger(graph_has_cycle(edges_from, edges_to));
+print(stuck);
+
+groups:a:a:s = danger(graph_connected_components(edges_from, edges_to));
+print(array_length(groups));
+
+pulled_in:a:s = danger(graph_reachable(edges_from, edges_to, `api`));
+print(array_join(pulled_in, `, `));
+
+route:a:s = danger(graph_shortest_path(edges_from, edges_to, `schema`, `cdn`));
+print(array_join(route, ` -> `));
+
+roads_from:a:s = [`home`, `home`, `park`];
+roads_to:a:s = [`park`, `office`, `office`];
+tolls:a:f = [1.0, 5.0, 1.5];
+cheapest:GRAPH_Path = danger(graph_shortest_path_weighted(roads_from, roads_to, tolls, `home`, `office`));
+print(array_join(cheapest.nodes, ` -> `));
+print(cheapest.cost);

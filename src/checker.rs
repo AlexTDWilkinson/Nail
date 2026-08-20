@@ -10,7 +10,6 @@ pub use crate::common::{ERROR_SCOPE, GLOBAL_SCOPE};
 pub struct Scope {
     pub symbols: HashMap<String, Symbol>,
     pub parent: usize,
-    pub is_lambda: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,12 +33,12 @@ impl ScopeArena {
     pub fn new() -> Self {
         // I guess this is where we'd set up global scope?
         // Note that global scope has no parent, so it's just set to ERROR_SCOPE to cause an error if it's parent is accessed for some reason
-        ScopeArena { scopes: vec![Scope { symbols: HashMap::new(), parent: ERROR_SCOPE, is_lambda: false }], current: GLOBAL_SCOPE }
+        ScopeArena { scopes: vec![Scope { symbols: HashMap::new(), parent: ERROR_SCOPE }], current: GLOBAL_SCOPE }
     }
 
     pub fn push_scope(&mut self) -> usize {
         let parent = self.current_scope();
-        self.scopes.push(Scope { symbols: HashMap::new(), parent, is_lambda: false });
+        self.scopes.push(Scope { symbols: HashMap::new(), parent });
         self.current = self.scopes.len() - 1;
         return self.current;
     }
@@ -79,23 +78,6 @@ impl ScopeArena {
         }
     }
 
-    pub fn mark_as_lambda(&mut self, scope_index: usize) {
-        if let Some(scope) = self.scopes.get_mut(scope_index) {
-            scope.is_lambda = true;
-        }
-    }
-
-    pub fn is_in_lambda(&self) -> bool {
-        // Check if any scope in the current chain is a lambda
-        let mut current = self.current_scope();
-        while current != ERROR_SCOPE && current != GLOBAL_SCOPE {
-            if self.scopes[current].is_lambda {
-                return true;
-            }
-            current = self.scopes[current].parent;
-        }
-        false
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,7 +94,6 @@ struct AnalyzerState {
     enum_variants: HashMap<String, HashSet<String>>,
     structs: HashMap<String, Vec<ASTNode>>,
     struct_spans: HashMap<String, CodeSpan>,
-    in_loop: bool,
     function_scope: Option<usize>,  // Track the scope of the current function
     /// Set just before a function's body is visited. The body shares the
     /// scope its parameters live in, and every other block gets one of its
@@ -147,7 +128,6 @@ fn new_analyzer_state() -> AnalyzerState {
             .collect(),
         structs: HashMap::new(),
         struct_spans: HashMap::new(),
-        in_loop: false,
         function_scope: None,
         body_shares_the_current_scope: false,
         known_ints: HashMap::new(),
@@ -184,6 +164,19 @@ fn fold_int(node: &ASTNode, state: &AnalyzerState, scope: usize) -> Folded {
             // this stays quiet rather than reporting the same number twice.
             Err(_) => Folded::Unknown,
         },
+        // A negated literal is one number, so the sign is part of the parse.
+        // The smallest i exists only in this form, since its digits alone are
+        // one past the largest i.
+        ASTNode::UnaryOperation { operator: Operation::Neg, operand, .. } if matches!(&**operand, ASTNode::NumberLiteral { data_type: NailDataTypeDescriptor::Int, .. }) => {
+            let ASTNode::NumberLiteral { value, .. } = &**operand else {
+                return Folded::Unknown;
+            };
+            let written = if value.starts_with('-') { value.clone() } else { format!("-{}", value) };
+            match written.parse::<i64>() {
+                Ok(number) => Folded::Int(number),
+                Err(_) => Folded::Unknown,
+            }
+        }
         ASTNode::UnaryOperation { operator: Operation::Neg, operand, .. } => match fold_int(operand, state, scope) {
             Folded::Int(number) => number.checked_neg().map_or(Folded::Overflows, Folded::Int),
             other => other,
@@ -513,28 +506,6 @@ fn check_sandboxed_code(ast: &ASTNode, state: &mut AnalyzerState) {
         let mut references = HashSet::new();
         collect_calls_and_references(body, &mut calls, &mut references);
         let caller = if directly_sandboxed { None } else { Some(function_name) };
-        // A background block is not a call, so the call walk never sees it,
-        // and its contents are sandbox checked like any other code. What is
-        // left is the thread itself: imported code that spawns takes a piece
-        // of the program and keeps it, which is the same seizure that denies
-        // it a sleep or a terminal.
-        for code_span in spawn_blocks_in(body) {
-            let mut span = code_span;
-            match caller {
-                None => add_error_with_help(
-                    state,
-                    "Sandboxed code brought in by import cannot spawn background work: it may compute and hand back an answer, and nothing else".to_string(),
-                    Some("do the work in the function and let your own code decide whether to spawn it".to_string()),
-                    &mut span,
-                ),
-                Some(name) => add_error_with_help(
-                    state,
-                    format!("'{}' is reachable from sandboxed code brought in by import, so it cannot spawn background work", name),
-                    Some(format!("keep '{}' out of reach of imported code, or bring that file in with import_dangerous if you trust it", name)),
-                    &mut span,
-                ),
-            }
-        }
         for (call_name, code_span) in calls {
             check_sandboxed_stdlib_call(call_name, code_span, caller, state);
         }
@@ -602,20 +573,6 @@ fn collect_sandboxed_const_initializers<'a>(node: &'a ASTNode, initializers: &mu
 /// Function calls (with call-site spans) and identifier references inside a
 /// subtree. References matter because naming a function, for example passing
 /// an error handler to safe(), reaches it just as surely as calling it.
-/// Every spawn block inside a body, by where it is written. A spawn is a
-/// statement rather than a call, so the call walk cannot see one.
-fn spawn_blocks_in(node: &ASTNode) -> Vec<CodeSpan> {
-    let mut found = Vec::new();
-    let mut stack = vec![node];
-    while let Some(current) = stack.pop() {
-        if let ASTNode::SpawnBlock { code_span, .. } = current {
-            found.push(code_span.clone());
-        }
-        stack.extend(current.children());
-    }
-    found
-}
-
 fn collect_calls_and_references<'a>(node: &'a ASTNode, calls: &mut Vec<(&'a str, CodeSpan)>, references: &mut HashSet<&'a str>) {
     match node {
         ASTNode::FunctionCall { name, code_span, .. } => {
@@ -643,7 +600,6 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::BinaryOperation { scope, .. }
         | ASTNode::Identifier { scope, .. }
         | ASTNode::IfStatement { scope, .. }
-        | ASTNode::ForLoop { scope, .. }
         | ASTNode::MapExpression { scope, .. }
         | ASTNode::FilterExpression { scope, .. }
         | ASTNode::ReduceExpression { scope, .. }
@@ -652,10 +608,7 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::FindExpression { scope, .. }
         | ASTNode::AllExpression { scope, .. }
         | ASTNode::AnyExpression { scope, .. }
-        | ASTNode::Loop { scope, .. }
-        | ASTNode::SpawnBlock { scope, .. }
-        | ASTNode::BreakStatement { scope, .. }
-        | ASTNode::ContinueStatement { scope, .. }
+        | ASTNode::Forever { scope, .. }
         | ASTNode::StructDeclaration { scope, .. }
         | ASTNode::EnumDeclaration { scope, .. }
         | ASTNode::ArrayLiteral { scope, .. }
@@ -665,7 +618,6 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         | ASTNode::Block { scope, .. }
         | ASTNode::ParallelBlock { scope, .. }
         | ASTNode::ConcurrentBlock { scope, .. }
-        | ASTNode::LambdaDeclaration { scope, .. }
         | ASTNode::FunctionDeclaration { scope, .. }
         | ASTNode::StructInstantiation { scope, .. }
         | ASTNode::StructInstantiationField { scope, .. }
@@ -689,14 +641,7 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
                 update_node_scope(stmt, new_scope);
             }
         }
-        ASTNode::ForLoop { iterable, body, .. } => {
-            update_node_scope(iterable, new_scope);
-            update_node_scope(body, new_scope);
-        }
-        ASTNode::Loop { body, .. } => {
-            update_node_scope(body, new_scope);
-        }
-        ASTNode::SpawnBlock { body, .. } => {
+        ASTNode::Forever { body, .. } => {
             update_node_scope(body, new_scope);
         }
         ASTNode::MapExpression { iterable, body, .. } | ASTNode::EachExpression { iterable, body, .. } => {
@@ -763,16 +708,11 @@ fn update_node_scope(node: &mut ASTNode, new_scope: usize) {
         ASTNode::NumberLiteral { .. } |
         ASTNode::StringLiteral { .. } |
         ASTNode::BooleanLiteral { .. } |
-        ASTNode::BreakStatement { .. } |
-        ASTNode::ContinueStatement { .. } |
         ASTNode::StructDeclarationField { .. } |
         ASTNode::EnumVariant { .. } => {
             // These nodes don't have child nodes to update
         }
         // Handle the remaining cases
-        ASTNode::LambdaDeclaration { body, .. } => {
-            update_node_scope(body, new_scope);
-        }
         ASTNode::FunctionDeclaration { body, .. } => {
             update_node_scope(body, new_scope);
         }
@@ -816,7 +756,6 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
         | ASTNode::BinaryOperation { scope, .. }
         | ASTNode::Identifier { scope, .. }
         | ASTNode::IfStatement { scope, .. }
-        | ASTNode::ForLoop { scope, .. }
         | ASTNode::MapExpression { scope, .. }
         | ASTNode::FilterExpression { scope, .. }
         | ASTNode::ReduceExpression { scope, .. }
@@ -825,10 +764,7 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
         | ASTNode::FindExpression { scope, .. }
         | ASTNode::AllExpression { scope, .. }
         | ASTNode::AnyExpression { scope, .. }
-        | ASTNode::Loop { scope, .. }
-        | ASTNode::SpawnBlock { scope, .. }
-        | ASTNode::BreakStatement { scope, .. }
-        | ASTNode::ContinueStatement { scope, .. }
+        | ASTNode::Forever { scope, .. }
         | ASTNode::StructDeclaration { scope, .. }
         | ASTNode::EnumDeclaration { scope, .. }
         | ASTNode::ArrayLiteral { scope, .. }
@@ -838,7 +774,6 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
         | ASTNode::Block { scope, .. }
         | ASTNode::ParallelBlock { scope, .. }
         | ASTNode::ConcurrentBlock { scope, .. }
-        | ASTNode::LambdaDeclaration { scope, .. }
         | ASTNode::FunctionDeclaration { scope, .. }
         | ASTNode::StructInstantiation { scope, .. }
         | ASTNode::StructInstantiationField { scope, .. }
@@ -877,13 +812,12 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
                     let return_type = visit_function_call(name, args, state, *scope, code_span);
                     // Non-void functions must have their results used
                     if return_type != NailDataTypeDescriptor::Void && 
-                       return_type != NailDataTypeDescriptor::Never && 
                        return_type != NailDataTypeDescriptor::FailedToResolve {
                         add_error_with_help(state, format!("The value returned by '{}' is silently discarded here", name), Some(format!("assign it to a variable: result:<type> = {}(...); Nail has no bare expression statements for value-returning calls", name)), code_span);
                     }
                 } else {
                     report_a_dropped_value(statement, state);
-                    visit_node(statement, state);
+                    visit_statement(statement, state);
                 }
             }
         }
@@ -927,8 +861,7 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
                 add_error_with_help(state, format!("There is no variable named '{}' in this scope", name), help, code_span);
             }
         }
-        ASTNode::IfStatement { condition_branches, else_branch, .. } => visit_if_statement(condition_branches, else_branch, state),
-        ASTNode::ForLoop { iterator, iterable, initial_value, filter, body, scope, .. } => visit_for_loop(iterator, iterable, initial_value, filter, body, state, *scope),
+        ASTNode::IfStatement { condition_branches, else_branch, .. } => visit_if_statement(condition_branches, else_branch, state, IfPosition::Expression),
         ASTNode::MapExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_map_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::FilterExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_filter_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::ReduceExpression { accumulator, iterator, index_iterator, iterable, initial_value, body, scope, .. } => visit_fold_expression("reduce", accumulator, iterator, index_iterator, iterable, initial_value, body, state, *scope),
@@ -937,10 +870,7 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
         ASTNode::FindExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_find_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::AllExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_all_expression(iterator, index_iterator, iterable, body, state, *scope),
         ASTNode::AnyExpression { iterator, index_iterator, iterable, body, scope, .. } => visit_any_expression(iterator, index_iterator, iterable, body, state, *scope),
-        ASTNode::Loop { index_iterator, body, scope, .. } => visit_loop(index_iterator, body, state, *scope),
-        ASTNode::SpawnBlock { body, .. } => visit_spawn_block(body, state),
-        ASTNode::BreakStatement { code_span, .. } => visit_break_statement(state, code_span),
-        ASTNode::ContinueStatement { code_span, .. } => visit_continue_statement(state, code_span),
+        ASTNode::Forever { body, scope, .. } => visit_forever(body, state, *scope),
         ASTNode::StructDeclaration { name, fields, code_span, .. } => visit_struct_declaration(name, fields, state, code_span),
         ASTNode::StructFieldAccess { struct_name, field_name, code_span, .. } => visit_struct_field_access(struct_name, field_name, state, code_span),
         ASTNode::NestedFieldAccess { object, field_name, code_span, .. } => visit_nested_field_access(object, field_name, state, code_span),
@@ -955,11 +885,11 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
         ASTNode::YieldDeclaration { statement, code_span, .. } => visit_yield_declaration(statement, state, code_span),
         ASTNode::ParallelBlock { statements, .. } => {
             check_one_name_each("parallel", statements, state);
-            statements.iter_mut().for_each(|statement| visit_node(statement, state));
+            statements.iter_mut().for_each(|statement| visit_statement(statement, state));
         }
         ASTNode::ConcurrentBlock { statements, .. } => {
             check_one_name_each("concurrent", statements, state);
-            statements.iter_mut().for_each(|statement| visit_node(statement, state));
+            statements.iter_mut().for_each(|statement| visit_statement(statement, state));
         }
         ASTNode::Block { statements, scope, .. } => {
             // A function's body shares the scope its parameters live in.
@@ -981,7 +911,6 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
                     let return_type = visit_function_call(name, args, state, *scope, code_span);
                     // Non-void functions must have their results used
                     if return_type != NailDataTypeDescriptor::Void && 
-                       return_type != NailDataTypeDescriptor::Never && 
                        return_type != NailDataTypeDescriptor::FailedToResolve {
                         add_error_with_help(state, format!("The value returned by '{}' is silently discarded here", name), Some(format!("assign it to a variable: result:<type> = {}(...); Nail has no bare expression statements for value-returning calls", name)), code_span);
                     }
@@ -989,7 +918,7 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
                     if index != last_index {
                         report_a_dropped_value(statement, state);
                     }
-                    visit_node(statement, state);
+                    visit_statement(statement, state);
                 }
             }
 
@@ -999,7 +928,6 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
                 state.scope_arena.exit_scope();
             }
         }
-        ASTNode::LambdaDeclaration { params, body, code_span, .. } => visit_lambda_declaration(params, body, state, code_span),
         ASTNode::StringLiteral { .. } => {},  // Literals don't need additional processing
         // Numbers are range checked in one pass over the finished tree, by
         // check_number_literals, so that no path into a literal can miss one.
@@ -1011,7 +939,30 @@ fn visit_node_inner(node: &mut ASTNode, state: &mut AnalyzerState, current_scope
             let mut code_span = code_span.clone();
             visit_struct_instantiation(&name, fields, state, &mut code_span);
         }
-        ASTNode::EnumVariant { .. } => {},  // Enum variants don't need additional processing
+        ASTNode::EnumVariant { name, variant, code_span, .. } => {
+            // A use of Enum::Variant reaches rustc as exactly that path, so a
+            // variant the enum does not have must be refused here, not by
+            // rustc in Rust the program never wrote. The table already holds
+            // the stdlib's enums, so one lookup covers both.
+            let enum_name = name.clone();
+            let variant_name = variant.clone();
+            let mut span = code_span.clone();
+            let variant_exists = state.enum_variants.get(&enum_name).map(|variants| variants.contains(&variant_name));
+            match variant_exists {
+                None => add_error(state, format!("There is no enum named '{}'", enum_name), &mut span),
+                Some(false) => {
+                    let mut known: Vec<String> = state.enum_variants.get(&enum_name).map(|variants| variants.iter().cloned().collect()).unwrap_or_default();
+                    known.sort();
+                    add_error_with_help(
+                        state,
+                        format!("Enum '{}' has no variant '{}'", enum_name, variant_name),
+                        Some(format!("its variants are {}", known.join(", "))),
+                        &mut span,
+                    );
+                }
+                Some(true) => {}
+            }
+        }
         _ => {
             panic!("visit_node: unhandled node type");
         }
@@ -1196,6 +1147,11 @@ fn value_source(value: &ASTNode, value_type: &NailDataTypeDescriptor, state: &An
 }
 
 fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value: &mut ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
+    // A v is nothing, so a binding of type v would be a name for nothing.
+    // Whatever produced it is a statement, and is written as one.
+    if *data_type == NailDataTypeDescriptor::Void {
+        add_error_with_help(state, format!("Cannot bind a void: '{}' is declared as v (void), so there is nothing to hold", name), Some("call it as a statement on its own line, without the binding".to_string()), code_span);
+    }
     // Shadowing a variable from an enclosing scope is refused: the shadow
     // dies with this block, so code after the block sees the outer value
     // again, which is a silently wrong answer rather than anything a shadow
@@ -1223,6 +1179,31 @@ fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value
     // Visit the value node to ensure proper scope setup for collection expressions
     visit_node(value, state);
 
+    // An if that is this declaration's value must give a value in every
+    // branch. Naming the branch that does not beats the general mismatch
+    // below, which would report the whole if and send the eye everywhere but
+    // the one branch missing its r.
+    let mut a_branch_never_yields = false;
+    if *data_type != NailDataTypeDescriptor::Void {
+        if let ASTNode::IfStatement { condition_branches, else_branch, .. } = &*value {
+            let mut branches: Vec<&ASTNode> = condition_branches.iter().map(|(_, branch)| branch.as_ref()).collect();
+            if let Some(else_node) = else_branch.as_deref() {
+                branches.push(else_node);
+            }
+            for branch in branches {
+                if check_type(branch, state) == NailDataTypeDescriptor::Void {
+                    a_branch_never_yields = true;
+                    add_error_with_help(
+                        state,
+                        "This branch never gives the if a value".to_string(),
+                        Some(format!("the if's value becomes '{}', so every branch must end with r <value>;", name)),
+                        &mut branch.code_span(),
+                    );
+                }
+            }
+        }
+    }
+
     // Check the declared type against the value's inferred type. Only fully
     // concrete inferred types are compared, so an earlier inference failure
     // (already reported) doesn't cascade into a second confusing error here.
@@ -1248,7 +1229,7 @@ fn visit_const_declaration(name: &str, data_type: &NailDataTypeDescriptor, value
                 &mut value_span,
             );
         }
-    } else if is_concrete_type(data_type) && is_concrete_type(&value_type) && *data_type != value_type {
+    } else if is_concrete_type(data_type) && is_concrete_type(&value_type) && *data_type != value_type && !a_branch_never_yields {
         add_error_with_help(
             state,
             format!("'{}' is declared as {} but {}", name, data_type.describe(), says_where),
@@ -1304,13 +1285,23 @@ fn visit_unary_operation(operator: &Operation, operand: &mut ASTNode, state: &mu
         }
     }
 
-    if *operator == Operation::Neg && fold_int(operand, state, state.scope_arena.current_scope()) == Folded::Overflows {
-        add_error_with_help(
-            state,
-            "Negating this number leaves the range of i".to_string(),
-            Some(format!("i holds whole numbers from {} to {}, and the smallest of those has no positive twin", i64::MIN, i64::MAX)),
-            code_span,
-        );
+    // What overflows is this negation, not just something inside the operand,
+    // so the operand's folded value is negated here before judging. That is
+    // how -(-9223372036854775808) is caught: the operand is the smallest i,
+    // in range on its own, and the negation is the step with no answer.
+    if *operator == Operation::Neg {
+        let negated = match fold_int(operand, state, state.scope_arena.current_scope()) {
+            Folded::Int(number) => number.checked_neg().map_or(Folded::Overflows, Folded::Int),
+            other => other,
+        };
+        if negated == Folded::Overflows {
+            add_error_with_help(
+                state,
+                "Negating this number leaves the range of i".to_string(),
+                Some(format!("i holds whole numbers from {} to {}, and the smallest of those has no positive twin", i64::MIN, i64::MAX)),
+                code_span,
+            );
+        }
     }
 }
 
@@ -1439,7 +1430,30 @@ fn visit_binary_operation(left: &mut ASTNode, operator: &Operation, right: &mut 
     }
 }
 
-fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], else_branch: &mut Option<Box<ASTNode>>, state: &mut AnalyzerState) {
+/// Where an if sits decides what its branches may do with r. An if that is
+/// an expression (a declaration's value, an array element, a yielded or
+/// returned value, an argument) hands its value back through r, so r is
+/// legal in its branches wherever the if itself sits. An if that is a
+/// statement, written directly in a block or at the top level, produces
+/// nothing, and its branches live by the rules of their surroundings, so a
+/// bare r inside one at the top level is refused the way any bare r is.
+#[derive(Clone, Copy, PartialEq)]
+enum IfPosition {
+    Expression,
+    Statement,
+}
+
+/// Visits one statement of a block, a parallel or concurrent block, or the
+/// program. That is the only place an if is a statement rather than an
+/// expression.
+fn visit_statement(statement: &mut ASTNode, state: &mut AnalyzerState) {
+    match statement {
+        ASTNode::IfStatement { condition_branches, else_branch, .. } => visit_if_statement(condition_branches, else_branch, state, IfPosition::Statement),
+        other => visit_node(other, state),
+    }
+}
+
+fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], else_branch: &mut Option<Box<ASTNode>>, state: &mut AnalyzerState, position: IfPosition) {
     // An if with no condition tests nothing, so only its else can ever run.
     // The Rust that came out of one was an `else` with no `if` in front of it.
     if condition_branches.is_empty() {
@@ -1453,14 +1467,15 @@ fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], e
         }
     }
 
-    // When if is used as an expression (e.g., x = if {...}), the branches can contain return statements
-    // to return values from the if expression itself. We need to temporarily allow returns.
+    // An if that is an expression gives its value through the r statements
+    // in its branches, so those are legal whatever surrounds the if. An if
+    // that is a statement inherits its surroundings' rules: forcing returns
+    // to be legal in every branch let a bare r deep inside top-level if
+    // statements pass the checker and fail as Rust.
     let prev_context = state.return_context.clone();
-
-    // Check if this if statement is being used as an expression by looking at context
-    // For now, we'll allow returns in all if branches since they can be used as expressions
-    state.return_context = ReturnContext::Function;
-
+    if position == IfPosition::Expression {
+        state.return_context = ReturnContext::Function;
+    }
     for (condition, branch) in condition_branches.iter_mut() {
         visit_node(condition, state);
         visit_node(branch, state);
@@ -1468,8 +1483,6 @@ fn visit_if_statement(condition_branches: &mut [(Box<ASTNode>, Box<ASTNode>)], e
     if let Some(branch) = else_branch {
         visit_node(branch, state);
     }
-
-    // Restore the original context
     state.return_context = prev_context;
 }
 
@@ -1537,62 +1550,6 @@ fn visit_map_expression(iterator: &str, index_iterator: &Option<String>, iterabl
     // The scope itself is kept - later type checking resolves through it -
     // but it stops being the current one, so the iterator cannot shadow
     // anything after the block.
-    state.scope_arena.exit_scope();
-}
-
-fn visit_for_loop(iterator: &str, iterable: &mut ASTNode, initial_value: &mut Option<Box<ASTNode>>, filter: &mut Option<Box<ASTNode>>, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
-    // First visit the iterable to ensure it's valid
-    visit_node(iterable, state);
-    
-    // Create a new scope for the loop body
-    let loop_scope = state.scope_arena.push_scope();
-    
-    // Get the type of the iterable
-    let iterable_type = check_type(iterable, state);
-    
-    // Determine the iterator type based on the iterable type
-    let iterator_type = match &iterable_type {
-        NailDataTypeDescriptor::Array(element_type) => (**element_type).clone(),
-        NailDataTypeDescriptor::String => NailDataTypeDescriptor::String, // Could be char in future
-        _ => {
-            if !iterable_type.is_unresolved() {
-                add_error_with_help(state, format!("'for' loops over arrays and strings, but this is neither, it is just {}", iterable_type.describe()), collection_op_help("for", iterable), &mut iterable.code_span());
-            }
-            NailDataTypeDescriptor::FailedToResolve
-        }
-    };
-    
-    // Add the iterator variable to the loop scope
-    if let Some(scope_data) = state.scope_arena.scopes.get_mut(loop_scope) {
-        scope_data.symbols.insert(
-            iterator.to_string(),
-            Symbol {
-                name: iterator.to_string(),
-                data_type: iterator_type,
-                is_used: true, // Mark as used since it's a loop variable
-            },
-        );
-    }
-    
-    // Update the body's scope to the loop scope
-    update_node_scope(body, loop_scope);
-    
-    // Loops that can collect values need return statements
-    let prev_context = state.return_context.clone();
-    state.return_context = ReturnContext::CollectionExpression;
-    
-    // Visit the body
-    visit_node(body, state);
-    
-    // Restore the original context
-    state.return_context = prev_context;
-
-    // The scope itself stays in the arena, because later type checking
-    // resolves names through it, but it stops being the current one: the
-    // iterator and anything declared in the body belong to the loop. Leaving
-    // it current meant they stayed visible after the loop, so a use of the
-    // iterator below the closing brace passed every check and then failed to
-    // build as Rust, where the binding really had ended.
     state.scope_arena.exit_scope();
 }
 
@@ -2027,59 +1984,8 @@ fn visit_any_expression(iterator: &str, index_iterator: &Option<String>, iterabl
 }
 
 
-fn visit_loop(index_iterator: &Option<String>, body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
-    // Mark that we're in a loop context for break/continue validation
-    let previous_in_loop = state.in_loop;
-    state.in_loop = true;
-    
-    // Create a new scope for the loop body if there's an index iterator
-    if index_iterator.is_some() {
-        let loop_scope = state.scope_arena.push_scope();
-        update_node_scope(body, loop_scope);
-        
-        // Add the index iterator to the scope
-        if let Some(idx_name) = index_iterator {
-            let scope_data = state.scope_arena.get_scope_mut(loop_scope);
-            scope_data.symbols.insert(
-                idx_name.clone(),
-                Symbol {
-                    name: idx_name.clone(),
-                    data_type: NailDataTypeDescriptor::Int,
-                    is_used: false,
-                },
-            );
-        }
-    }
-    
-    // Visit the body
+fn visit_forever(body: &mut ASTNode, state: &mut AnalyzerState, _scope: usize) {
     visit_node(body, state);
-    
-    // Leave the scope if we created one
-    if index_iterator.is_some() {
-        state.scope_arena.exit_scope();
-    }
-    
-    // Restore previous loop context
-    state.in_loop = previous_in_loop;
-}
-
-fn visit_spawn_block(body: &mut ASTNode, state: &mut AnalyzerState) {
-    // Visit the body - spawn blocks run asynchronously
-    visit_node(body, state);
-}
-
-fn visit_break_statement(state: &mut AnalyzerState, code_span: &CodeSpan) {
-    // Check if we're in a loop
-    if !state.in_loop {
-        add_error(state, "break statement can only be used inside a loop".to_string(), &mut code_span.clone());
-    }
-}
-
-fn visit_continue_statement(state: &mut AnalyzerState, code_span: &CodeSpan) {
-    // Check if we're in a loop
-    if !state.in_loop {
-        add_error(state, "continue statement can only be used inside a loop".to_string(), &mut code_span.clone());
-    }
 }
 
 fn visit_struct_field_access(struct_name: &str, field_name: &str, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
@@ -2442,9 +2348,22 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
         if args.is_empty() {
             add_error(state, "print expects at least 1 argument, got 0".to_string(), code_span);
         }
-        // Type check all arguments (print accepts any type)
+        // print takes any value, and only values: a function is a thing to
+        // call, and a void is the absence of a value. Both used to pass here
+        // and fail as generated Rust.
         for arg in args.iter_mut() {
             visit_node(arg, state);
+            let arg_type = check_type(arg, state);
+            match arg_type {
+                NailDataTypeDescriptor::Fn(..) => {
+                    let shown = match arg { ASTNode::Identifier { name, .. } => name.clone(), _ => "this".to_string() };
+                    add_error_with_help(state, format!("Cannot print a function: '{}' is a function's name, not something it returned", shown), Some(format!("write print({}(...)) with its arguments to print what it returns", shown)), &mut arg.code_span());
+                }
+                NailDataTypeDescriptor::Void => {
+                    add_error(state, "Cannot print a void: what was handed here returns v (void), so there is nothing to print".to_string(), &mut arg.code_span());
+                }
+                _ => {}
+            }
         }
         return NailDataTypeDescriptor::Void;
     }
@@ -2462,14 +2381,7 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
         }
 
         // Check that the second argument (error handler) accepts error type
-        if let ASTNode::LambdaDeclaration { params, .. } = &args[1] {
-            if params.len() == 1 {
-                let (_, param_type) = &params[0];
-                if *param_type != NailDataTypeDescriptor::Error {
-                    add_error(state, format!("The error handler passed to 'safe' must take a parameter of type :e (an error), but this parameter is {}", param_type.describe()), code_span);
-                }
-            }
-        } else if let ASTNode::Identifier { name: handler_name, .. } = &args[1] {
+        if let ASTNode::Identifier { name: handler_name, .. } = &args[1] {
             // Check if it's a function that takes error type
             let handler_type = lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), handler_name).map(|s| s.data_type.clone());
             if let Some(NailDataTypeDescriptor::Fn(param_types, _)) = handler_type {
@@ -2490,7 +2402,6 @@ fn visit_function_call(name: &str, args: &mut [ASTNode], state: &mut AnalyzerSta
         // returns has to be what the call would have produced. Without this
         // the mismatch only surfaces as an error in the generated Rust.
         let handler_return = match &args[1] {
-            ASTNode::LambdaDeclaration { data_type, .. } => Some(data_type.clone()),
             ASTNode::Identifier { name: handler_name, .. } => match lookup_symbol(&state.scope_arena, state.scope_arena.current_scope(), handler_name).map(|symbol| symbol.data_type.clone()) {
                 Some(NailDataTypeDescriptor::Fn(_, returns)) => Some((*returns).clone()),
                 _ => None,
@@ -2725,7 +2636,7 @@ fn collect_return_types(node: &ASTNode, return_types: &mut Vec<NailDataTypeDescr
             }
         }
         // Don't recurse into nested functions or loops
-        ASTNode::ForLoop { .. } | ASTNode::MapExpression { .. } => {}
+        ASTNode::MapExpression { .. } => {}
         _ => {
             panic!("collect_return_types: unhandled node type");
         }
@@ -2810,7 +2721,6 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
         }
         ASTNode::Program { statements, .. } => statements.last().map_or(NailDataTypeDescriptor::OneOf(vec![]), |stmt| check_type(stmt, state)),
         ASTNode::FunctionDeclaration { data_type, .. } => data_type.clone(),
-        ASTNode::LambdaDeclaration { data_type, .. } => data_type.clone(),
         ASTNode::IfStatement { condition_branches, else_branch, .. } => {
             // For if expressions, check all branches and ensure they return the same type
             let mut return_type: Option<NailDataTypeDescriptor> = None;
@@ -2859,98 +2769,18 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
                     return check_type(statement, state);
                 }
             }
-            // Otherwise, the type is the type of the last statement
-            statements.last().map_or(NailDataTypeDescriptor::OneOf(vec![]), |stmt| check_type(stmt, state))
-        }
-        ASTNode::ForLoop { body, iterator, iterable, scope, .. } => {
-            // For loops return the type of their body
-            // First, get the type of the iterable
-            let iterable_type = check_type(iterable, state);
-            let element_type = match &iterable_type {
-                NailDataTypeDescriptor::Array(elem_type) => (**elem_type).clone(),
-                _ => NailDataTypeDescriptor::FailedToResolve,
-            };
-            
-            // If the body contains return statements, it's collecting values
-            if let ASTNode::Block { statements, .. } = body.as_ref() {
-                // Look for return or yield statements in the body
-                for stmt in statements {
-                    if let ASTNode::ReturnDeclaration { statement, .. } = stmt {
-                        // The loop will collect values of the return type
-                        // For simple identifiers, check if it's the iterator
-                        if let ASTNode::Identifier { name, .. } = statement.as_ref() {
-                            if name == iterator {
-                                return NailDataTypeDescriptor::Array(Box::new(element_type));
-                            }
-                        }
-                        
-                        // For more complex expressions, we need to temporarily add the iterator 
-                        // to the scope to type check the return expression properly
-                        // Since check_type is immutable, we'll use a simpler approach:
-                        // If it's a binary operation involving the iterator, infer the type
-                        let return_type = match statement.as_ref() {
-                            ASTNode::BinaryOperation { left, operator, right, .. } => {
-                                // Check if one side is the iterator
-                                let left_is_iterator = matches!(left.as_ref(), ASTNode::Identifier { name, .. } if name == iterator);
-                                let right_is_iterator = matches!(right.as_ref(), ASTNode::Identifier { name, .. } if name == iterator);
-                                
-                                if left_is_iterator || right_is_iterator {
-                                    // Infer type based on operation and element type
-                                    match (operator, &element_type) {
-                                        (Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod, 
-                                         NailDataTypeDescriptor::Int | NailDataTypeDescriptor::Float) => element_type.clone(),
-                                        // String concatenation with + is not supported in Nail
-                                        _ => NailDataTypeDescriptor::FailedToResolve,
-                                    }
-                                } else {
-                                    check_type(statement, state)
-                                }
-                            }
-                            _ => check_type(statement, state),
-                        };
-                        
-                        return NailDataTypeDescriptor::Array(Box::new(return_type));
-                    }
-                    if let ASTNode::YieldDeclaration { statement, .. } = stmt {
-                        // The loop will collect values of the yield type
-                        // For simple identifiers, check if it's the iterator
-                        if let ASTNode::Identifier { name, .. } = statement.as_ref() {
-                            if name == iterator {
-                                return NailDataTypeDescriptor::Array(Box::new(element_type));
-                            }
-                        }
-                        
-                        // For more complex expressions, we need to temporarily add the iterator 
-                        // to the scope to type check the yield expression properly
-                        // Since check_type is immutable, we'll use a simpler approach:
-                        // If it's a binary operation involving the iterator, infer the type
-                        let return_type = match statement.as_ref() {
-                            ASTNode::BinaryOperation { left, operator, right, .. } => {
-                                // Check if one side is the iterator
-                                let left_is_iterator = matches!(left.as_ref(), ASTNode::Identifier { name, .. } if name == iterator);
-                                let right_is_iterator = matches!(right.as_ref(), ASTNode::Identifier { name, .. } if name == iterator);
-                                
-                                if left_is_iterator || right_is_iterator {
-                                    // Infer type based on operation and element type
-                                    match (operator, &element_type) {
-                                        (Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod, 
-                                         NailDataTypeDescriptor::Int | NailDataTypeDescriptor::Float) => element_type.clone(),
-                                        // String concatenation with + is not supported in Nail
-                                        _ => NailDataTypeDescriptor::FailedToResolve,
-                                    }
-                                } else {
-                                    check_type(statement, state)
-                                }
-                            }
-                            _ => check_type(statement, state),
-                        };
-                        
-                        return NailDataTypeDescriptor::Array(Box::new(return_type));
-                    }
+            // With no r or y, the block's value is its last statement's, but
+            // only a statement that can BE a value counts. A declaration
+            // carries its declared type for its own checks, and reading that
+            // type here let a branch ending in a declaration pass for a value
+            // the branch never yields, refused later by rustc.
+            match statements.last() {
+                None => NailDataTypeDescriptor::OneOf(vec![]),
+                Some(ASTNode::ConstDeclaration { .. }) | Some(ASTNode::StructDeclaration { .. }) | Some(ASTNode::EnumDeclaration { .. }) | Some(ASTNode::FunctionDeclaration { .. }) => {
+                    NailDataTypeDescriptor::Void
                 }
+                Some(stmt) => check_type(stmt, state),
             }
-            // If no return statements, it's a void loop
-            NailDataTypeDescriptor::Void
         }
         ASTNode::MapExpression { body, .. } => {
             // A map is an array of whatever its body yields. Answering "an
@@ -3001,10 +2831,7 @@ fn check_type(node: &ASTNode, state: &AnalyzerState) -> NailDataTypeDescriptor {
             // Any returns boolean
             NailDataTypeDescriptor::Boolean
         }
-        ASTNode::Loop { .. } => NailDataTypeDescriptor::Void,
-        ASTNode::SpawnBlock { .. } => NailDataTypeDescriptor::Void,
-        ASTNode::BreakStatement { .. } => NailDataTypeDescriptor::Never,
-        ASTNode::ContinueStatement { .. } => NailDataTypeDescriptor::Never,
+        ASTNode::Forever { .. } => NailDataTypeDescriptor::Void,
         ASTNode::FunctionCall { name, args, .. } => {
             // Special handling for error constructor
             if name == "e" {
@@ -3440,6 +3267,10 @@ fn has_return_statement(node: &ASTNode) -> bool {
     match node {
         ASTNode::ReturnDeclaration { .. } => true,
         ASTNode::YieldDeclaration { .. } => true,
+        // A forever block has no way out but a return from inside it (there
+        // is no break), so nothing after it ever runs and a path that reaches
+        // it has ended.
+        ASTNode::Forever { .. } => true,
         ASTNode::Block { statements, .. } => statements.last().map_or(false, |stmt| has_return_statement(stmt)),
         ASTNode::IfStatement { condition_branches, else_branch, .. } => {
             // All branches must return for the if statement to return
@@ -3467,38 +3298,6 @@ fn has_return_statement(node: &ASTNode) -> bool {
         }
         _ => false,
     }
-}
-
-fn visit_lambda_declaration(params: &[(String, NailDataTypeDescriptor)], body: &mut Box<ASTNode>, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
-    // Check if we're already inside a lambda (nested lambdas not allowed)
-    if state.scope_arena.current_scope() > GLOBAL_SCOPE + 1 {
-        // Check if any parent scope is a lambda scope
-        if state.scope_arena.is_in_lambda() {
-            add_error(state, "Nested lambdas are not allowed in Nail".to_string(), code_span);
-            return;
-        }
-    }
-
-    // Create a new scope for the lambda
-    let lambda_scope = state.scope_arena.push_scope();
-    state.scope_arena.mark_as_lambda(lambda_scope);
-
-    // Add parameters to the lambda scope
-    for (param_name, param_type) in params {
-        add_symbol(state, Symbol { name: param_name.clone(), data_type: param_type.clone(), is_used: false });
-    }
-
-    // Update the lambda body's scope
-    if let ASTNode::Block { scope, .. } = body.as_mut() {
-        *scope = lambda_scope;
-    }
-
-    // Visit the lambda body
-    visit_node(body, state);
-
-    // Kept in the arena for the later type-checking pass, but no longer the
-    // current scope: a lambda parameter must not outlive the lambda.
-    state.scope_arena.exit_scope();
 }
 
 fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &ASTNode, state: &mut AnalyzerState, code_span: &mut CodeSpan) {
@@ -3561,6 +3360,9 @@ fn check_function_return(name: &str, data_type: &NailDataTypeDescriptor, body: &
             // Yield statements are not allowed in function returns
             add_error(state, format!("Cannot use 'y' (yield) in function '{}' - use 'r' (return) instead", name), code_span);
         }
+        // A forever block runs until a return inside it, so a function that
+        // ends in one never reaches the closing brace without a value.
+        Some(ASTNode::Forever { .. }) => {}
         Some(ASTNode::IfStatement { condition_branches, else_branch, .. }) => {
             // If statement can provide a return value if all branches return
             let mut all_branches_return = true;
@@ -3667,6 +3469,131 @@ mod tests {
             Ok(()) => Vec::new(),
             Err(errors) => errors.into_iter().map(|error| error.message).collect(),
         }
+    }
+
+    /// print accepted a function name and a void call as arguments, and
+    /// rustc refused the Rust (a fn item has no Debug, a unit is not a
+    /// value). Found by the fuzzer's mutate engine, which turned a
+    /// safe(x, handler) into print(print(x), handler).
+    #[test]
+    fn print_takes_values_only() {
+        let a_function = "f show_error(error_msg:e):s {\n    r `none`;\n}\nprint(show_error);";
+        let errors = check_errors(a_function);
+        assert!(errors.iter().any(|message| message.contains("Cannot print a function: 'show_error'")), "got: {:?}", errors);
+
+        let a_void = "print(print(`inner`));";
+        let errors = check_errors(a_void);
+        assert!(errors.iter().any(|message| message.contains("Cannot print a void")), "got: {:?}", errors);
+
+        let fine = "f twice(num:i):i {\n    r num * 2;\n}\nprint(twice(2), 1, `two`);";
+        assert!(check_errors(fine).is_empty(), "values of any type still print, got: {:?}", check_errors(fine));
+    }
+
+    /// A forever block has no break, so the only way out of one inside a
+    /// function is a return from inside it, and a function whose body ends in one has
+    /// no path that reaches its closing brace. It used to be refused for a
+    /// missing return statement.
+    #[test]
+    fn a_function_may_end_in_a_forever_block_because_it_never_falls_through() {
+        let returns_from_inside = "f wait_for(path:s):s {\n    forever {\n        if {\n            path_exists(path) -> { r danger(fs_read(path)); },\n            else -> { time_sleep(1.0); }\n        }\n    }\n}\nprint(wait_for(`config.toml`));";
+        assert!(check_errors(returns_from_inside).is_empty(), "a function ending in a forever block is complete, got: {:?}", check_errors(returns_from_inside));
+
+        let nothing_after_the_if = "f first_square_past(limit:i):i {\n    if {\n        limit < 0 -> { r 0; },\n        else -> { print(limit); }\n    }\n}\nprint(first_square_past(50));";
+        let errors = check_errors(nothing_after_the_if);
+        assert!(errors.iter().any(|message| message.contains("Missing return statement")), "an if that does not return on every branch is still refused, got: {:?}", errors);
+    }
+
+    /// break, continue and when are not part of the language. The first two
+    /// are refused by name with the same kind of pointer the while keyword
+    /// gets, because someone typing them is reaching for a habit and needs
+    /// the Nail spelling. when is an ordinary word.
+    #[test]
+    fn break_and_continue_are_refused_by_name_and_when_is_a_plain_word() {
+        for (word, pointer) in [("break", "leave a forever block inside a function with 'r'"), ("continue", "choose the elements with 'filter'")] {
+            let program = format!("forever {{\n    print(`tick`);\n    {};\n}}", word);
+            let tokens = lexer(&program);
+            let errors = crate::lexer::collect_lexer_errors(&tokens);
+            assert!(errors.iter().any(|error| error.message.contains(&format!("Nail has no '{}'", word)) && error.message.contains(pointer)), "{} must be refused with a pointer, got: {:?}", word, errors);
+        }
+        let when_is_a_name = "when:s = `now`;\nprint(when);";
+        assert!(check_errors(when_is_a_name).is_empty(), "when is an ordinary identifier, got: {:?}", check_errors(when_is_a_name));
+    }
+
+    /// A use of Enum::Variant went entirely unvalidated, so a variant the
+    /// enum does not have passed the checker and failed as generated Rust.
+    /// Found by the fuzzer's check-implies-build oracle. One table covers
+    /// the program's enums and the stdlib's.
+    #[test]
+    fn an_enum_variant_must_exist_to_be_named() {
+        let missing_variant = "enum Direction { North, South }\nheading:Direction = Direction::East;\nprint(`unreached`);";
+        let errors = check_errors(missing_variant);
+        assert!(errors.iter().any(|message| message.contains("Enum 'Direction' has no variant 'East'")), "a variant the enum lacks must be refused, got: {:?}", errors);
+
+        let missing_enum = "flag:b = Nowhere::North == Nowhere::North;\nprint(flag);";
+        let errors = check_errors(missing_enum);
+        assert!(errors.iter().any(|message| message.contains("There is no enum named 'Nowhere'")), "a variant of an enum that does not exist must be refused, got: {:?}", errors);
+
+        let stdlib_typo = "stamp:s = danger(time_format(time_now(), TIME_Format::IS8601));\nprint(stamp);";
+        let errors = check_errors(stdlib_typo);
+        assert!(errors.iter().any(|message| message.contains("Enum 'TIME_Format' has no variant 'IS8601'")), "a stdlib enum typo must be refused, got: {:?}", errors);
+
+        let sound = "enum Direction { North, South }\nheading:Direction = Direction::North;\nprint(`fine`);";
+        assert!(check_errors(sound).is_empty(), "a variant the enum has stays accepted");
+    }
+
+    /// The smallest i has no positive twin, so negating it overflows. It
+    /// arrived written --9223372036854775808, which the range check read as
+    /// a negated literal in range, and rustc then refused the build. Found
+    /// by the fuzzer's check-implies-build oracle.
+    #[test]
+    fn negating_the_smallest_int_is_an_overflow() {
+        let double_negation = "print(--9223372036854775808 * 7);";
+        let errors = check_errors(double_negation);
+        assert!(errors.iter().any(|message| message.contains("leaves the range of i")), "negating the smallest i must be refused, got: {:?}", errors);
+
+        let smallest = "smallest:i = -9223372036854775808;\nprint(smallest);";
+        assert!(check_errors(smallest).is_empty(), "the smallest i stays writable");
+    }
+
+    /// A value-position if branch that ended in a declaration instead of an
+    /// r passed the checker, because a block with no r read its type off its
+    /// last statement and a declaration answers with its declared type.
+    /// Found by the fuzzer's check-implies-build oracle.
+    #[test]
+    fn an_if_used_as_a_value_needs_every_branch_to_yield() {
+        let missing_r = "result:i = if {\n    true -> { inner_value:i = 200; },\n    else -> { r 7; }\n};\nprint(result);";
+        let errors = check_errors(missing_r);
+        assert!(errors.iter().any(|message| message.contains("never gives the if a value")), "a branch ending in a declaration must be refused, got: {:?}", errors);
+        assert!(errors.len() == 1, "the branch error replaces the general mismatch, got: {:?}", errors);
+
+        let sound = "result:i = if {\n    true -> { inner_value:i = 200; r inner_value; },\n    else -> { r 7; }\n};\nprint(result);";
+        assert!(check_errors(sound).is_empty(), "a branch that declares and then yields stays accepted");
+
+        let branch_type_mismatch = "result:i = if {\n    true -> { r `words`; },\n    else -> { r 7; }\n};\nprint(result);";
+        let errors = check_errors(branch_type_mismatch);
+        assert!(errors.iter().any(|message| message.contains("declared as an integer")), "a branch of the wrong type still reports the mismatch, got: {:?}", errors);
+    }
+
+    /// Branches of every if once allowed r unconditionally, so a bare r deep
+    /// inside top-level if statements passed the checker and broke the Rust
+    /// build. An if written as a statement inherits its surroundings' rules
+    /// now, and an if that is an expression, wherever it sits, keeps r as
+    /// the way a branch hands the if its value. Found by the fuzzer's
+    /// check-implies-build oracle.
+    #[test]
+    fn a_return_inside_a_statement_if_needs_a_function_around_it() {
+        let top_level = "if { true -> { r `loose`; }, else -> { } }\nprint(`after`);";
+        let errors = check_errors(top_level);
+        assert!(errors.iter().any(|message| message.contains("Return statement outside of function")), "a bare r inside a top-level if must be refused, got: {:?}", errors);
+
+        let in_function = "f pick(flag:b):i {\n    if {\n        flag -> { r 1; },\n        else -> { r 2; }\n    }\n}\nprint(pick(true));";
+        assert!(check_errors(in_function).is_empty(), "early returns through an if inside a function stay accepted");
+
+        let yielded_if = "total:i = reduce acc num in [1, 2, 3] from 0 {\n    y if {\n        num % 2 == 0 -> { r acc + num; },\n        else -> { r acc; }\n    };\n};\nprint(total);";
+        assert!(check_errors(yielded_if).is_empty(), "an if yielded as a value keeps r in its branches");
+
+        let if_as_element = "picks:a:i = [if { true -> { r 3; }, else -> { r -17; } }];\nprint(picks);";
+        assert!(check_errors(if_as_element).is_empty(), "an if that is an array element is an expression and keeps r");
     }
 
     #[test]

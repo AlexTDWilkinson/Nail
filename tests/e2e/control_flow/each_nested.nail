@@ -1,0 +1,7 @@
+nail latest
+// E2E: nested each loops over ranges
+each outer_num in array_range(0, 2) {
+    each inner_num in array_range(0, 2) {
+        print(outer_num, inner_num);
+    }
+}

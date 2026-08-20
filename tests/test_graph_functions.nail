@@ -1,0 +1,65 @@
+nail latest
+// Graph module: a graph is two parallel edge arrays, and every answer
+// comes back in the order the edges first mention nodes
+
+// Dependency order: each edge points from a prerequisite to what needs it
+build_from:a:s = [`schema`, `schema`, `api`];
+build_to:a:s = [`api`, `seed`, `web`];
+build_order:a:s = danger(graph_topological_sort(build_from, build_to));
+expected_order:a:s = [`schema`, `api`, `seed`, `web`];
+test_assert_equal_array(build_order, expected_order, `dependencies come out in build order`);
+
+straight:b = danger(graph_has_cycle(build_from, build_to));
+test_assert_equal_bool(straight, false, `a dependency chain has no cycle`);
+
+// Two tasks that each need the other first
+circular_from:a:s = [`wake`, `brew`];
+circular_to:a:s = [`brew`, `wake`];
+circular:b = danger(graph_has_cycle(circular_from, circular_to));
+test_assert_equal_bool(circular, true, `mutual prerequisites are a cycle`);
+
+// Int node ids work through the same bounded type variable
+int_from:a:i = [1, 2];
+int_to:a:i = [2, 3];
+int_order:a:i = danger(graph_topological_sort(int_from, int_to));
+expected_int_order:a:i = [1, 2, 3];
+test_assert_equal_array(int_order, expected_int_order, `int node ids sort the same way`);
+
+// Components read edges in either direction: this is batch union find
+pair_from:a:s = [`alice`, `bob`, `dana`];
+pair_to:a:s = [`bob`, `carol`, `erin`];
+groups:a:a:s = danger(graph_connected_components(pair_from, pair_to));
+test_assert_array_length(groups, 2, `two clusters of people`);
+first_group:a:s = danger(array_get(groups, 0));
+expected_first_group:a:s = [`alice`, `bob`, `carol`];
+test_assert_equal_array(first_group, expected_first_group, `alice, bob and carol are one cluster`);
+
+// Reachability follows edges one way, the start itself first
+dep_from:a:s = [`web`, `api`, `api`, `worker`];
+dep_to:a:s = [`api`, `db`, `cache`, `db`];
+pulled_in:a:s = danger(graph_reachable(dep_from, dep_to, `web`));
+expected_reach:a:s = [`web`, `api`, `db`, `cache`];
+test_assert_equal_array(pulled_in, expected_reach, `web pulls in api and everything api needs`);
+
+// Swapping the edge arrays asks what reaches a node instead
+uses_db:a:s = danger(graph_reachable(dep_to, dep_from, `db`));
+test_assert_array_contains(uses_db, `web`, `web is upstream of db`);
+test_assert_array_contains(uses_db, `worker`, `worker is upstream of db`);
+
+// Fewest edges, both ends included
+walk_from:a:s = [`home`, `home`, `park`, `mall`, `park`];
+walk_to:a:s = [`park`, `mall`, `office`, `office`, `mall`];
+route:a:s = danger(graph_shortest_path(walk_from, walk_to, `home`, `office`));
+expected_route:a:s = [`home`, `park`, `office`];
+test_assert_equal_array(route, expected_route, `two hops from home to office`);
+
+// The weighted route comes back with its cost attached
+road_from:a:s = [`home`, `home`, `park`];
+road_to:a:s = [`park`, `office`, `office`];
+tolls:a:f = [1.0, 5.0, 1.5];
+cheapest:GRAPH_Path = danger(graph_shortest_path_weighted(road_from, road_to, tolls, `home`, `office`));
+test_assert_equal_float(cheapest.cost, 2.5, 0.0001, `through the park costs 2.5`);
+expected_cheap_route:a:s = [`home`, `park`, `office`];
+test_assert_equal_array(cheapest.nodes, expected_cheap_route, `the cheap route goes through the park`);
+
+print(`graph module checks passed`);

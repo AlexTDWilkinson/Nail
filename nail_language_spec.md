@@ -35,7 +35,7 @@ To achieve its goals, Nail imposes the following restrictions:
 - No mutability - variables are immutable, with no exceptions. Rebinding a name is done by shadowing (a fresh declaration in the same scope), and accumulating across iterations is what `reduce` and `scan` are for.
 - No classes, inheritance, or traditional OOP constructs.
 - No manual memory allocation or management.
-- Two loop constructs only: `for` (which can yield values) and `loop` (a statement, with `break` and `continue`). No while loop.
+- No loops except `forever`, a block that runs until the program ends. Walking a collection is `each`, and building one is `map`, `filter`, `reduce` or `scan`. No for loop, no while loop, no break, no continue.
 - No traditional if statements (replaced by a pseudo match/switch expression).
 - No function or operator overloading.
 - No implicit returns.
@@ -60,9 +60,9 @@ Reserved keywords in Nail:
 
 ```
 f if else struct enum import import_dangerous
-for loop in from break continue when
+forever in from
 map filter reduce scan each find all any
-p /p c /c r y spawn
+p /p c /c r y
 ```
 
 Rust's own keywords (`fn`, `let`, `match`, `impl` and the rest) are also
@@ -167,21 +167,20 @@ Arithmetic is for numbers only; text is joined with `string_concat`.
 - `!` Logical NOT
 
 #### 4.5.4 Range Functions
-Nail provides range functions for creating sequences in for loops:
+Nail provides range functions for creating sequences to walk:
 
 ```nail-fragment
 // Range function creates arrays for iteration
 numbers:a:i = array_range(1, 5);  // Creates [1, 2, 3, 4] (end not included)
 
-// Use in for loops
-for index in array_range(0, 5) {
+// Walk a count with each
+each index in array_range(0, 5) {
     print(string_from(index));  // Prints 0, 1, 2, 3, 4
 }
 
-// Common patterns
-for index in array_range(0, array_length(numbers)) {
-    item:i = danger(array_get(numbers, index));
-    print(item);
+// The index comes with the element, so there is no need to count by hand
+each item index in numbers {
+    print(index, `: `, item);
 }
 ```
 
@@ -355,8 +354,8 @@ doubled:a:i = map num in numbers {
 };
 
 // Map with index access (no comma between iterators)
-indexed_values:a:s = map num idx in numbers {
-    y array_join([`Index `, string_from(idx), `: `, string_from(num)], ``);
+indexed_values:a:s = map num index in numbers {
+    y array_join([`Index `, string_from(index), `: `, string_from(num)], ``);
 };
 
 // Note: To map over characters in a string, first convert to array
@@ -375,8 +374,8 @@ evens:a:i = filter num in numbers {
 };
 
 // Filter with index (no comma between iterators)
-first_three:a:i = filter num idx in numbers {
-    y idx < 3;
+first_three:a:i = filter num index in numbers {
+    y index < 3;
 };
 ```
 
@@ -435,14 +434,9 @@ each num in numbers {
 }
 
 // With index (no comma between iterators)
-each num idx in numbers {
-    print(array_join([`[`, string_from(idx), `]: `, string_from(num)], ``));
+each num index in numbers {
+    print(array_join([`[`, string_from(index), `]: `, string_from(num)], ``));
 }
-
-// Each can also be assigned to a variable (expression form)
-each_result:v = each num in numbers {
-    print(array_join([`Number: `, string_from(num)], ``));
-};
 ```
 
 #### Find Operation
@@ -456,8 +450,8 @@ first_even:i = danger(find num in numbers {
 });
 
 // Find with index (no comma between iterators)
-third_element:i = danger(find num idx in numbers {
-    y idx == 2;
+third_element:i = danger(find num index in numbers {
+    y index == 2;
 });
 ```
 
@@ -472,7 +466,7 @@ all_positive:b = all num in numbers {
 };
 
 // Check if any negative (with index access)
-has_negative:b = any num idx in numbers {
+has_negative:b = any num index in numbers {
     y num < 0;
 };
 ```
@@ -510,94 +504,93 @@ evens:a:i = filter num in numbers {
 };
 ```
 
-### 6.4 For Loops
+### 6.4 Loops
 
-For loops iterate over arrays or function-generated ranges:
+#### No For Loop
 
-```nail
-// Range iteration - iterator can be any valid name
-for index in array_range(0, 5) {
-    print(string_from(index)); // Prints 0, 1, 2, 3, 4
-}
-
-// Iterator names are flexible
-for counter in array_range(1, 4) {
-    print(string_from(counter * counter)); // Prints 1, 4, 9
-}
-
-// Iterate over array elements directly
-numbers:a:i = [10, 20, 30];
-for value in numbers {
-    print(string_from(value));
-}
-
-// Common pattern: iterate by index with descriptive names
-for position in array_range(0, array_length(numbers)) {
-    current_num:i = danger(array_get(numbers, position));
-    print(`Index `, position, `: `, current_num);
-}
-```
+Nail has no `for` loop, and the keyword is refused with an error saying so.
+Walking a collection for its side effects is `each`, which also hands over the
+index (`each item index in items`), and building a value from a collection is
+`map`, `filter`, `reduce`, `scan`, `find`, `all` or `any`. Every one of them
+names the collection and the element the same way, so there is one shape to
+learn. A count is a collection too: `each index in array_range(0, 5)`.
 
 #### No While Loops
 
 Nail has no `while` loop, and the keyword is refused with an error saying so.
 Every job a while loop does has a better home: iterating a collection is
-`for`, building a value up as you go is `reduce` or `scan`, and repeating
-until some outside condition changes is `loop` with `break`. A while loop
-would also need mutable state to ever terminate, and Nail has no mutation.
+`each`, building a value up as you go is `reduce` or `scan`, repeating until
+something outside changes is a function that calls itself, and running
+until the program ends is `forever`. A while loop would also need mutable state to ever
+terminate, and Nail has no mutation.
 
-#### Loop (Infinite Loops)
+#### No Break or Continue
 
-Loop construct for explicit infinite loops with `break` and `continue` support:
+`break` and `continue` are refused the same way. A loop has no way to skip an
+element or stop early, and does not need one: `filter` picks the elements
+before the loop sees them, `array_take_while` cuts a collection off where a
+condition stops holding, and inside a function `r` leaves a forever block with
+the answer. A loop that has to stop is a collection being walked or a function
+being left, never a loop with an exit bolted on.
 
-```nail-fragment
-// Basic infinite loop with break
-loop {
-    print(`Looping...`);
-    break; // Must break to avoid infinite loop (immutable variables)
-}
+#### Forever
 
-// Indexed loop - provides automatic counter (still infinite until break)
-loop index {
-    print(string_from(index)); // index starts at 0, auto-increments each iteration
-    if {
-        index >= 10 -> { break; },     // Exits the loop
-        index == 5 -> { continue; },   // Skips to next iteration (index becomes 6)
-        else -> { }                    // keeps looping
-    }
-}
-
-// Key points about loop index:
-// - Still infinite by default (no built-in termination)
-// - index automatically increments each iteration (0, 1, 2, 3...)
-// - break and continue work as expected
-// - Provides counter without needing mutable variables
-```
-
-#### Spawn Blocks (Background Tasks)
-
-Spawn blocks run asynchronously in the background:
+`forever` is a block that runs until the program ends. It is for work that is
+meant to never stop, like a server accepting connections or a heartbeat in the
+background, and a program whose top level reaches a `forever` stays in it for
+as long as it runs:
 
 ```nail-fragment
-// Spawn a background task
-spawn {
-    print(`Background task started`);
-    time_sleep(1.0);
-    print(`Background task completed`);
-}
-
-// Main thread continues immediately
-print(`Main thread continues`);
-
-// Spawn with loop for continuous background processing
-spawn {
-    loop {
-        // Perform periodic task
-        health_check();
-        time_sleep(60.0); // Sleep 60 seconds
+// A heartbeat that runs for as long as the program does, in a c block
+// beside whatever else lives that long
+f heartbeat():v {
+    forever {
+        print(`still here`);
+        time_sleep(60.0);
     }
 }
 ```
+
+Inside a function, `r` leaves the block, and since a forever block never falls
+through, a function whose body ends in one needs no return after it:
+
+```nail
+f wait_for(path:s):s {
+    forever {
+        if {
+            path_exists(path) -> { r danger(fs_read(path)); },
+            else -> { time_sleep(1.0); }
+        }
+    }
+}
+print(wait_for(`config.toml`));
+```
+
+There is no counter. A block that cares how many times it has run is keeping
+state across passes, and state lives in a function's arguments (a function
+that calls itself with `attempt + 1`), in the program's own struct (what
+`game_run` and `tui_run` hand back to `update` every frame), or in the world.
+
+#### No Background Blocks
+
+Nail has no way to start work and walk away from it. Everything a program
+starts, it waits for: `c` runs its statements at once and ends when all of
+them have ended, and `p` does the same on threads. A server with a heartbeat
+is a `c` block holding two functions that run `forever`, and the program
+lives inside that block:
+
+```nail-fragment
+c
+    heartbeat();
+    serve();
+/c
+```
+
+Work that must outlive a request, like sending the email after the answer has
+gone out, is a job written somewhere a worker in that `c` block picks up,
+which also means it survives a restart. A block that ran behind the program's
+back could not be waited for, could not report an error, and was cut off
+wherever it stood when the program ended.
 
 ### 6.4 Collection Operation Transpilation
 
@@ -668,14 +661,8 @@ any_expression :=
 // - ALL collection operations use yield (y) statements, not return (r)
 // - This maintains Nail's principle of explicit yields in iterations
 
-for_loop :=
-    "for" identifier "in" expression ["from" expression] ["when" expression] block
-
-loop :=
-    "loop" [identifier] block
-
-spawn_block :=
-    "spawn" block
+forever :=
+    "forever" block
 
 parallel_block :=
     "p" statement* "/p"
@@ -692,17 +679,11 @@ return_statement :=
 yield_statement :=
     "y" expression ";"
 
-break_statement :=
-    "break" ";"
-
-continue_statement :=
-    "continue" ";"
-
 statement :=
     const_decl | struct_decl | enum_decl | function_decl |
-    if_expression | for_loop | loop |
-    spawn_block | parallel_block | concurrent_block |
-    return_statement | yield_statement | break_statement | continue_statement |
+    if_expression | forever |
+    parallel_block | concurrent_block |
+    return_statement | yield_statement |
     expression_statement
 
 expression_statement :=
@@ -1294,7 +1275,7 @@ functions, structs, and enums alike, and holds for every module: a name
 without a namespace reads as a word of the language itself.
 
 The language's own words are the only names with no namespace: `print`,
-`print_no_newline`, `danger`, `safe`, `expect`, `panic`, `todo` and `spawn`. Two registry tests
+`print_no_newline`, `danger`, `safe`, `expect`, `panic` and `todo`. Two registry tests
 enforce the rule, so a new stdlib name cannot skip it.
 
 ### The Library Describes Itself
@@ -1528,6 +1509,40 @@ The rest read a hashmap into a new one, leaving the original alone:
 - `hashmap_pick(map:h<K,V>, keys:a:K):h<K,V>` - Only the named keys
 - `hashmap_omit(map:h<K,V>, keys:a:K):h<K,V>` - Everything except the named keys
 
+### Graph Operations (`graph_*`)
+
+A graph is two parallel arrays: `edges_from[i] -> edges_to[i]` is one directed
+edge, the shape a language without tuples holds pairs in. A node exists by
+appearing in an edge, so an isolated node is simply not in the graph. Node ids
+are ints or strings (the `K` below). Every function answers in the order the
+edge arrays first mention nodes, so the same input always gives the same
+answer.
+
+- `graph_topological_sort(edges_from:a:K, edges_to:a:K):a:K!e` - An order that puts each edge's first node before its second. When every edge points from a prerequisite to what needs it, this is the order to build, migrate or load in. A cycle is the error, and the error names it
+- `graph_has_cycle(edges_from:a:K, edges_to:a:K):b!e` - Whether following the edges around can ever come back to a node already passed through
+- `graph_connected_components(edges_from:a:K, edges_to:a:K):a:a:K!e` - The groups of nodes that touch through edges read in either direction. This is what union find computes, delivered in one call
+- `graph_reachable(edges_from:a:K, edges_to:a:K, start:K):a:K!e` - Every node the edges lead to from the start, one way only, the start itself first. Swapping the two edge arrays turns the question around into what reaches this node
+- `graph_shortest_path(edges_from:a:K, edges_to:a:K, start:K, goal:K):a:K!e` - The route crossing the fewest edges, both ends included. No route is the error
+- `graph_shortest_path_weighted(edges_from:a:s, edges_to:a:s, weights:a:f, start:s, goal:s):GRAPH_Path!e` - The cheapest route when every edge carries a cost, one weight per edge by position, none of them negative
+
+The weighted route answers with two things at once, so it returns a struct
+rather than an array: `GRAPH_Path` carries the route in `nodes:a:s` and its
+total in `cost:f`. Its node ids are strings because a struct's fields name
+concrete types:
+
+```nail-fragment
+edges_from:a:s = [`home`, `home`, `park`];
+edges_to:a:s = [`park`, `office`, `office`];
+weights:a:f = [1.0, 5.0, 1.5];
+cheapest:GRAPH_Path = danger(graph_shortest_path_weighted(edges_from, edges_to, weights, `home`, `office`));
+print(cheapest.cost);
+```
+
+All of these mismatch-check the parallel arrays the way `array_zip_with` does,
+which is why every one of them can fail. Anything a graph function does not
+answer in one call - a spanning tree, weighted distances to everywhere - is a
+sign the data wants a real store: register the edges as rows and write SQL.
+
 ### Type Conversion
 - `int_from(value):i!e` - Convert to integer
 - `float_from(value):f!e` - Convert to float
@@ -1661,8 +1676,8 @@ nothing will open.
 
 Two things a program wants from sound: play this file, and beep when something
 finishes. Playing is synchronous - the call returns when the sound has finished
-- so a notification is one line; put it in a `spawn` block to carry on while it
-plays.
+- so a notification is one line. To carry on while it plays, run it in a `c`
+block beside the other work.
 
 - `audio_play_file(path:s):v!e` - Play a WAV, MP3, FLAC or Ogg Vorbis file
 - `audio_play_tone(hertz:f, seconds:f, volume:f):v!e` - 440.0 hertz is a concert A; 0.2 is a better volume for a notification than 1.0
@@ -2513,7 +2528,7 @@ the channel either way.
 Each websocket text frame is answered by the program's `handle_message(message:s,
 state:h<s,s>):s` - the return goes back to that one client, and the empty string
 means no reply. Broadcasts stay in `http_live_send`, called from wherever the
-program likes: a handler, a `spawn` loop, a watcher.
+program likes: a handler, a `forever` function in a `c` block, a watcher.
 
 ### XML (`xml_*`) and Feeds (`feed_*`)
 `xml_serialize(value, root_name:s):s!e` and `xml_deserialize(text:s):T!e` are the
@@ -2678,15 +2693,9 @@ expression :=
     binary_expression         // Binary operations (e.g., `a + b`)
     unary_expression          // Unary operations (e.g., `-a`, `!b`)
     if_expression             // Conditional expression (e.g., `if { condition -> { block } }`)
-    match_expression          // Pattern matching (e.g., `match x { ... }`)
     block                     // A sequence of statements inside `{}` (e.g., `{ stmt1; stmt2 }`)
-    for_loop                  // For loop construct (e.g., `for i in array_range(0, 10) { ... }`)
-    loop                      // Infinite loop construct (e.g., `loop { ... }`)
-    break                     // Breaks out of a loop (e.g., `break`)
-    continue                  // Skips to the next loop iteration (e.g., `continue`)
+    forever                   // A block that runs until the program ends (e.g., `forever { ... }`)
     return                    // Returns a value from a function (e.g., `r x`)
-    assignment                // Assigning a value (e.g., `x = y`)
-    error_handling            // All errors must be handled explicitly
 
 declaration :=
     const_decl                  // Declaring a constant (e.g., `pi = 3.14;`)
@@ -3019,8 +3028,8 @@ Functions in Nail can return values of any type, or they can be void functions t
 
 ```nail
 // Function with return type
-f calculate(x:i, y:i):i {
-    r x + y;
+f calculate(left:i, right:i):i {
+    r left + right;
 }
 
 // Void function (returns void type :v)
@@ -3045,9 +3054,6 @@ result:s = print(`Hello`);  // ERROR
 
 // This is valid - just call the function
 print(`Hello`);  // OK
-
-// Also valid - the declaration says void
-outcome:v = print(`Hello`);  // OK
 
 // Functions that return values can be assigned
 sum:i = calculate(5, 3);  // OK - returns an integer
@@ -3457,7 +3463,6 @@ doubled:a:i = map num in numbers {
 
 // Correct
 print(`Hello`);  // Just call the function
-outcome:v = print(`Hello`);  // Or name the void result honestly
 ```
 
 ### Runtime Issues
@@ -3473,22 +3478,19 @@ f handle_parse_error(err:e):i { r 0; }
 result:i = safe(int_from(`123`), handle_parse_error);
 ```
 
-#### Infinite Loops
-Remember that `loop` and `loop index` are infinite by default:
-```nail-refused
-// This will run forever - BAD
-loop {
-    print(`Forever`);
-}
-
-// Always include a break condition
-loop index {
-    print(string_from(index));
+#### Forever Means Forever
+`forever` never ends on its own, and there is no break. A program whose top
+level reaches one stays there, which is right for a server and wrong for a
+script. A block that has to stop belongs in a function, which `r` can leave,
+and a search that stops is a function that calls itself:
+```nail
+f first_square_past(limit:i, candidate:i):i {
     if {
-        index >= 10 -> { break; },
-        else -> { /* continue */ }
+        candidate * candidate > limit -> { r candidate; },
+        else -> { r first_square_past(limit, candidate + 1); }
     }
 }
+print(first_square_past(50, 0));
 ```
 
 ### Best Practices
@@ -3498,4 +3500,4 @@ loop index {
 3. **Remember Nail's syntax** - Match-like if statements, yield in collections
 4. **Type your variables** - Always include type annotations
 5. **Use collection operations** - Prefer map/filter/reduce over manual loops
-6. **Handle concurrency carefully** - Use parallel blocks for I/O, spawn for background tasks
+6. **Handle concurrency carefully** - Use `p` for work that computes, `c` for work that waits

@@ -68,7 +68,7 @@ if {
         // have drawn can be printed without drawing it.
         drawn:TUI_Screen = view(start);
         print(drawn.title);
-        for line in drawn.lines {
+        each line in drawn.lines {
             print(line.text);
         }
         print(drawn.status);

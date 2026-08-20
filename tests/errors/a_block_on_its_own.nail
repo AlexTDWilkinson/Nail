@@ -1,0 +1,6 @@
+nail latest
+{
+    inner:i = 5;
+    print(inner);
+}
+print(`after`);

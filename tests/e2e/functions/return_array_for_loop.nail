@@ -1,7 +1,0 @@
-nail latest
-// E2E: function returning array consumed by for loop
-f first_squares(count:i):a:i {
-    r map num in array_range_inclusive(1, count) { y num * num; };
-}
-squares:a:i = first_squares(4);
-for sq_val in squares { print(sq_val); }

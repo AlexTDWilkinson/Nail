@@ -1,7 +1,0 @@
-nail latest
-// E2E: spawned task runs; main waits long enough before finishing
-spawn {
-    print(`spawned task ran`);
-}
-time_sleep(0.5);
-print(`main done`);

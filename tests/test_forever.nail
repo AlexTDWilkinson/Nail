@@ -1,0 +1,40 @@
+nail latest
+// forever runs until the program ends. It is for work that is meant to never
+// stop, like a server or a heartbeat, and the only way out of one is a return
+// from the function it sits in. There is no break, no continue, and no
+// counter: a block that cares how many times it has run is keeping state, and
+// state lives in a function's arguments or in the world.
+
+f heartbeat():v {
+    forever {
+        print(`still here`);
+        time_sleep(60.0);
+    }
+}
+
+f serve():v {
+    forever {
+        print(`serving`);
+        time_sleep(30.0);
+    }
+}
+
+// Inside a function, r leaves the block with the answer, and because a
+// forever block never falls through the function needs no return after it
+f wait_for(path:s):s {
+    forever {
+        if {
+            path_exists(path) -> { r danger(fs_read(path)); },
+            else -> { time_sleep(1.0); }
+        }
+    }
+}
+
+print(wait_for(`config.toml`));
+
+// Two things that run for the life of the program run together in a c block,
+// which ends when both have ended, so the program lives in it
+c
+    heartbeat();
+    serve();
+/c

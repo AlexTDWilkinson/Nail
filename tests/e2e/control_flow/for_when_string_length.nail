@@ -1,6 +1,0 @@
-nail latest
-// E2E: for loop with when clause filtering strings by length
-words:a:s = [`hi`, `hello`, `ok`, `world`];
-for word in words when string_length(word) > 2 {
-    print(word);
-}

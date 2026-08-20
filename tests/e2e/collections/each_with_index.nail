@@ -1,4 +1,4 @@
 nail latest
 // E2E: each with index parameter printing position and value
 words:a:s = [`red`, `blue`];
-each word idx in words { print(idx, word); }
+each word index in words { print(index, word); }

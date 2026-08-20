@@ -10,7 +10,7 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         custom_type_imports: vec![],
         module: StdlibModule::Process,
         parameters: vec![nail_param!(code: i)],
-        return_type: nail_type!(never),
+        return_type: nail_type!(v),
         diverging: true,
         description: "Terminates the program immediately with the given exit code. Never returns.",
         example: "process_exit(1);",
@@ -69,9 +69,6 @@ pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
         "process_wait_for_interrupt" [Tokio] => "std_lib::process::wait_for_interrupt", () -> (v!e),
             "Waits until the program is asked to stop - Ctrl-C, or the TERM signal a service manager sends - and returns when it is. Put it after starting everything, and shut down cleanly afterwards instead of being killed mid-request.",
             "danger(process_wait_for_interrupt());";
-        "spawn" [Tokio] => "std_lib::process::spawn", () -> v,
-            "Runs a block concurrently in the background (used via the spawn keyword).",
-            "spawn { print(`background work`); }";
         "process_open_browser" [Tokio] => "std_lib::process::open_browser", (url: s) -> (v!e),
             "Opens a URL in the person's browser through the desktop's own opener. For local tools that want to show the page they just made.",
             "danger(process_open_browser(`http://localhost:8080`));";

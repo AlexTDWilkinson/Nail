@@ -11,7 +11,7 @@ use super::*;
 pub(super) fn register(m: &mut HashMap<&'static str, StdlibFunction>) {
     simple_fns! { m, Audio:
         "audio_play_file" [Rodio] => "std_lib::audio::play_file", (path: s) -> (v!e),
-            "Plays a sound file and returns when it has finished. WAV, MP3, FLAC and Ogg Vorbis are understood. Put it in a spawn block to carry on while it plays.",
+            "Plays a sound file and returns when it has finished. WAV, MP3, FLAC and Ogg Vorbis are understood. To carry on while it plays, run it in a c block beside the other work.",
             "danger(audio_play_file(`done.wav`));";
         "audio_play_tone" [Rodio] => "std_lib::audio::play_tone", (hertz: f, seconds: f, volume: f) -> (v!e),
             "Plays a single tone and returns when it has finished. 440.0 hertz is a concert A. A volume of 0.2 is a better starting point for a notification than 1.0.",

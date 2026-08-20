@@ -4980,9 +4980,6 @@ impl Editor {
                     symbols.extend(self.extract_symbols_from_ast(else_body));
                 }
             }
-            parser::ASTNode::ForLoop { body, .. } => {
-                symbols.extend(self.extract_symbols_from_ast(body));
-            }
             // Add more node types as needed
             _ => {
                 // For other node types, we don't extract symbols but could add more cases

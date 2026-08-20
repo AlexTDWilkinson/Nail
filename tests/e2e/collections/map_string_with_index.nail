@@ -1,5 +1,5 @@
 nail latest
 // E2E: map with index over string array combining length and position
 words:a:s = [`zero`, `one`, `two`];
-combined:a:i = map word idx in words { y string_length(word) + idx; };
+combined:a:i = map word index in words { y string_length(word) + index; };
 print(combined);
