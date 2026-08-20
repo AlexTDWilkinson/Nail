@@ -3153,6 +3153,18 @@ Put another way: `c` buys overlap, `p` buys cores. If the machine's CPU meter
 would sit near zero while the statement runs, reach for `c`. If it would peg a
 core, reach for `p`.
 
+#### How many threads a program uses
+
+A program decides this itself when it starts, from the machine it started
+on: the physical cores of the NUMA node it woke up on, and it stays on that
+node. A laptop or a droplet gets its physical cores. A four-socket machine
+gets one socket, because rayon's default of every logical CPU on such a
+machine splits each small fork-join across sockets and joins it with a
+barrier three memory hops wide, which measured ten times slower than one
+socket alone. The collection operations and `p` blocks draw on that pool,
+and the async runtime behind `c`, the servers and every stdlib call that
+waits uses the same count for its workers. There is nothing to set.
+
 ### Syntax
 
 ```nail-fragment

@@ -16,6 +16,8 @@ pub mod lexer;
 pub mod parser;
 pub mod version_line;
 pub mod prof;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod threads;
 pub mod transpiler;
 pub mod statics_for_tests;
 pub mod stdlib_registry;

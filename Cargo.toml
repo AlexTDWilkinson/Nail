@@ -98,6 +98,9 @@ gltf = { version = "1", default-features = false, features = ["import", "utils"]
 # The whole windowing, terminal, server and disk world - none of it exists in
 # a browser, so none of it is compiled for one.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# sched_getcpu and sched_setaffinity, for sizing a program's threads to the
+# NUMA node it starts on (src/threads.rs).
+libc = "0.2"
 env_logger = "0.11.5"
 ratatui = { version = "0.28.1", features = ["all-widgets", "crossterm"] }
 axum = { version = "0.7", features = ["ws"] }

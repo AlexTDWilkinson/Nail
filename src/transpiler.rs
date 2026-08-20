@@ -192,7 +192,7 @@ struct AssociativeFold<'a> {
 enum ParallelIterMode {
     Sync,
     AsyncPure,
-    AsyncBlockOn,
+    AsyncJoin,
 }
 
 pub struct Transpiler {
@@ -1128,8 +1128,12 @@ impl Transpiler {
     /// - Sync: inside a pure fn, a plain rayon chain with no runtime involved.
     /// - AsyncPure: async context with a pure body, rayon inside spawn_blocking so
     ///   tokio core threads aren't blocked, but plain closures (no block_on).
-    /// - AsyncBlockOn: async context whose body does async work, rayon inside
-    ///   spawn_blocking with a per-element block_on.
+    /// - AsyncJoin: async context whose body does async work. Every element
+    ///   becomes a future and join_all runs them together, in order. Rayon is
+    ///   not involved: an async body is waiting, not computing, and the old
+    ///   shape (rayon workers each parked in block_on) deadlocked on a machine
+    ///   with one or two cores as soon as the body held another collection
+    ///   operation, because the inner rayon job could never get a worker.
     fn parallel_iter_mode(&self, body: &ASTNode) -> ParallelIterMode {
         // A browser has one thread and no blocking executor, so every
         // collection operation is a plain chain there - rayon runs those
@@ -1142,16 +1146,16 @@ impl Transpiler {
         } else if !Self::node_needs_async(body, &self.pure_functions) {
             ParallelIterMode::AsyncPure
         } else {
-            ParallelIterMode::AsyncBlockOn
+            ParallelIterMode::AsyncJoin
         }
     }
 
     /// Called once the closure header of a parallel operation is written. Only
-    /// an AsyncBlockOn body sits inside an async block; every other mode puts
+    /// an AsyncJoin body sits inside an async block; every other mode puts
     /// the body in a plain closure, where an inner operation must stay sync.
     fn enter_parallel_closure(&mut self, mode: ParallelIterMode) {
         self.enclosing_parallel_closures.push(self.in_parallel_closure);
-        self.in_parallel_closure = mode != ParallelIterMode::AsyncBlockOn;
+        self.in_parallel_closure = mode != ParallelIterMode::AsyncJoin;
     }
 
     /// Called once the closure of a parallel operation is closed.
@@ -1178,9 +1182,6 @@ impl Transpiler {
         if let Some(idx) = index_iterator {
             self.record_variable_type(idx, NailDataTypeDescriptor::Int);
         }
-        if mode == ParallelIterMode::AsyncBlockOn {
-            writeln!(output, "{}let __rt_handle = tokio::runtime::Handle::current();", self.indent())?;
-        }
         write!(output, "{}let __iter = ", self.indent())?;
         // Lazy iterator forms (ranges) are only IndexedParallelIterator for
         // small integer types in rayon, so enumerate() is unavailable on them;
@@ -1194,17 +1195,26 @@ impl Transpiler {
             writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
         }
 
-        if mode == ParallelIterMode::Sync {
-            write!(output, "{}let __result: Vec<_> = ", self.indent())?;
-        } else {
-            writeln!(output, "{}let __result: Vec<_> = tokio::task::spawn_blocking(move || {{", self.indent())?;
-            self.indent_level += 1;
-            write!(output, "{}", self.indent())?;
+        match mode {
+            ParallelIterMode::Sync => {
+                write!(output, "{}let __result: Vec<_> = ", self.indent())?;
+            }
+            ParallelIterMode::AsyncPure => {
+                writeln!(output, "{}let __result: Vec<_> = tokio::task::spawn_blocking(move || {{", self.indent())?;
+                self.indent_level += 1;
+                write!(output, "{}", self.indent())?;
+            }
+            ParallelIterMode::AsyncJoin => {
+                write!(output, "{}let __result: Vec<_> = future::join_all(", self.indent())?;
+            }
         }
-        if use_index {
-            writeln!(output, "__iter.into_par_iter().enumerate().{}(|(_idx, {})| {{", rayon_method, iterator)?;
+        let (iter_call, element) = if use_index { ("into_iter().enumerate()", format!("(_idx, {})", iterator)) } else { ("into_iter()", iterator.to_string()) };
+        if mode == ParallelIterMode::AsyncJoin {
+            writeln!(output, "__iter.{}.map(|{}| {{", iter_call, element)?;
+        } else if use_index {
+            writeln!(output, "__iter.into_par_iter().enumerate().{}(|{}| {{", rayon_method, element)?;
         } else {
-            writeln!(output, "__iter.into_par_iter().{}(|{}| {{", rayon_method, iterator)?;
+            writeln!(output, "__iter.into_par_iter().{}(|{}| {{", rayon_method, element)?;
         }
         self.indent_level += 1;
 
@@ -1212,8 +1222,8 @@ impl Transpiler {
             writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
         }
 
-        if mode == ParallelIterMode::AsyncBlockOn {
-            writeln!(output, "{}__rt_handle.block_on(async move {{", self.indent())?;
+        if mode == ParallelIterMode::AsyncJoin {
+            writeln!(output, "{}async move {{", self.indent())?;
             self.indent_level += 1;
         }
 
@@ -1224,22 +1234,31 @@ impl Transpiler {
         Ok(())
     }
 
-    /// Closes the structure opened by write_parallel_iter_open.
-    fn write_parallel_iter_close(&mut self, mode: ParallelIterMode, output: &mut String) -> Result<(), CodeError> {
+    /// Closes the structure opened by write_parallel_iter_open. The rayon
+    /// method decides what a joined body's answers need: a map's are the
+    /// values, a filter_map's are options to flatten.
+    fn write_parallel_iter_close(&mut self, mode: ParallelIterMode, rayon_method: &str, output: &mut String) -> Result<(), CodeError> {
         self.leave_parallel_closure();
-        if mode == ParallelIterMode::AsyncBlockOn {
-            self.indent_level -= 1;
-            writeln!(output, "{}}})", self.indent())?;
-        }
-        self.indent_level -= 1;
         match mode {
             ParallelIterMode::Sync => {
+                self.indent_level -= 1;
                 writeln!(output, "{}}}).collect();", self.indent())?;
             }
-            _ => {
+            ParallelIterMode::AsyncPure => {
+                self.indent_level -= 1;
                 writeln!(output, "{}}}).collect()", self.indent())?;
                 self.indent_level -= 1;
                 writeln!(output, "{}}}).await.unwrap();", self.indent())?;
+            }
+            ParallelIterMode::AsyncJoin => {
+                self.indent_level -= 1;
+                writeln!(output, "{}}}", self.indent())?;
+                self.indent_level -= 1;
+                if rayon_method == "filter_map" {
+                    writeln!(output, "{}}})).await.into_iter().flatten().collect();", self.indent())?;
+                } else {
+                    writeln!(output, "{}}})).await;", self.indent())?;
+                }
             }
         }
         Ok(())
@@ -1567,8 +1586,8 @@ impl Transpiler {
     /// on-match statements ending in break, and a result expression.
     /// Shared shape of the short-circuiting search operations (find/all/any),
     /// emitted as rayon's parallel short-circuiting find_first/all/any. The
-    /// same three modes as map/filter apply (sync, async + pure body, async +
-    /// block_on). find_first's predicate receives &Item, so `by_ref_param`
+    /// same three modes as map/filter apply (sync, async + pure body, async
+    /// joined futures). find_first's predicate receives &Item, so `by_ref_param`
     /// clones the binding to an owned value first.
     fn write_parallel_search(
         &mut self,
@@ -1599,9 +1618,6 @@ impl Transpiler {
         let mode = self.parallel_iter_mode(body);
         let use_index = index_iterator.is_some();
 
-        if mode == ParallelIterMode::AsyncBlockOn {
-            writeln!(output, "{}let __rt_handle = tokio::runtime::Handle::current();", self.indent())?;
-        }
         write!(output, "{}let __iter = ", self.indent())?;
         self.transpile_iterable(iterable, !use_index, output)?;
         writeln!(output, ";")?;
@@ -1611,56 +1627,87 @@ impl Transpiler {
             writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
         }
 
-        if mode == ParallelIterMode::Sync {
-            write!(output, "{}let __search_result = ", self.indent())?;
-        } else {
-            writeln!(output, "{}let __search_result = tokio::task::spawn_blocking(move || {{", self.indent())?;
+        if mode == ParallelIterMode::AsyncJoin {
+            // Every element's condition is a future, and they are all awaited
+            // together. What the search hands back rides along beside each
+            // answer: the element (with its index when asked for) for a find,
+            // nothing for all and any. The short-circuit is lost, which costs
+            // some wasted waiting and never a wrong answer.
+            let kept = match (by_ref_param, use_index) {
+                (true, true) => format!("(_idx, {}.clone())", iterator),
+                (true, false) => format!("{}.clone()", iterator),
+                (false, _) => "()".to_string(),
+            };
+            let element = if use_index { format!("(_idx, {})", iterator) } else { iterator.to_string() };
+            let iter_call = if use_index { "into_iter().enumerate()" } else { "into_iter()" };
+            writeln!(output, "{}let __checked = future::join_all(__iter.{}.map(|{}| {{", self.indent(), iter_call, element)?;
             self.indent_level += 1;
-            write!(output, "{}", self.indent())?;
-        }
-        match (use_index, by_ref_param) {
-            (false, false) => writeln!(output, "__iter.into_par_iter().{}(|{}| {{", rayon_method, iterator)?,
-            (false, true) => writeln!(output, "__iter.into_par_iter().{}(|__item| {{", rayon_method)?,
-            (true, false) => writeln!(output, "__iter.into_par_iter().enumerate().{}(|(_idx, {})| {{", rayon_method, iterator)?,
-            (true, true) => writeln!(output, "__iter.into_par_iter().enumerate().{}(|__pair| {{", rayon_method)?,
-        }
-        self.indent_level += 1;
-        if by_ref_param {
-            if use_index {
-                writeln!(output, "{}let (_idx, {}) = __pair.clone();", self.indent(), iterator)?;
-            } else {
-                writeln!(output, "{}let {} = __item.clone();", self.indent(), iterator)?;
+            for var in &captured {
+                writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
             }
-        }
-
-        for var in &captured {
-            writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
-        }
-
-        if mode == ParallelIterMode::AsyncBlockOn {
-            writeln!(output, "{}__rt_handle.block_on(async move {{", self.indent())?;
+            writeln!(output, "{}let __kept = {};", self.indent(), kept)?;
+            writeln!(output, "{}async move {{", self.indent())?;
             self.indent_level += 1;
-        }
-        if let Some(idx) = index_iterator {
-            writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
-        }
-
-        self.enter_parallel_closure(mode);
-        self.write_condition_result(body, output)?;
-        writeln!(output, "{}condition_result", self.indent())?;
-        self.leave_parallel_closure();
-
-        if mode == ParallelIterMode::AsyncBlockOn {
+            if let Some(idx) = index_iterator {
+                writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+            }
+            self.enter_parallel_closure(mode);
+            self.write_condition_result(body, output)?;
+            writeln!(output, "{}(__kept, condition_result)", self.indent())?;
+            self.leave_parallel_closure();
             self.indent_level -= 1;
-            writeln!(output, "{}}})", self.indent())?;
-        }
-        self.indent_level -= 1;
-        match mode {
-            ParallelIterMode::Sync => writeln!(output, "{}}});", self.indent())?,
-            _ => {
-                writeln!(output, "{}}})", self.indent())?;
-                self.indent_level -= 1;
-                writeln!(output, "{}}}).await.unwrap();", self.indent())?;
+            writeln!(output, "{}}}", self.indent())?;
+            self.indent_level -= 1;
+            writeln!(output, "{}}})).await;", self.indent())?;
+            let derived = match rayon_method {
+                "find_first" => "__checked.into_iter().find(|__answer| __answer.1).map(|__answer| __answer.0)",
+                "all" => "__checked.into_iter().all(|__answer| __answer.1)",
+                _ => "__checked.into_iter().any(|__answer| __answer.1)",
+            };
+            writeln!(output, "{}let __search_result = {};", self.indent(), derived)?;
+        } else {
+            if mode == ParallelIterMode::Sync {
+                write!(output, "{}let __search_result = ", self.indent())?;
+            } else {
+                writeln!(output, "{}let __search_result = tokio::task::spawn_blocking(move || {{", self.indent())?;
+                self.indent_level += 1;
+                write!(output, "{}", self.indent())?;
+            }
+            match (use_index, by_ref_param) {
+                (false, false) => writeln!(output, "__iter.into_par_iter().{}(|{}| {{", rayon_method, iterator)?,
+                (false, true) => writeln!(output, "__iter.into_par_iter().{}(|__item| {{", rayon_method)?,
+                (true, false) => writeln!(output, "__iter.into_par_iter().enumerate().{}(|(_idx, {})| {{", rayon_method, iterator)?,
+                (true, true) => writeln!(output, "__iter.into_par_iter().enumerate().{}(|__pair| {{", rayon_method)?,
+            }
+            self.indent_level += 1;
+            if by_ref_param {
+                if use_index {
+                    writeln!(output, "{}let (_idx, {}) = __pair.clone();", self.indent(), iterator)?;
+                } else {
+                    writeln!(output, "{}let {} = __item.clone();", self.indent(), iterator)?;
+                }
+            }
+
+            for var in &captured {
+                writeln!(output, "{}let {} = {}.clone();", self.indent(), var, var)?;
+            }
+            if let Some(idx) = index_iterator {
+                writeln!(output, "{}let {} = _idx as i64;", self.indent(), idx)?;
+            }
+
+            self.enter_parallel_closure(mode);
+            self.write_condition_result(body, output)?;
+            writeln!(output, "{}condition_result", self.indent())?;
+            self.leave_parallel_closure();
+
+            self.indent_level -= 1;
+            match mode {
+                ParallelIterMode::Sync => writeln!(output, "{}}});", self.indent())?,
+                _ => {
+                    writeln!(output, "{}}})", self.indent())?;
+                    self.indent_level -= 1;
+                    writeln!(output, "{}}}).await.unwrap();", self.indent())?;
+                }
             }
         }
 
@@ -1757,8 +1804,22 @@ impl Transpiler {
             writeln!(output)?;
             writeln!(output, "async fn nail_browser_main() {{")?;
         } else {
-            writeln!(output, "#[tokio::main]")?;
-            writeln!(output, "async fn main() {{")?;
+            // The program sizes itself to the machine before anything else
+            // runs: the physical cores of the NUMA node it started on, for
+            // rayon and for tokio alike (see nail::threads). #[tokio::main]
+            // would have started one worker per logical CPU, which on a
+            // four-socket box is the setting that made work ten times slower.
+            writeln!(output, "fn main() {{")?;
+            writeln!(output, "    let __threads = nail::threads::configure();")?;
+            writeln!(output, "    tokio::runtime::Builder::new_multi_thread()")?;
+            writeln!(output, "        .worker_threads(__threads)")?;
+            writeln!(output, "        .enable_all()")?;
+            writeln!(output, "        .build()")?;
+            writeln!(output, "        .expect(\"the async runtime could not start\")")?;
+            writeln!(output, "        .block_on(nail_main());")?;
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+            writeln!(output, "async fn nail_main() {{")?;
         }
         self.indent_level += 1;
         // Browser builds skip instrumentation: no clock, no filesystem, no
@@ -2053,7 +2114,7 @@ impl Transpiler {
                     writeln!(output)?;
                 }
 
-                self.write_parallel_iter_close(mode, output)?;
+                self.write_parallel_iter_close(mode, "map", output)?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
@@ -2082,7 +2143,7 @@ impl Transpiler {
                 self.indent_level -= 1;
                 writeln!(output, "{}}}", self.indent())?;
 
-                self.write_parallel_iter_close(mode, output)?;
+                self.write_parallel_iter_close(mode, "filter_map", output)?;
                 writeln!(output, "{}__result", self.indent())?;
                 self.indent_level -= 1;
                 write!(output, "{}}}", self.indent())?;
@@ -3157,5 +3218,44 @@ mod tests {
 
         let plain = "print(`hi`);";
         assert!(!transpile_source(plain).contains("use dashmap::DashMap;"), "a program with no hashmap does not import one");
+    }
+
+    /// A collection operation whose body awaits used to run each element on a
+    /// rayon worker parked in block_on. With two cores, two outer elements
+    /// held both workers while an inner map waited for one, and the program
+    /// hung with no CPU use at all. An async body is waiting, not computing,
+    /// so its elements are futures joined together, and rayon is left to the
+    /// pure bodies. Found by running the e2e suite pinned to two cores.
+    #[test]
+    fn an_async_body_joins_futures_instead_of_parking_rayon_workers() {
+        let nested = "grid:a:a:i = [[1, 2], [3, 4, 5]];\nsizes:a:i = map row in grid {\n    doubled:a:i = map cell in row { y cell * 2; };\n    time_sleep(0.01);\n    y array_length(doubled);\n};\nprint(sizes);";
+        let rust = transpile_source(nested);
+        assert!(rust.contains("future::join_all(__iter.into_iter().map(|row|"), "an awaiting body becomes joined futures, got:\n{}", rust);
+        assert!(!rust.contains("__rt_handle.block_on"), "nothing parks a rayon worker in block_on any more, got:\n{}", rust);
+        assert!(rust.contains("__iter.into_par_iter().map(|cell|"), "the pure inner map keeps rayon, got:\n{}", rust);
+
+        let searching = "words:a:s = [`a`, `bb`];\nlong:s = danger(find word index in words {\n    time_sleep(0.01);\n    y string_length(word) > 1;\n});\nprint(long);";
+        let rust = transpile_source(searching);
+        assert!(rust.contains("let __kept = (_idx, word.clone());") && rust.contains(".find(|__answer| __answer.1).map(|__answer| __answer.0)"), "an awaiting find keeps the element beside its answer, got:\n{}", rust);
+
+        let filtering = "words:a:s = [`a`, `bb`];\nlong:a:s = filter word in words {\n    time_sleep(0.01);\n    y string_length(word) > 1;\n};\nprint(long);";
+        let rust = transpile_source(filtering);
+        assert!(rust.contains("})).await.into_iter().flatten().collect();"), "an awaiting filter flattens its options, got:\n{}", rust);
+    }
+
+    /// A program's threads are decided from the machine at startup, once,
+    /// for rayon and tokio together. The tokio::main attribute started a
+    /// worker per logical CPU and left rayon to do the same, which on a
+    /// four-socket machine scattered every small fork-join across sockets
+    /// and ran ten times slower than one socket alone.
+    #[test]
+    fn main_sizes_its_threads_to_the_machine_before_anything_runs() {
+        let rust = transpile_source("print(`hi`);");
+        assert!(!rust.contains("#[tokio::main]"), "no attribute runtime, got:\n{}", rust);
+        let main_start = rust.find("fn main() {").expect("a main");
+        let configure = rust.find("let __threads = nail::threads::configure();").expect("the thread plan");
+        let workers = rust.find(".worker_threads(__threads)").expect("tokio sized by it");
+        let body = rust.find("async fn nail_main() {").expect("the program body");
+        assert!(main_start < configure && configure < workers && workers < body, "configure runs first, then the runtime, then the program, got:\n{}", rust);
     }
 }

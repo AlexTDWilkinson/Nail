@@ -35,9 +35,9 @@ A clean run currently reports 587/587 lexer/parser, 586/586 type checker and
 567/567 transpiler, with zero failures. (These counts move whenever a test is
 added: what matters is that every number is a full pass.) Those counts are every `.nail` file in
 the repository, from the one shared list in `scripts/test_nail_files.sh`, rather than
-the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1359 passing
-(1374 with `--features fuzz`, which adds the fuzzer's own tests), `cargo test --bin nail`
-reports 1382 (the library's tests plus the editor's own), and `./scripts/test_e2e.sh`
+the two non-recursive globs the scripts used to carry. `cargo test --lib` reports 1367 passing
+(1382 with `--features fuzz`, which adds the fuzzer's own tests), `cargo test --bin nail`
+reports 1384 (the library's tests plus the editor's own), and `./scripts/test_e2e.sh`
 reports 398 programs passing. Treat any number below that as a
 regression to investigate, not a new baseline.
 
